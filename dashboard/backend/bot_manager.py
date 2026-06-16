@@ -38,7 +38,7 @@ BOT_REGISTRY = {
     },
     "zaji": {
         "name": "zaji",
-        "display": "🏴‍☠️ Za'ji le Capitaine",
+        "display": "🏍️ Eikichi Onizuka",
         "dir": "ZajiBot",
         "script": "bot_zaji.py",
         "bat": "start_zaji.bat",
