@@ -1,9 +1,9 @@
 @echo off
-title Za'ji Bot - Le Rugissement Parfait
-color 0B
+title Eikichi Onizuka Bot - GTO
+color 0C
 echo ================================
-echo    ZA'JI LE CAPITAINE
-echo    Le Rugissement Parfait
+echo    EIKICHI ONIZUKA
+echo    Great Teacher Onizuka
 echo ================================
 echo.
 echo Lancement du bot...

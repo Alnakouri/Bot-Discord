@@ -58,7 +58,7 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-# ZA'JI LE CAPITAINE CORSAIRE
+# EIKICHI ONIZUKA (GTO)
 
 # IMPORT SECURE ENV LOADER
 from pathlib import Path
@@ -83,7 +83,7 @@ try:
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
     DATABASE_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"⚠️ [ZA'JI] Modules optionnels non disponibles: {e}")
+    logger.warning(f"⚠️ [ONIZUKA] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
 
 try:
@@ -234,7 +234,7 @@ async def daily_birthday_check():
 async def before_birthday_check():
     await bot.wait_until_ready()
 
-# COMMANDES SPÉCIALES ZA'JI
+# COMMANDES SPÉCIALES ONIZUKA
 
 @bot.command(name="exploit", aliases=["histoire", "legende"])
 async def exploit_cmd(ctx):
@@ -388,7 +388,7 @@ async def on_message(message):
     # A.bis IMAGE PRIORITY
     elif has_image_early and not is_bot_talking:
         should_respond = True
-        logger.info(f"[IMAGE PRIORITY] Za'ji va analyser l'image de {message.author.name}")
+        logger.info(f"[IMAGE PRIORITY] Onizuka va analyser l'image de {message.author.name}")
     
     # B. Mode DUEL avec autres bots
     elif is_bot_talking:
@@ -507,7 +507,7 @@ async def on_message(message):
     # C. Intervention aléatoire (10%)
     elif not is_bot_talking and random.random() < 0.10:
         should_respond = True
-        logger.info(f"[INTERVENTION] Za'ji intervient dans {message.channel.name}")
+        logger.info(f"[INTERVENTION] Onizuka intervient dans {message.channel.name}")
     
     if not should_respond:
         return
