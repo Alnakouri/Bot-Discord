@@ -58,7 +58,16 @@ WELCOME_MESSAGES = {
         "🌟 Ay {user} ! Bienvenue dans le quartier ma vie ! "
         "Ici c'est Marseille bébé, et moi chui la reine du Vieux-Port ooh !",
     ],
+    "onizuka": [
+        "🏍️ **Oï !** Bienvenue dans la classe, {user} ! Le GRAND Onizuka, 22 ans, "
+        "célibataire et prof d'exception, te souhaite la bienvenue ! Fais pas le malin et tout se passera bien ! 🔥",
+        "✊ Tiens, un nouvel élève ! Bienvenue à Seirin, {user} ! "
+        "Prépare-toi, avec moi on ne s'ennuie jamais. Leçon numéro 1 : vis ta vie à fond ! 😎",
+        "🔥 **Great Teacher Onizuka** est là pour t'accueillir, {user} ! "
+        "Pas de chichis entre nous, ici on apprend sur le terrain. Sois le bienvenu !"
+    ],
 }
+WELCOME_MESSAGES["zaji"] = WELCOME_MESSAGES["onizuka"]
 
 GOODBYE_MESSAGES = {
     "sheogorath": [
@@ -90,7 +99,14 @@ GOODBYE_MESSAGES = {
         "😢 Ay {user} nous quitte ! Peuchère... Allez bonne route ! "
         "Mais oublie pas, ici c'est chez toi hein !",
     ],
+    "onizuka": [
+        "👋 Quoi, {user} se tire déjà ? Reste un peu, on allait faire une virée en bécane ! "
+        "Allez, bonne route et reste cool !",
+        "😢 Peuchère... {user} nous quitte ? J'espère que c'est pas à cause des grimaces d'Uchiyamada. "
+        "Prends soin de toi, morveux !"
+    ],
 }
+GOODBYE_MESSAGES["zaji"] = GOODBYE_MESSAGES["onizuka"]
 
 
 def get_welcome_message(bot_name: str, user: discord.Member) -> str:
@@ -143,7 +159,14 @@ BIRTHDAY_MESSAGES = {
         "J'espère que t'as un gâteau avec des paillettes et du rose dessus ! "
         "Sinon c'est pas un vrai anniversaire ooh ! 💅✨",
     ],
+    "onizuka": [
+        "🎂 **JOYEUX ANNIVERSAIRE {user} !** 22 ans ? Ah non, ça c'est mon âge ! "
+        "En tout cas, ce soir c'est ramen et pachinko à mes frais... enfin, si je gagne le jackpot ! 🎰🔥",
+        "🎉 Bon anniv', {user} ! Le GRAND Onizuka te souhaite le meilleur ! "
+        "Ne laisse aucun prof relou gâcher ta journée, et profite à fond ! 🏍️😎"
+    ],
 }
+BIRTHDAY_MESSAGES["zaji"] = BIRTHDAY_MESSAGES["onizuka"]
 
 
 def get_birthday_message(bot_name: str, user: discord.Member) -> str:
@@ -167,8 +190,8 @@ async def handle_member_join(bot, member: discord.Member, bot_name: str):
     
     if target_channel:
         # Probabilité de message (pour éviter le spam si plusieurs bots)
-        # Sheogorath: 40%, M'aiq: 30%, Alfred: 30%
-        probs = {"sheogorath": 0.4, "maiq": 0.3, "alfred": 0.3}
+        # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Onizuka/Zaji: 30%
+        probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.3, "zaji": 0.3}
         if random.random() < probs.get(bot_name.lower(), 0.3):
             message = get_welcome_message(bot_name, member)
             await target_channel.send(message)
@@ -227,7 +250,7 @@ async def check_and_send_birthdays(bot, bot_name: str):
         if member:
             # Probabilité pour éviter les doublons entre bots
             # Un seul bot envoie le message
-            probs = {"sheogorath": 0.5, "maiq": 0.25, "alfred": 0.25}
+            probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.2, "zaji": 0.2}
             if random.random() < probs.get(bot_name.lower(), 0.33):
                 message = get_birthday_message(bot_name, member)
                 await target_channel.send(message)

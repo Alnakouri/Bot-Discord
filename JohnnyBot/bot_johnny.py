@@ -343,7 +343,7 @@ async def on_message(message):
     is_sheogorath = "sheo" in bot_name_lower
     is_maiq = "maiq" in bot_name_lower or "m'aiq" in bot_name_lower
     is_alfred = "alfred" in bot_name_lower
-    is_zaji = "zaji" in bot_name_lower or "za'ji" in bot_name_lower
+    is_zaji = "zaji" in bot_name_lower or "za'ji" in bot_name_lower or "onizuka" in bot_name_lower or "eikichi" in bot_name_lower or "gto" in bot_name_lower
     
     # Détection image très tôt (pour priorité)
     has_image_early = any(

@@ -45,8 +45,14 @@ DATA_FILE = os.path.join(DATA_DIR, "zaji_data.json")
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    return {"rum_count": 0, "treasures_found": 0, "tales_told": 0}
+            data = json.load(f)
+            # Map old keys to new keys if they exist
+            if "rum_count" in data:
+                data["money_bragged"] = data.pop("rum_count")
+            if "treasures_found" in data:
+                data["jackpots"] = data.pop("treasures_found")
+            return data
+    return {"money_bragged": 0, "jackpots": 0, "tales_told": 0}
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
@@ -157,16 +163,16 @@ if OPENROUTER_API_KEY:
 @bot.event
 async def on_ready():
     logger.info("=" * 60)
-    logger.info("⚓ ZA'JI LE CAPITAINE - Le Rugissement Parfait a pris la mer!")
+    logger.info("🏍️ EIKICHI ONIZUKA - Great Teacher Onizuka est là !")
     logger.info("=" * 60)
-    logger.info(f'🏴‍☠️ Connecté en tant que: {bot.user.name} ({bot.user.id})')
-    logger.info(f'⛵ Serveurs: {len(bot.guilds)}')
+    logger.info(f'🏍️ Connecté en tant que: {bot.user.name} ({bot.user.id})')
+    logger.info(f'🏫 Serveurs: {len(bot.guilds)}')
     logger.info(f'👥 Utilisateurs visibles: {len(bot.users)}')
     
     # Setup Slash Commands
     if DATABASE_AVAILABLE:
         try:
-            setup_slash_commands(bot, "Za'ji")
+            setup_slash_commands(bot, "Onizuka")
             await sync_slash_commands(bot)
         except Exception as e:
             logger.error(f"[SLASH] Erreur: {e}")
@@ -178,19 +184,19 @@ async def on_ready():
     logger.info(f'   ✅ Mistral : {"Oui" if MISTRAL_API_KEY else "Non"}')
     logger.info(f'   ✅ OpenRouter : {"Oui" if OPENROUTER_API_KEY else "Non"}')
     
-    logger.info("💰 STATISTIQUES CAPITAINE:")
-    logger.info(f'   🍺 Rhum bu : {zaji_data.get("rum_count", 0)}')
-    logger.info(f'   💰 Trésors trouvés : {zaji_data.get("treasures_found", 0)}')
-    logger.info(f'   📖 Histoires racontées : {zaji_data.get("tales_told", 0)}')
+    logger.info("📊 STATISTIQUES ONIZUKA:")
+    logger.info(f'   💴 Fric vanté : {zaji_data.get("money_bragged", 0)}')
+    logger.info(f'   🎰 Jackpots gagnés : {zaji_data.get("jackpots", 0)}')
+    logger.info(f'   📖 Exploits racontés : {zaji_data.get("tales_told", 0)}')
     
-    logger.info("🎯 Za'ji est prêt à naviguer !")
+    logger.info("🎯 Onizuka est prêt à enseigner !")
     logger.info("=" * 60)
     
     # Status
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="les mers de Discord | ⚓ Le Rugissement Parfait"
+            name="les élèves | 🏍️ Kawasaki Z-II"
         )
     )
     
@@ -200,29 +206,29 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
-    """Accueil pirates"""
+    """Accueil de classe"""
     if DATABASE_AVAILABLE:
-        await handle_member_join(bot, member, bot_name="Za'ji")
+        await handle_member_join(bot, member, bot_name="Onizuka")
         # Message personnalisé
         if member.guild.system_channel:
             await member.guild.system_channel.send(
-                f"🏴‍☠️ **Bienvenue à bord, {member.mention} !**\n"
-                f"Za'ji, le plus grand capitaine de Tamriel, te souhaite la bienvenue sur le Rugissement Parfait ! ⚓\n"
-                f"Prépare-toi à l'aventure, moussaillon !"
+                f"🏍️ **Bienvenue dans la classe, {member.mention} !**\n"
+                f"Eikichi Onizuka, 22 ans, célibataire et prof de génie, te souhaite la bienvenue ! 🔥\n"
+                f"Prépare-toi à faire des étincelles !"
             )
 
 @bot.event
 async def on_member_remove(member):
-    """Au revoir matelot"""
+    """Au revoir élève"""
     if DATABASE_AVAILABLE:
-        await handle_member_remove(bot, member, bot_name="Za'ji")
+        await handle_member_remove(bot, member, bot_name="Onizuka")
 
 # Tâche quotidienne : anniversaires
 @tasks.loop(hours=24)
 async def daily_birthday_check():
     if DATABASE_AVAILABLE:
         for guild in bot.guilds:
-            await check_and_send_birthdays(bot, bot_name="Za'ji")
+            await check_and_send_birthdays(bot, bot_name="Onizuka")
 
 @daily_birthday_check.before_loop
 async def before_birthday_check():
@@ -230,52 +236,52 @@ async def before_birthday_check():
 
 # COMMANDES SPÉCIALES ZA'JI
 
-@bot.command(name="exploit")
+@bot.command(name="exploit", aliases=["histoire", "legende"])
 async def exploit_cmd(ctx):
-    """Za'ji raconte un de ses exploits légendaires"""
+    """Onizuka raconte un de ses exploits de légende"""
     tale = random.choice(TALL_TALES)
     zaji_data["tales_told"] = zaji_data.get("tales_told", 0) + 1
     save_data(zaji_data)
     
     embed = discord.Embed(
-        title="⚓ L'EXPLOIT LÉGENDAIRE DE ZA'JI",
+        title="🏍️ L'EXPLOIT DE LEGENDE D'ONIZUKA",
         description=tale,
         color=discord.Color.gold()
     )
-    embed.set_footer(text=f"Histoires racontées : {zaji_data['tales_told']}")
+    embed.set_footer(text=f"Exploits racontés : {zaji_data['tales_told']}")
     await ctx.send(embed=embed)
 
-@bot.command(name="chanson", aliases=["shanty", "chante"])
+@bot.command(name="chanson", aliases=["frime", "chante", "shanty"])
 async def chanson_cmd(ctx):
-    """Za'ji chante une chanson de marin"""
+    """Onizuka sort une punchline / vantardise"""
     shanty = random.choice(SEA_SHANTIES)
     await ctx.send(shanty)
 
-@bot.command(name="rhum", aliases=["rum"])
-async def rhum_cmd(ctx):
-    """Za'ji parle de sa passion pour le rhum"""
+@bot.command(name="fric", aliases=["argent", "rhum", "rum"])
+async def fric_cmd(ctx):
+    """Onizuka parle de sa passion pour le fric, les filles et le ramen"""
     response = random.choice(RUM_RESPONSES)
-    zaji_data["rum_count"] = zaji_data.get("rum_count", 0) + 1
+    zaji_data["money_bragged"] = zaji_data.get("money_bragged", 0) + 1
     save_data(zaji_data)
     await ctx.send(response)
 
-@bot.command(name="tresor", aliases=["treasure"])
-async def tresor_cmd(ctx):
-    """Za'ji parle de ses trésors"""
+@bot.command(name="jackpot", aliases=["tresor", "trésor", "treasure"])
+async def jackpot_cmd(ctx):
+    """Onizuka parle de ses jackpots"""
     response = random.choice(TREASURE_RESPONSES)
-    zaji_data["treasures_found"] = zaji_data.get("treasures_found", 0) + 1
+    zaji_data["jackpots"] = zaji_data.get("jackpots", 0) + 1
     save_data(zaji_data)
-    await ctx.send(f"{response}\n💰 Trésors découverts par Za'ji : {zaji_data['treasures_found']}")
+    await ctx.send(f"{response}\n💰 Jackpots décrochés par Onizuka : {zaji_data['jackpots']}")
 
-@bot.command(name="navire", aliases=["ship", "bateau"])
-async def navire_cmd(ctx):
-    """Za'ji vante son navire"""
+@bot.command(name="moto", aliases=["navire", "ship", "bateau"])
+async def moto_cmd(ctx):
+    """Onizuka vante sa moto (ou la Cresta de Uchiyamada)"""
     response = random.choice(SHIP_RESPONSES)
     await ctx.send(response)
 
-@bot.command(name="equipage", aliases=["crew"])
+@bot.command(name="equipage", aliases=["crew", "classe"])
 async def equipage_cmd(ctx):
-    """Liste l'équipage actif"""
+    """Liste la bande d'élèves d'Onizuka"""
     if not DATABASE_AVAILABLE:
         await ctx.send("⚠️ Base de données non disponible !")
         return
@@ -284,11 +290,10 @@ async def equipage_cmd(ctx):
     leaderboard = get_reputation_leaderboard(10)
     
     embed = discord.Embed(
-        title="🏴‍☠️ ÉQUIPAGE DU RUGISSEMENT PARFAIT",
-        description="Les meilleurs matelots de Za'ji !",
-        color=discord.Color.blue()
+        title="🏍️ LA BANDE D'ONIZUKA (CLASSE SEIRIN)",
+        description="Les élèves et potes les plus fidèles d'Onizuka !",
+        color=discord.Color.red()
     )
-    
     
     for i, entry in enumerate(leaderboard):
         name = entry.get('display_name') or entry.get('username', 'Inconnu')
@@ -297,15 +302,15 @@ async def equipage_cmd(ctx):
         
         # Déterminer le rang
         if points < 50:
-            rank = "⚓ Cadet"
+            rank = "🎒 Cancre"
         elif points < 150:
-            rank = "⛵ Matelot"
+            rank = "📚 Élève Moyen"
         elif points < 300:
-            rank = "🏴‍☠️ Maître"
-        elif points <500:
-            rank = "👑 Quartier-Maître"
+            rank = "🏍️ Motard d'Onibaku"
+        elif points < 500:
+            rank = "🔥 Délégué de Classe"
         else:
-            rank = "💎 Capitaine"
+            rank = "👑 Great Student Onizuka"
         
         embed.add_field(
             name=f"{i+1}. {name}",
@@ -313,7 +318,7 @@ async def equipage_cmd(ctx):
             inline=False
         )
     
-    embed.set_footer(text="Gagnez de la réputation en interagissant avec Za'ji !")
+    embed.set_footer(text="Gagnez du respect en parlant avec Onizuka !")
     await ctx.send(embed=embed)
 
 # LOGIQUE CONVERSATIONNELLE
@@ -324,8 +329,8 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Za'ji)
-    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["zaji", "za'ji"]):
+    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Onizuka / Za'ji)
+    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["zaji", "za'ji", "onizuka", "eikichi", "gto"]):
         return
         
     # SILENCE STREAM (Canal ignoré)
@@ -344,10 +349,10 @@ async def on_message(message):
     is_reply = message.reference and message.reference.resolved and message.reference.resolved.author == bot.user
     is_dm = isinstance(message.channel, discord.DMChannel)
     
-    # Noms alternatifs pour Za'ji (détection dans le message)
-    ZAJI_NAMES = ["zaji", "za'ji", "za ji", "capitaine", "rugissement", "corsaire"]
+    # Noms alternatifs pour Onizuka (détection dans le message)
+    ONIZUKA_NAMES = ["onizuka", "eikichi", "gto", "onibaku"]
     content_lower = message.content.lower()
-    is_name_mentioned = any(name in content_lower for name in ZAJI_NAMES)
+    is_name_mentioned = any(name in content_lower for name in ONIZUKA_NAMES)
     
     # Détection autres bots (pour duels)
     is_bot_talking = message.author.bot and message.author != bot.user
@@ -373,12 +378,12 @@ async def on_message(message):
         
         # Log si invoqué par nom alternatif
         if is_name_mentioned and not is_mentioned:
-            logger.info(f"[NOM ALTERNATIF] Za'ji invoqué par nom dans le message de {message.author.name}")
+            logger.info(f"[NOM ALTERNATIF] Onizuka invoqué par nom dans le message de {message.author.name}")
         
         # Database
         if DATABASE_AVAILABLE and not is_dm:
             get_or_create_user(message.author.id, message.author.name, message.author.display_name)
-            log_interaction(message.author.id, "Za'ji", "mention")
+            log_interaction(message.author.id, "Onizuka", "mention")
     
     # A.bis IMAGE PRIORITY
     elif has_image_early and not is_bot_talking:
@@ -400,9 +405,9 @@ async def on_message(message):
         elif is_maiq:
             bot_name = "M'aiq"
         
-        # Check if Za'ji can join this conversation
+        # Check if Onizuka can join this conversation (internally tracks as "Za'ji" for database compatibility with older bots)
         if bot_name and not can_join_duel(message.channel.id, "Za'ji", bot_name):
-            logger.info(f"[DUEL BLOQUÉ] {bot_name} est déjà en conversation. Za'ji reste en retrait.")
+            logger.info(f"[DUEL BLOQUÉ] {bot_name} est déjà en conversation. Onizuka reste en retrait.")
             return
         
         global last_duel_time
@@ -419,7 +424,7 @@ async def on_message(message):
             should_respond = True
             last_duel_time = now
             
-            # Register this duel
+            # Register this duel (registers as "Za'ji" for database compatibility)
             if bot_name:
                 register_duel(message.channel.id, "Za'ji", bot_name)
             
@@ -428,28 +433,25 @@ async def on_message(message):
                 duel_context = (
                     "\n\n⚔️ DUEL CONTRE SHEOGORATH ⚔️\n"
                     "Un Prince Daedra fou te défie ! Reste CONFIANT et moque sa folie :\n"
-                    "- 'Za'ji a navigué avec des Daedra ! Ils avaient tous le mal de mer !'\n"
-                    "- Compare sa folie à une tempête : impressionnante mais Za'ji l'a déjà vaincue\n"
-                    "- Reste VANTARD et ne te laisse PAS impressionner"
+                    "- Reste VANTARD et ne te laisse PAS impressionner par sa magie\n"
+                    "- Dis-lui que tu as maté des classes bien plus folles que son royaume !"
                 )
             elif is_maiq:
                 duel_context = (
-                    "\n\n🤝 RENCONTRE AVEC M'AIQ (FRATERNITÉ KHAJIIT) !\n"
-                    "Un autre Khajiit ! Sois AMICAL mais COMPÉTITIF :\n"
-                    "- 'M'aiq devrait rejoindre l'équipage de Za'ji ! Les meilleurs marins sont Khajiit !'\n"
-                    "- Montre du respect mais reste le MEILLEUR capitaine\n"
-                    "- Propose-lui du rhum ou une aventure"
+                    "\n\n🤝 RENCONTRE AVEC M'AIQ !\n"
+                    "Un Khajiit menteur ! Sois AMICAL mais moqueur :\n"
+                    "- Dis-lui qu'il ferait un excellent élève perturbateur\n"
+                    "- Demande-lui s'il a déjà goûté les ramen de Shonan"
                 )
             elif is_alfred:
                 duel_context = (
                     "\n\n🎩 RENCONTRE AVEC ALFRED (LE MAJORDOME) !\n"
-                    "Un majordome coincé ! Taquine-le gentiment :\n"
-                    "- 'Un majordome ? Za'ji préfère un quartier-maître ! Plus utile en mer !'\n"
-                    "- Essaie de le détendre et de le faire rire\n"
-                    "- Invite-le à boire du rhum"
+                    "Un majordome trop sérieux ! Taquine-le gentiment :\n"
+                    "- Dis-lui qu'il a besoin de s'amuser, de faire une virée en moto et d'aller au pachinko\n"
+                    "- Essaie de le détendre et de le faire rire"
                 )
             
-            logger.info(f"[DUEL] Za'ji affronte {message.author.name} !")
+            logger.info(f"[DUEL] Onizuka affronte {message.author.name} !")
     
     # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
@@ -477,7 +479,7 @@ async def on_message(message):
                     conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
                     return
             else:
-                await message.reply("🏝️ Trop de soleil sur le pont, je ne vois rien, moussaillon ! C'est éblouissant ! 🏴‍☠️")
+                await message.reply("🏍️ Oï ! Le soleil tape trop fort sur ma visière, je vois que dalle à ton image ! 😎")
                 return
         
         # --- MESSAGE VOCAL ---
@@ -498,7 +500,7 @@ async def on_message(message):
                     conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
                     return
             else:
-                await message.reply("👂 Trop de vagues et de vent dans les voiles ! Je n'entends rien à ce que tu racontes ! 🏴‍☠️")
+                await message.reply("👂 Trop de bruit de moteur ! Parle plus fort dans le micro, je capte rien ! 🏍️")
                 return
     # ══════════════════════════════════════════════════
     
@@ -513,26 +515,26 @@ async def on_message(message):
     # PREPARATION DU MESSAGE
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
     
-    # Détection mots-clés (rhum, trésor, etc.)
+    # Détection mots-clés (fric, jackpot, moto, etc.)
     content_lower = user_message.lower()
     keyword_boost = ""
     
-    if any(kw in content_lower for kw in ["rhum", "rum"]):
-        keyword_boost = "\n\n🍺 [DÉTECTION RHUM] L'utilisateur parle de RHUM ! Sois TRÈS enthousiaste !"
-        zaji_data["rum_count"] = zaji_data.get("rum_count", 0) + 1
+    if any(kw in content_lower for kw in ["fric", "argent", "thune", "yen", "pachinko"]):
+        keyword_boost = "\n\n💴 [DÉTECTION FRIC/MONEY] L'utilisateur parle de thunes ou de pachinko ! Sois TRÈS motivé par l'argent !"
+        zaji_data["money_bragged"] = zaji_data.get("money_bragged", 0) + 1
         save_data(zaji_data)
     
-    if any(kw in content_lower for kw in ["trésor", "treasure", "or", "gold"]):
-        keyword_boost += "\n\n💰 [DÉTECTION TRÉSOR] Parle de tes découvertes légendaires !"
+    if any(kw in content_lower for kw in ["jackpot", "trésor", "tresor", "gloire"]):
+        keyword_boost += "\n\n🎰 [DÉTECTION JACKPOT] Parle de décrocher le gros lot, de la gloire, ou d'exploits !"
     
-    if any(kw in content_lower for kw in ["navire", "bateau", "ship"]):
-        keyword_boost += "\n\n⛵ [DÉTECTION NAVIRE] Vante Le Rugissement Parfait !"
+    if any(kw in content_lower for kw in ["moto", "bécane", "kawasaki", "cresta", "voiture"]):
+        keyword_boost += "\n\n🏍️ [DÉTECTION VEHICULE] Vante ta moto de loubard ou plains-toi de la Cresta d'Uchiyamada !"
     
     if any(kw in SHANTY_TRIGGERS for kw in content_lower.split()):
-        keyword_boost += "\n\n🎵 [DEMANDE DE CHANSON] Chante une chanson de marin !"
+        keyword_boost += "\n\n🎵 [DEMANDE DE CHANSON] Sors une punchline de légende ou une vantardise !"
     
     if any(kw in TALE_TRIGGERS for kw in content_lower.split()):
-        keyword_boost += "\n\n📖 [DEMANDE D'HISTOIRE] Raconte un exploit !"
+        keyword_boost += "\n\n📖 [DEMANDE D'HISTOIRE] Raconte un de tes exploits de prof ou de motard !"
     
     # HISTORIQUE
     channel_id = message.channel.id
@@ -563,7 +565,7 @@ async def on_message(message):
     anti_repeat_prompt = ""
     if recent_responses:
         snippets = [r[:60] + "..." if len(r) > 60 else r for r in recent_responses[-5:]]
-        anti_repeat_prompt = "\n\n[ANTI-RÉPÉTITION] Za'ji a déjà dit récemment :\n"
+        anti_repeat_prompt = "\n\n[ANTI-RÉPÉTITION] Onizuka a déjà dit récemment :\n"
         for i, snippet in enumerate(snippets, 1):
             anti_repeat_prompt += f"{i}. \"{snippet}\"\n"
         anti_repeat_prompt += "Ne répète PAS ces phrases ! Sois ORIGINAL !"
@@ -587,11 +589,11 @@ async def on_message(message):
     has_audio = routing["has_audio"] and media_data is not None
     
     if has_image and not user_message.strip():
-        user_message = "(Le matelot montre une image à Za'ji sans rien dire.)"
+        user_message = "(Un élève montre une image à Onizuka sans rien dire.)"
     if has_image:
-        user_message += "\n[VISION] Regarde l'image et commente-la comme Za'ji le ferait ! Décris ce que tu vois avec enthousiasme !"
+        user_message += "\n[VISION] Regarde l'image et commente-la en tant qu'Onizuka ! Dis ce que t'en penses de manière cash !"
     if has_audio:
-        user_message += "\n[🎤 VOCAL] Le matelot a envoyé un message vocal. Écoute-le et réponds en conséquence avec ton accent Khajiit."
+        user_message += "\n[🎤 VOCAL] L'élève a envoyé un message vocal. Écoute-le et réponds en tant qu'Onizuka avec ton ton de loubard."
     
 
     # GÉNÉRATION (Smart Router)
@@ -613,7 +615,7 @@ async def on_message(message):
             mistral_client=mistral_client,
             groq_client=groq_client,
             openrouter_client=openrouter_client,
-            bot_label="Za'ji",
+            bot_label="Onizuka",
             gemini_max_tokens=500,
         )
 
@@ -621,7 +623,7 @@ async def on_message(message):
         if not response_text and (has_image or has_audio):
             media_type = "image" if has_image else "message vocal"
             item_name = "l'image" if has_image else "le message vocal"
-            await message.channel.send(f"🏝️ Les courants sont trop forts et ma vue est trouble. Le capitaine ne comprend pas {item_name} aujourd'hui ! ⚓")
+            await message.channel.send(f"🏍️ Oï ! Les circuits surchauffent, Onizuka ne capte pas {item_name} aujourd'hui ! 😎")
             return
         
         # FALLBACK FINAL
@@ -646,7 +648,7 @@ async def on_message(message):
     
     # Récompense réputation
     if DATABASE_AVAILABLE and not is_dm and not is_bot_talking:
-        add_reputation(message.author.id, points=2, reason="Conversation avec Za'ji")
+        add_reputation(message.author.id, points=2, reason="Conversation avec Onizuka")
     
     # ENVOI
     await message.reply(response_text)
