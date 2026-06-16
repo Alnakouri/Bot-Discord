@@ -1,16 +1,73 @@
 const API_BASE = '/api';
 
+// --- AUTHENTIFICATION ---
+// Toute réponse 401 (session absente/expirée) ramène à l'écran de login.
+const _origFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+    const res = await _origFetch(...args);
+    if (res.status === 401) showLogin();
+    return res;
+};
+
+function showLogin() {
+    const ov = document.getElementById('login-overlay');
+    if (ov) ov.style.display = 'flex';
+}
+
+async function ensureAuthenticated() {
+    try {
+        const res = await _origFetch(`${API_BASE}/me`);
+        const data = await res.json();
+        if (data.authenticated) return true;
+    } catch (_) { /* serveur injoignable : on montre le login */ }
+    showLogin();
+    return false;
+}
+
+async function logout() {
+    try { await _origFetch(`${API_BASE}/logout`, { method: 'POST' }); } catch (_) {}
+    location.reload();
+}
+
+function initLoginForm() {
+    const form = document.getElementById('login-form');
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pwd = document.getElementById('login-password').value;
+        const errEl = document.getElementById('login-error');
+        errEl.textContent = '';
+        try {
+            const res = await _origFetch(`${API_BASE}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pwd }),
+            });
+            if (res.ok) {
+                location.reload();
+            } else {
+                errEl.textContent = 'Mot de passe invalide.';
+            }
+        } catch (_) {
+            errEl.textContent = 'Serveur injoignable.';
+        }
+    });
+}
+
 // --- INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    initLoginForm();
+    if (!(await ensureAuthenticated())) return; // login affiché : on stoppe ici
+
     initNavigation();
     initClock();
     refreshAllData();
     initLogsWebSocket();
-    
+
     // Bind buttons
     document.getElementById('btn-refresh-logs')?.addEventListener('click', loadLogs);
     document.getElementById('btn-generate-report')?.addEventListener('click', generateReport);
-    
+
     // Refresh loop every 30s
     setInterval(refreshAllData, 30000);
 });

@@ -19,7 +19,23 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="dark-theme">
-    
+
+    <!-- Écran de connexion (verrou d'accès au dashboard) -->
+    <div id="login-overlay" style="position:fixed;inset:0;z-index:9999;display:none;
+         align-items:center;justify-content:center;background:rgba(10,12,20,.92);backdrop-filter:blur(6px);">
+        <form id="login-form" class="glass" style="display:flex;flex-direction:column;gap:16px;
+             padding:32px;min-width:320px;border-radius:14px;">
+            <h2 style="margin:0;display:flex;align-items:center;gap:10px;">
+                <i class="fa-solid fa-lock"></i> Accès sécurisé
+            </h2>
+            <p style="margin:0;opacity:.7;font-size:.9em;">Dashboard de contrôle des bots</p>
+            <input type="password" id="login-password" placeholder="Mot de passe" autocomplete="current-password"
+                   style="padding:12px;border-radius:8px;border:1px solid #334;background:#161a24;color:#fff;">
+            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-right-to-bracket"></i> Se connecter</button>
+            <div id="login-error" style="color:#ff6b6b;font-size:.85em;min-height:1em;"></div>
+        </form>
+    </div>
+
     <!-- Barre de navigation latérale -->
     <nav class="sidebar">
         <div class="brand">
@@ -40,6 +56,10 @@
             <div class="status-indicator online"></div>
             <span>Système Normal</span>
         </div>
+
+        <button id="btn-logout" class="btn btn-outline" style="margin-top:12px;width:100%;" onclick="logout()">
+            <i class="fa-solid fa-right-from-bracket"></i> Déconnexion
+        </button>
     </nav>
 
     <!-- Contenu Principal -->

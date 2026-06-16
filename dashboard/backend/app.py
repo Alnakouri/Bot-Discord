@@ -1,11 +1,19 @@
 import os
+import hmac
+import secrets
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, Query, HTTPException
+from fastapi import FastAPI, WebSocket, Query, HTTPException, Request, Response, Body
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # dotenv optionnel : fonctionne aussi si la variable est déjà dans l'env
+    def load_dotenv(*_a, **_k):
+        return False
 
 # Importer les composants créés
 from bot_manager import BotManager
@@ -21,6 +29,37 @@ DASHBOARD_DIR = BACKEND_DIR.parent
 ROOT_DIR = DASHBOARD_DIR.parent
 DATA_DIR = ROOT_DIR / "data"
 FRONTEND_DIR = DASHBOARD_DIR / "frontend"
+
+# --- AUTHENTIFICATION ---------------------------------------------------
+# Le dashboard pilote les bots (start/stop) et expose logs/clés : il exige
+# un mot de passe défini dans dashboard/.env (DASHBOARD_PASSWORD). Sans lui,
+# l'API est verrouillée (fail-closed) : on ne sert jamais ces routes ouvertes.
+load_dotenv(DASHBOARD_DIR / ".env")
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
+
+# Sessions en mémoire (jeton aléatoire par login ; invalidées au redémarrage).
+_SESSIONS: set[str] = set()
+# Routes accessibles sans authentification.
+_PUBLIC_PATHS = {"/api/login", "/api/health", "/api/me"}
+
+if not DASHBOARD_PASSWORD:
+    print("\n" + "=" * 60)
+    print("  ⚠️  DASHBOARD_PASSWORD non défini dans dashboard/.env")
+    print("  L'API est VERROUILLÉE tant qu'aucun mot de passe n'est posé.")
+    print("  -> Copiez dashboard/.env.example en dashboard/.env")
+    print("     et renseignez DASHBOARD_PASSWORD.")
+    print("=" * 60 + "\n")
+
+
+def _password_ok(candidate: str) -> bool:
+    """Comparaison à temps constant du mot de passe fourni."""
+    if not DASHBOARD_PASSWORD:
+        return False
+    return hmac.compare_digest(candidate, DASHBOARD_PASSWORD)
+
+
+def _session_valid(token: str | None) -> bool:
+    return bool(token) and token in _SESSIONS
 
 BOTS_DB_PATH = DATA_DIR / "bots_database.db"
 API_DB_PATH = DATA_DIR / "api_usage.db"
@@ -47,6 +86,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def require_auth(request: Request, call_next):
+    """Verrouille toute route /api/* (hors login/health) derrière une session.
+    Les WebSockets ne passent pas par ce middleware : ils sont contrôlés
+    directement dans leur handler."""
+    path = request.url.path
+    if path.startswith("/api/") and path not in _PUBLIC_PATHS:
+        if not _session_valid(request.cookies.get("dash_session")):
+            return JSONResponse({"detail": "Authentification requise"}, status_code=401)
+    return await call_next(request)
+
+
+# --- AUTH ROUTES ---
+@app.post("/api/login")
+async def login(response: Response, password: str = Body(..., embed=True)):
+    if not _password_ok(password):
+        # Délai léger pour décourager le bruteforce.
+        await asyncio.sleep(0.5)
+        raise HTTPException(status_code=401, detail="Mot de passe invalide")
+    token = secrets.token_urlsafe(32)
+    _SESSIONS.add(token)
+    response.set_cookie(
+        "dash_session", token,
+        httponly=True, samesite="strict", max_age=86400, path="/",
+    )
+    return {"status": "ok"}
+
+
+@app.post("/api/logout")
+async def logout(request: Request, response: Response):
+    _SESSIONS.discard(request.cookies.get("dash_session"))
+    response.delete_cookie("dash_session", path="/")
+    return {"status": "ok"}
+
+
+@app.get("/api/me")
+async def me(request: Request):
+    """Permet au frontend de savoir s'il est authentifié."""
+    return {"authenticated": _session_valid(request.cookies.get("dash_session"))}
 
 # --- ROUTES STATIQUES ---
 # Au cas où frontend n'existe pas encore
@@ -89,6 +169,10 @@ async def get_logs(
 
 @app.websocket("/api/logs/stream")
 async def log_stream(websocket: WebSocket, bot: str = None):
+    # Le middleware HTTP ne couvre pas les WebSockets : on vérifie ici.
+    if not _session_valid(websocket.cookies.get("dash_session")):
+        await websocket.close(code=1008)  # 1008 = Policy Violation
+        return
     await websocket.accept()
     try:
         # Utiliser le générateur async du log_collector
