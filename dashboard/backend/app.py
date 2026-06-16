@@ -35,10 +35,15 @@ report_generator = ReportGenerator(str(BOTS_DB_PATH))
 
 app = FastAPI(title="Bot Discord Dashboard", version="1.0.0")
 
+# CORS restreint au front servi en local (le dashboard pilote les bots :
+# pas d'origine arbitraire ni de credentials cross-site).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "http://127.0.0.1:8501",
+        "http://localhost:8501",
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -130,4 +135,7 @@ async def health():
     return {"status": "ok"}
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8501, reload=True)
+    # Bind localhost uniquement : ce dashboard expose le contrôle des bots
+    # (start/stop) SANS authentification ; il ne doit jamais être joignable
+    # depuis le LAN. reload désactivé (pas de mode debug en exécution réelle).
+    uvicorn.run("app:app", host="127.0.0.1", port=8501, reload=False)

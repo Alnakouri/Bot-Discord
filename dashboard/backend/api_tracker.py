@@ -103,7 +103,8 @@ class APITracker:
             for row in cursor.fetchall():
                 d = dict(row)
                 # Obscurcir la clé pour l'affichage (garder les 4 derniers caractères)
-                key_raw = d["api_key"]
+                # et SUPPRIMER la clé brute : elle ne doit jamais sortir du backend.
+                key_raw = d.pop("api_key", "")
                 d["api_key_display"] = f"***{key_raw[-4:]}" if len(key_raw) > 4 else "***"
                 keys.append(d)
             
