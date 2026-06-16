@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ecosystem Dashboard | 6 Bots Discord</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    
+    <!-- Polices -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="static/css/dashboard.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dark-theme">
+    
+    <!-- Barre de navigation latérale -->
+    <nav class="sidebar">
+        <div class="brand">
+            <i class="fa-brands fa-discord"></i>
+            <h2>Command Central</h2>
+        </div>
+        
+        <ul class="nav-links">
+            <li class="active" data-target="overview"><i class="fa-solid fa-chart-pie"></i> Vue d'ensemble</li>
+            <li data-target="logs"><i class="fa-solid fa-terminal"></i> Logs en direct</li>
+            <li data-target="errors"><i class="fa-solid fa-triangle-exclamation"></i> Analyse Erreurs</li>
+            <li data-target="api-keys"><i class="fa-solid fa-key"></i> Gestion Clés API</li>
+            <li data-target="conversations"><i class="fa-solid fa-comments"></i> Conversations</li>
+            <li data-target="reports"><i class="fa-solid fa-file-export"></i> Rapports GenAI</li>
+        </ul>
+        
+        <div class="system-status">
+            <div class="status-indicator online"></div>
+            <span>Système Normal</span>
+        </div>
+    </nav>
+
+    <!-- Contenu Principal -->
+    <main class="content">
+        
+        <!-- Header -->
+        <header>
+            <h1>Vue d'ensemble de l'écosystème</h1>
+            <div class="date-time" id="clock">00:00:00</div>
+        </header>
+
+        <!-- SECTION: VUE D'ENSEMBLE -->
+        <section id="overview" class="view active">
+            
+            <!-- Statistiques rapides -->
+            <div class="stats-grid">
+                <div class="stat-card glass">
+                    <i class="fa-solid fa-robot"></i>
+                    <div>
+                        <h3>Bots Actifs</h3>
+                        <p id="stat-active-bots">0 / 6</p>
+                    </div>
+                </div>
+                <div class="stat-card glass warning">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <div>
+                        <h3>Erreurs (24h)</h3>
+                        <p id="stat-errors">0</p>
+                    </div>
+                </div>
+                <div class="stat-card glass success">
+                    <i class="fa-solid fa-bolt"></i>
+                    <div>
+                        <h3>Taux Succès API</h3>
+                        <p id="stat-api-success">100%</p>
+                    </div>
+                </div>
+                <div class="stat-card glass">
+                    <i class="fa-solid fa-users"></i>
+                    <div>
+                        <h3>Utilisateurs (7j)</h3>
+                        <p id="stat-users">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contrôles globaux pour les Bots -->
+            <div class="global-bot-actions" style="display: flex; gap: 15px; margin-bottom: 20px; justify-content: flex-end;">
+                <button class="btn btn-success" id="btn-start-all-bots" onclick="actionAllBots('start')">
+                    <i class="fa-solid fa-play"></i> Lancer les 6 Bots
+                </button>
+                <button class="btn btn-danger" id="btn-stop-all-bots" onclick="actionAllBots('stop')">
+                    <i class="fa-solid fa-stop"></i> Arrêter Tous les Bots
+                </button>
+            </div>
+
+            <!-- Grille de contrôle des bots -->
+            <div class="bots-grid" id="bots-container">
+                <!-- Les cartes des bots seront générées ici par JS -->
+                <div class="loader">Chargement des états...</div>
+            </div>
+
+            <!-- Graphiques vue globale -->
+            <div class="charts-row">
+                <div class="chart-container glass">
+                    <h3>Activité Globale (24h)</h3>
+                    <canvas id="mainActivityChart"></canvas>
+                </div>
+            </div>
+            
+        </section>
+
+        <!-- SECTION: LOGS -->
+        <section id="logs" class="view">
+            <div class="logs-header glass">
+                <div class="filters">
+                    <select id="log-bot-filter">
+                        <option value="">Tous les Bots</option>
+                        <option value="sheogorath">Sheogorath</option>
+                        <option value="maiq">M'aiq</option>
+                        <option value="alfred">Alfred</option>
+                        <option value="johnny">Johnny Silverbot</option>
+                        <option value="zaji">Za'ji</option>
+                        <option value="malena">Malena</option>
+                    </select>
+                    <select id="log-level-filter">
+                        <option value="">Tous les Niveaux</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                        <option value="CRITICAL">CRITICAL</option>
+                    </select>
+                    <input type="text" id="log-search" placeholder="Rechercher...">
+                    <button class="btn btn-primary" id="btn-refresh-logs"><i class="fa-solid fa-rotate"></i> Actualiser</button>
+                    <button class="btn btn-outline" id="btn-stream-logs"><i class="fa-solid fa-satellite-dish"></i> <span>Live</span></button>
+                </div>
+            </div>
+            
+            <div class="terminal-container glass">
+                <div class="terminal-body" id="logs-terminal">
+                    <div class="log-line"><span class="log-time">System</span> <span class="log-info">[INFO]</span> En attente de connexion au flux de logs...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: ERREURS -->
+        <section id="errors" class="view">
+            <div class="errors-layout">
+                <div class="errors-list glass">
+                    <h3>Erreurs Détectées</h3>
+                    <ul id="error-list-container">
+                        <div class="loader">Chargement...</div>
+                    </ul>
+                </div>
+                
+                <div class="error-detail glass" id="error-detail-pane">
+                    <div class="placeholder-text">Sélectionnez une erreur pour voir le diagnostic GenAI</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: API -->
+        <section id="api-keys" class="view">
+            <div class="charts-row">
+                <div class="chart-container glass">
+                    <h3>Répartition des Appels API</h3>
+                    <canvas id="apiUsageChart"></canvas>
+                </div>
+                <div class="chart-container glass" style="flex: 2;">
+                    <h3>État des clés (Multimodal & Round-Robin)</h3>
+                    <div class="keys-table-container">
+                        <table class="keys-table" id="keys-table">
+                            <thead>
+                                <tr>
+                                    <th>Clé (Masquée)</th>
+                                    <th>Statut</th>
+                                    <th>Erreurs</th>
+                                    <th>TPM Actuel</th>
+                                    <th>RPM</th>
+                                    <th>Quota Restant</th>
+                                </tr>
+                            </thead>
+                            <tbody id="keys-status-body">
+                                <!-- Populated via JS -->
+                                <tr><td colspan="6" class="loader">Chargement...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: CONVERSATIONS -->
+        <section id="conversations" class="view">
+            <div class="charts-row">
+                <div class="chart-container glass">
+                    <h3>Volume de Messages (Par Bot)</h3>
+                    <canvas id="conversationChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: REPORTS -->
+        <section id="reports" class="view">
+            <div class="report-generator glass">
+                <h2>Générateur de Rapport de Diagnostic</h2>
+                <p>Générez un rapport détaillé parfait pour être copié-collé dans Gemini, ChatGPT ou Claude.</p>
+                
+                <div class="form-group">
+                    <label>Périmètre d'analyse</label>
+                    <select id="report-scope">
+                        <option value="all">Écosystème complet</option>
+                        <option value="errors">Erreurs uniquement</option>
+                        <option value="api">Clés API uniquement</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Fenêtre de temps</label>
+                    <select id="report-timeframe">
+                        <option value="1">Dernière Heure</option>
+                        <option value="6">Dernières 6 Heures</option>
+                        <option value="24" selected>Dernières 24 Heures</option>
+                        <option value="168">Derniers 7 Jours</option>
+                    </select>
+                </div>
+                
+                <button class="btn btn-primary btn-large" id="btn-generate-report">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Générer le Rapport .MD
+                </button>
+            </div>
+        </section>
+        
+    </main>
+
+    <!-- Scripts -->
+    <script src="static/js/charts.js"></script>
+    <script src="static/js/app.js"></script>
+</body>
+</html>

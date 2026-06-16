@@ -1,0 +1,103 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environnement
+.env
+.env.encrypted
+.master_key
+.env.bak_*
+.env.encrypted.bak_*
+.master_key.bak_*
+.master_key.RACINE.bak
+.venv
+env/
+venv/
+ENV/
+
+# Données sensibles (fichiers JSON contenant des données de bot)
+sheogorath_memory.json
+sheo_facts.json
+sheo_punishments.json
+maiq_data.json
+alfred_memory.json
+johnny_data.json
+zaji_data.json
+malena_memory.json
+
+# Bases de données SQLite (pas de commit, persistées en volume Docker)
+*.db
+*.db-shm
+*.db-wal
+
+# Logs et cache
+*.log
+.DS_Store
+Thumbs.db
+
+# Audio temporaire (Alfred)
+*.mp3
+*.wav
+alfred_speech.mp3
+alfred_response.mp3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests et debug
+test_*.py
+check_*.py
+*_test.py
+debug/
+diag_results.txt
+found_models.txt
+valid_models.txt
+diagnostic_output.txt
+
+# Discloud
+.discloudignore
+node_modules/
+
+_temporary_keys.txt
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json
+
+# ───────────────────────────────────────────────────────────────
+# Données runtime / modèles IA — NE JAMAIS COMMITER (ajout 2026-06-02)
+# ───────────────────────────────────────────────────────────────
+
+# Stockage Ollama (blobs de modèles ~1,6 Go + clé privée d'identité)
+ollama_storage/
+
+# Modèle de synthèse vocale Piper (~60 Mo)
+piper-data/
+
+# Serveur Chatterbox : ignorer les gros modèles/voix, GARDER le code source
+# (server.py, extract_voice.py, Dockerfile, voices/concat.txt restent trackés)
+chatterbox-server/voices/*.onnx
+chatterbox-server/voices/*.pt
+chatterbox-server/voices/*.bin
+chatterbox-server/voices/*.safetensors
+# (les *.wav sont déjà couverts par la règle globale *.wav)
+
+# Logs structurés JSON Lines (la règle *.log ne les couvre PAS)
+*.jsonl
+logs/
+
+# Config éditeur Obsidian (vault perso = racine du repo)
+.obsidian/
+
+# Données bot runtime supplémentaires (cf. liste nommée plus haut)
+data/sheo_faveurs.json
+sheo_faveurs.json

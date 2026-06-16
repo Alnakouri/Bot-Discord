@@ -1,0 +1,192 @@
+# -*- coding: utf-8 -*-
+
+# INJECTION SHARED FOLDER
+import sys
+import os
+_parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
+
+"""
+Système de mini-jeux pour M'aiq le Menteur.
+Énigmes et vérités (ou mensonges).
+"""
+import random
+import re
+from typing import Dict, Optional, Tuple
+
+# Import Database Partagée
+try:
+    from shared.shared_database import set_active_riddle, get_active_riddle
+except ImportError:
+    # Fallback pour tests locaux si nécessaire
+    print("ERREUR IMPORT SHARED_DATABASE dans minigames.py")
+
+# ÉNIGMES DE M'AIQ
+
+ENIGMES = [
+    {
+        "question": "M'aiq court beaucoup, mais ne bouge pas. Que suis-je ?",
+        "answer": ["rivière", "une rivière", "le vent", "vent"],
+        "hint": "Cela coule, ou cela souffle. M'aiq ne sait plus.",
+        "reward": 15
+    },
+    {
+        "question": "Plus tu en prends, plus tu en laisses derrière toi. Que sont-ils ?",
+        "answer": ["pas", "des pas", "empreintes", "traces"],
+        "hint": "Regarde le sable derrière toi, voyageur.",
+        "reward": 10
+    },
+    {
+        "question": "Je peux voler sans ailes. Je peux pleurer sans yeux. Que suis-je ?",
+        "answer": ["nuage", "un nuage", "le nuage"],
+        "hint": "Regarde le ciel. Ils te jugent.",
+        "reward": 20
+    },
+    {
+        "question": "M'aiq en a beaucoup, mais les autres disent qu'elles sont fausses. Qu'est-ce que c'est ?",
+        "answer": ["histoires", "rumeurs", "mensonges", "histoires de m'aiq"],
+        "hint": "C'est la vérité... ou pas.",
+        "reward": 10
+    },
+    {
+        "question": "Qu'est-ce qui disparait dès que tu dis son nom ?",
+        "answer": ["silence", "le silence", "un silence"],
+        "hint": "Chut...",
+        "reward": 15
+    },
+    {
+        "question": "Pourquoi les Dwemers ont-ils disparu ?",
+        "answer": ["personne ne sait", "inconnu", "mystère", "magie"],
+        "hint": "M'aiq le sait. Mais M'aiq ne le dira pas.",
+        "reward": 25
+    },
+]
+
+# Note: active_games est supprimé au profit de la DB partagée
+
+def generate_riddle(channel_id: int) -> Optional[Dict]:
+    """Génère une énigme (mais ne la sauvegarde pas encore)."""
+    # Vérifier si une énigme existe déjà
+    current = get_active_riddle(channel_id)
+    if current:
+        return None
+
+    enigme = random.choice(ENIGMES)
+    return enigme
+
+def start_tracking_riddle(channel_id: int, question: str, answers: list, hint: str, reward: int, message_id: int, is_impossible: bool = False):
+    """Sauvegarde l'énigme active après son envoi."""
+    set_active_riddle(
+        channel_id,
+        question,
+        answers,
+        hint,
+        reward,
+        message_id,
+        is_impossible=is_impossible
+    )
+
+def start_enigme(channel_id: int) -> Optional[Dict]:
+    """OBSOLÈTE: Utiliser generate_riddle + start_tracking_riddle."""
+    # Legacy support removed — use generate_riddle() + start_tracking_riddle()
+    return None
+
+def start_custom_enigme(channel_id: int, question: str, answers: list, hint: str, reward: int) -> Dict:
+    """Démarre une énigme personnalisée (ex: générée par IA)."""
+    # Vérifier si une énigme existe déjà
+    current = get_active_riddle(channel_id)
+    if current:
+        return current
+
+    set_active_riddle(
+        channel_id,
+        question,
+        answers,
+        hint,
+        reward
+    )
+    return {
+        "question": question,
+        "answer": answers,
+        "hint": hint,
+        "reward": reward
+    }
+
+def normalize_answer(text: str) -> str:
+    """Normalise la réponse pour comparaison floue."""
+    if not text: return ""
+    text = text.lower().strip()
+    
+    # Retirer la ponctuation
+    text = re.sub(r'[^\w\s]', '', text)
+    
+    # Retirer les articles définis/indéfinis au début
+    articles = ["le ", "la ", "les ", "un ", "une ", "du ", "des ", "l'", "d'", "l ", "d "]
+    for art in articles:
+        if text.startswith(art):
+            text = text[len(art):].strip()
+            break
+            
+    return text.strip()
+
+def check_answer(channel_id: int, user_answer: str) -> Tuple[bool, Optional[int], str]:
+    """
+    Vérifie une réponse.
+    Retourne: (correct, reward, message)
+    """
+    game = get_active_riddle(channel_id)
+    if not game:
+        return False, None, "M'aiq ne pose pas d'énigme pour le moment. Le voyageur rêve."
+    
+    # Vérifier la réponse
+    user_answer_norm = normalize_answer(user_answer)
+    valid_answers_norm = [normalize_answer(a) for a in game["answer"]]
+    
+    # Debug log (via print for now as logger not passed here)
+    print(f"[DEBUG RIDDLE] User: '{user_answer}' -> '{user_answer_norm}' | Valid: {valid_answers_norm}")
+    
+    if user_answer_norm in valid_answers_norm:
+        # Bonne réponse !
+        reward = game["reward"]
+        # ON NE SUPPRIME PLUS L'ÉNIGME ICI (Multi-Gagnants)
+        # delete_active_riddle(channel_id) 
+        return True, reward, "C'est la vérité ! M'aiq est impressionné."
+    
+    # Mauvaise réponse
+    # M'aiq ne donne JAMAIS la réponse.
+    # Il peut donner un indice ou se moquer.
+    
+    return False, None, f"Ce n'est pas ça. Si vous voulez la réponse, demandez au Prince Fou (Sheogorath).\nM'aiq pense à '{game['hint']}'..."
+
+
+def get_hint(channel_id: int) -> Optional[str]:
+    """Donne un indice pour l'énigme en cours."""
+    game = get_active_riddle(channel_id)
+    if not game:
+        return None
+    return game.get("hint")
+
+
+def jeu_fromage(user_id: int) -> Dict:
+    """
+    Le jeu du fromage mystérieux pour Sheogorath.
+    Retourne un dictionnaire avec le nom du fromage, l'effet et les points de réputation.
+    """
+    fromages = [
+        {"nom": "Vieux Boulogne", "effet": "maladie", "points": -5},
+        {"nom": "Roquefort d'Oblivion", "effet": "puissance", "points": 10},
+        {"nom": "Camembert de Mania", "effet": "joie", "points": 5},
+        {"nom": "Cheddar de Jyggalag (Rassis)", "effet": "confusion", "points": 2},
+        {"nom": "Brie de Démence", "effet": "mélancolie", "points": 5},
+        {"nom": "Fromage de Chèvre à tête de Wabbajack", "effet": "folie", "points": 15},
+        {"nom": "Emmental Invisible", "effet": "hallucination", "points": 8},
+        {"nom": "Croûte de Parmesan de Pelagius", "effet": "confusion", "points": 1},
+    ]
+    
+    result = random.choice(fromages)
+    
+    # Si DATABASE_AVAILABLE, on pourrait logguer ici mais c'est fait dans le bot
+    return result
+
+

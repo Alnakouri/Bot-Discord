@@ -1,0 +1,639 @@
+# -*- coding: utf-8 -*-
+
+# INJECTION SHARED FOLDER
+import sys
+import os
+_parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
+
+"""
+Bot Discord : Malena (La Gitana Marseillaise)
+Version : 1.0.0
+"""
+
+import os
+import discord
+import asyncio
+import random
+from openai import OpenAI
+from datetime import datetime
+import base64
+from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
+from shared.media_handler import process_image, process_image_ollama, process_voice_message
+from google.genai import types
+from shared.safe_client import get_client as get_safe_genai_client
+from groq import Groq
+from mistralai import Mistral
+from pathlib import Path
+try:
+    from shared.secure_env import load_secure_env
+    load_secure_env(Path(__file__).parent)
+except ImportError:
+    from dotenv import load_dotenv
+    load_dotenv()
+
+# Import modules partagés
+from shared.bot_logger import setup_logger
+from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel
+from shared.bot_duel_tracker import can_join_duel, register_duel
+
+# Import données spécifiques
+import malena_data as data
+from malena_memory import MalenaMemory
+from shared.server_events import check_and_send_birthdays, handle_member_join, handle_member_remove
+from shared.graceful_shutdown import setup_graceful_shutdown
+
+
+# Configuration du Logger
+logger = setup_logger("malena", "logs")
+
+# MISSED MENTIONS TRACKING
+checked_messages_malena = set()
+MAX_CHECKED_CACHE = 200
+
+# MALENA MEMORY
+malena_brain = MalenaMemory()
+
+# CREDENTIALS
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY_1")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+if not DISCORD_TOKEN:
+    logger.critical("❌ DISCORD_TOKEN introuvable dans .env !")
+    exit(1)
+
+# INITIALISATION CLIENTS IA
+gemini_client = None
+if GEMINI_API_KEY:
+    try: gemini_client = get_safe_genai_client(api_key=GEMINI_API_KEY)
+    except Exception as e: logger.error(f"❌ Erreur Init Gemini : {e}")
+
+groq_client = None
+if GROQ_API_KEY:
+    try: groq_client = Groq(api_key=GROQ_API_KEY)
+    except Exception as e: logger.error(f"❌ Erreur Init Groq : {e}")
+
+mistral_client = None
+if MISTRAL_API_KEY:
+    try: mistral_client = Mistral(api_key=MISTRAL_API_KEY)
+    except Exception as e: logger.error(f"❌ Erreur Init Mistral : {e}")
+
+openrouter_client = None
+if OPENROUTER_API_KEY:
+    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+    except Exception as e: logger.warning(f"⚠️ OpenRouter indisponible : {e}")
+
+# KEY MANAGER (Standardisé)
+from shared.api_manager import MultiAPIKeyManager
+key_manager = MultiAPIKeyManager()
+key_manager.register_api("gemini", [GEMINI_API_KEY] if GEMINI_API_KEY else [])
+key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
+key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
+key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
+
+# CONSTRUCTION DYNAMIQUE DU HINT D'EXPRESSIONS
+def build_expression_hint(mood):
+    """Retourne les expressions adaptées à l'humeur détectée."""
+    mood_data = data.MOODS.get(mood, data.MOODS["NEUTRE"])
+    categories = mood_data.get("expressions", [])
+    
+    relevant = []
+    for cat in categories:
+        if cat in data.EXPRESSIONS:
+            relevant.extend(data.EXPRESSIONS[cat])
+    
+    if not relevant:
+        return ""
+    
+    
+    # Sélectionner 2-4 expressions aléatoires parmi celles pertinentes
+    sample = random.sample(relevant, min(4, len(relevant)))
+    expr_list = ", ".join(f"'{e}'" for e in sample)
+    
+    return (
+        f"\n\nEXPRESSIONS DISPONIBLES POUR CETTE RÉPONSE (choisis-en 1 ou 2 MAX, "
+        f"seulement si ça colle au contexte) : {expr_list}"
+    )
+
+async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None, mime_type=None):
+    """Essaie selon le Smart Router : Gemini (Image/Audio) -> Groq (Texte) -> Mistral (Fallback)."""
+    
+    # SYSTEM PROMPT COMMUN + HUMEUR + EXPRESSIONS CIBLÉES
+    mood_instruction = data.MOODS[mood]["prompt"]
+    expression_hint = build_expression_hint(mood)
+    sys_prompt = data.PERSONALITY_PROMPT + f"\n\n{mood_instruction}{expression_hint}\n\nET SURTOUT : FAIS COURT (Max 3-4 phrases)."
+
+    cascade = get_model_cascade(routing["type"] if routing else RequestType.TEXT)
+    
+    for client_type, model_name in cascade:
+        try:
+            # 1. GEMINI
+            if client_type == "gemini" and gemini_client:
+                logger.info(f"🧠 Tentative Gemini ({model_name})...")
+                # Construire le payload Gemini
+                last_turn_parts = [types.Part(text=f"SYSTEM: {sys_prompt}\n\nUSER: {prompt}")]
+                if media_data:
+                    last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
+                gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
+
+                response = gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=gemini_messages,
+                    config=types.GenerateContentConfig(temperature=1.1, max_output_tokens=300)
+                )
+                return response.text
+ 
+            # 1.bis OLLAMA (Moondream)
+            elif client_type == "ollama":
+                if routing and routing["type"] == RequestType.IMAGE and routing["image_attachment"]:
+                    response_text = await process_image_ollama(
+                        attachment=routing["image_attachment"],
+                        personality_prompt=sys_prompt,
+                        user_message=prompt
+                    )
+                    if response_text:
+                        logger.info(f"✅ [OLLAMA {model_name}] Malena a utilisé Moondream local !")
+                        return response_text
+                    continue
+                else:
+                    continue
+
+            # 2. MISTRAL
+            elif client_type == "mistral" and mistral_client:
+                logger.info(f"🥖 Tentative Mistral ({model_name})...")
+                response = mistral_client.chat.complete(
+                    model=model_name,
+                    messages=[{"role": "system", "content": sys_prompt},
+                              {"role": "user", "content": prompt}],
+                    temperature=0.9,
+                    max_tokens=300
+                )
+                return response.choices[0].message.content
+
+            # 4. GROQ
+            elif client_type == "groq" and groq_client:
+                logger.info(f"🚀 Tentative Groq ({model_name})...")
+                chat = groq_client.chat.completions.create(
+                    messages=[{"role": "system", "content": sys_prompt},
+                              {"role": "user", "content": prompt}],
+                    model=model_name,
+                    temperature=1.1,
+                    max_tokens=300
+                )
+                return chat.choices[0].message.content
+
+            # 5. OPENROUTER
+            elif client_type == "openrouter" and openrouter_client:
+                logger.info(f"🌌 Tentative OpenRouter ({model_name})...")
+                
+                user_content = prompt
+                # Support Multimodal Secours
+                if media_data:
+                    b64_image = base64.b64encode(media_data).decode('utf-8')
+                    user_content = [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
+                        }
+                    ]
+                
+                chat = openrouter_client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "system", "content": sys_prompt},
+                              {"role": "user", "content": user_content}],
+                    temperature=1.1,
+                    max_tokens=300,
+                    extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Malena Bot"}
+                )
+                return chat.choices[0].message.content
+
+        except Exception as e:
+            logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {e}")
+            continue
+
+    return "Ay caramba ! J'ai mal au crâne, plus personne ne marche là-dedans ! (Erreur API Totale)"
+
+# INITIALISATION DU BOT
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True  # Nécessaire pour les événements de bienvenue/départ
+from discord.ext import commands, tasks
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+
+@bot.event
+async def on_ready():
+    logger.info(f'✅ Connectée en tant que {bot.user} (Gitana Mode)')
+    logger.info(f'✅ {bot.user} est là ! (Gemini + Groq Hybrid)')
+    # Lancer les tâches périodiques
+    if not check_missed_mentions_malena.is_running():
+        check_missed_mentions_malena.start()
+    if not birthday_loop_malena.is_running():
+        birthday_loop_malena.start()
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+        
+    # SILENCE STREAM (Canal ignoré)
+    if is_ignored_channel(message.channel):
+        return
+        
+    await bot.process_commands(message)
+
+    # Gestion des mentions ou réponses
+    is_mentioned = bot.user.mentioned_in(message)
+    is_reply = (message.reference and message.reference.resolved and 
+                message.reference.resolved.author == bot.user)
+    
+    # 🚫 RESPECT DES MENTIONS : Si d'autres sont mentionnés et PAS moi, je me tais.
+    if message.mentions and not is_mentioned:
+        return
+
+    # 1. DÉTECTION DU NOM OU MOTS DÉCLENCHEURS (Priority High)
+    # --------------------------------------------------------
+    content_lower = message.content.lower()
+    
+    # ✨ RÉACTIONS ÉMOJI CONTEXTUELLES (même sans répondre)
+    # --------------------------------------------------------
+    if not message.author.bot:
+        for cat_name, cat_data in data.EMOJI_REACTIONS.items():
+            if any(kw in content_lower for kw in cat_data["keywords"]):
+                if random.random() < cat_data["proba"]:
+                    emoji = random.choice(cat_data["emojis"])
+                    try:
+                        await message.add_reaction(emoji)
+                        logger.info(f"✨ [REACTION] {emoji} sur message de {message.author.name} (cat: {cat_name})")
+                    except discord.HTTPException:
+                        pass
+                break  # 1 seule catégorie de réaction par message
+    
+    # Mots qui forcent la réponse (ex: cuivre, caravane...)
+    has_trigger_word = any(word in content_lower for word in data.TRIGGER_WORDS)
+    
+    # Noms du bot
+    is_name_mentioned = any(name in content_lower for name in ["malena", "gitana", "gitane", "la gitane"])
+
+    should_respond = is_mentioned or is_reply or is_name_mentioned or has_trigger_word
+
+    # 2. INTERACTIONS SPÉCIALES (Utilisateurs VIP)
+    # --------------------------------------------------------
+    if not should_respond and message.author.name in data.SPECIAL_INTERACTIONS:
+        user_config = data.SPECIAL_INTERACTIONS[message.author.name]
+        
+        # Tirage au sort basé sur la config
+        if random.random() < user_config["proba"]:
+            logger.info(f"🎲 [SPECIAL INTERACTION] Malena a envie de parler à {message.author.name} ({user_config['proba']*100}%)")
+            should_respond = True
+
+
+    # MODE DUEL & ANTI-BOUCLE (5% + FILE LOCK) (Adapté de Johnny/Za'ji)
+    
+    # 🚫 ANTI-BOUCLE TYPE 1 : Ne pas répondre si c'est une RÉPONSE à ce bot (si pas direct)
+    if message.reference:
+        try:
+            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+            if referenced_msg.author.id == bot.user.id:
+                # C'est une réponse directe, on traite normalement si c'est un humain
+                pass 
+        except (discord.NotFound, discord.HTTPException):
+            pass
+
+    # LISTE DES AUTRES BOTS (IDs connus)
+    OTHER_BOTS_IDS = [
+        1335271966029381664, # Sheogorath
+        1335722977797869638, # M'aiq
+        1342609516641124474, # Johnny
+        1342609710363574364, # Za'ji
+        1342953282279436371  # Alfred
+    ]
+
+    # Interaction avec un autre BOT
+    if message.author.id in OTHER_BOTS_IDS:
+        # Probabilité de 5% de répondre (HOTFIX LOOP)
+        if random.random() < 0.05:
+            logger.info(f"🎲 [DUEL CHANCE] Malena a envie de critiquer {message.author.name}")
+            # CHECK LOCK FILE
+            try:
+                opponent_name = message.author.name
+                
+                # Vérifier si on peut rejoindre le duel (ou en lancer un)
+                if not can_join_duel(message.channel.id, "Malena", opponent_name):
+                    logger.info(f"🚫 [DUEL LOCKED] Malena ne peut pas placer un mot.")
+                    return # On se tait, le canal est verrouillé par d'autres bots
+                
+                # Si on peut parler, on VERROUILLE le canal pour nous
+                register_duel(message.channel.id, "Malena", opponent_name)
+                should_respond = True
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur Duel System : {e}")
+                # En cas d'erreur du système de duel, on évite de répondre pour pas spammer
+                return
+        else:
+            return # Ignore les bots à 95%
+
+    # Si on doit répondre (Humain ou Duel validé)
+    if should_respond:
+        async with message.channel.typing():
+            try:
+                # Construction du prompt
+                user_msg = message.content.replace(f'<@{bot.user.id}>', '').strip()
+                
+                # 1. DÉTECTION DE L'HUMEUR (du plus spécifique au plus général)
+                current_mood = "NEUTRE"
+                msg_lower = user_msg.lower()
+                
+                # Priorité 1 : VÉNÈRE (insultes)
+                if any(word in msg_lower for word in data.MOODS["VENER"]["keywords"]):
+                    current_mood = "VENER"
+                # Priorité 2 : CHOQUÉE (stupeur)
+                elif any(word in msg_lower for word in data.MOODS["CHOQUEE"]["keywords"]):
+                    current_mood = "CHOQUEE"
+                # Priorité 3 : MOQUEUSE (se moque)
+                elif any(word in msg_lower for word in data.MOODS["MOQUEUSE"]["keywords"]):
+                    current_mood = "MOQUEUSE"
+                # Priorité 4 : LOVE (compliments)
+                elif any(word in msg_lower for word in data.MOODS["LOVE"]["keywords"]):
+                    current_mood = "LOVE"
+                # Priorité 5 : FIÈRE (identité)
+                elif any(word in msg_lower for word in data.MOODS["FIERE"]["keywords"]):
+                    current_mood = "FIERE"
+                
+                if current_mood != "NEUTRE":
+                    logger.info(f"\U0001f3ad Humeur détectée : {current_mood} (Msg: {user_msg})")
+                
+                # 2. GESTION DES SURNOMS
+                target_nickname = data.NICKNAMES.get(message.author.name)
+                nickname_instruction = ""
+                if target_nickname:
+                     nickname_instruction = f" (IMPORTANT : Appelle cet utilisateur '{target_nickname}' et pas autrement !)"
+                     logger.info(f"🏷️ Surnom appliqué : {message.author.name} -> {target_nickname}")
+
+                # CONTEXTE MÉMOIRE
+                memory_context = malena_brain.get_context_summary(message.author.id)
+                
+                # ══════════════════════════════════════════════════
+                # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
+                # ══════════════════════════════════════════════════
+                if message.attachments:
+                    routing = classify_request(message.content, message.attachments)
+                    
+                    # --- IMAGE ---
+                    if routing["has_image"] and routing["image_attachment"]:
+                        api_key = key_manager.get_key("gemini")
+                        if api_key:
+                            async with message.channel.typing():
+                                # Mood & Personality
+                                mood_instruction = data.MOODS[current_mood]["prompt"]
+                                expression_hint = build_expression_hint(current_mood)
+                                full_personality = f"{data.PERSONALITY_PROMPT}\n\n{mood_instruction}{expression_hint}{memory_context}"
+                                
+                                response = await process_image(
+                                    attachment=routing["image_attachment"],
+                                    api_key=api_key,
+                                    personality_prompt=full_personality,
+                                    user_message=message.content or ""
+                                )
+                            if response:
+                                await message.reply(response)
+                                malena_brain.add_interaction(message.author.id, message.author.name, message.content or "[IMAGE]", response)
+                                return
+                        else:
+                            await message.reply("Ay ! J'ai pas mes lunettes, je vois rien du tout ! Reviens plus tard, peuchère !")
+                            return
+                    
+                    # --- MESSAGE VOCAL ---
+                    if routing["has_audio"] and routing["audio_attachment"]:
+                        api_key = key_manager.get_key("gemini")
+                        if api_key:
+                            async with message.channel.typing():
+                                mood_instruction = data.MOODS[current_mood]["prompt"]
+                                expression_hint = build_expression_hint(current_mood)
+                                full_personality = f"{data.PERSONALITY_PROMPT}\n\n{mood_instruction}{expression_hint}{memory_context}"
+                                
+                                response = await process_voice_message(
+                                    attachment=routing["audio_attachment"],
+                                    api_key=api_key,
+                                    personality_prompt=full_personality
+                                )
+                            if response:
+                                await message.reply(response)
+                                malena_brain.add_interaction(message.author.id, message.author.name, "[VOCAL]", response)
+                                return
+                        else:
+                            await message.reply("👂 Ay ! Y'a trop de mistral, j'entends rien ! Mon oreille me fait mal !")
+                            return
+                # ══════════════════════════════════════════════════
+
+                # SMART ROUTER (Media & Intention)
+                routing = classify_request(user_msg, message.attachments)
+                
+                media_data = None
+                mime_type = "image/jpeg"
+                if routing["has_image"] and routing["image_attachment"]:
+                    media_data, mime_type = await download_media(routing["image_attachment"])
+                    if not media_data:
+                        routing["type"] = RequestType.TEXT
+                elif routing["has_audio"] and routing["audio_attachment"]:
+                    media_data, mime_type = await download_media(routing["audio_attachment"])
+                    if not media_data:
+                        routing["type"] = RequestType.TEXT
+                
+                has_image = routing["has_image"] and media_data is not None
+                has_audio = routing["has_audio"] and media_data is not None
+                
+                if has_image and not user_msg.strip():
+                    user_msg = "(L'utilisateur te montre une image sans rien dire.)"
+                if has_image:
+                    user_msg += "\n[VISION] Regarde l'image et commente-la avec ton style de marseillaise."
+                if has_audio:
+                    user_msg += "\n[🎤 VOCAL] L'utilisateur a envoyé un message vocal. Écoute-le et réponds."
+                
+                prompt = f"L'utilisateur {message.author.name} te dit : '{user_msg}'. Réponds-lui.{nickname_instruction}{memory_context}"
+                
+                # GÉNÉRATION ROUTÉE
+                reply_text = await generate_response_hybrid(prompt, current_mood, routing, media_data, mime_type)
+                
+                if not reply_text and (has_image or has_audio):
+                    media_type_str = "l'image" if has_image else "le message vocal"
+                    reply_text = f"Ay <@{message.author.id}> ! J'arrive pas à ouvrir {media_type_str}... Mon téléphone a encore buggé ! 🙄"
+
+                # Logging DB
+                try:
+                    user_data = get_or_create_user(message.author.id, message.author.name, message.author.display_name)
+                    log_interaction(user_data['user_id'], "Malena", "message")
+                except Exception as db_err:
+                    logger.error(f"DB Error: {db_err}")
+
+                await message.reply(reply_text)
+                logger.info(f"✅ Répondu à {message.author.name}")
+                
+                # ENREGISTRER L'INTERACTION DANS LA MÉMOIRE
+                malena_brain.add_interaction(message.author.id, message.author.name, user_msg, reply_text)
+
+            except Exception as e:
+                logger.error(f"❌ Erreur de génération : {e}")
+                logger.error(f"❌ [API ERROR] : {e}")
+                await message.reply("Ay caramba ! J'ai mal à la tête, laissez-moi tranquille ! (Erreur API)")
+
+# DÉTECTION DES MENTIONS MANQUÉES
+
+@tasks.loop(minutes=2)
+async def check_missed_mentions_malena():
+    """Vérifie si quelqu'un a mentionné Malena sans obtenir de réponse."""
+    global checked_messages_malena
+    
+    name_triggers = ["malena", "gitana", "gitane", "la gitane"]
+    
+    for guild in bot.guilds:
+        found_one = False  # Limite : 1 rattrapage par cycle par guild
+        for channel in guild.text_channels:
+            if found_one:
+                break
+            
+            # Vérifier les permissions
+            perms = channel.permissions_for(guild.me)
+            if not perms.read_messages or not perms.send_messages or not perms.read_message_history:
+                continue
+
+            if is_ignored_channel(channel): continue
+            
+            try:
+                messages = []
+                async for msg in channel.history(limit=20):
+                    messages.append(msg)
+                
+                # Parcourir les messages (du plus ancien au plus récent)
+                messages.reverse()
+                
+                for i, msg in enumerate(messages):
+                    # Skip si déjà vérifié, si c'est un bot, ou si trop vieux
+                    if msg.id in checked_messages_malena:
+                        continue
+                    if msg.author.bot:
+                        continue
+                    
+                    age = (datetime.now(msg.created_at.tzinfo) - msg.created_at).total_seconds() if msg.created_at.tzinfo else (datetime.utcnow() - msg.created_at).total_seconds()
+                    if age > 600 or age < 30:  # Ignorer > 10min ou < 30s
+                        checked_messages_malena.add(msg.id)
+                        continue
+                    
+                    # Détecter si on est mentionnée
+                    is_mentioned = bot.user.mentioned_in(msg)
+                    content_lower = msg.content.lower()
+                    is_name_mentioned = any(name in content_lower for name in name_triggers)
+                    
+                    # Si un AUTRE est mentionné mais PAS nous, ignorer
+                    if msg.mentions and not is_mentioned:
+                        checked_messages_malena.add(msg.id)
+                        continue
+                    
+                    if not is_mentioned and not is_name_mentioned:
+                        checked_messages_malena.add(msg.id)
+                        continue
+                    
+                    # Vérifier si le bot a déjà répondu après ce message
+                    bot_replied = False
+                    for later_msg in messages[i+1:]:
+                        if later_msg.author.id == bot.user.id:
+                            bot_replied = True
+                            break
+                    
+                    if bot_replied:
+                        checked_messages_malena.add(msg.id)
+                        continue
+                    
+                    # MENTION MANQUÉE DÉTECTÉE !
+                    logger.info(f"🔔 [MENTION MANQUÉE] {msg.author.name} a parlé à Malena il y a {int(age)}s sans réponse !")
+                    
+                    # Générer une réponse tardive
+                    user_text = msg.content.replace(f'<@{bot.user.id}>', '').strip()
+                    if not user_text:
+                        user_text = "(L'utilisateur t'a juste mentionnée sans rien dire.)"
+                    
+                    late_prompt = (
+                        f"{data.PERSONALITY_PROMPT}\n\n"
+                        f"CONTEXTE: Tu viens de te rendre compte que {msg.author.name} t'a parlé il y a quelques minutes "
+                        f"mais tu n'as PAS répondu (tu étais occupée à autre chose). "
+                        f"Son message était : '{user_text}'.\n"
+                        f"INSTRUCTION: Réponds-lui maintenant avec ton style marseillais. Excuse-toi à ta façon "
+                        f"(tu étais au téléphone, tu regardais les étoiles, tu faisais la sieste...). "
+                        f"Puis réponds à son message. Sois naturelle et en personnage. 2-3 phrases max."
+                    )
+                    
+                    # Détection de l'humeur pour la réponse tardive
+                    current_mood = "NEUTRE"
+                    msg_lower = user_text.lower()
+                    if any(word in msg_lower for word in data.MOODS["VENER"]["keywords"]):
+                        current_mood = "VENER"
+                    elif any(word in msg_lower for word in data.MOODS["LOVE"]["keywords"]):
+                        current_mood = "LOVE"
+                    
+                    response_text = await generate_response_hybrid(late_prompt, current_mood)
+                    
+                    if not response_text or "Erreur API" in response_text:
+                        # Fallback statique
+                        fallbacks = [
+                            f"Eh oh <@{msg.author.id}> ! Tu m'as parlé et j'ai pas répondu ?! Excuse-moi j'étais au téléphone avec ma cousine, tu sais comment c'est ! Tu disais quoi ?",
+                            f"Ay <@{msg.author.id}> ! Pardon pardon, j'étais dans la lune ! Non mais attends, t'es sérieux tu m'as parlé et j'ai pas capté ? Allez dis-moi !",
+                            f"Oh la la <@{msg.author.id}> ! J'ai vu que tu m'avais parlé ! Pardonne-moi j'étais occupée à regarder les oiseaux sur le balcon. Bénissou bénissou, qu'est-ce que tu voulais ?"
+                        ]
+                        response_text = random.choice(fallbacks)
+                    
+                    try:
+                        await msg.reply(response_text)
+                        logger.info(f"✅ [MENTION MANQUÉE] Répondu à {msg.author.name} en retard !")
+                    except Exception as e:
+                        logger.error(f"❌ [MENTION MANQUÉE] Erreur envoi: {e}")
+                    
+                    checked_messages_malena.add(msg.id)
+                    found_one = True
+                    break  # 1 seul rattrapage par cycle
+                    
+            except Exception as e:
+                logger.error(f"❌ [MISSED CHECK] Erreur canal {channel.name}: {e}")
+    
+    # Nettoyer le cache
+    if len(checked_messages_malena) > MAX_CHECKED_CACHE:
+        checked_messages_malena = set(list(checked_messages_malena)[-MAX_CHECKED_CACHE:])
+
+@check_missed_mentions_malena.before_loop
+async def before_missed_mentions():
+    await bot.wait_until_ready()
+
+# ANNIVERSAIRES MALENA
+
+@tasks.loop(hours=12)
+async def birthday_loop_malena():
+    """Vérifie les anniversaires toutes les 12 heures."""
+    try:
+        await check_and_send_birthdays(bot, "Malena")
+        logger.info("🎂 [ANNIVERSAIRE] Vérification des anniversaires effectuée.")
+    except Exception as e:
+        logger.error(f"❌ [ANNIVERSAIRE] Erreur : {e}")
+
+@birthday_loop_malena.before_loop
+async def before_birthday_malena():
+    await bot.wait_until_ready()
+
+# ÉVÉNEMENTS SERVEUR — BIENVENUE ET DÉPART
+
+@bot.event
+async def on_member_join(member):
+    """Message de bienvenue quand un membre rejoint."""
+    await handle_member_join(bot, member, "Malena")
+
+@bot.event
+async def on_member_remove(member):
+    """Message de départ quand un membre quitte."""
+    await handle_member_remove(bot, member, "Malena")
+
+if __name__ == "__main__":
+    setup_graceful_shutdown(bot)
+    bot.run(DISCORD_TOKEN)

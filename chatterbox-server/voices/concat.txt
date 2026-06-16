@@ -1,0 +1,5 @@
+file 'seg1.wav'
+file 'seg2.wav'
+file 'seg3.wav'
+file 'seg4.wav'
+file 'seg5.wav'

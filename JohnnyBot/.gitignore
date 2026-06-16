@@ -1,0 +1,31 @@
+# Environment variables (API KEYS - NE JAMAIS COMMIT)
+.env
+.env.encrypted
+.env.local
+.env.*.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Data files (peut contenir des données sensibles)
+*.json
+
+# Archives
+*.zip
+*.tar.gz
+
+# Database
+bots_database.db
+
+# Security
+.master_key

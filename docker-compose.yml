@@ -1,0 +1,179 @@
+x-bot-common: &bot-common
+  build: .
+  restart: unless-stopped
+  volumes:
+    - ./shared:/app/shared:ro
+    - ./data:/app/data
+    - ./logs:/app/bot/logs
+  environment:
+    - DATA_DIR=/app/data
+    - OLLAMA_VISION_URL=http://bots-ollama-vision:11434
+  networks:
+    - bots-network
+
+services:
+  sheogorath:
+    <<: *bot-common
+    container_name: bot-sheogorath
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./data:/app/data
+      - ./Sheogorath:/app/bot:ro
+      - ./logs:/app/bot/logs
+      - ./Sheogorath/.master_key:/app/bot/.master_key:ro
+    working_dir: /app/bot
+    command: python bot_sheogorath.py
+    environment:
+      - DATA_DIR=/app/data
+      - OLLAMA_VISION_URL=http://bots-ollama-vision:11434
+      - PIPER_TTS_URL=http://chatterbox-tts:5000
+    depends_on:
+      - chatterbox-tts
+    
+  maiq:
+    <<: *bot-common
+    container_name: bot-maiq
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./data:/app/data
+      - ./MaiqBot:/app/bot:ro
+      - ./logs:/app/bot/logs
+      - ./MaiqBot/.master_key:/app/bot/.master_key:ro
+    working_dir: /app/bot
+    command: python bot_maiq.py
+
+  alfred:
+    <<: *bot-common
+    container_name: bot-alfred
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./data:/app/data
+      - ./Alfred:/app/bot:ro
+      - ./logs:/app/bot/logs
+      - ./Alfred/.master_key:/app/bot/.master_key:ro
+    working_dir: /app/bot
+    command: python bot_alfred.py
+
+  johnny:
+    <<: *bot-common
+    container_name: bot-johnny
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./data:/app/data
+      - ./JohnnyBot:/app/bot:ro
+      - ./logs:/app/bot/logs
+      - ./JohnnyBot/.master_key:/app/bot/.master_key:ro
+    working_dir: /app/bot
+    command: python bot_johnny.py
+
+  zaji:
+    <<: *bot-common
+    container_name: bot-zaji
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./data:/app/data
+      - ./ZajiBot:/app/bot:ro
+      - ./logs:/app/bot/logs
+      - ./ZajiBot/.master_key:/app/bot/.master_key:ro
+    working_dir: /app/bot
+    command: python bot_zaji.py
+
+  malena:
+    <<: *bot-common
+    container_name: bot-malena
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./data:/app/data
+      - ./MalenaBot:/app/bot:ro
+      - ./logs:/app/bot/logs
+      - ./MalenaBot/.master_key:/app/bot/.master_key:ro  # Clé locale Malena
+    working_dir: /app/bot
+    command: python bot_malena.py
+
+  bots-ollama-vision:
+    image: ollama/ollama:latest
+    container_name: bots-ollama-vision
+    ports:
+      - "11445:11434"
+    volumes:
+      - ./ollama_storage:/root/.ollama
+    restart: unless-stopped
+    # ═══ GPU ACCELERATION — RTX 4060 Ti 16 Go ═══
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bots-network
+
+  ollama-model-init:
+    image: ollama/ollama:latest
+    container_name: ollama-model-init
+    depends_on:
+      bots-ollama-vision:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "ollama pull moondream && echo '✅ Moondream ready'"
+    environment:
+      - OLLAMA_HOST=http://bots-ollama-vision:11434
+    networks:
+      - bots-network
+    restart: "no"
+
+  # ═══════════════════════════════════════════════════════════
+  # CHATTERBOX TTS — Voice Cloning Sheogorath (GPU)
+  # Clone de la voix de Philippe Bozo (VF TESO)
+  # API : FastAPI sur port 5000 (GET / + POST /tts)
+  # Modèle : Chatterbox Turbo (350M params, ~3-4 Go VRAM)
+  # ═══════════════════════════════════════════════════════════
+  chatterbox-tts:
+    build: ./chatterbox-server
+    container_name: chatterbox-tts
+    restart: unless-stopped
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "5050:5000"
+    volumes:
+      - ./chatterbox-server/voices:/app/voices
+      - chatterbox-models:/root/.cache
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - VOICE_REF_PATH=/app/voices/sheogorath_ref.wav
+      - MODEL_TYPE=multilingual
+      - EXAGGERATION=0.7
+      - CFG_WEIGHT=0.3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - bots-network
+
+volumes:
+  chatterbox-models:
+
+networks:
+  bots-network:
+    driver: bridge

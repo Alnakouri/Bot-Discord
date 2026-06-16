@@ -1,0 +1,15 @@
+# Cursor Rules — Projet Discord Bots
+
+## Règles impératives
+- LIRE ARCHITECTURE.md et AGENTS.md AVANT toute modification
+- NE JAMAIS modifier ou supprimer un fichier .env (clés API de production)
+- NE JAMAIS modifier ou supprimer un fichier .master_key
+- NE JAMAIS créer d'import entre deux dossiers de bots
+- NE JAMAIS factoriser le code "dupliqué" entre bots (indépendance voulue)
+- Le dossier shared/ est OPTIONNEL — tous ses imports doivent avoir un try/except
+
+## Convention
+- Chaque bot est autonome et déployable seul
+- Logger via shared.bot_logger.setup_logger()
+- Tâches périodiques via @tasks.loop() de discord.py
+- Variables keyword_boost et duel_context initialisées à "" en début de on_message
