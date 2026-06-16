@@ -94,7 +94,9 @@ services:
     image: ollama/ollama:latest
     container_name: bots-ollama-vision
     ports:
-      - "11445:11434"
+      # Bind localhost uniquement : service interne au réseau Docker,
+      # ne doit pas être joignable depuis le LAN (Ollama n'a pas d'auth).
+      - "127.0.0.1:11445:11434"
     volumes:
       - ./ollama_storage:/root/.ollama
     restart: unless-stopped
@@ -151,7 +153,8 @@ services:
               count: 1
               capabilities: [gpu]
     ports:
-      - "5050:5000"
+      # Bind localhost uniquement : API TTS interne, pas d'exposition LAN.
+      - "127.0.0.1:5050:5000"
     volumes:
       - ./chatterbox-server/voices:/app/voices
       - chatterbox-models:/root/.cache
