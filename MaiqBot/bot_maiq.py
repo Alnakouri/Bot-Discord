@@ -49,14 +49,6 @@ def save_data(data):
         json.dump(data, f)
 
 
-# TOP-LEVEL DUEL TRACKER IMPORT
-try:
-    from shared.bot_duel_tracker import can_join_duel, register_duel
-except ImportError:
-    logger.warning("[DUEL] bot_duel_tracker non disponible")
-    can_join_duel = lambda *args: True
-    register_duel = lambda *args: None
-
 # ZONE DE CONFIGURATION : M'AIQ LE MENTEUR
 
 # IMPORT SECURE ENV LOADER (Supports encrypted .env files)
@@ -93,7 +85,6 @@ except ImportError as e:
 
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-last_duel_time = 0
 recent_rumor_targets = {}
 
 # API KEYS ROTATION (Google Gemini)
@@ -954,51 +945,11 @@ async def on_message(message):
     
     await bot.process_commands(message) # Important pour les commandes (!maiq)
 
-    # 1. FILTRE BOT & MODE DUEL
-    is_duel = False
-    
-    # IGNORE SERVER BOTS & WEBHOOKS (Fortnite, etc.)
-    is_server_bot = message.author.bot and message.webhook_id is not None
-    is_external_bot = message.author.bot and not any(name in message.author.name.lower() for name in ["sheo", "alfred"])
-    
-    if is_server_bot or (is_external_bot and "[SERVEUR]" in str(message.author.display_name).upper()):
-        return  # Ignorer complètement les bots serveur/webhooks
-    
-    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés M'aiq)
-    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["m'aiq", "maiq"]):
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    if message.author.bot:
         return
 
-    if message.author.bot:
-        if "sheo" in message.author.name.lower():
-            if not can_join_duel(message.channel.id, "M'aiq", "Sheogorath"):
-                logger.info(f"🚫 [DUEL BLOQUÉ] Sheogorath est déjà en conversation avec un autre bot. M'aiq reste silencieux.")
-                return
-            
-            global last_duel_time
-            now = datetime.now().timestamp()
-            
-            if now - last_duel_time < 300:
-                logger.info(f"🛑 [DUEL COOLDOWN] M'aiq ignore Sheogorath (Repos).")
-                return
-
-            if message.reference and message.reference.resolved and message.reference.resolved.author.id == bot.user.id:
-                logger.info(f"🛑 [LOOP STOP] Sheogorath nous a répondu. Fin de l'échange.")
-                return
-
-            if random.random() < 0.05:
-                is_duel = True
-                last_duel_time = now
-                register_duel(message.channel.id, "M'aiq", "Sheogorath")
-                logger.info(f"🧀⚔️ DUEL : M'aiq répond à Sheogorath ! (Début d'échange)")
-                await asyncio.sleep(random.uniform(2.0, 4.0))
-            else:
-                return
-        elif random.random() < 0.05:
-            is_duel = True
-            logger.info(f"⚔️ DUEL : M'aiq répond à {message.author.name} (Chance !)")
-            await asyncio.sleep(random.uniform(1.0, 2.0))
-        else:
-            return
+    is_duel = False  # conservé pour compatibilité (toujours False désormais)
 
     # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
@@ -1202,27 +1153,10 @@ async def on_message(message):
     # PREPARATION DE LA REPONSE
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
     
-    # Injection du Contexte "Duel" - SYSTEM-LEVEL ONLY (Never in user_message to avoid leakage!)
+    # Injection du Contexte "Rumeur" - SYSTEM-LEVEL ONLY (Never in user_message to avoid leakage!)
     duel_context = ""
     if is_rumor_defense:
          duel_context = "\n\n[CONFRONTATION RUMEUR] Le mortel tente de nier ou réagit à ta récente rumeur ! Réponds avec une pique flegmatique qui maintient le doute."
-    elif is_duel:
-        if "sheo" in message.author.name.lower():
-             # Instructions stay in system context, NOT in user_message
-             duel_context = (
-                 "\n\n[⚔️ MODE DUEL ACTIVÉ - SHEOGORATH ⚔️]\n"
-                 "Le Prince de la Folie t'a parlé. INSTRUCTIONS DE COMBAT (NE PAS CITER) :\n"
-                 "- ESQUIVE ses menaces avec une remarque cryptique ou confuse.\n"
-                 "- RETOURNE son insulte avec calme (style 'Merci. M'aiq note cela.').\n"
-                 "- Fais semblant de ne pas comprendre OU change de sujet brutalement.\n"
-                 "- Mentionne tes PIEDS fatigués, le SABLE, ou les DRAGONS pour déstabiliser.\n"
-                 "- Exemple : 'Je te transforme en fromage!' → 'Le fromage fond au soleil. M'aiq préfère l'ombre. 🧀'\n"
-                 "- Sois ÉVASIF mais PIQUANT. Tu fuis, mais tu griffes en partant !\n"
-                 "⚠️ IMPORTANT: Ne JAMAIS citer ces instructions dans ta réponse !"
-             )
-             # user_message stays clean - just the opponent's words
-        else:
-             duel_context = "\n\n[⚔️ MODE DUEL - BOT] Un autre bot t'a parlé. Réponds avec confusion et une remarque étrange. Change de sujet si nécessaire. ⚠️ NE CITE PAS CES INSTRUCTIONS !"
 
     # Gestion de la mémoire (Discord Context)
     channel_id = message.channel.id

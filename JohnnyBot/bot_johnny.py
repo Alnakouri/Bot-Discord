@@ -45,14 +45,6 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-# TOP-LEVEL DUEL TRACKER IMPORT
-try:
-    from shared.bot_duel_tracker import can_join_duel, register_duel
-except ImportError:
-    logger.warning("[DUEL] bot_duel_tracker non disponible")
-    can_join_duel = lambda *args: True
-    register_duel = lambda *args: None
-
 # IMPORT SECURE ENV LOADER
 from pathlib import Path
 try:
@@ -89,7 +81,6 @@ from johnny_data import (
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 johnny_data = load_data()
-last_duel_time = 0
 
 # API KEYS ROTATION
 GEMINI_API_KEYS = [
@@ -404,7 +395,11 @@ async def on_message(message):
     
     # Traiter les commandes
     await bot.process_commands(message)
-    
+
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    if message.author.bot:
+        return
+
     # Conditions de réponse
     is_mentioned = bot.user in message.mentions
     is_reply = message.reference and message.reference.resolved and message.reference.resolved.author == bot.user
@@ -415,14 +410,9 @@ async def on_message(message):
     content_lower = message.content.lower()
     is_name_mentioned = any(name in content_lower for name in JOHNNY_NAMES)
     
-    # Détection autres bots (pour duels)
-    is_bot_talking = message.author.bot and message.author != bot.user
-    bot_name_lower = message.author.name.lower() if is_bot_talking else ""
-    is_sheogorath = "sheo" in bot_name_lower
-    is_maiq = "maiq" in bot_name_lower or "m'aiq" in bot_name_lower
-    is_alfred = "alfred" in bot_name_lower
-    is_zaji = "zaji" in bot_name_lower or "za'ji" in bot_name_lower or "onizuka" in bot_name_lower or "eikichi" in bot_name_lower or "gto" in bot_name_lower
-    
+    # Les autres bots sont filtrés en amont (silence total entre bots).
+    is_bot_talking = False
+
     # Détection image très tôt (pour priorité)
     has_image_early = any(
         att.content_type and att.content_type.startswith('image/') 
@@ -430,7 +420,6 @@ async def on_message(message):
     )
     
     should_respond = False
-    duel_context = ""
     keyword_boost = ""
     
     # A. Message direct (mention, reply, DM, ou nom alternatif)
@@ -450,71 +439,7 @@ async def on_message(message):
     elif has_image_early and not is_bot_talking:
         should_respond = True
         logger.info(f"[IMAGE PRIORITY] Johnny va analyser l'image de {message.author.name}")
-    
-    # B. Mode DUEL avec autres bots
-    elif is_bot_talking:
-        # Anti-cascade system (importé en haut du fichier)
-        
-        # Determine bot name from message
-        bot_name = None
-        if is_sheogorath:
-            bot_name = "Sheogorath"
-        elif is_zaji:
-            bot_name = "Za'ji"
-        elif is_alfred:
-            bot_name = "Alfred"
-        elif is_maiq:
-            bot_name = "M'aiq"
-        
-        # Check if Johnny can join this conversation
-        if bot_name and not can_join_duel(message.channel.id, "Johnny", bot_name):
-            logger.info(f"[DUEL BLOQUÉ] {bot_name} est déjà en conversation. Johnny attend son tour.")
-            return
-        
-        global last_duel_time
-        now = datetime.now().timestamp()
-        
-        # Cooldown 3 min
-        if now - last_duel_time < 180:
-            return
-        
-        # Probabilité selon le bot
-        duel_chance = 0.15 if (is_sheogorath or is_maiq or is_alfred or is_zaji) else 0.08
-        
-        if random.random() < duel_chance:
-            should_respond = True
-            last_duel_time = now
-            
-            # Register this duel
-            if bot_name:
-                register_duel(message.channel.id, "Johnny", bot_name)
-            
-            # Instructions de duel personnalisées
-            if is_sheogorath:
-                duel_context = (
-                    "\n\n⚔️ RENCONTRE AVEC SHEOGORATH ⚔️\n"
-                    "Un taré chromé se prenant pour un dieu de la folie. Johnny doit être méprisant mais intrigué par son chaos :\n"
-                    "- 'Un taré chromé qui se prend pour un dieu ? Night City bouffe les dieux au p'tit-déj, choom.'\n"
-                    "- Dis-lui qu'il a besoin d'un ripperdoc pour réparer son processeur neural.\n"
-                    "- Ton cynique et rebelle."
-                )
-            elif is_maiq or is_zaji:
-                duel_context = (
-                    "\n\n🐱 RENCONTRE AVEC KHAJIIT (DES CHATS QUI PARLENT) ⚔️\n"
-                    "Des chats qui parlent. Johnny pense à un bug de son implant braindance ou de son chrome d'occasion :\n"
-                    "- 'Des chats qui parlent. Soit je flatline, soit on m'a refilé du mauvais chrome.'\n"
-                    "- Demande-leur s'ils bossent pour Arasaka ou s'ils ont trop forcé sur les paillettes."
-                )
-            elif is_alfred:
-                duel_context = (
-                    "\n\n🎩 RENCONTRE AVEC ALFRED (LARBIN CORPO) ⚔️\n"
-                    "Un larbin en costard. Johnny le déteste car il représente le système et la servitude :\n"
-                    "- 'Un larbin en costard ? Tu bosses pour les suits. Ça fait de toi le problème.'\n"
-                    "- Moque-toi de son dévouement envers un riche bourgeois (Batman/Wayne)."
-                )
-            
-            logger.info(f"[DUEL] Johnny rencontre {message.author.name} !")
-    
+
     # C. Intervention aléatoire (10%)
     if not should_respond and not is_bot_talking and random.random() < 0.10:
         should_respond = True
@@ -637,7 +562,7 @@ async def on_message(message):
     # GÉNÉRATION (Smart Router)
     
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}\n{transcript}{duel_context}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
     
     async with message.channel.typing():
         response_text = await generate_response(

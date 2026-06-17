@@ -62,14 +62,6 @@ except ImportError:
 if ElevenLabs is None:
     logger.warning("[INIT] ElevenLabs non disponible. Fonctions vocales désactivées.")
 
-# TOP-LEVEL DUEL TRACKER IMPORT
-try:
-    from shared.bot_duel_tracker import can_join_duel, register_duel
-except ImportError:
-    logger.warning("[DUEL] bot_duel_tracker non disponible")
-    can_join_duel = lambda *args: True
-    register_duel = lambda *args: None
-
 # ZONE DE CONFIGURATION : ALFRED PENNYWORTH
 
 # IMPORT SAFE CLIENT (CRITICAL)
@@ -171,7 +163,6 @@ response_memory = ResponseMemory()
 PROBA_REACTION = 0.20  # 20%
 PROBA_INTERVENTION = 0.10 # 10%
 DELAY_MIN, DELAY_MAX = 1.0, 2.0
-last_duel_time = 0 # COOLDOWN GLOBAL
 
 # VOCAL PATROL (Détection de chant en vocal via Gemini Audio)
 vocal_patrol_active = False
@@ -1116,13 +1107,10 @@ async def on_message(message):
     
     # PROCESS STANDARD COMMANDS
     await bot.process_commands(message)
-    
-    # IGNORE SERVER BOTS & WEBHOOKS (Fortnite, etc.)
-    is_server_bot = message.author.bot and message.webhook_id is not None
-    is_external_bot = message.author.bot and not any(name in message.author.name.lower() for name in ["sheo", "m'aiq", "maiq"])
-    
-    if is_server_bot or (is_external_bot and "[SERVEUR]" in str(message.author.display_name).upper()):
-        return  # Ignorer complètement les bots serveur/webhooks
+
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    if message.author.bot:
+        return
 
     # 1. ANALYSE
     text_lower = message.content.lower()
@@ -1238,79 +1226,7 @@ async def on_message(message):
         should_respond = True
         context_prefix = "VISION: Le Maître partage une image. Analysez-la et commentez avec élégance."
         logger.info(f"📷 [IMAGE PRIORITY] Alfred va analyser l'image de {message.author.name}")
-    
-    # B. Si c'est un autre Bot (MODE DUEL)
-    elif is_bot_talking:
-        # Anti-cascade system (importé en haut du fichier)
-        
-        # DÉTECTION SPÉCIFIQUE DES ADVERSAIRES
-        bot_name = message.author.name.lower()
-        is_sheogorath = "sheo" in bot_name
-        is_maiq = "maiq" in bot_name or "m'aiq" in bot_name
-        
-        # Determine bot name for tracker
-        opponent_name = None
-        if is_sheogorath:
-            opponent_name = "Sheogorath"
-        elif is_maiq:
-            opponent_name = "M'aiq"
-        
-        # Check if Alfred can join this conversation
-        if opponent_name and not can_join_duel(message.channel.id, "Alfred", opponent_name):
-            logger.info(f"🚫 [DUEL BLOQUÉ] {opponent_name} est déjà en conversation avec un autre bot. Alfred reste en retrait.")
-            return
-        
-        global last_duel_time
-        now = datetime.now().timestamp()
-        
-        # COOLDOWN 3 MIN (Anti-Loop) - Réduit de 5 à 3 min
-        if now - last_duel_time < 180:
-            logger.info(f"🛑 [COOLDOWN] Alfred ignore les bots (Repos).")
-            return
-        
-        # Probabilité de 5% pour TOUS les bots
-        duel_chance = 0.05
-        
-        if random.random() < duel_chance:
-            should_respond = True
-            last_duel_time = now
-            
-            # Register this duel
-            if opponent_name:
-                register_duel(message.channel.id, "Alfred", opponent_name)
-            
-            # INSTRUCTIONS DE DUEL PERSONNALISÉES (AGRESSIVES)
-            if is_sheogorath:
-                context_prefix = (
-                    "\n\n⚔️ MODE DUEL VS SHEOGORATH ⚔️\n"
-                    "Sheogorath, Prince Daedra de la Folie, vient de parler.\n"
-                    "INSTRUCTIONS SPÉCIALES :\n"
-                    "   - Sois sarcastique sur sa DÉMENCE (avec condescendance).\n"
-                    "   - Compare-le défavorablement à Maître Black (qui, lui, est sain d'esprit).\n"
-                    "   - Suggère qu'il devrait consulter un psychiatre (avec fausse politesse).\n"
-                    "   - EXEMPLES PRÉCIS :\n"
-                    "   - 'Monsieur Sheogorath. Encore. Avez-vous oublié de prendre vos médicaments ? 🧐'\n"
-                    "   - 'La folie n'est pas une excuse pour l'impolitesse. Maître Black gère des criminels. Vous, vous gérez... quoi, au juste ? Des hallucinations ? 🧐'\n"
-                    "   - 'Le fromage. Encore. Fascinant. Monsieur devrait ouvrir une fromagerie plutôt qu'un royaume. ☕'\n"
-                    "NE SOIS PAS PASSIF. ATTAQUE son ego, sa compétence, sa pertinence."
-                )
-                print(f"☕⚔️ DUEL : Alfred vs Sheogorath !")
-            elif is_maiq:
-                context_prefix = (
-                    "⚔️ DUEL CONTRE M'AIQ ⚔️\n"
-                    "Le chat errant (M'aiq) vient de mentir. Tu dois répondre avec :\n"
-                    "- Une remarque sur ses poils qui traînent partout\n"
-                    "- Un doute poli sur la véracité de ses propos\n"
-                    "- Un commentaire sur l'odeur de chat mouillé\n"
-                    "Sois condescendant mais pas cruel. C'est juste un vagabond."
-                )
-                print(f"☕⚔️ DUEL : Alfred vs M'aiq !")
-            else:
-                context_prefix = "CONTEXTE: Un autre bot parle. Tu interviens pour ramener de l'ordre poliment."
-                print(f"☕ INTERVENTION : Alfred remet de l'ordre face à {message.author.name}")
-            
-            await asyncio.sleep(random.uniform(1.5, 3.0))
-    
+
     # C. Si Chaos détecté (Proactivité "Ordre")
     elif (has_chaos_keyword or is_shouting) and random.random() < 0.15:
         should_respond = True

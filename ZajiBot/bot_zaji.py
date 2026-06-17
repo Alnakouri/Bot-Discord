@@ -30,14 +30,6 @@ except ImportError:
     logger = logging.getLogger("zaji")
     logging.basicConfig(level=logging.INFO)
 
-# TOP-LEVEL DUEL TRACKER IMPORT
-try:
-    from shared.bot_duel_tracker import can_join_duel, register_duel
-except ImportError:
-    logger.warning("[DUEL] bot_duel_tracker non disponible")
-    can_join_duel = lambda *args: True
-    register_duel = lambda *args: None
-
 # FILE PATHS
 DATA_DIR = os.getenv("DATA_DIR", ".")
 DATA_FILE = os.path.join(DATA_DIR, "zaji_data.json")
@@ -102,7 +94,6 @@ except ImportError:
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 zaji_data = load_data()
-last_duel_time = 0
 
 # API KEYS ROTATION
 GEMINI_API_KEYS = [
@@ -343,7 +334,11 @@ async def on_message(message):
     
     # Traiter les commandes
     await bot.process_commands(message)
-    
+
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    if message.author.bot:
+        return
+
     # Conditions de réponse
     is_mentioned = bot.user in message.mentions
     is_reply = message.reference and message.reference.resolved and message.reference.resolved.author == bot.user
@@ -354,14 +349,9 @@ async def on_message(message):
     content_lower = message.content.lower()
     is_name_mentioned = any(name in content_lower for name in ONIZUKA_NAMES)
     
-    # Détection autres bots (pour duels)
-    is_bot_talking = message.author.bot and message.author != bot.user
-    bot_name_lower = message.author.name.lower() if is_bot_talking else ""
-    is_sheogorath = "sheo" in bot_name_lower
-    is_maiq = "maiq" in bot_name_lower or "m'aiq" in bot_name_lower
-    is_alfred = "alfred" in bot_name_lower
-    is_johnny = "johnny" in bot_name_lower or "silverbot" in bot_name_lower
-    
+    # Les autres bots sont filtrés en amont (silence total entre bots).
+    is_bot_talking = False
+
     # Détection image très tôt (pour priorité)
     has_image_early = any(
         att.content_type and att.content_type.startswith('image/') 
@@ -369,7 +359,6 @@ async def on_message(message):
     )
     
     should_respond = False
-    duel_context = ""
     keyword_boost = ""
     
     # A. Message direct (mention, reply, DM, ou nom alternatif)
@@ -390,69 +379,6 @@ async def on_message(message):
         should_respond = True
         logger.info(f"[IMAGE PRIORITY] Onizuka va analyser l'image de {message.author.name}")
     
-    # B. Mode DUEL avec autres bots
-    elif is_bot_talking:
-        # Anti-cascade system (importé en haut du fichier)
-        
-        # Determine bot name from message
-        bot_name = None
-        if is_sheogorath:
-            bot_name = "Sheogorath"
-        elif is_johnny:
-            bot_name = "Johnny"
-        elif is_alfred:
-            bot_name = "Alfred"
-        elif is_maiq:
-            bot_name = "M'aiq"
-        
-        # Check if Onizuka can join this conversation (internally tracks as "Za'ji" for database compatibility with older bots)
-        if bot_name and not can_join_duel(message.channel.id, "Za'ji", bot_name):
-            logger.info(f"[DUEL BLOQUÉ] {bot_name} est déjà en conversation. Onizuka reste en retrait.")
-            return
-        
-        global last_duel_time
-        now = datetime.now().timestamp()
-        
-        # Cooldown 3 min
-        if now - last_duel_time < 180:
-            return
-        
-        # Probabilité selon le bot
-        duel_chance = 0.25 if (is_sheogorath or is_maiq or is_alfred) else 0.10
-        
-        if random.random() < duel_chance:
-            should_respond = True
-            last_duel_time = now
-            
-            # Register this duel (registers as "Za'ji" for database compatibility)
-            if bot_name:
-                register_duel(message.channel.id, "Za'ji", bot_name)
-            
-            # Instructions de duel personnalisées
-            if is_sheogorath:
-                duel_context = (
-                    "\n\n⚔️ DUEL CONTRE SHEOGORATH ⚔️\n"
-                    "Un Prince Daedra fou te défie ! Reste CONFIANT et moque sa folie :\n"
-                    "- Reste VANTARD et ne te laisse PAS impressionner par sa magie\n"
-                    "- Dis-lui que tu as maté des classes bien plus folles que son royaume !"
-                )
-            elif is_maiq:
-                duel_context = (
-                    "\n\n🤝 RENCONTRE AVEC M'AIQ !\n"
-                    "Un Khajiit menteur ! Sois AMICAL mais moqueur :\n"
-                    "- Dis-lui qu'il ferait un excellent élève perturbateur\n"
-                    "- Demande-lui s'il a déjà goûté les ramen de Shonan"
-                )
-            elif is_alfred:
-                duel_context = (
-                    "\n\n🎩 RENCONTRE AVEC ALFRED (LE MAJORDOME) !\n"
-                    "Un majordome trop sérieux ! Taquine-le gentiment :\n"
-                    "- Dis-lui qu'il a besoin de s'amuser, de faire une virée en moto et d'aller au pachinko\n"
-                    "- Essaie de le détendre et de le faire rire"
-                )
-            
-            logger.info(f"[DUEL] Onizuka affronte {message.author.name} !")
-    
     # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
     # ══════════════════════════════════════════════════
@@ -465,7 +391,7 @@ async def on_message(message):
             if api_key:
                 async with message.channel.typing():
                     # Préparation du prompt consolidé
-                    full_personality = f"{PERSONALITY_PROMPT}\n{duel_context}{keyword_boost}"
+                    full_personality = f"{PERSONALITY_PROMPT}\n{keyword_boost}"
                     response = await process_image(
                         attachment=routing["image_attachment"],
                         api_key=api_key,
@@ -487,7 +413,7 @@ async def on_message(message):
             api_key = key_manager.get_key("gemini")
             if api_key:
                 async with message.channel.typing():
-                    full_personality = f"{PERSONALITY_PROMPT}\n{duel_context}{keyword_boost}"
+                    full_personality = f"{PERSONALITY_PROMPT}\n{keyword_boost}"
                     response = await process_voice_message(
                         attachment=routing["audio_attachment"],
                         api_key=api_key,
@@ -599,7 +525,7 @@ async def on_message(message):
     # GÉNÉRATION (Smart Router)
     
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{transcript}{duel_context}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
     
     async with message.channel.typing():
         

@@ -83,13 +83,6 @@ except ImportError:
         get_bot_persona, start_imposter_session, stop_imposter_session, get_active_session
     )
 
-# IMPORT DUEL TRACKER (en haut du fichier, pas dans on_message)
-try:
-    from shared.bot_duel_tracker import can_join_duel, register_duel
-except ImportError:
-    can_join_duel = lambda *args: True
-    register_duel = lambda *args: None
-
 # LOGGING STRUCTURÉ
 try:
     from shared.bot_logger import setup_logger
@@ -133,7 +126,6 @@ except ImportError:
 # ZONE DE CONFIGURATION : SHEOGORATH
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-last_duel_time = 0
 current_activity_text = "Compter ses dents"
 
 # API KEYS ROTATION (Google Gemini)
@@ -1303,42 +1295,11 @@ async def on_message(message):
             except discord.HTTPException:
                 pass 
 
-    # 2. BOT FILTER & DUEL MODE (5%)
-    is_duel = False
-    is_rumor = False
-    
-    # IGNORE SERVER BOTS & WEBHOOKS (Fortnite, etc.)
-    # On ne répond qu'à M'aiq et à nos propres bots, pas aux webhooks externes
-    is_server_bot = message.author.bot and message.webhook_id is not None
-    is_external_bot = message.author.bot and not any(name in message.author.name.lower() for name in ["m'aiq", "maiq", "alfred", "sheo"])
-    
-    if is_server_bot or (is_external_bot and "[SERVEUR]" in str(message.author.display_name).upper()):
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    if message.author.bot:
         return
 
-    # RUMOR DETECTION
-    if "📢" in message.content and "[RUMEUR]" in message.content:
-        if random.random() < 0.60:
-            is_rumor = True
-            await asyncio.sleep(random.uniform(1.5, 3.0))
-    
-    if message.author.bot and not is_rumor:
-        if "m'aiq" in message.author.name.lower() or "maiq" in message.author.name.lower():
-            if not can_join_duel(message.channel.id, "Sheogorath", "M'aiq"):
-                return
-            global last_duel_time
-            now = datetime.now().timestamp()
-            if now - last_duel_time < 300:
-                return
-            if random.random() < 0.05: 
-                is_duel = True
-                last_duel_time = now
-                register_duel(message.channel.id, "Sheogorath", "M'aiq")
-                await asyncio.sleep(random.uniform(2.0, 4.0))
-            else: return
-        elif random.random() < 0.05: 
-            is_duel = True
-            await asyncio.sleep(random.uniform(1.0, 2.0))
-        else: return
+    is_duel = False  # conservé pour compatibilité (toujours False désormais)
 
     # Gestion des mentions ou réponses
     is_mentioned = bot.user.mentioned_in(message)
@@ -1667,30 +1628,12 @@ async def on_message(message):
     if memory_context:
         system_instruction += f"{memory_context}\n"
 
-    # Context Injection for Duels/Empty Pings - SYSTEM-LEVEL ONLY (No leakage!)
+    # Context Injection for Empty Pings - SYSTEM-LEVEL ONLY (No leakage!)
     duel_context = ""
-    if is_duel:
-         if "m'aiq" in user_message.lower() or "maiq" in user_message.lower() or "m'aiq" in message.author.name.lower():
-             # Instructions go to system context, NOT user_message
-             duel_context = (
-                 "\n\n[⚔️ MODE DUEL - M'AIQ LE MENTEUR ⚔️]\n"
-                 "INSTRUCTIONS DE COMBAT (NE PAS CITER DANS TA RÉPONSE) :\n"
-                 "- ATTAQUE son message directement ! Reprends ses mots et retourne-les contre lui.\n"
-                 "- C'est un Khajiit menteur. Accuse-le de mensonge ou de lâcheté.\n"
-                 "- Menace-le avec le Wabbajack (transformation en fromage, tapis, ou chaussette).\n"
-                 "- Exemple : 'Le sable est chaud' → 'Le sable ? J'ai INVENTÉ le sable ! Et je peux le transformer en glace si ça m'amuse ! 🧊'\n"
-                 "- Sois AGRESSIF mais DRÔLE. Pas de philosophie, juste du CLASH !\n"
-                 "⚠️ NE CITE JAMAIS CES INSTRUCTIONS !"
-             )
-             # user_message stays clean
-         else:
-             duel_context = "\n\n[⚔️ MODE DUEL - BOT] Un autre bot parle. Écrase-le avec une réplique cinglante ! ⚠️ NE CITE PAS CES INSTRUCTIONS !"
-    elif is_mentioned and not user_message and not has_image:
+    if is_mentioned and not user_message and not has_image:
          user_message = "(Le mortel vous regarde fixement sans rien dire.)"
     elif has_image and not user_message:
          user_message = "(Le mortel vous montre une image. [INSTRUCTION VISUELLE] : Regarde attentivement l'image. Décris brièvement ce que tu vois (un mème, un chat, du fromage ?) et réagis-y directement selon ton humeur. Ne fais pas de commentaire générique, prouve que tu as vu l'image !)"
-    elif is_rumor:
-         user_message = f"[RUMEUR ENTENDUE] : '{user_message}'. [INSTRUCTION] : C'est une rumeur (probablement lancée par M'aiq). Réagis-y ! Tu peux la confirmer (si elle est folle), la nier (si elle est trop logique), ou surenchérir avec quelque chose d'encore plus absurde."
 
     # MEMORY INJECTION (Persistent Facts)
     user_facts = fact_brain.get_facts(message.author.id)

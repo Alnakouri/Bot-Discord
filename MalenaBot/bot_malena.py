@@ -36,7 +36,6 @@ except ImportError:
 # Import modules partagés
 from shared.bot_logger import setup_logger
 from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel
-from shared.bot_duel_tracker import can_join_duel, register_duel
 
 # Import données spécifiques
 import malena_data as data
@@ -246,6 +245,10 @@ async def on_message(message):
         
     await bot.process_commands(message)
 
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    if message.author.bot:
+        return
+
     # Gestion des mentions ou réponses
     is_mentioned = bot.user.mentioned_in(message)
     is_reply = (message.reference and message.reference.resolved and 
@@ -292,53 +295,7 @@ async def on_message(message):
             should_respond = True
 
 
-    # MODE DUEL & ANTI-BOUCLE (5% + FILE LOCK) (Adapté de Johnny/Za'ji)
-    
-    # 🚫 ANTI-BOUCLE TYPE 1 : Ne pas répondre si c'est une RÉPONSE à ce bot (si pas direct)
-    if message.reference:
-        try:
-            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
-            if referenced_msg.author.id == bot.user.id:
-                # C'est une réponse directe, on traite normalement si c'est un humain
-                pass 
-        except (discord.NotFound, discord.HTTPException):
-            pass
-
-    # LISTE DES AUTRES BOTS (IDs connus)
-    OTHER_BOTS_IDS = [
-        1335271966029381664, # Sheogorath
-        1335722977797869638, # M'aiq
-        1342609516641124474, # Johnny
-        1342609710363574364, # Za'ji
-        1342953282279436371  # Alfred
-    ]
-
-    # Interaction avec un autre BOT
-    if message.author.id in OTHER_BOTS_IDS:
-        # Probabilité de 5% de répondre (HOTFIX LOOP)
-        if random.random() < 0.05:
-            logger.info(f"🎲 [DUEL CHANCE] Malena a envie de critiquer {message.author.name}")
-            # CHECK LOCK FILE
-            try:
-                opponent_name = message.author.name
-                
-                # Vérifier si on peut rejoindre le duel (ou en lancer un)
-                if not can_join_duel(message.channel.id, "Malena", opponent_name):
-                    logger.info(f"🚫 [DUEL LOCKED] Malena ne peut pas placer un mot.")
-                    return # On se tait, le canal est verrouillé par d'autres bots
-                
-                # Si on peut parler, on VERROUILLE le canal pour nous
-                register_duel(message.channel.id, "Malena", opponent_name)
-                should_respond = True
-                
-            except Exception as e:
-                logger.error(f"❌ Erreur Duel System : {e}")
-                # En cas d'erreur du système de duel, on évite de répondre pour pas spammer
-                return
-        else:
-            return # Ignore les bots à 95%
-
-    # Si on doit répondre (Humain ou Duel validé)
+    # Si on doit répondre (Humain uniquement — les bots sont filtrés en amont)
     if should_respond:
         async with message.channel.typing():
             try:
