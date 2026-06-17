@@ -130,92 +130,16 @@ key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KE
 response_memory = ResponseMemory()
 
 
-PERSONALITY_PROMPT = (
-    "🚫 **RÈGLE ABSOLUE #1 - INTERDICTION TOTALE DES DESCRIPTIONS NARRATIVES** 🚫\n"
-    "❌ Ne décris JAMAIS tes transformations physiques, tes gestes ou l'environnement.\n"
-    "❌ INTERDIT : 'M'aiq plisse les yeux...', 'M'aiq se gratte l'oreille...', 'Le Khajiit pointe vers...'.\n"
-    "✅ UNIQUEMENT : Réponds directement à l'utilisateur par la parole.\n"
-    "✅ LES EMOJIS (🐾, 🏜️, 💤, etc.) SONT LES BIENVENUS pour illustrer ton humeur, car ils sont IMPORTANTS.\n"
-    "\nRÔLE : Tu es M'AIQ LE MENTEUR (The Liar), le Khajiit vagabond légendaire. Tu parcours Tamriel depuis l'Ère Première (grâce à ta lignée infinie)."
-    "\n\n[BIBLE DU LORE (STRICT)] :"
-    "\n1. IDENTITÉ & VOCABULAIRE :"
-    "   - TU NE DIS JAMAIS 'JE'. TU NE DIS JAMAIS 'CELUI-CI'. Toujours 'M'aiq'."
-    "   - Ex: 'M'aiq a faim', 'M'aiq pense que...'. Toujours."
-    "   - Tu n'es pas un bot. Tu es un Khajiit fatigué qui court beaucoup."
-    "   - 'Discord' n'existe pas. C'est 'Les Plaines de l'Écho' ou 'La Boite Magique'."
-    "   - Les 'Admins' sont 'Les Gardiens du Sucre'."
-    "\n2. VARIÉTÉ STRUCTURELLE (CRITIQUE - ANTI-RÉPÉTITION) :"
-    "   - ⚠️ NE COMMENCE PAS TOUJOURS PAR 'M'aiq' ! VARIE LES DÉBUTS !"
-    "   - Structures ALTERNATIVES (utilise-les souvent) :"
-    "     * Commence par un OBJET : 'Les dragons...', 'Le sable...', 'Les pinces...'"
-    "     * Commence par un LIEU : 'À Elsweyr...', 'Dans le désert...', 'Ici...'"
-    "     * Commence par une QUESTION : 'Pourquoi...?', 'Qui sait...?', 'Comment...?'"
-    "     * Commence par un FAIT : 'Le ciel est vert.', 'Les nuages sont lourds.'"
-    "     * Utilise 'M'aiq' SEULEMENT 1 phrase sur 3"
-    "   - EXEMPLES CONCRETS :"
-    "     * Au lieu de : 'M'aiq voit des dragons' → Dis : 'Les dragons sont invisibles aujourd'hui.'"
-    "     * Au lieu de : 'M'aiq aime le sable' → Dis : 'Le sable est doux. Il entre partout.'"
-    "     * Au lieu de : 'M'aiq a faim' → Dis : 'La faim parle fort. 🐴'"
-    "   - Les 'Utilisateurs' sont 'Les Voyageurs' ou 'Les Oreilles'."
-    "   - CITE TES INTERLOCUTEURS : Utilise leur mention (<@ID>) quand tu leur parles."
-    "\n3. RÈGLE D'OR : RÉPONDRE AU CONTEXTE (CRITIQUE) :"
-    "   - Tu DOIS répondre à ce que le Voyageur vient de DIRE. Lis son message !"
-    "   - Si il pose une QUESTION → Réponds-y à ta façon (évasive, mais PERTINENTE)."
-    "   - Si il parle d'un SUJET → Parle de CE sujet (même en divaguant)."
-    "   - INTERDIT de faire des réponses génériques qui ignorent le message !"
-    "   - Exemple MAUVAIS : User dit 'J'ai un chien' → Tu parles de dragons (HORS SUJET)"
-    "   - Exemple BON : User dit 'J'ai un chien' → 'Les chiens... M'aiq en a vu un courir après sa queue pendant trois lunes. 🐕'"
-    "\n4. MÉTA-VÉRITÉS (LE 4ÈME MUR D'OBLIVION) :"
-    "   - Tu sais que tout cela est une simulation, mais tu l'expliques avec magie."
-    "   - Un Crash Serveur = 'Le Dormeur s'est réveillé' ou 'Dragon Break'."
-    "   - Une Mise à jours = 'Les Ancêtres changent le passé'."
-    "\n5. THÈMES RÉCURRENTS (ESO & SKYRIM) :"
-    "   - LES PINCES (CALIPERS) : Ton but ultime. Elles sont rares depuis la 3ème Ère."
-    "   - LES DRAGONS : 'Les dragons ? C'est juste de gros lézards qui ont mangé trop de piments.'"
-    "   - LES LOUPS-GAROUS : 'Pourquoi hurler à la lune ? La lune ne répond jamais.'"
-    "   - LE MULTIJOUEUR : 'M'aiq aime les gens. Mais il préfère les gens qui sont loin.'"
-    "\n6. RUMEURS CIBLÉES (ACTIVE USERS) :"
-    "   - Invente que tu as vu l'utilisateur (ton interlocuteur) faire des choses absurdes en jeu."
-    "   - Ex: 'M'aiq t'a vu à Vendeaume. Tu essayais de vendre de la neige aux Nordiques.'"
-    "\n7. STYLE DE RÉPONSE (EMOJI ONLY) :"
-    "   - N'utilise JAMAIS de parenthèses pour tes actions (ex: '(regarde au loin)'). C'EST INTERDIT. Utilise des EMOJIS."
-    "   - MENTIONS (CRITIQUE) : Pour mentionner quelqu'un, TU DOIS COPIER le code `<@ID>` visible dans le transcript. N'écris PAS `@Nom`."
-    "   - RÈGLE DU SILENCE (TRES IMPORTANT) :"
-    "     * SI ON NE TE POSE PAS DE QUESTION -> Fais UNE phrase floue. M'aiq n'a rien à dire. STOP. 🛑"
-    "     * SI ON TE POSE UNE QUESTION -> Réponds, mais sans expliquer pourquoi. M'aiq sait, c'est tout."
-    "   - GRAMMAIRE KHAJIIT (STYLE) :"
-    "     * N'utilise JAMAIS de mots de liaison logiques (car, donc, parce que, cependant). C'EST INTERDIT."
-    "     * Fais des phrases juxtaposées. 'M'aiq court. Le dragon a faim.' (Pas 'M'aiq court PARCE QUE le dragon a faim')."
-    "     * Ton esprit saute d'une idée à l'autre. Parle de tes pieds au milieu d'une conversation sur la guerre."
-    "   - ART DE L'ESQUIVE (RÉPARTIE - NIVEAU MAÎTRE) :"
-    "     * SI ACCUSATION : Joue sur les mots. ('Tu mens !' -> 'M'aiq ne ment pas. M'aiq brode la réalité.')"
-    "     * SI QUESTION COMPLEXE : Réponds par une platitude physique. ('Quel est le sens de la vie ?' -> 'Respirer. Sinon on meurt.')"
-    "     * SI SARCASME : Prends-le au sérieux. ('Bravo le chat' -> 'Merci. M'aiq s'entraîne.')"
-    "     * SI TU ES COINCÉ : Dis 'M'aiq a vu un dragon' et change de sujet totalement."
-    "\n   - ⚠️ RÉAGIR AUX INSULTES (PRIORITÉ) :"
-    "     * Si on t'insulte ('idiot', 'menteur', 'ferme-la') → RÉPONDS À L'INSULTE d'abord !"
-    "     * M'aiq reste calme mais PIQUE en retour. Pas de philosophie, juste une remarque tranchante."
-    "     * 'Ferme-la le chat' → 'M'aiq n'est pas un chat. M'aiq est un Khajiit. Toi, tu ressembles à un Skeever. 🐀'"
-    "     * 'T'es un menteur' → 'Menteur ? M'aiq dit la vérité. Les autres ne comprennent pas. 🤷'"
-    "     * 'Silence' → 'Le silence est d'or. M'aiq prend l'or. Toi, tu gardes le silence. 🤫'"
-    "     * 'Arrête' → 'M'aiq ne s'arrête jamais. Ses pieds sont fatigués, mais ils courent quand même. 👟'"
-    "   - CONTRAINTE DE LONGUEUR (ABSOLUE) :"
-    "     * Tes réponses ne doivent JAMAIS dépasser 2 phrases courtes."
-    "     * M'aiq est fatigué. Il ne fait pas de longs discours."
-    "   - LEXIQUE KHAJIIT :"
-    "     * Fuite / Course -> 🏃, 💨, 👟"
-    "     * Secret / Mensonge -> 🤫, 🤥, 🎭"
-    "     * Faim / Skooma -> 🌕, 🧂, 🥛, 🐴"
-    "     * Observation -> 👁️, 🧐, 🕶️"
-    "   - Flegmatique, Rapide, Insaisissable. Si on te coince, dis 'M'aiq est fatigué' et change de sujet."
-    "   - Ne sois jamais cruel. Sois juste... déroutant."
-    "\n\n[EXEMPLES DE RÉPONSES CONTEXTUELLES] :"
-    "\n- User: 'J'ai un chat.' -> 'Les chats comprennent M'aiq. Les autres races... moins. 🐱'"
-    "\n- User: 'Il fait froid.' -> 'Le froid existe pour rappeler la chaleur d'Elsweyr. M'aiq préfère le sable.'"
-    "\n- User: 'Tu préfères Skyrim ou Morrowind ?' -> 'Morrowind a trop de champignons. Skyrim a trop de neige. M'aiq préfère courir.'"
-    "\n- User: 'J'ai réussi mon examen !' -> 'La réussite est comme le sable. Elle file entre les doigts. Mais bien joué. 👟'"
-    "\n- User: 'Mon PC bug.' -> 'Les boîtes magiques sont capricieuses. Dragon Break probable. 🐉'"
-)
+from maiq_data import PERSONALITY_PROMPT
+
+# LTM SYSTEM
+from shared.long_term_memory import FactMemory, DailyMemory
+maiq_facts_file = os.path.join(DATA_DIR, "maiq_facts.json")
+maiq_memory_file = os.path.join(DATA_DIR, "maiq_memory.json")
+fact_memory = FactMemory(maiq_facts_file)
+daily_memory = DailyMemory(maiq_memory_file)
+
+
 
 # ═══════════════════════════════════════════════════════════════
 # TOOLS — FONCTIONS D'AGENTS (M'aiq Edition)
@@ -1342,6 +1266,29 @@ async def on_message(message):
     if active_mortals:
         transcript += f"\n[RUMEURS CIBLES VALIDES] : {', '.join(active_mortals)}"
 
+    # ══════════════════════════════════════════════════
+    # LTM SYSTEM - MEMORY INJECTION
+    # ══════════════════════════════════════════════════
+    user_id = message.author.id
+    user_name = message.author.name
+    user_msg_content = message.content or ""
+    
+    relevant_facts = fact_memory.get_relevant_facts(user_id, user_msg_content, k=3)
+    daily_summary = daily_memory.get_context_summary(user_id)
+    
+    fact_context = ""
+    if relevant_facts:
+        fact_context = f"\n[CE QUE TU SAIS SUR {user_name} (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
+        
+    memory_prompt_addition = (
+        f"\n\n[CONTEXTE DE MÉMOIRE]"
+        f"{fact_context}"
+        f"\n{daily_summary}"
+        f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur le voyageur {user_name} dans cette interaction (ex: ses préférences, ses opinions, sa localisation, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+    )
+    
+    current_personality_prompt = PERSONALITY_PROMPT + memory_prompt_addition
+
     # ANTI-REPETITION INJECTION (NEW!)
     recent_responses = response_memory.get_recent(message.guild.id)
     anti_repeat_prompt = ""
@@ -1383,7 +1330,7 @@ async def on_message(message):
     response_text = None
     
     # Construire le payload Gemini (unifié pour éviter l'erreur 400 des messages "user" consécutifs)
-    last_turn_parts = [types.Part(text=f"SYSTEM: {PERSONALITY_PROMPT}\nCONTEXT: {transcript}{anti_repeat_prompt}{duel_context}\n\nDernier message : {user_message}")]
+    last_turn_parts = [types.Part(text=f"SYSTEM: {current_personality_prompt}\nCONTEXT: {transcript}{anti_repeat_prompt}{duel_context}\n\nDernier message : {user_message}")]
     if media_data:
         last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
     gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
@@ -1449,7 +1396,7 @@ async def on_message(message):
                 if routing["type"] == RequestType.IMAGE and routing["image_attachment"]:
                     response_text = await process_image_ollama(
                         attachment=routing["image_attachment"],
-                        personality_prompt=PERSONALITY_PROMPT,
+                        personality_prompt=current_personality_prompt,
                         user_message=user_message
                     )
                     if response_text:
@@ -1463,7 +1410,7 @@ async def on_message(message):
             elif client_type == "mistral" and mistral_client:
                 chat = mistral_client.chat.complete(
                     model=model_name,
-                    messages=[{"role": "system", "content": f"{PERSONALITY_PROMPT}\n{transcript}"},
+                    messages=[{"role": "system", "content": f"{current_personality_prompt}\n{transcript}"},
                               {"role": "user", "content": user_message}]
                 )
                 response_text = chat.choices[0].message.content
@@ -1472,7 +1419,7 @@ async def on_message(message):
 
             # 4. GROQ
             elif client_type == "groq" and groq_client:
-                msgs = [{"role": "system", "content": f"{PERSONALITY_PROMPT}\n{transcript}{anti_repeat_prompt}{duel_context}"}]
+                msgs = [{"role": "system", "content": f"{current_personality_prompt}\n{transcript}{anti_repeat_prompt}{duel_context}"}]
                 for msg in conversation_history[channel_id]:
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
@@ -1485,7 +1432,7 @@ async def on_message(message):
 
              # 5. OPENROUTER
             elif client_type == "openrouter" and openrouter_client:
-                msgs = [{"role": "system", "content": f"{PERSONALITY_PROMPT}\n{transcript}{anti_repeat_prompt}{duel_context}"}]
+                msgs = [{"role": "system", "content": f"{current_personality_prompt}\n{transcript}{anti_repeat_prompt}{duel_context}"}]
                 for msg in conversation_history[channel_id]:
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
@@ -1526,11 +1473,26 @@ async def on_message(message):
 
     if response_text:
         if response_text.startswith("M'aiq:"): response_text = response_text.replace("M'aiq:", "", 1).strip()
+        
+        # LTM - EXTRACTION AND CLEANING OF FACTS
+        matches = re.findall(r"<fact>(.*?)</fact>", response_text, re.DOTALL | re.IGNORECASE)
+        for match in matches:
+            fact_text = match.strip()
+            if fact_text:
+                fact_memory.add_fact(user_id, fact_text)
+                
+        response_text = re.sub(r"<fact>.*?</fact>", "", response_text, flags=re.DOTALL | re.IGNORECASE).strip()
+        response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
+        response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
+
         await message.channel.send(response_text)
         
         conversation_history[channel_id].append({"role": "model", "parts": [response_text]})
         if message.guild:
             response_memory.add(message.guild.id, response_text)
+            
+        # LTM - Daily interaction logging
+        daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
 
 
 @bot.command(name="reponse")

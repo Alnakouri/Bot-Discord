@@ -146,6 +146,84 @@ if OPENROUTER_API_KEY:
     try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
     except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
+# LTM - LONG TERM MEMORY SYSTEM
+import re
+from shared.long_term_memory import FactMemory, DailyMemory
+from shared.smart_router import RequestType
+
+johnny_facts_file = os.path.join(DATA_DIR, "johnny_facts.json")
+johnny_memory_file = os.path.join(DATA_DIR, "johnny_memory.json")
+fact_memory = FactMemory(johnny_facts_file)
+
+async def consolidate_daily_memory(memory_dict):
+    """
+    Callback asynchrone pour consolider les conversations quotidiennes
+    de Johnny en faits persistants dans fact_memory.
+    """
+    conversations = memory_dict.get("conversations", [])
+    if not conversations:
+        return
+        
+    logger.info("🧠 [LTM] Début de la consolidation quotidienne pour Johnny...")
+    
+    # Grouper par utilisateur
+    user_conversations = {}
+    for conv in conversations:
+        uid = conv.get("user_id")
+        if not uid:
+            continue
+        if uid not in user_conversations:
+            user_conversations[uid] = []
+        user_conversations[uid].append(conv)
+        
+    for uid, chats in user_conversations.items():
+        user_name = chats[0].get("user", "le voyageur")
+        
+        # Formater l'historique
+        chat_text = ""
+        for c in chats:
+            chat_text += f"{c['user']}: {c['content']}\nJohnny: {c['response']}\n"
+            
+        prompt = f"""
+        Tu es Johnny Silverhand, rockerboy charismatique et cynique. Tu dois résumer les conversations de la journée avec {user_name} sous forme de faits durables, clairs et concis sur lui (ses préférences, ses opinions, ses modifications corporelles, son comportement, etc.).
+        Fais des phrases courtes, directes et cyniques à la troisième personne (ex: "Il déteste les corpos" ou "Elle traîne beaucoup au bar de Kabuki").
+        
+        Historique de la journée :
+        {chat_text}
+        
+        Génère uniquement une liste de nouveaux faits, chacun entouré de balises <fact>Le fait appris</fact>. Si tu n'apprends rien de durable ou de nouveau sur lui, ne renvoie rien.
+        """
+        
+        routing = {"type": RequestType.TEXT, "reason": f"Consolidation quotidienne user {uid}"}
+        try:
+            resp_text = await generate_response(
+                routing=routing,
+                system_prompt="Tu es Johnny Silverhand, rockerboy anarchiste et observateur cynique de Night City.",
+                transcript="",
+                user_message=prompt,
+                conversation_history=[],
+                media_data=None,
+                mime_type="",
+                key_manager=key_manager,
+                mistral_client=mistral_client,
+                groq_client=groq_client,
+                openrouter_client=openrouter_client,
+                bot_label="Johnny",
+                temperature=0.4
+            )
+            
+            if resp_text:
+                matches = re.findall(r"<fact>(.*?)</fact>", resp_text, re.DOTALL | re.IGNORECASE)
+                for f in matches:
+                    fact_text = f.strip()
+                    if fact_text:
+                        fact_memory.add_fact(uid, fact_text)
+                        
+        except Exception as e:
+            logger.error(f"Erreur lors de la consolidation LTM pour {user_name} ({uid}) : {e}")
+
+daily_memory = DailyMemory(johnny_memory_file, on_reset=consolidate_daily_memory)
+
 @bot.event
 async def on_ready():
     logger.info("=" * 60)
@@ -448,6 +526,27 @@ async def on_message(message):
     # PREPARATION DU MESSAGE
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
     
+    # ══════════════════════════════════════════════════
+    # LTM SYSTEM - MEMORY INJECTION
+    # ══════════════════════════════════════════════════
+    user_id = message.author.id
+    user_name = message.author.name
+    user_msg_content = user_message
+    
+    relevant_facts = fact_memory.get_relevant_facts(user_id, user_msg_content, k=3)
+    daily_summary = daily_memory.get_context_summary(user_id)
+    
+    fact_context = ""
+    if relevant_facts:
+        fact_context = f"\n[CE QUE TU SAIS SUR CETTE PERSONNE (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
+        
+    memory_prompt_addition = (
+        f"\n\n[CONTEXTE DE MÉMOIRE]"
+        f"{fact_context}"
+        f"\n{daily_summary}"
+        f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cette personne dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+    )
+
     # Détection mots-clés
     content_lower = user_message.lower()
     keyword_boost = ""
@@ -538,7 +637,7 @@ async def on_message(message):
     # GÉNÉRATION (Smart Router)
     
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{transcript}{duel_context}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}\n{transcript}{duel_context}{keyword_boost}{anti_repeat_prompt}"
     
     async with message.channel.typing():
         response_text = await generate_response(
@@ -572,6 +671,17 @@ async def on_message(message):
     # NETTOYAGE
     response_text = response_text.strip()
     
+    # LTM - EXTRACTION AND CLEANING OF FACTS
+    matches = re.findall(r"<fact>(.*?)</fact>", response_text, re.DOTALL | re.IGNORECASE)
+    for match in matches:
+        fact_text = match.strip()
+        if fact_text:
+            fact_memory.add_fact(user_id, fact_text)
+            
+    response_text = re.sub(r"<fact>.*?</fact>", "", response_text, flags=re.DOTALL | re.IGNORECASE).strip()
+    response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
+    response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
+
     # Sauvegarde anti-répétition
     if message.guild:
         response_memory.add(message.guild.id, response_text)
@@ -585,6 +695,9 @@ async def on_message(message):
     # Récompense réputation
     if DATABASE_AVAILABLE and not is_dm and not is_bot_talking:
         add_reputation(message.author.id, points=2, reason="Conversation avec Johnny")
+        
+    # LTM - Daily interaction logging
+    daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
     
     # ENVOI
     await message.reply(response_text)
