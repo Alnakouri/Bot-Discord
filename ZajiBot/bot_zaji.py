@@ -482,9 +482,10 @@ async def on_message(message):
         messages_list.append(hist_msg)
     
     for hist_msg in reversed(messages_list):
-        prefix = "[autre IA] " if (hist_msg.author.bot and hist_msg.author != bot.user) else ""
-        transcript += f"{prefix}{hist_msg.author.name}: {hist_msg.content}\n"
-    transcript += "\n[RÈGLE] Les lignes préfixées '[autre IA]' sont d'autres bots compagnons (décor). Reste toi-même et n'adopte JAMAIS leurs thèmes/personnages quand tu réponds à un humain.\n"
+        # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
+        if hist_msg.author.bot and hist_msg.author != bot.user:
+            continue
+        transcript += f"{hist_msg.author.name}: {hist_msg.content}\n"
     
     # ANTI-RÉPÉTITION
     recent_responses = response_memory.get_recent(message.guild.id if message.guild else 0)

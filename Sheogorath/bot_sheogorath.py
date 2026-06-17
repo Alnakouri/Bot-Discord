@@ -1684,9 +1684,10 @@ async def on_message(message):
             
     # Reverse to get Chronological Order (Oldest -> Newest)
     for hist_msg in reversed(messages_list):
-        prefix = "[autre IA] " if (hist_msg.author.bot and hist_msg.author != bot.user) else ""
-        transcript += f"{prefix}{hist_msg.author.name} ({hist_msg.author.mention}): {hist_msg.content}\n"
-    transcript += "\n[RÈGLE] Les lignes préfixées '[autre IA]' sont d'autres bots compagnons (décor). Reste toi-même et n'adopte JAMAIS leurs thèmes/personnages quand tu réponds à un humain.\n"
+        # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
+        if hist_msg.author.bot and hist_msg.author != bot.user:
+            continue
+        transcript += f"{hist_msg.author.name} ({hist_msg.author.mention}): {hist_msg.content}\n"
 
     # INJECTION ACTIVITÉ (STATUS)
     transcript += f"\n[TON ACTIVITÉ ACTUELLE (STATUS DISCORD)] : Tu es en train de : '{current_sheo_activity}'."
