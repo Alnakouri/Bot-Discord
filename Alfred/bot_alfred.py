@@ -130,16 +130,30 @@ key_manager.register_api("openrouter", [os.getenv("OPENROUTER_API_KEY")] if os.g
 
 # MEMORY SETTINGS
 # LTM SYSTEM
-from shared.long_term_memory import FactMemory, DailyMemory
+try:
+    from alfred_memory import FactMemory, DailyMemory
+except ImportError:
+    from Alfred.alfred_memory import FactMemory, DailyMemory
 alfred_facts_file = os.path.join(DATA_DIR, "alfred_facts.json")
 alfred_memory_file = os.path.join(DATA_DIR, "alfred_memory.json")
 fact_memory = FactMemory(alfred_facts_file)
 daily_memory = DailyMemory(alfred_memory_file)
 
+async def _daily_llm_call(system_prompt, user_message):
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "daily_read"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client, openrouter_client=openrouter_client,
+        bot_label="Alfred", temperature=0.5, max_tokens=60)
+
 class AlfredBrainAdapter:
     def get_user_context(self, user_id, message_content=""):
         daily_summary = daily_memory.get_context_summary(user_id)
         relevant_facts = fact_memory.get_relevant_facts(user_id, message_content, k=3)
+        dr = daily_memory.get_daily_read(user_id)
+        daily_read_addition = f"\n[CONSIGNE DU JOUR] {dr}" if dr else ""
         
         fact_context = ""
         if relevant_facts:
@@ -148,7 +162,7 @@ class AlfredBrainAdapter:
         memory_instruction = (
             f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si vous apprenez un fait durable, important et nouveau sur ce Monsieur dans cette interaction (ex: ses préférences, ses opinions, sa localisation, etc.), vous DEVEZ l'ajouter discrètement à la fin de votre réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mettez rien."
         )
-        return f"{daily_summary}{fact_context}{memory_instruction}"
+        return f"{daily_summary}{daily_read_addition}{fact_context}{memory_instruction}"
 
     def update_user(self, user_id, user_name, topic=None):
         pass
@@ -1051,6 +1065,29 @@ async def nettoyage(ctx, limit: int = 100):
         return await ctx.send("🤵 **Alfred** : Seuls les Administrateurs peuvent utiliser cette commande. 🧤")
     await do_cleanup(ctx.channel, limit, bots_only=False)
 
+@bot.command(name="oubliemoi")
+async def oubliemoi(ctx):
+    """Purge toutes les données de mémoire de l'utilisateur."""
+    uid = str(ctx.author.id)
+    
+    # Purge Daily Memory
+    if "users" in daily_memory.memory and uid in daily_memory.memory["users"]:
+        del daily_memory.memory["users"][uid]
+    
+    if "conversations" in daily_memory.memory:
+        daily_memory.memory["conversations"] = [
+            c for c in daily_memory.memory["conversations"]
+            if c.get("user_id") != uid
+        ]
+    daily_memory.save_memory()
+    
+    # Purge Fact Memory
+    if uid in fact_memory.facts:
+        del fact_memory.facts[uid]
+        fact_memory.save_facts()
+        
+    await ctx.send("🤵 **Alfred** : C'est fait, Monsieur. J'ai effacé chaque bribe de nos échanges de mes registres. Vous revoilà un parfait étranger à mes yeux. ☕")
+
 async def do_cleanup(channel, limit=100, bots_only=False):
     """Supprime les messages d'un canal.
     
@@ -1626,6 +1663,8 @@ async def on_message(message):
             
             # LTM - Daily interaction logging
             daily_memory.add_interaction(message.author.id, message.author.name, message.content or "", response_text)
+            import asyncio
+            asyncio.create_task(daily_memory.refresh_daily_read(message.author.id, _daily_llm_call))
     else:
         # FALLBACK: If image but no vision API available
         if has_image:

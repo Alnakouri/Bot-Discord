@@ -116,6 +116,24 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # MEMORY SETTINGS
+try:
+    from onizuka_memory import FactMemory, DailyMemory
+except ImportError:
+    from OnizukaBot.onizuka_memory import FactMemory, DailyMemory
+onizuka_facts_file = os.path.join(DATA_DIR, "onizuka_facts.json")
+onizuka_memory_file = os.path.join(DATA_DIR, "onizuka_memory.json")
+fact_memory = FactMemory(onizuka_facts_file)
+daily_memory = DailyMemory(onizuka_memory_file)
+
+async def _daily_llm_call(system_prompt, user_message):
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "daily_read"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client, openrouter_client=openrouter_client,
+        bot_label="Onizuka", temperature=0.5, max_tokens=60)
+
 conversation_history = {}
 MAX_HISTORY = 30
 
@@ -318,6 +336,29 @@ async def equipage_cmd(ctx):
     embed.set_footer(text="Gagnez du respect en parlant avec Onizuka !")
     await ctx.send(embed=embed)
 
+@bot.command(name="oubliemoi")
+async def oubliemoi(ctx):
+    """Purge toutes les données de mémoire de l'utilisateur."""
+    uid = str(ctx.author.id)
+    
+    # Purge Daily Memory
+    if "users" in daily_memory.memory and uid in daily_memory.memory["users"]:
+        del daily_memory.memory["users"][uid]
+    
+    if "conversations" in daily_memory.memory:
+        daily_memory.memory["conversations"] = [
+            c for c in daily_memory.memory["conversations"]
+            if c.get("user_id") != uid
+        ]
+    daily_memory.save_memory()
+    
+    # Purge Fact Memory
+    if uid in fact_memory.facts:
+        del fact_memory.facts[uid]
+        fact_memory.save_facts()
+        
+    await ctx.send("🏍️ *Hausse les épaules et démarre sa Kawasaki Z2.* C'est bon, gamin, j'ai tout balancé à la poubelle. On repart de zéro, mais fais pas le malin en classe !")
+
 # LOGIQUE CONVERSATIONNELLE
 
 @bot.event
@@ -446,6 +487,28 @@ async def on_message(message):
     
     # PREPARATION DU MESSAGE
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
+
+    # LTM SYSTEM - MEMORY INJECTION
+    user_id = message.author.id
+    user_name = message.author.name
+    user_msg_content = user_message
+    
+    relevant_facts = fact_memory.get_relevant_facts(user_id, user_msg_content, k=3)
+    daily_summary = daily_memory.get_context_summary(user_id)
+    dr = daily_memory.get_daily_read(user_id)
+    daily_read_addition = f"\n[CONSIGNE DU JOUR] {dr}" if dr else ""
+    
+    fact_context = ""
+    if relevant_facts:
+        fact_context = f"\n[CE QUE TU SAIS SUR CET INTERLOCUTEUR (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
+        
+    memory_prompt_addition = (
+        f"\n\n[CONTEXTE DE MÉMOIRE]"
+        f"{fact_context}"
+        f"\n{daily_summary}"
+        f"{daily_read_addition}"
+        f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cet élève/interlocuteur dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+    )
     
     # Détection mots-clés (fric, jackpot, moto, etc.)
     content_lower = user_message.lower()
@@ -532,7 +595,7 @@ async def on_message(message):
     # GÉNÉRATION (Smart Router)
     
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
     
     async with message.channel.typing():
         
@@ -567,6 +630,18 @@ async def on_message(message):
             response_text = random.choice(GREETINGS)
     
     # NETTOYAGE
+    if response_text:
+        import re
+        matches = re.findall(r"<fact>(.*?)</fact>", response_text, re.DOTALL | re.IGNORECASE)
+        for f in matches:
+            fact_text = f.strip()
+            if fact_text:
+                fact_memory.add_fact(user_id, fact_text)
+                
+        response_text = re.sub(r"<fact>.*?</fact>", "", response_text, flags=re.DOTALL | re.IGNORECASE).strip()
+        response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
+        response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
+
     response_text = response_text.strip()
     
     # Sauvegarde anti-répétition
@@ -578,6 +653,11 @@ async def on_message(message):
         "role": "assistant",
         "parts": [response_text]
     })
+
+    # LTM - Daily interaction logging
+    daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
+    import asyncio
+    asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
     
     # Récompense réputation
     if DATABASE_AVAILABLE and not is_dm and not is_bot_talking:

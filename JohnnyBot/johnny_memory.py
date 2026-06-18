@@ -4,7 +4,7 @@ import re
 import logging
 from datetime import datetime
 
-logger = logging.getLogger("long_term_memory")
+logger = logging.getLogger("johnny_memory")
 
 STOPWORDS_MEMORY = {
     "le", "la", "les", "un", "une", "des", "ce", "cet", "cette", "ces",
@@ -17,6 +17,21 @@ STOPWORDS_MEMORY = {
     "plus", "moins", "très", "tout", "tous", "toute", "toutes", "bien", "comme", "alors",
     "faire", "fait", "font", "peux", "peut"
 }
+
+MIN_DAILY_INTERACTIONS = 3
+DAILY_READ_PROMPT = (
+    "Tu aides un bot à AJUSTER SON TON pour aujourd'hui avec un interlocuteur. "
+    "À partir des éléments fournis, donne UNE SEULE phrase courte (max ~15 mots) de consigne "
+    "d'ATTITUDE/de TON à adopter avec cette personne aujourd'hui (ex: 'reste taquin et léger', "
+    "'sois plus posé'). INTERDIT : déduire/affirmer une info perso, citer le contenu précis, "
+    "stocker quoi que ce soit sur la personne. Réponds UNIQUEMENT par la consigne, sans guillemets."
+)
+
+def _daily_material(user_dict: dict) -> str:
+    topics = ", ".join(user_dict.get("topics", []) or [])
+    return (f"Interlocuteur : {user_dict.get('name','cette personne')}. "
+            f"Interactions aujourd'hui : {user_dict.get('interactions',0)}. "
+            f"Sujets : {topics or 'aucun en particulier'}.")
 
 def tokenize(text: str) -> set[str]:
     """Nettoie, filtre les stopwords et extrait les mots de 3 lettres ou plus."""
@@ -301,3 +316,30 @@ class DailyMemory:
             summary += f"\n[RÉCENT] {chats_str}"
             
         return summary
+
+    def get_daily_read(self, user_id) -> str:
+        from datetime import datetime
+        ud = self.memory.get("users", {}).get(str(user_id))
+        if ud and ud.get("daily_read_date") == str(datetime.now().date()):
+            return ud.get("daily_read", "") or ""
+        return ""
+
+    async def refresh_daily_read(self, user_id, llm_call):
+        """Tâche de fond : 1 appel/jour si user actif. llm_call(sys_prompt, user_msg)->str|None."""
+        from datetime import datetime
+        try:
+            ud = self.memory.get("users", {}).get(str(user_id))
+            if not ud:
+                return
+            today = str(datetime.now().date())
+            if ud.get("daily_read_date") == today:
+                return
+            if ud.get("interactions", 0) < MIN_DAILY_INTERACTIONS:
+                return
+            consigne = await llm_call(DAILY_READ_PROMPT, _daily_material(ud))
+            if consigne:
+                ud["daily_read"] = consigne.strip().strip('"').split("\n")[0][:160]
+                ud["daily_read_date"] = today
+                self.save_memory()
+        except Exception:
+            pass  # non bloquant

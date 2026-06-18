@@ -279,6 +279,16 @@ def get_smart_string_response_v2(text, guild_id):
 
 # Instantiation des mémoires (classes importées de sheo_memory.py)
 daily_brain = DailyMemory()
+
+async def _daily_llm_call(system_prompt, user_message):
+    from shared.llm_cascade import generate_response
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "daily_read"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client, openrouter_client=openrouter_client,
+        bot_label="Sheogorath", temperature=0.5, max_tokens=60)
 fact_brain = FactMemory()
 
 # Instantiation du système de Faveur du Prince
@@ -1260,6 +1270,28 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         logger.error(f"❌ [IMPOSTEUR CMD] Erreur : {e}")
         await ctx.send(f"Le masque a glissé... ({e})")
 
+@bot.command(name="oubliemoi")
+async def oubliemoi(ctx):
+    """Purge toutes les données de mémoire de l'utilisateur."""
+    uid = str(ctx.author.id)
+    
+    # Purge Daily Memory
+    if "users" in daily_brain.memory and uid in daily_brain.memory["users"]:
+        del daily_brain.memory["users"][uid]
+    
+    if "conversations" in daily_brain.memory:
+        daily_brain.memory["conversations"] = [
+            c for c in daily_brain.memory["conversations"]
+            if c.get("user_id") != uid
+        ]
+    daily_brain.save_memory()
+    
+    # Purge Fact Memory
+    if uid in fact_brain.facts:
+        del fact_brain.facts[uid]
+        fact_brain.save_facts()
+        
+    await ctx.send("🧀 *Danse frénétiquement en jetant du fromage en l'air.* Oublié ! Effacé ! Vaporisé ! Pouf ! Tu n'es plus qu'une page blanche dans mon livre de folie ! 🧀")
 
 @bot.event
 async def on_message(message):
@@ -1589,6 +1621,8 @@ async def on_message(message):
         # AJOUT : Suffixe selon l'humeur en Hybrid Mode ? (Optionnel, gardons simple pour l'instant)
         await message.channel.send(response_text)
         daily_brain.add_interaction(message.author.id, message.author.name, message.content, response_text)
+        import asyncio
+        asyncio.create_task(daily_brain.refresh_daily_read(message.author.id, _daily_llm_call))
         return
 
     # LLM EXECUTION
@@ -1599,6 +1633,9 @@ async def on_message(message):
     
     # Memory Context
     memory_context = daily_brain.get_context_summary(message.author.id)
+    dr = daily_brain.get_daily_read(message.author.id)
+    if dr:
+        memory_context += f"\n[CONSIGNE DU JOUR] {dr}"
     
     # REPUTATION CONTEXT (Rank Awareness)
     user_rep = get_reputation(message.author.id)
@@ -1641,7 +1678,7 @@ async def on_message(message):
     if user_facts:
         fact_context = f"\n[CE QUE TU SAIS SUR {message.author.name}]:\n- " + "\n- ".join(user_facts) + "\nUtilise ces infos pour personnaliser ta réponse."
     
-    system_instruction = f"{current_system_prompt}\n{fact_context}"
+    system_instruction = f"{system_instruction}\n{fact_context}"
     
     # FAVEUR DU PRINCE — Contexte de rang
     faveur_context = faveur_system.get_rank_context(message.author.id)
@@ -1969,6 +2006,8 @@ async def on_message(message):
             
         conversation_history[channel_id].append({"role": "model", "parts": [response_text]})
         daily_brain.add_interaction(message.author.id, message.author.name, message.content, response_text)
+        import asyncio
+        asyncio.create_task(daily_brain.refresh_daily_read(message.author.id, _daily_llm_call))
         response_memory.add(message.guild.id, response_text)
 
 if __name__ == "__main__":

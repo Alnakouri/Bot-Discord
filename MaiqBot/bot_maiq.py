@@ -124,11 +124,23 @@ response_memory = ResponseMemory()
 from maiq_data import PERSONALITY_PROMPT
 
 # LTM SYSTEM
-from shared.long_term_memory import FactMemory, DailyMemory
+try:
+    from maiq_memory import FactMemory, DailyMemory
+except ImportError:
+    from MaiqBot.maiq_memory import FactMemory, DailyMemory
 maiq_facts_file = os.path.join(DATA_DIR, "maiq_facts.json")
 maiq_memory_file = os.path.join(DATA_DIR, "maiq_memory.json")
 fact_memory = FactMemory(maiq_facts_file)
 daily_memory = DailyMemory(maiq_memory_file)
+
+async def _daily_llm_call(system_prompt, user_message):
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "daily_read"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client, openrouter_client=openrouter_client,
+        bot_label="Maiq", temperature=0.5, max_tokens=60)
 
 
 
@@ -1210,6 +1222,8 @@ async def on_message(message):
     
     relevant_facts = fact_memory.get_relevant_facts(user_id, user_msg_content, k=3)
     daily_summary = daily_memory.get_context_summary(user_id)
+    dr = daily_memory.get_daily_read(user_id)
+    daily_read_addition = f"\n[CONSIGNE DU JOUR] {dr}" if dr else ""
     
     fact_context = ""
     if relevant_facts:
@@ -1219,6 +1233,7 @@ async def on_message(message):
         f"\n\n[CONTEXTE DE MÉMOIRE]"
         f"{fact_context}"
         f"\n{daily_summary}"
+        f"{daily_read_addition}"
         f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur le voyageur {user_name} dans cette interaction (ex: ses préférences, ses opinions, sa localisation, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
     )
     
@@ -1428,6 +1443,8 @@ async def on_message(message):
             
         # LTM - Daily interaction logging
         daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
+        import asyncio
+        asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
 
 
 @bot.command(name="reponse")
@@ -1527,6 +1544,29 @@ async def indice_cmd(ctx):
         await ctx.send(f"💡 **M'aiq vous aide** (pour {PRICE} pièces) : {hint}")
     else:
         await ctx.send("Pas de devinette. Pas d'indice.")
+
+@bot.command(name="oubliemoi")
+async def oubliemoi(ctx):
+    """Purge toutes les données de mémoire de l'utilisateur."""
+    uid = str(ctx.author.id)
+    
+    # Purge Daily Memory
+    if "users" in daily_memory.memory and uid in daily_memory.memory["users"]:
+        del daily_memory.memory["users"][uid]
+    
+    if "conversations" in daily_memory.memory:
+        daily_memory.memory["conversations"] = [
+            c for c in daily_memory.memory["conversations"]
+            if c.get("user_id") != uid
+        ]
+    daily_memory.save_memory()
+    
+    # Purge Fact Memory
+    if uid in fact_memory.facts:
+        del fact_memory.facts[uid]
+        fact_memory.save_facts()
+        
+    await ctx.send("🐾 M'aiq sait beaucoup de choses, mais M'aiq choisit d'oublier. M'aiq a oublié vos histoires et vos secrets. Les lunes brillent sur un esprit vide. 🐾")
 
 if __name__ == "__main__":
     setup_graceful_shutdown(bot)

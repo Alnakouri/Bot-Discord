@@ -94,6 +94,16 @@ key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
 key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
 
+async def _daily_llm_call(system_prompt, user_message):
+    from shared.llm_cascade import generate_response
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "daily_read"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client, openrouter_client=openrouter_client,
+        bot_label="Malena", temperature=0.5, max_tokens=60)
+
 # CONSTRUCTION DYNAMIQUE DU HINT D'EXPRESSIONS
 def build_expression_hint(mood):
     """Retourne les expressions adaptées à l'humeur détectée."""
@@ -224,6 +234,24 @@ intents.members = True  # Nécessaire pour les événements de bienvenue/départ
 from discord.ext import commands, tasks
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
+@bot.command(name="oubliemoi")
+async def oubliemoi(ctx):
+    """Purge toutes les données de mémoire de l'utilisateur."""
+    uid = str(ctx.author.id)
+    username = ctx.author.name
+    
+    if "users" in malena_brain.memory and uid in malena_brain.memory["users"]:
+        del malena_brain.memory["users"][uid]
+        
+    if "conversations" in malena_brain.memory:
+        malena_brain.memory["conversations"] = [
+            c for c in malena_brain.memory["conversations"]
+            if c.get("user") != username
+        ]
+    malena_brain.save_memory()
+    
+    await ctx.send("💃 *Remet ses cheveux en place avec un air hautain.* T'inquiète pas, mon minot. J'ai tout effacé, j'sais même plus qui tu es. Allez, trace ta route ! 💅")
+
 @bot.event
 async def on_ready():
     logger.info(f'✅ Connectée en tant que {bot.user} (Gitana Mode)')
@@ -334,6 +362,9 @@ async def on_message(message):
 
                 # CONTEXTE MÉMOIRE
                 memory_context = malena_brain.get_context_summary(message.author.id)
+                dr = malena_brain.get_daily_read(message.author.id)
+                if dr:
+                    memory_context += f"\n[CONSIGNE DU JOUR] {dr}"
                 
                 # ══════════════════════════════════════════════════
                 # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
@@ -360,6 +391,7 @@ async def on_message(message):
                             if response:
                                 await message.reply(response)
                                 malena_brain.add_interaction(message.author.id, message.author.name, message.content or "[IMAGE]", response)
+                                asyncio.create_task(malena_brain.refresh_daily_read(message.author.id, _daily_llm_call))
                                 return
                         else:
                             await message.reply("Ay ! J'ai pas mes lunettes, je vois rien du tout ! Reviens plus tard, peuchère !")
@@ -382,6 +414,7 @@ async def on_message(message):
                             if response:
                                 await message.reply(response)
                                 malena_brain.add_interaction(message.author.id, message.author.name, "[VOCAL]", response)
+                                asyncio.create_task(malena_brain.refresh_daily_read(message.author.id, _daily_llm_call))
                                 return
                         else:
                             await message.reply("👂 Ay ! Y'a trop de mistral, j'entends rien ! Mon oreille me fait mal !")
@@ -433,6 +466,7 @@ async def on_message(message):
                 
                 # ENREGISTRER L'INTERACTION DANS LA MÉMOIRE
                 malena_brain.add_interaction(message.author.id, message.author.name, user_msg, reply_text)
+                asyncio.create_task(malena_brain.refresh_daily_read(message.author.id, _daily_llm_call))
 
             except Exception as e:
                 logger.error(f"❌ Erreur de génération : {e}")

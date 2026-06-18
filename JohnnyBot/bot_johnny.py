@@ -139,7 +139,10 @@ if OPENROUTER_API_KEY:
 
 # LTM - LONG TERM MEMORY SYSTEM
 import re
-from shared.long_term_memory import FactMemory, DailyMemory
+try:
+    from johnny_memory import FactMemory, DailyMemory
+except ImportError:
+    from JohnnyBot.johnny_memory import FactMemory, DailyMemory
 from shared.smart_router import RequestType
 
 johnny_facts_file = os.path.join(DATA_DIR, "johnny_facts.json")
@@ -214,6 +217,15 @@ async def consolidate_daily_memory(memory_dict):
             logger.error(f"Erreur lors de la consolidation LTM pour {user_name} ({uid}) : {e}")
 
 daily_memory = DailyMemory(johnny_memory_file, on_reset=consolidate_daily_memory)
+
+async def _daily_llm_call(system_prompt, user_message):
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "daily_read"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client, openrouter_client=openrouter_client,
+        bot_label="Johnny", temperature=0.5, max_tokens=60)
 
 @bot.event
 async def on_ready():
@@ -373,6 +385,29 @@ async def legends_cmd(ctx):
     embed.set_footer(text="Gagnez du respect en aidant Johnny dans ses gigs !")
     await ctx.send(embed=embed)
 
+@bot.command(name="oubliemoi")
+async def oubliemoi(ctx):
+    """Purge toutes les données de mémoire de l'utilisateur."""
+    uid = str(ctx.author.id)
+    
+    # Purge Daily Memory
+    if "users" in daily_memory.memory and uid in daily_memory.memory["users"]:
+        del daily_memory.memory["users"][uid]
+    
+    if "conversations" in daily_memory.memory:
+        daily_memory.memory["conversations"] = [
+            c for c in daily_memory.memory["conversations"]
+            if c.get("user_id") != uid
+        ]
+    daily_memory.save_memory()
+    
+    # Purge Fact Memory
+    if uid in fact_memory.facts:
+        del fact_memory.facts[uid]
+        fact_memory.save_facts()
+        
+    await ctx.send("🎸 *Prend une taffe de clope et te regarde froidement.* C'est fait, choom. J'ai effacé tes traces de mes puces de mémoire. T'as jamais existé pour moi.")
+
 # LOGIQUE CONVERSATIONNELLE
 
 @bot.event
@@ -460,6 +495,8 @@ async def on_message(message):
     
     relevant_facts = fact_memory.get_relevant_facts(user_id, user_msg_content, k=3)
     daily_summary = daily_memory.get_context_summary(user_id)
+    dr = daily_memory.get_daily_read(user_id)
+    daily_read_addition = f"\n[CONSIGNE DU JOUR] {dr}" if dr else ""
     
     fact_context = ""
     if relevant_facts:
@@ -469,6 +506,7 @@ async def on_message(message):
         f"\n\n[CONTEXTE DE MÉMOIRE]"
         f"{fact_context}"
         f"\n{daily_summary}"
+        f"{daily_read_addition}"
         f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cette personne dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
     )
 
@@ -623,6 +661,8 @@ async def on_message(message):
         
     # LTM - Daily interaction logging
     daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
+    import asyncio
+    asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
     
     # ENVOI
     await message.reply(response_text)
