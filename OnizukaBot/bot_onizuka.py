@@ -357,7 +357,7 @@ async def oubliemoi(ctx):
         del fact_memory.facts[uid]
         fact_memory.save_facts()
         
-    await ctx.send("🏍️ *Hausse les épaules et démarre sa Kawasaki Z2.* C'est bon, gamin, j'ai tout balancé à la poubelle. On repart de zéro, mais fais pas le malin en classe !")
+    await ctx.send("🏍️ C'est bon, gamin, j'ai tout balancé à la poubelle ! On repart de zéro, mais fais pas le malin en classe !")
 
 # LOGIQUE CONVERSATIONNELLE
 

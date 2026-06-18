@@ -1291,7 +1291,7 @@ async def oubliemoi(ctx):
         del fact_brain.facts[uid]
         fact_brain.save_facts()
         
-    await ctx.send("🧀 *Danse frénétiquement en jetant du fromage en l'air.* Oublié ! Effacé ! Vaporisé ! Pouf ! Tu n'es plus qu'une page blanche dans mon livre de folie ! 🧀")
+    await ctx.send("🧀 Oublié ! Effacé ! Vaporisé ! Pouf ! Tu n'es plus qu'une page blanche dans mon livre de folie ! 🧀")
 
 @bot.event
 async def on_message(message):

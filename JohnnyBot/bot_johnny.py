@@ -406,7 +406,7 @@ async def oubliemoi(ctx):
         del fact_memory.facts[uid]
         fact_memory.save_facts()
         
-    await ctx.send("🎸 *Prend une taffe de clope et te regarde froidement.* C'est fait, choom. J'ai effacé tes traces de mes puces de mémoire. T'as jamais existé pour moi.")
+    await ctx.send("🎸 C'est fait, choom. J'ai effacé tes traces de mes puces de mémoire. T'as jamais existé pour moi.")
 
 # LOGIQUE CONVERSATIONNELLE
 

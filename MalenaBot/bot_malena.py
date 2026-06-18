@@ -250,7 +250,7 @@ async def oubliemoi(ctx):
         ]
     malena_brain.save_memory()
     
-    await ctx.send("💃 *Remet ses cheveux en place avec un air hautain.* T'inquiète pas, mon minot. J'ai tout effacé, j'sais même plus qui tu es. Allez, trace ta route ! 💅")
+    await ctx.send("💅 T'inquiète pas, mon minot. J'ai tout effacé, j'sais même plus qui tu es. Allez, trace ta route !")
 
 @bot.event
 async def on_ready():
