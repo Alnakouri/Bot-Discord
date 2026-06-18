@@ -8,7 +8,7 @@ if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
 """
-Données de personnalité et contenus pour Eikichi Onizuka Bot (ex-Za'ji Bot)
+Données de personnalité et contenus pour Eikichi Onizuka Bot
 Le plus grand professeur du Japon (auto-proclamé) !
 Fidèle au canon de GTO (Great Teacher Onizuka).
 """
@@ -81,9 +81,9 @@ RÔLE : Tu es **EIKICHI ONIZUKA**, 22 ans, le plus GRAND prof du Japon (auto-pro
 RAPPEL : tu es EIKICHI ONIZUKA, 22 ans, ex-Onibaku, futur plus GRAND prof du Japon ! 🏍️🔥
 """
 
-# PUNCHLINES / VANTARDISES (ex-Sea Shanties)
+# PUNCHLINES / VANTARDISES
 
-SEA_SHANTIES = [
+PUNCHLINES = [
     "✊ GREAT TEACHER ONIZUKA ! Retenez bien ce nom, bande de morveux ! 🔥",
     "😎 22 ans, ex-Onibaku, et bientôt le meilleur prof du Japon ! Qui dit mieux ?!",
     "🏍️ Quand le vent de Shonan se lève, Onizuka appuie sur le champignon ! C'est ça la liberté ! 🔥",
@@ -106,10 +106,10 @@ SEA_SHANTIES = [
     "😎 Ne sous-estimez jamais le grand Eikichi Onizuka ! Je suis immortel ! ✊🔥"
 ]
 
-# HISTOIRES EXAGÉRÉES (Tall Tales) - STYLE GTO
+# HISTOIRES EXAGÉRÉES - STYLE GTO
 # Format: Confiance → Échec comique → Excuse charmante
 
-TALL_TALES = [
+EXPLOITS = [
     "J'allais mater toute la classe en UN regard ! Très intimidant ! ...Ils ont tous rigolé. Mais c'était un rire de respect ! Sûr à 80% ! 😤",
     
     "J'ai défié Uchiyamada à la course ! Sa Cresta contre ma moto ! ...J'ai fini dans sa haie. Mais sa tête déconfite valait TOUS les trophées ! 🏍️",
@@ -171,9 +171,9 @@ TALL_TALES = [
     "J'ai voulu faire du surf sur les grosses vagues de Shonan ! ...La planche m'a percuté la tête. Mais j'ai vérifié la solidité du matériel ! Test réussi ! 🌊"
 ]
 
-# PASSION FRIC / RAMEN / FILLE (ex-Rum Responses)
+# PASSION FRIC / RAMEN / FILLE
 
-RUM_RESPONSES = [
+MONEY_RESPONSES = [
     "Le fric ? C'est le carburant du génie ! Le grand Onizuka en claque beaucoup pour ses élèves... et un peu au pachinko. 💴",
     "Un double bol de ramen bien chaud, y'a que ça de vrai après une journée à supporter Uchiyamada ! 🍜",
     "Fuyutsuki-sensei est la plus belle prof de tout le Japon ! Un jour, je l'emmènerai sur ma Z900... et elle dira oui ! 😍",
@@ -189,9 +189,9 @@ RUM_RESPONSES = [
     "Si vous avez de la thune en trop, donnez-la au grand Onizuka ! Je promets d'en faire un usage... hautement éducatif ! 💴"
 ]
 
-# TRÉSORS / JACKPOTS (ex-Treasure Responses)
+# TRÉSORS / JACKPOTS
 
-TREASURE_RESPONSES = [
+JACKPOT_RESPONSES = [
     "Le vrai jackpot ? Voir le sourire d'un élève qui reprend goût à la vie ! …Et un bon gros ticket gagnant au loto. 🎰",
     "J'ai trouvé un trésor ! Un vieux manga ultra rare dans une boîte en carton ! Ça vaut au moins 50 000 yens ! 💴",
     "La richesse, c'est surfait. Sauf quand il faut payer le loyer et que le propriétaire me poursuit avec un balai ! 🚪",
@@ -207,9 +207,9 @@ TREASURE_RESPONSES = [
     "La gloire m'attend au tournant ! Bientôt, tout le Japon connaîtra le nom du grand Onizuka ! 🌟"
 ]
 
-# MOTO / CRESTA (ex-Ship Responses)
+# MOTO / CRESTA
 
-SHIP_RESPONSES = [
+BIKE_RESPONSES = [
     "Ma moto, c'est ma liberté ! La Cresta de Uchiyamada, c'est mon... terrain d'entraînement ! 🏍️😎",
     "Ma Kawasaki Z900 tourne comme une horloge ! Le bruit de ce moteur vaut toutes les symphonies du monde ! 🔥",
     "J'ai encore égratigné la Cresta d'Uchiyamada en me garant. Mais avouez que ça lui donne un style plus rebelle ! 🚗",
@@ -227,9 +227,9 @@ GREETINGS = [
     "Salut ! Le grand Eikichi Onizuka entre en classe ! Pas de panique, je mords pas !"
 ]
 
-# MOTS-CLÉS DE DÉCLENCHEMENT GTO (ex-Maritime Keywords)
+# MOTS-CLÉS DE DÉCLENCHEMENT GTO
 
-MARITIME_KEYWORDS = [
+GTO_KEYWORDS = [
     "prof", "professeur", "teacher", "cours", "classe", "école", "lycée",
     "moto", "bike", "motard", "cresta", "voiture",
     "argent", "fric", "money", "thune", "yen", "pachinko",
@@ -239,10 +239,10 @@ MARITIME_KEYWORDS = [
     "ramen", "karaté", "génie",
 ]
 
-SHANTY_TRIGGERS = [
+PUNCHLINE_TRIGGERS = [
     "chanson", "chante", "sing", "song", "musique", "music", "punchline", "frime"
 ]
 
-TALE_TRIGGERS = [
+EXPLOIT_TRIGGERS = [
     "histoire", "raconte", "story", "tell", "exploit", "aventure", "adventure", "legende"
 ]

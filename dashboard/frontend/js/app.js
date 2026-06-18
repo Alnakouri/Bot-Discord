@@ -184,7 +184,7 @@ window.botAction = async function(botId, action) {
 }
 
 window.actionAllBots = async function(action) {
-    const bots = ["sheogorath", "maiq", "alfred", "zaji", "johnny", "malena"];
+    const bots = ["sheogorath", "maiq", "alfred", "onizuka", "johnny", "malena"];
     let successCount = 0;
     
     // UI update to prevent spamming
@@ -302,7 +302,7 @@ const BOT_REGISTRY_JS = {
     "maiq": { color: "#f97316" },
     "alfred": { color: "#475569" },
     "johnny": { color: "#22c55e" },
-    "zaji": { color: "#0ea5e9" },
+    "onizuka": { color: "#0ea5e9" },
     "malena": { color: "#f43f5e" }
 };
 

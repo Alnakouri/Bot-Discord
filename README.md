@@ -10,7 +10,7 @@
 | **M'aiq le Menteur** | Khajiit menteur (TES) | Énigmes, rumeurs, mensonges |
 | **Alfred Pennyworth** | Majordome (Batman) | Vocal TTS/STT, cynisme, service |
 | **Johnny Silverbot** | Rockerboy (Cyberpunk 2077) | Anti-corpo, cynisme, provocation |
-| **Za'ji** | Capitaine corsaire (TES) | Aventures, explosions, cuisine |
+| **Onizuka** | Professeur déjanté (GTO) | Moto, loubard, leçons de vie |
 | **Malena** | Gitana marseillaise | Tarot, prédictions, sagesse gitane |
 
 ## 🏗️ Architecture
@@ -45,7 +45,7 @@ Bot Discord/
 ├── MalenaBot/                  # Code spécifique au bot (avec sa clé .master_key locale)
 ├── JohnnyBot/                  # Code spécifique au bot (avec sa clé .master_key locale)
 ├── Sheogorath/                 # Code spécifique au bot (avec sa clé .master_key locale)
-└── ZajiBot/                    # Code spécifique au bot (avec sa clé .master_key locale)
+└── OnizukaBot/                 # Code spécifique au bot (avec sa clé .master_key locale)
 ```
 
 ## 🚀 Démarrage

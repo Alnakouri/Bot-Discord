@@ -10,7 +10,7 @@
 
 **Chaque bot est un processus autonome et déployable indépendamment.**
 
-- Chaque bot a son propre dossier (`Alfred/`, `Sheogorath/`, `MaiqBot/`, `JohnnyBot/`, `ZajiBot/`, `MalenaBot/`)
+- Chaque bot a son propre dossier (`Alfred/`, `Sheogorath/`, `MaiqBot/`, `JohnnyBot/`, `OnizukaBot/`, `MalenaBot/`)
 - Chaque bot a ses propres fichiers : `.env`, `requirements.txt`, `discloud.config`, `bot_*.py`
 - Chaque bot PEUT fonctionner SEUL sans les autres bots
 - Chaque bot PEUT fonctionner SANS le dossier `shared/` (mode dégradé)
@@ -74,9 +74,9 @@ Bot Discord/
 │   ├── bot_johnny.py
 │   └── johnny_data.py       # Personnalité et données
 │
-├── ZajiBot/                 # Bot Za'ji (Capitaine Corsaire Khajiit)
-│   ├── bot_zaji.py
-│   └── zaji_data.py
+├── OnizukaBot/              # Bot Eikichi Onizuka (Great Teacher Onizuka)
+│   ├── bot_onizuka.py
+│   └── onizuka_data.py
 │
 ├── MalenaBot/               # Bot Malena (La Gitana Marseillaise)
 │   ├── bot_malena.py

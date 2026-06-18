@@ -67,7 +67,6 @@ WELCOME_MESSAGES = {
         "Pas de chichis entre nous, ici on apprend sur le terrain. Sois le bienvenu !"
     ],
 }
-WELCOME_MESSAGES["zaji"] = WELCOME_MESSAGES["onizuka"]
 
 GOODBYE_MESSAGES = {
     "sheogorath": [
@@ -106,7 +105,6 @@ GOODBYE_MESSAGES = {
         "Prends soin de toi, morveux !"
     ],
 }
-GOODBYE_MESSAGES["zaji"] = GOODBYE_MESSAGES["onizuka"]
 
 
 def get_welcome_message(bot_name: str, user: discord.Member) -> str:
@@ -166,7 +164,6 @@ BIRTHDAY_MESSAGES = {
         "Ne laisse aucun prof relou gâcher ta journée, et profite à fond ! 🏍️😎"
     ],
 }
-BIRTHDAY_MESSAGES["zaji"] = BIRTHDAY_MESSAGES["onizuka"]
 
 
 def get_birthday_message(bot_name: str, user: discord.Member) -> str:
@@ -190,8 +187,8 @@ async def handle_member_join(bot, member: discord.Member, bot_name: str):
     
     if target_channel:
         # Probabilité de message (pour éviter le spam si plusieurs bots)
-        # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Onizuka/Zaji: 30%
-        probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.3, "zaji": 0.3}
+        # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Onizuka: 30%
+        probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.3}
         if random.random() < probs.get(bot_name.lower(), 0.3):
             message = get_welcome_message(bot_name, member)
             await target_channel.send(message)
@@ -250,7 +247,7 @@ async def check_and_send_birthdays(bot, bot_name: str):
         if member:
             # Probabilité pour éviter les doublons entre bots
             # Un seul bot envoie le message
-            probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.2, "zaji": 0.2}
+            probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.2}
             if random.random() < probs.get(bot_name.lower(), 0.33):
                 message = get_birthday_message(bot_name, member)
                 await target_channel.send(message)

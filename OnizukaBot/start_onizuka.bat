@@ -7,5 +7,5 @@ echo    Great Teacher Onizuka
 echo ================================
 echo.
 echo Lancement du bot...
-python bot_zaji.py
+python bot_onizuka.py
 pause

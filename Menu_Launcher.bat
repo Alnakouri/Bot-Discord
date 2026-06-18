@@ -12,7 +12,7 @@ echo.
 echo   [1] Lancer Sheogorath
 echo   [2] Lancer M'aiq le Menteur
 echo   [3] Lancer Alfred Pennyworth
-echo   [4] Lancer Za'ji le Capitaine
+echo   [4] Lancer Eikichi Onizuka
 echo   [5] Lancer Johnny Silverbot
 echo   [6] Lancer Malena la Gitana
 echo.
@@ -27,7 +27,7 @@ set /p choix="Quel bot voulez-vous lancer ? (1-8, ou Q) : "
 if /i "%choix%"=="1" goto BOOT_SHEO
 if /i "%choix%"=="2" goto BOOT_MAIQ
 if /i "%choix%"=="3" goto BOOT_ALFRED
-if /i "%choix%"=="4" goto BOOT_ZAJI
+if /i "%choix%"=="4" goto BOOT_ONIZUKA
 if /i "%choix%"=="5" goto BOOT_JOHNNY
 if /i "%choix%"=="6" goto BOOT_MALENA
 if /i "%choix%"=="7" goto BOOT_ALL
@@ -54,9 +54,9 @@ start /min "Alfred Bot" cmd /k "cd /d "%~dp0Alfred" && python bot_alfred.py"
 pause
 goto MENU
 
-:BOOT_ZAJI
-echo Demarrage de Za'ji...
-start /min "Za'ji Bot" cmd /k "cd /d "%~dp0ZajiBot" && python bot_zaji.py"
+:BOOT_ONIZUKA
+echo Demarrage d'Onizuka...
+start /min "Onizuka Bot" cmd /k "cd /d "%~dp0OnizukaBot" && python bot_onizuka.py"
 pause
 goto MENU
 
@@ -73,14 +73,14 @@ pause
 goto MENU
 
 :BOOT_ALL
-echo Lancement de toute la flotte...
+echo Lancement de tous les bots...
 start /min "Sheogorath Bot" cmd /k "cd /d "%~dp0Sheogorath" && python bot_sheogorath.py"
 timeout /t 2 /nobreak >nul
 start /min "M'aiq Bot" cmd /k "cd /d "%~dp0MaiqBot" && python bot_maiq.py"
 timeout /t 2 /nobreak >nul
 start /min "Alfred Bot" cmd /k "cd /d "%~dp0Alfred" && python bot_alfred.py"
 timeout /t 2 /nobreak >nul
-start /min "Za'ji Bot" cmd /k "cd /d "%~dp0ZajiBot" && python bot_zaji.py"
+start /min "Onizuka Bot" cmd /k "cd /d "%~dp0OnizukaBot" && python bot_onizuka.py"
 timeout /t 2 /nobreak >nul
 start /min "Johnny Bot" cmd /k "cd /d "%~dp0JohnnyBot" && python bot_johnny.py"
 timeout /t 2 /nobreak >nul

@@ -37,5 +37,5 @@ docker compose down
 | M'aiq | 512MB |
 | Alfred | 768MB (vocal) |
 | Johnny | 256MB |
-| Za'ji | 256MB |
+| Onizuka | 256MB |
 | Malena | 256MB |

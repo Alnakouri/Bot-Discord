@@ -25,14 +25,14 @@ from shared.media_handler import process_image, process_voice_message
 # LOGGING STRUCTURÉ
 try:
     from shared.bot_logger import setup_logger
-    logger = setup_logger("zaji")
+    logger = setup_logger("onizuka")
 except ImportError:
-    logger = logging.getLogger("zaji")
+    logger = logging.getLogger("onizuka")
     logging.basicConfig(level=logging.INFO)
 
 # FILE PATHS
 DATA_DIR = os.getenv("DATA_DIR", ".")
-DATA_FILE = os.path.join(DATA_DIR, "zaji_data.json")
+DATA_FILE = os.path.join(DATA_DIR, "onizuka_data.json")
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -41,8 +41,14 @@ def load_data():
             # Map old keys to new keys if they exist
             if "rum_count" in data:
                 data["money_bragged"] = data.pop("rum_count")
+            if "beer_count" in data:
+                data["money_bragged"] = data.pop("beer_count")
             if "treasures_found" in data:
                 data["jackpots"] = data.pop("treasures_found")
+            if "stash_count" in data:
+                data["jackpots"] = data.pop("stash_count")
+            if "legends_told" in data:
+                data["tales_told"] = data.pop("legends_told")
             return data
     return {"money_bragged": 0, "jackpots": 0, "tales_told": 0}
 
@@ -79,21 +85,21 @@ except ImportError as e:
     DATABASE_AVAILABLE = False
 
 try:
-    from zaji_data import (
-        PERSONALITY_PROMPT, SEA_SHANTIES, TALL_TALES,
-        RUM_RESPONSES, TREASURE_RESPONSES, SHIP_RESPONSES,
-        GREETINGS, SHANTY_TRIGGERS, TALE_TRIGGERS
+    from onizuka_data import (
+        PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS,
+        MONEY_RESPONSES, JACKPOT_RESPONSES, BIKE_RESPONSES,
+        GREETINGS, PUNCHLINE_TRIGGERS, EXPLOIT_TRIGGERS
     )
 except ImportError:
-    from ZajiBot.zaji_data import (
-        PERSONALITY_PROMPT, SEA_SHANTIES, TALL_TALES,
-        RUM_RESPONSES, TREASURE_RESPONSES, SHIP_RESPONSES,
-        GREETINGS, SHANTY_TRIGGERS, TALE_TRIGGERS
+    from OnizukaBot.onizuka_data import (
+        PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS,
+        MONEY_RESPONSES, JACKPOT_RESPONSES, BIKE_RESPONSES,
+        GREETINGS, PUNCHLINE_TRIGGERS, EXPLOIT_TRIGGERS
     )
 
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-zaji_data = load_data()
+onizuka_data = load_data()
 
 # API KEYS ROTATION
 GEMINI_API_KEYS = [
@@ -176,9 +182,9 @@ async def on_ready():
     logger.info(f'   ✅ OpenRouter : {"Oui" if OPENROUTER_API_KEY else "Non"}')
     
     logger.info("📊 STATISTIQUES ONIZUKA:")
-    logger.info(f'   💴 Fric vanté : {zaji_data.get("money_bragged", 0)}')
-    logger.info(f'   🎰 Jackpots gagnés : {zaji_data.get("jackpots", 0)}')
-    logger.info(f'   📖 Exploits racontés : {zaji_data.get("tales_told", 0)}')
+    logger.info(f'   💴 Fric vanté : {onizuka_data.get("money_bragged", 0)}')
+    logger.info(f'   🎰 Jackpots gagnés : {onizuka_data.get("jackpots", 0)}')
+    logger.info(f'   📖 Exploits racontés : {onizuka_data.get("tales_told", 0)}')
     
     logger.info("🎯 Onizuka est prêt à enseigner !")
     logger.info("=" * 60)
@@ -230,44 +236,44 @@ async def before_birthday_check():
 @bot.command(name="exploit", aliases=["histoire", "legende"])
 async def exploit_cmd(ctx):
     """Onizuka raconte un de ses exploits de légende"""
-    tale = random.choice(TALL_TALES)
-    zaji_data["tales_told"] = zaji_data.get("tales_told", 0) + 1
-    save_data(zaji_data)
+    tale = random.choice(EXPLOITS)
+    onizuka_data["tales_told"] = onizuka_data.get("tales_told", 0) + 1
+    save_data(onizuka_data)
     
     embed = discord.Embed(
         title="🏍️ L'EXPLOIT DE LEGENDE D'ONIZUKA",
         description=tale,
         color=discord.Color.gold()
     )
-    embed.set_footer(text=f"Exploits racontés : {zaji_data['tales_told']}")
+    embed.set_footer(text=f"Exploits racontés : {onizuka_data['tales_told']}")
     await ctx.send(embed=embed)
 
-@bot.command(name="chanson", aliases=["frime", "chante", "shanty"])
+@bot.command(name="chanson", aliases=["frime", "chante"])
 async def chanson_cmd(ctx):
     """Onizuka sort une punchline / vantardise"""
-    shanty = random.choice(SEA_SHANTIES)
+    shanty = random.choice(PUNCHLINES)
     await ctx.send(shanty)
 
-@bot.command(name="fric", aliases=["argent", "rhum", "rum"])
+@bot.command(name="fric", aliases=["argent"])
 async def fric_cmd(ctx):
     """Onizuka parle de sa passion pour le fric, les filles et le ramen"""
-    response = random.choice(RUM_RESPONSES)
-    zaji_data["money_bragged"] = zaji_data.get("money_bragged", 0) + 1
-    save_data(zaji_data)
+    response = random.choice(MONEY_RESPONSES)
+    onizuka_data["money_bragged"] = onizuka_data.get("money_bragged", 0) + 1
+    save_data(onizuka_data)
     await ctx.send(response)
 
-@bot.command(name="jackpot", aliases=["tresor", "trésor", "treasure"])
+@bot.command(name="jackpot", aliases=["pachinko"])
 async def jackpot_cmd(ctx):
     """Onizuka parle de ses jackpots"""
-    response = random.choice(TREASURE_RESPONSES)
-    zaji_data["jackpots"] = zaji_data.get("jackpots", 0) + 1
-    save_data(zaji_data)
-    await ctx.send(f"{response}\n💰 Jackpots décrochés par Onizuka : {zaji_data['jackpots']}")
+    response = random.choice(JACKPOT_RESPONSES)
+    onizuka_data["jackpots"] = onizuka_data.get("jackpots", 0) + 1
+    save_data(onizuka_data)
+    await ctx.send(f"{response}\n💰 Jackpots décrochés par Onizuka : {onizuka_data['jackpots']}")
 
-@bot.command(name="moto", aliases=["navire", "ship", "bateau"])
+@bot.command(name="moto")
 async def moto_cmd(ctx):
     """Onizuka vante sa moto (ou la Cresta de Uchiyamada)"""
-    response = random.choice(SHIP_RESPONSES)
+    response = random.choice(BIKE_RESPONSES)
     await ctx.send(response)
 
 @bot.command(name="equipage", aliases=["crew", "classe"])
@@ -320,8 +326,8 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Onizuka / Za'ji)
-    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["zaji", "za'ji", "onizuka", "eikichi", "gto"]):
+    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Onizuka)
+    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["onizuka", "eikichi", "gto", "onibaku"]):
         return
         
     # SILENCE STREAM (Canal ignoré)
@@ -447,8 +453,8 @@ async def on_message(message):
     
     if any(kw in content_lower for kw in ["fric", "argent", "thune", "yen", "pachinko"]):
         keyword_boost = "\n\n💴 [DÉTECTION FRIC/MONEY] L'utilisateur parle de thunes ou de pachinko ! Sois TRÈS motivé par l'argent !"
-        zaji_data["money_bragged"] = zaji_data.get("money_bragged", 0) + 1
-        save_data(zaji_data)
+        onizuka_data["money_bragged"] = onizuka_data.get("money_bragged", 0) + 1
+        save_data(onizuka_data)
     
     if any(kw in content_lower for kw in ["jackpot", "trésor", "tresor", "gloire"]):
         keyword_boost += "\n\n🎰 [DÉTECTION JACKPOT] Parle de décrocher le gros lot, de la gloire, ou d'exploits !"
@@ -456,10 +462,10 @@ async def on_message(message):
     if any(kw in content_lower for kw in ["moto", "bécane", "kawasaki", "cresta", "voiture"]):
         keyword_boost += "\n\n🏍️ [DÉTECTION VEHICULE] Vante ta moto de loubard ou plains-toi de la Cresta d'Uchiyamada !"
     
-    if any(kw in SHANTY_TRIGGERS for kw in content_lower.split()):
+    if any(kw in PUNCHLINE_TRIGGERS for kw in content_lower.split()):
         keyword_boost += "\n\n🎵 [DEMANDE DE CHANSON] Sors une punchline de légende ou une vantardise !"
     
-    if any(kw in TALE_TRIGGERS for kw in content_lower.split()):
+    if any(kw in EXPLOIT_TRIGGERS for kw in content_lower.split()):
         keyword_boost += "\n\n📖 [DEMANDE D'HISTOIRE] Raconte un de tes exploits de prof ou de motard !"
     
     # HISTORIQUE

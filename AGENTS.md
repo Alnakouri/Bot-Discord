@@ -36,7 +36,7 @@ Alfred/.env
 Sheogorath/.env
 MaiqBot/.env
 JohnnyBot/.env
-ZajiBot/.env
+OnizukaBot/.env
 MalenaBot/.env
 .master_key
 MalenaBot/.master_key

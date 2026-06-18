@@ -44,7 +44,7 @@ pip install -r requirements.txt
 ### 4. Lancer Onizuka
 
 ```bash
-python bot_zaji.py
+python bot_onizuka.py
 ```
 
 ## 🎮 Commandes
@@ -93,8 +93,8 @@ Gagnez des points pour monter en grade :
 
 ## 🛠️ Architecture
 
-- `bot_zaji.py` - Fichier principal du bot
-- `zaji_data.py` - Personnalité et données
+- `bot_onizuka.py` - Fichier principal du bot
+- `onizuka_data.py` - Personnalité et données
 - `requirements.txt` - Dépendances
 - `.env.encrypted` - Configuration sécurisée
 - `shared_database.py` - Base de données partagée (dossier parent)

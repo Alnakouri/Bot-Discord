@@ -7,7 +7,6 @@ x-bot-common: &bot-common
     - ./logs:/app/bot/logs
   environment:
     - DATA_DIR=/app/data
-    - OLLAMA_VISION_URL=http://bots-ollama-vision:11434
   networks:
     - bots-network
 
@@ -25,11 +24,11 @@ services:
     command: python bot_sheogorath.py
     environment:
       - DATA_DIR=/app/data
-      - OLLAMA_VISION_URL=http://bots-ollama-vision:11434
-      - PIPER_TTS_URL=http://chatterbox-tts:5000
-    depends_on:
-      - chatterbox-tts
-    
+    # NOTE : voix clonée (TTS) et vision locale (Moondream) RETIRÉES du déploiement.
+    # Services GPU non compatibles Oracle free tier — feature parkée à refaire.
+    # Voir FEATURE_VOIX_VISION_GPU.md. Le code (sheo_voice.py, process_image_ollama)
+    # dégrade proprement : texte sans voix, vision via Gemini cloud.
+
   maiq:
     <<: *bot-common
     container_name: bot-maiq
@@ -66,17 +65,17 @@ services:
     working_dir: /app/bot
     command: python bot_johnny.py
 
-  zaji:
+  onizuka:
     <<: *bot-common
-    container_name: bot-zaji
+    container_name: bot-onizuka
     volumes:
       - ./shared:/app/shared:ro
       - ./data:/app/data
-      - ./ZajiBot:/app/bot:ro
+      - ./OnizukaBot:/app/bot:ro
       - ./logs:/app/bot/logs
-      - ./ZajiBot/.master_key:/app/bot/.master_key:ro
+      - ./OnizukaBot/.master_key:/app/bot/.master_key:ro
     working_dir: /app/bot
-    command: python bot_zaji.py
+    command: python bot_onizuka.py
 
   malena:
     <<: *bot-common
@@ -90,92 +89,15 @@ services:
     working_dir: /app/bot
     command: python bot_malena.py
 
-  bots-ollama-vision:
-    image: ollama/ollama:latest
-    container_name: bots-ollama-vision
-    ports:
-      # Bind localhost uniquement : service interne au réseau Docker,
-      # ne doit pas être joignable depuis le LAN (Ollama n'a pas d'auth).
-      - "127.0.0.1:11445:11434"
-    volumes:
-      - ./ollama_storage:/root/.ollama
-    restart: unless-stopped
-    # ═══ GPU ACCELERATION — RTX 4060 Ti 16 Go ═══
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - bots-network
-
-  ollama-model-init:
-    image: ollama/ollama:latest
-    container_name: ollama-model-init
-    depends_on:
-      bots-ollama-vision:
-        condition: service_healthy
-    entrypoint: >
-      sh -c "ollama pull moondream && echo '✅ Moondream ready'"
-    environment:
-      - OLLAMA_HOST=http://bots-ollama-vision:11434
-    networks:
-      - bots-network
-    restart: "no"
-
-  # ═══════════════════════════════════════════════════════════
-  # CHATTERBOX TTS — Voice Cloning Sheogorath (GPU)
-  # Clone de la voix de Philippe Bozo (VF TESO)
-  # API : FastAPI sur port 5000 (GET / + POST /tts)
-  # Modèle : Chatterbox Turbo (350M params, ~3-4 Go VRAM)
-  # ═══════════════════════════════════════════════════════════
-  chatterbox-tts:
-    build: ./chatterbox-server
-    container_name: chatterbox-tts
-    restart: unless-stopped
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    ports:
-      # Bind localhost uniquement : API TTS interne, pas d'exposition LAN.
-      - "127.0.0.1:5050:5000"
-    volumes:
-      - ./chatterbox-server/voices:/app/voices
-      - chatterbox-models:/root/.cache
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - VOICE_REF_PATH=/app/voices/sheogorath_ref.wav
-      - MODEL_TYPE=multilingual
-      - EXAGGERATION=0.7
-      - CFG_WEIGHT=0.3
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    networks:
-      - bots-network
-
-volumes:
-  chatterbox-models:
+# ═══════════════════════════════════════════════════════════════
+# SERVICES GPU RETIRÉS (feature parkée — voir FEATURE_VOIX_VISION_GPU.md)
+# ───────────────────────────────────────────────────────────────
+# Anciennement ici : bots-ollama-vision (Moondream), ollama-model-init,
+# et chatterbox-tts (voice cloning Philippe Bozo, ~3-4 Go VRAM).
+# Retirés car incompatibles Oracle free tier (aucun GPU). Le code reste
+# dans le repo (chatterbox-server/, sheo_voice.py, process_image_ollama)
+# et dégrade proprement. À refaire autrement plus tard.
+# ═══════════════════════════════════════════════════════════════
 
 networks:
   bots-network:

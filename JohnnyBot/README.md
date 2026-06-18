@@ -76,7 +76,7 @@ start_johnny.bat
 
 Johnny interagit avec les autres bots :
 - **vs Sheogorath** : Méfiance face au Prince de la Folie
-- **vs Khajiit (M'aiq/Za'ji)** : Trafiquants, comme à Night City
+- **vs Khajiit (M'aiq)** : Trafiquant, comme à Night City
 - **vs Alfred** : Le majordome corpo par excellence — cible idéale
 
 ## 📊 Système de Réputation

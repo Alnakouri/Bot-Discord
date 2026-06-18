@@ -36,12 +36,12 @@ BOT_REGISTRY = {
         "bat": "start_johnny.bat",
         "color": "#22c55e"
     },
-    "zaji": {
-        "name": "zaji",
+    "onizuka": {
+        "name": "onizuka",
         "display": "🏍️ Eikichi Onizuka",
-        "dir": "ZajiBot",
-        "script": "bot_zaji.py",
-        "bat": "start_zaji.bat",
+        "dir": "OnizukaBot",
+        "script": "bot_onizuka.py",
+        "bat": "start_onizuka.bat",
         "color": "#0ea5e9"
     },
     "malena": {

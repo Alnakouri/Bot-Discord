@@ -72,7 +72,7 @@ class AchievementsMigration(Migration):
             ("lore_master", "Maître du Lore", "Répondre parfaitement au quiz lore", "📚", 300, 60, "rare", "knowledge"),
             ("cheese_lover", "Amoureux du Fromage", "Mentionner le fromage 50 fois à Sheogorath", "🧀", 100, 20, "uncommon", "fun"),
             ("cat_whisperer", "Chuchoteur de Chats", "Avoir 100 conversations avec M'aiq", "🐱", 250, 50, "rare", "social"),
-            ("pirate_legend", "Légende Pirate", "Terminer toutes les quêtes de Za'ji", "🏴‍☠️", 500, 100, "epic", "quest"),
+            ("gto_disciple", "Disciple d'Onizuka", "Terminer toutes les quêtes d'Onizuka", "🏍️", 500, 100, "epic", "quest"),
             ("diplomat", "Diplomate", "Aider Rigurt dans 20 missions", "🎖️", 400, 80, "rare", "quest"),
         ]
         

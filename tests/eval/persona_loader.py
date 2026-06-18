@@ -16,7 +16,7 @@ def load_persona(bot_id):
         "maiq": ("MaiqBot.maiq_data", "PERSONALITY_PROMPT", "M'aiq"),
         "alfred": ("Alfred.alfred_data", "PERSONALITY_PROMPT", "Alfred"),
         "malena": ("MalenaBot.malena_data", "PERSONALITY_PROMPT", "Malena"),
-        "zaji": ("ZajiBot.zaji_data", "PERSONALITY_PROMPT", "Onizuka"),
+        "onizuka": ("OnizukaBot.onizuka_data", "PERSONALITY_PROMPT", "Onizuka"),
         "sheogorath": ("Sheogorath.sheo_data", "MOOD_PROMPTS", "Sheogorath")
     }
     

@@ -43,7 +43,7 @@
 1. ✅ Sheogorath/ - Fonctionnel
 2. ✅ MaiqBot/ - Fonctionnel
 3. ✅ Alfred/ - Fonctionnel
-4. ✅ ZajiBot/ - Fonctionnel
+4. ✅ OnizukaBot/ - Fonctionnel
 5. ✅ **JohnnyBot/** - **EN LIGNE** 🔫
 
 ### Modules Partagés

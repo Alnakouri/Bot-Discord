@@ -10,7 +10,7 @@
 - **bot_base.py** : Classe de base pour standardiser l'initialisation.
 
 ### Corrections (Phase 2)
-- **Johnny/Zaji** : Suppression du double calcul `should_respond` dans `on_message`.
+- **Johnny/Onizuka** : Suppression du double calcul `should_respond` dans `on_message`.
 - **Alfred** : Suppression du double appel `load_secure_env()`.
 - **Sheogorath** : Suppression de la double définition de `status_loop_sheo`.
 - **Malena** : Migration de `discord.Client` vers `commands.Bot`.

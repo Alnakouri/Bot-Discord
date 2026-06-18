@@ -28,14 +28,16 @@ sheo_punishments.json
 maiq_data.json
 alfred_memory.json
 johnny_data.json
-zaji_data.json
+onizuka_data.json
 malena_memory.json
 # Onizuka (données runtime : IDs/pseudos Discord + profils générés)
 OnizukaBot/onizuka_data.json
 OnizukaBot/onizuka_facts.json
 OnizukaBot/onizuka_memory.json
-# État de jeu runtime
-data/duel_state.json
+# État de jeu runtime et sauvegardes
+data/*.json
+data/*.bak
+*.bak
 # Base vectorielle Chroma (persistée hors git)
 chroma.sqlite3
 # Rapports d'évaluation générés
