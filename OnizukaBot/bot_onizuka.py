@@ -427,6 +427,36 @@ async def on_message(message):
         logger.info(f"[IMAGE PRIORITY] Onizuka va analyser l'image de {message.author.name}")
     
     # ══════════════════════════════════════════════════
+    # LTM SYSTEM - MEMORY INJECTION (paresseux)
+    # On ne calcule la mémoire (recherche embeddings, etc.) QUE si un chemin qui
+    # répond la consomme réellement → pas de coût sur les messages ignorés.
+    # ══════════════════════════════════════════════════
+    user_id = message.author.id
+    user_name = message.author.name
+    _memory_cache = {}
+    
+    def _get_memory_addition():
+        if "val" not in _memory_cache:
+            user_message_temp = message.content.replace(f'<@{bot.user.id}>', '').strip()
+            relevant_facts = fact_memory.get_relevant_facts(user_id, user_message_temp, k=3)
+            daily_summary = daily_memory.get_context_summary(user_id)
+            dr = daily_memory.get_daily_read(user_id)
+            daily_read_addition = f"\n[CONSIGNE DU JOUR] {dr}" if dr else ""
+            
+            fact_context = ""
+            if relevant_facts:
+                fact_context = f"\n[CE QUE TU SAIS SUR CET INTERLOCUTEUR (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
+                
+            _memory_cache["val"] = (
+                f"\n\n[CONTEXTE DE MÉMOIRE]"
+                f"{fact_context}"
+                f"\n{daily_summary}"
+                f"{daily_read_addition}"
+                f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cet élève/interlocuteur dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+            )
+        return _memory_cache["val"]
+
+    # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
     # ══════════════════════════════════════════════════
     if message.attachments:
@@ -438,7 +468,7 @@ async def on_message(message):
             if api_key:
                 async with message.channel.typing():
                     # Préparation du prompt consolidé
-                    full_personality = f"{PERSONALITY_PROMPT}\n{keyword_boost}"
+                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}\n{keyword_boost}"
                     response = await process_image(
                         attachment=routing["image_attachment"],
                         api_key=api_key,
@@ -446,10 +476,25 @@ async def on_message(message):
                         user_message=message.content or ""
                     )
                 if response:
+                    # Clean/extract facts
+                    import re
+                    matches = re.findall(r"<fact>(.*?)</fact>", response, re.DOTALL | re.IGNORECASE)
+                    for f in matches:
+                        fact_text = f.strip()
+                        if fact_text:
+                            fact_memory.add_fact(user_id, fact_text)
+                    response = re.sub(r"<fact>.*?</fact>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
+                    response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
+                    response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
+
                     await message.reply(response)
                     if message.channel.id not in conversation_history:
                         conversation_history[message.channel.id] = []
                     conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
+                    
+                    daily_memory.add_interaction(user_id, user_name, message.content or "[IMAGE]", response)
+                    import asyncio
+                    asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
                     return
             else:
                 await message.reply("🏍️ Oï ! Le soleil tape trop fort sur ma visière, je vois que dalle à ton image ! 😎")
@@ -460,17 +505,32 @@ async def on_message(message):
             api_key = key_manager.get_key("gemini")
             if api_key:
                 async with message.channel.typing():
-                    full_personality = f"{PERSONALITY_PROMPT}\n{keyword_boost}"
+                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}\n{keyword_boost}"
                     response = await process_voice_message(
                         attachment=routing["audio_attachment"],
                         api_key=api_key,
                         personality_prompt=full_personality
                     )
                 if response:
+                    # Clean/extract facts
+                    import re
+                    matches = re.findall(r"<fact>(.*?)</fact>", response, re.DOTALL | re.IGNORECASE)
+                    for f in matches:
+                        fact_text = f.strip()
+                        if fact_text:
+                            fact_memory.add_fact(user_id, fact_text)
+                    response = re.sub(r"<fact>.*?</fact>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
+                    response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
+                    response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
+
                     await message.reply(response)
                     if message.channel.id not in conversation_history:
                         conversation_history[message.channel.id] = []
                     conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
+                    
+                    daily_memory.add_interaction(user_id, user_name, "[VOCAL]", response)
+                    import asyncio
+                    asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
                     return
             else:
                 await message.reply("👂 Trop de bruit de moteur ! Parle plus fort dans le micro, je capte rien ! 🏍️")
@@ -488,27 +548,7 @@ async def on_message(message):
     # PREPARATION DU MESSAGE
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
 
-    # LTM SYSTEM - MEMORY INJECTION
-    user_id = message.author.id
-    user_name = message.author.name
     user_msg_content = user_message
-    
-    relevant_facts = fact_memory.get_relevant_facts(user_id, user_msg_content, k=3)
-    daily_summary = daily_memory.get_context_summary(user_id)
-    dr = daily_memory.get_daily_read(user_id)
-    daily_read_addition = f"\n[CONSIGNE DU JOUR] {dr}" if dr else ""
-    
-    fact_context = ""
-    if relevant_facts:
-        fact_context = f"\n[CE QUE TU SAIS SUR CET INTERLOCUTEUR (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
-        
-    memory_prompt_addition = (
-        f"\n\n[CONTEXTE DE MÉMOIRE]"
-        f"{fact_context}"
-        f"\n{daily_summary}"
-        f"{daily_read_addition}"
-        f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cet élève/interlocuteur dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
-    )
     
     # Détection mots-clés (fric, jackpot, moto, etc.)
     content_lower = user_message.lower()
@@ -595,7 +635,7 @@ async def on_message(message):
     # GÉNÉRATION (Smart Router)
     
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{_get_memory_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
     
     async with message.channel.typing():
         
