@@ -390,9 +390,9 @@ async function loadApiKeysStatus() {
                     <td><code class="glass-code">${k.api_key_display}</code></td>
                     <td><span class="badge ${statusClass}">${k.status.toUpperCase()}</span></td>
                     <td>${k.error_count}</td>
-                    <td><span class="tpm-val">${k.tpm_current}</span> / 1M</td>
-                    <td>${k.rpm_current} / 4K</td>
-                    <td>${k.quota_remaining.toLocaleString()} tokens</td>
+                    <td>${k.total_calls}</td>
+                    <td>${(k.last_used || '—').split('T')[0]}</td>
+                    <td class="log-error">${k.last_error || '—'}</td>
                 </tr>
             `;
             body.insertAdjacentHTML('beforeend', row);

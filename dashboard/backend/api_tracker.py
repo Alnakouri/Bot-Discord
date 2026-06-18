@@ -29,15 +29,15 @@ class APITracker:
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS api_key_status (
-                    api_key TEXT PRIMARY KEY,
-                    api_name TEXT,
-                    status TEXT DEFAULT 'active',
-                    error_count INTEGER DEFAULT 0,
+                    api_name TEXT NOT NULL,
+                    key_index INTEGER NOT NULL,
+                    valid INTEGER DEFAULT 1,
+                    cooldown_until TEXT,
+                    total_calls INTEGER DEFAULT 0,
+                    total_errors INTEGER DEFAULT 0,
                     last_error TEXT,
-                    tpm_current INTEGER DEFAULT 0,
-                    rpm_current INTEGER DEFAULT 0,
-                    quota_remaining REAL,
-                    updated_at TEXT DEFAULT (datetime('now'))
+                    last_used TEXT,
+                    PRIMARY KEY (api_name, key_index)
                 )
             """)
             # Activation WAL
@@ -92,24 +92,42 @@ class APITracker:
         
         try:
             cursor = conn.cursor()
-            # On récupère toutes les colonnes incluant TPM et Quota
             cursor.execute("""
-                SELECT api_key, status, error_count, last_error, 
-                       tpm_current, rpm_current, quota_remaining 
+                SELECT api_name, key_index, valid, cooldown_until,
+                       total_calls, total_errors, last_error, last_used
                 FROM api_key_status
-                ORDER BY status ASC, error_count DESC
+                ORDER BY api_name ASC, key_index ASC
             """)
+            from datetime import datetime
             keys = []
+            now = datetime.now()
             for row in cursor.fetchall():
                 d = dict(row)
-                # Obscurcir la clé pour l'affichage (garder les 4 derniers caractères)
-                # et SUPPRIMER la clé brute : elle ne doit jamais sortir du backend.
-                key_raw = d.pop("api_key", "")
-                d["api_key_display"] = f"***{key_raw[-4:]}" if len(key_raw) > 4 else "***"
-                keys.append(d)
-            
+                valid = d.get("valid", 1)
+                cooldown = d.get("cooldown_until")
+                in_cooldown = False
+                if cooldown:
+                    try:
+                        in_cooldown = datetime.fromisoformat(cooldown) > now
+                    except (ValueError, TypeError):
+                        in_cooldown = False
+                if not valid:
+                    status = "dead"
+                elif in_cooldown:
+                    status = "cooldown"
+                else:
+                    status = "active"
+                keys.append({
+                    "api_key_display": f"{d.get('api_name','?')} #{d.get('key_index','?')}",
+                    "status": status,
+                    "error_count": d.get("total_errors", 0),
+                    "total_calls": d.get("total_calls", 0),
+                    "last_used": (d.get("last_used") or "—"),
+                    "last_error": (d.get("last_error") or "—"),
+                })
             conn.close()
             return keys
         except Exception as e:
             print(f"Error in get_keys_status: {e}")
+            if conn: conn.close()
             return []
