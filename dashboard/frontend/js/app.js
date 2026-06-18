@@ -157,8 +157,8 @@ function renderBotsGrid(bots) {
                 </div>
                 <div class="bot-actions">
                     ${isRunning 
-                        ? `<button class="btn btn-outline" onclick="botAction('${bot.id}', 'restart')"><i class="fa-solid fa-rotate-right"></i></button>
-                           <button class="btn btn-danger" onclick="botAction('${bot.id}', 'stop')"><i class="fa-solid fa-stop"></i></button>`
+                        ? `<button class="btn btn-outline" onclick="botAction('${bot.id}', 'restart')"><i class="fa-solid fa-rotate-right"></i> Redémarrer</button>
+                           <button class="btn btn-danger" onclick="botAction('${bot.id}', 'stop')"><i class="fa-solid fa-stop"></i> Arrêter</button>`
                         : `<button class="btn btn-success" onclick="botAction('${bot.id}', 'start')"><i class="fa-solid fa-play"></i> Démarrer</button>`
                     }
                 </div>
@@ -188,8 +188,12 @@ window.actionAllBots = async function(action) {
     let successCount = 0;
     
     // UI update to prevent spamming
-    const btnId = action === 'start' ? 'btn-start-all-bots' : 'btn-stop-all-bots';
-    const btn = document.getElementById(btnId);
+    const btnMap = {
+        start: 'btn-start-all-bots',
+        stop: 'btn-stop-all-bots',
+        restart: 'btn-restart-all-bots'
+    };
+    const btn = document.getElementById(btnMap[action]);
     const originalText = btn.innerHTML;
     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Action en cours...`;
     btn.disabled = true;
