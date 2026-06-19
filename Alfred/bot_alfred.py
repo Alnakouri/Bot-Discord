@@ -84,6 +84,15 @@ except ImportError as e:
     logger.warning(f"⚠️ [ALFRED] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
 
+try:
+    from shared.twitch_announcer import setup_twitch_announcer
+    TWITCH_AVAILABLE = True
+except ImportError:
+    TWITCH_AVAILABLE = False
+    def setup_twitch_announcer(*a, **k): return None
+
+twitch_announcer = None
+
 # CREDENTIALS
 # ⚠️ REMPLACEZ CECI PAR LE TOKEN DE VOTRE NOUVEAU BOT ALFRED
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -300,6 +309,16 @@ async def on_ready():
     status_loop_alfred.start()
     weekly_protip_alfred.start() # Conseil Hebdomadaire (Vendredi)
     birthday_check_alfred.start() # Anniversaires
+    
+    global twitch_announcer
+    if TWITCH_AVAILABLE and twitch_announcer is None:
+        twitch_announcer = setup_twitch_announcer(
+            bot, "alfred", logger,
+            personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Alfred")
+        if twitch_announcer:
+            twitch_poll_loop.start()
 
     # INITIALISATION DES COMMANDES SLASH
     if DATABASE_AVAILABLE:
@@ -309,6 +328,15 @@ async def on_ready():
 
 # ACTIVITY LOOP
 current_alfred_activity = "Cirer l'argenterie"
+
+@tasks.loop(seconds=90)
+async def twitch_poll_loop():
+    if twitch_announcer:
+        await twitch_announcer.tick()
+
+@twitch_poll_loop.before_loop
+async def before_twitch_poll():
+    await bot.wait_until_ready()
 
 @tasks.loop(minutes=30)
 async def status_loop_alfred():

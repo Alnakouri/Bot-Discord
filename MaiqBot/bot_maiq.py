@@ -83,6 +83,15 @@ except ImportError as e:
     logger.warning(f"⚠️ [M'aiq] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
 
+try:
+    from shared.twitch_announcer import setup_twitch_announcer
+    TWITCH_AVAILABLE = True
+except ImportError:
+    TWITCH_AVAILABLE = False
+    def setup_twitch_announcer(*a, **k): return None
+
+twitch_announcer = None
+
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 recent_rumor_targets = {}
@@ -263,6 +272,16 @@ async def on_ready():
     
     # NOUVELLES TÂCHES
     birthday_check_maiq.start()  # Vérification anniversaires
+    
+    global twitch_announcer
+    if TWITCH_AVAILABLE and twitch_announcer is None:
+        twitch_announcer = setup_twitch_announcer(
+            bot, "maiq", logger,
+            personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="M'aiq")
+        if twitch_announcer:
+            twitch_poll_loop.start()
 
     # Rétroactif Riddle Check
     try:
@@ -339,6 +358,15 @@ async def check_missed_riddle_answers():
 
 # STATUS VARIABLE
 current_maiq_activity = "Chercher des pinces (Calipers)"
+
+@tasks.loop(seconds=90)
+async def twitch_poll_loop():
+    if twitch_announcer:
+        await twitch_announcer.tick()
+
+@twitch_poll_loop.before_loop
+async def before_twitch_poll():
+    await bot.wait_until_ready()
 
 @tasks.loop(minutes=30)
 async def status_loop_maiq():

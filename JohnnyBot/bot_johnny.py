@@ -70,6 +70,15 @@ except ImportError as e:
     logger.warning(f"⚠️ [JOHNNY] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
 
+try:
+    from shared.twitch_announcer import setup_twitch_announcer
+    TWITCH_AVAILABLE = True
+except ImportError:
+    TWITCH_AVAILABLE = False
+    def setup_twitch_announcer(*a, **k): return None
+
+twitch_announcer = None
+
 # IMPORT PERSONNALITÉ JOHNNY
 from johnny_data import (
     PERSONALITY_PROMPT, DIPLOMATIC_TALES, GIFT_RESPONSES,
@@ -270,6 +279,16 @@ async def on_ready():
     # Tâches périodiques
     if DATABASE_AVAILABLE:
         daily_birthday_check.start()
+        
+    global twitch_announcer
+    if TWITCH_AVAILABLE and twitch_announcer is None:
+        twitch_announcer = setup_twitch_announcer(
+            bot, "johnny", logger,
+            personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Johnny")
+        if twitch_announcer:
+            twitch_poll_loop.start()
 
 @bot.event
 async def on_member_join(member):
@@ -296,6 +315,15 @@ async def daily_birthday_check():
 
 @daily_birthday_check.before_loop
 async def before_birthday_check():
+    await bot.wait_until_ready()
+
+@tasks.loop(seconds=90)
+async def twitch_poll_loop():
+    if twitch_announcer:
+        await twitch_announcer.tick()
+
+@twitch_poll_loop.before_loop
+async def before_twitch_poll():
     await bot.wait_until_ready()
 
 # COMMANDES SPÉCIALES JOHNNY SILVERHAND

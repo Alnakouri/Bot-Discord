@@ -43,6 +43,15 @@ from malena_memory import MalenaMemory
 from shared.server_events import check_and_send_birthdays, handle_member_join, handle_member_remove
 from shared.graceful_shutdown import setup_graceful_shutdown
 
+try:
+    from shared.twitch_announcer import setup_twitch_announcer
+    TWITCH_AVAILABLE = True
+except ImportError:
+    TWITCH_AVAILABLE = False
+    def setup_twitch_announcer(*a, **k): return None
+
+twitch_announcer = None
+
 
 # Configuration du Logger
 logger = setup_logger("malena", "logs")
@@ -261,6 +270,16 @@ async def on_ready():
         check_missed_mentions_malena.start()
     if not birthday_loop_malena.is_running():
         birthday_loop_malena.start()
+        
+    global twitch_announcer
+    if TWITCH_AVAILABLE and twitch_announcer is None:
+        twitch_announcer = setup_twitch_announcer(
+            bot, "malena", logger,
+            personality_prompt=data.PERSONALITY_PROMPT, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Malena")
+        if twitch_announcer:
+            twitch_poll_loop.start()
 
 @bot.event
 async def on_message(message):
@@ -611,6 +630,15 @@ async def birthday_loop_malena():
 
 @birthday_loop_malena.before_loop
 async def before_birthday_malena():
+    await bot.wait_until_ready()
+
+@tasks.loop(seconds=90)
+async def twitch_poll_loop():
+    if twitch_announcer:
+        await twitch_announcer.tick()
+
+@twitch_poll_loop.before_loop
+async def before_twitch_poll():
     await bot.wait_until_ready()
 
 # ÉVÉNEMENTS SERVEUR — BIENVENUE ET DÉPART

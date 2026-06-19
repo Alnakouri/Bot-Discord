@@ -94,6 +94,7 @@ function initNavigation() {
             if(targetId === 'logs') loadLogs();
             if(targetId === 'errors') loadErrors();
             if(targetId === 'api-keys') loadApiKeysStatus();
+            if(targetId === 'twitch') loadTwitchConfig();
         });
     });
 }
@@ -420,5 +421,205 @@ async function generateReport() {
     } finally {
         btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Générer le Rapport .MD';
         btn.disabled = false;
+    }
+}
+
+// --- TWITCH MANAGEMENT ---
+let twitchConfig = {};
+
+async function loadTwitchConfig() {
+    try {
+        const res = await fetch(`${API_BASE}/twitch`);
+        if (!res.ok) throw new Error("Impossible de charger la config Twitch");
+        twitchConfig = await res.json();
+        renderTwitchBotView();
+    } catch (e) {
+        console.error("Twitch config error:", e);
+    }
+}
+
+window.onTwitchBotSelect = function() {
+    renderTwitchBotView();
+}
+
+function renderTwitchBotView() {
+    const botId = document.getElementById('twitch-bot-select').value;
+    const botConfig = twitchConfig[botId];
+    
+    if (!botConfig) return;
+    
+    // Set status title
+    const botDisplayNames = {
+        sheogorath: "🧀 Sheogorath",
+        maiq: "🐱 M'aiq le Menteur",
+        alfred: "☕ Alfred Pennyworth",
+        johnny: "🔫 Johnny Silverbot",
+        onizuka: "🏍️ Eikichi Onizuka",
+        malena: "💃 Malena la Gitana"
+    };
+    document.getElementById('twitch-bot-status-title').textContent = `Configuration Twitch de ${botDisplayNames[botId] || botId}`;
+    
+    // Set form values
+    document.getElementById('twitch-bot-enabled').checked = botConfig.enabled;
+    document.getElementById('twitch-bot-interval').value = botConfig.poll_interval_seconds;
+    
+    // Set subscriptions
+    const emptyEl = document.getElementById('twitch-subs-empty');
+    const listEl = document.getElementById('twitch-subs-list');
+    
+    listEl.innerHTML = '';
+    
+    const subs = botConfig.subscriptions || [];
+    if (subs.length === 0) {
+        emptyEl.style.display = 'block';
+        listEl.style.display = 'none';
+    } else {
+        emptyEl.style.display = 'none';
+        listEl.style.display = 'flex';
+        
+        subs.forEach((sub, index) => {
+            const card = `
+                <div class="twitch-sub-card glass" style="padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.01);">
+                    <div style="flex-grow: 1; margin-right: 15px;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                            <span style="font-weight: 600; color: #a78bfa; font-size: 1.05em;"><i class="fa-brands fa-twitch"></i> ${sub.twitch_login}</span>
+                            <span style="font-size: 0.85em; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-family: monospace;">Salon: ${sub.discord_channel_id}</span>
+                        </div>
+                        ${sub.custom_message ? `<div style="font-size: 0.85em; opacity: 0.85; border-left: 2px solid var(--accent); padding-left: 8px; margin-top: 4px; font-style: italic;">"${sub.custom_message}"</div>` : `<div style="font-size: 0.8em; opacity: 0.5; font-style: italic;">Message embed standard auto</div>`}
+                    </div>
+                    <button class="btn btn-danger" onclick="deleteTwitchSubscription(${index})" style="padding: 6px 12px; font-size: 0.9em; flex-shrink: 0;">
+                        <i class="fa-solid fa-trash"></i> Supprimer
+                    </button>
+                </div>
+            `;
+            listEl.insertAdjacentHTML('beforeend', card);
+        });
+    }
+}
+
+window.saveTwitchBotSettings = async function() {
+    const botId = document.getElementById('twitch-bot-select').value;
+    const enabled = document.getElementById('twitch-bot-enabled').checked;
+    const interval = parseInt(document.getElementById('twitch-bot-interval').value);
+    
+    if (isNaN(interval) || interval < 60) {
+        alert("L'intervalle de polling doit être d'au moins 60 secondes.");
+        return;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/${botId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled, poll_interval_seconds: interval })
+        });
+        
+        if (res.ok) {
+            alert("Paramètres enregistrés avec succès !");
+            await loadTwitchConfig();
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Impossible de sauvegarder la configuration"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+window.addTwitchSubscription = async function() {
+    const botId = document.getElementById('twitch-bot-select').value;
+    const twitchLogin = document.getElementById('twitch-add-login').value.trim();
+    const channelId = document.getElementById('twitch-add-channel').value.trim();
+    const customMessage = document.getElementById('twitch-add-message').value.trim() || null;
+    
+    if (!twitchLogin || !channelId) {
+        alert("La chaîne Twitch et l'ID du salon Discord sont requis.");
+        return;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/${botId}/subscriptions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                twitch_login: twitchLogin,
+                discord_channel_id: channelId,
+                custom_message: customMessage
+            })
+        });
+        
+        if (res.ok) {
+            document.getElementById('twitch-add-login').value = '';
+            document.getElementById('twitch-add-channel').value = '';
+            document.getElementById('twitch-add-message').value = '';
+            alert("Abonnement Twitch ajouté avec succès !");
+            await loadTwitchConfig();
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Impossible d'ajouter l'abonnement"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+window.setTwitchEnabledAll = async function(enabled) {
+    if (!confirm(enabled ? "Activer la surveillance Twitch pour TOUS les bots ?"
+                         : "Désactiver la surveillance Twitch pour TOUS les bots ?")) return;
+    try {
+        const res = await fetch(`${API_BASE}/twitch/all`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        if (res.ok) {
+            alert(enabled ? "Surveillance activée pour tous les bots."
+                          : "Surveillance désactivée pour tous les bots.");
+            await loadTwitchConfig();
+        } else {
+            const d = await res.json(); alert(`Erreur: ${d.detail || ''}`);
+        }
+    } catch (e) { alert(`Erreur réseau: ${e}`); }
+}
+
+window.addTwitchSubscriptionAll = async function() {
+    const login = document.getElementById('twitch-all-login').value.trim();
+    const channel = document.getElementById('twitch-all-channel').value.trim();
+    const msg = document.getElementById('twitch-all-message').value.trim() || null;
+    if (!login || !channel) { alert("La chaîne Twitch et le salon Discord sont requis."); return; }
+    try {
+        const res = await fetch(`${API_BASE}/twitch/all/subscriptions`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ twitch_login: login, discord_channel_id: channel, custom_message: msg })
+        });
+        const d = await res.json();
+        if (res.ok) {
+            document.getElementById('twitch-all-login').value = '';
+            document.getElementById('twitch-all-channel').value = '';
+            document.getElementById('twitch-all-message').value = '';
+            alert(`Ajouté à ${d.added.length} bot(s).` + (d.skipped.length ? ` Déjà présent sur ${d.skipped.length}.` : ''));
+            await loadTwitchConfig();
+        } else {
+            alert(`Erreur: ${d.detail || "Impossible d'ajouter l'abonnement"}`);
+        }
+    } catch (e) { alert(`Erreur réseau: ${e}`); }
+}
+
+window.deleteTwitchSubscription = async function(index) {
+    const botId = document.getElementById('twitch-bot-select').value;
+    if (!confirm("Voulez-vous vraiment supprimer cet abonnement ?")) return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/${botId}/subscriptions/${index}`, {
+            method: 'DELETE'
+        });
+        
+        if (res.ok) {
+            await loadTwitchConfig();
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Impossible de supprimer l'abonnement"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
     }
 }
