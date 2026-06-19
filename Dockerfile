@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONUTF8=1 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /app
 
 # Dépendances système (ffmpeg audio, libsodium pour discord voice)

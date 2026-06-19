@@ -1,0 +1,16 @@
+[Unit]
+Description=Dashboard Bots Discord
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__REPO__
+Environment=PATH=__REPO__/.venv-dashboard/bin:/usr/bin:/bin
+ExecStart=__REPO__/.venv-dashboard/bin/python __REPO__/dashboard/backend/app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
