@@ -7,6 +7,7 @@ Gère la superposition de texte sur parchemin et la manipulation des rôles Disc
 
 import discord
 import os
+import re
 import textwrap
 import logging
 import random
@@ -17,6 +18,51 @@ logger = logging.getLogger("sheogorath")
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 PARCHMENT_PATH = os.path.join(ASSETS_DIR, "parchment.png")
+
+# Polices embarquées (DejaVu Serif) : couvrent tous les accents français, donc
+# fonctionnent IDENTIQUEMENT en local et en Docker (où arial.ttf n'existe pas).
+# On garde des chemins système en repli si jamais le fichier embarqué manque.
+_FONT_CANDIDATES_REGULAR = [
+    os.path.join(ASSETS_DIR, "DejaVuSerif.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    "DejaVuSerif.ttf",
+    "arial.ttf",
+]
+_FONT_CANDIDATES_BOLD = [
+    os.path.join(ASSETS_DIR, "DejaVuSerif-Bold.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+    "DejaVuSerif-Bold.ttf",
+    "arialbd.ttf",
+] + _FONT_CANDIDATES_REGULAR
+
+# Emoji et symboles hors-police (ranges non couverts par DejaVu) : on les retire
+# du texte de l'image pour éviter les carrés « tofu ». Ils restent dans le
+# message Discord d'accompagnement.
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    "\U00002B00-\U00002BFF\U0000FE00-\U0000FE0F\U00002190-\U000021FF]+",
+    flags=re.UNICODE,
+)
+
+
+def _load_font(candidates, size):
+    """Charge la première police disponible dans la liste, sinon police défaut."""
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    logger.warning("⚠️ [DECRET] Aucune police TTF trouvée, repli sur la police par défaut (accents possiblement absents).")
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def _clean_for_image(text):
+    """Retire emoji/symboles hors-police et normalise les espaces pour l'image."""
+    text = _EMOJI_RE.sub("", text or "")
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 # Couleurs Sheogorath (RGB)
 COLORS = {
@@ -41,17 +87,23 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
         draw = ImageDraw.Draw(img)
         width, height = img.size
 
-        # 2. Charger les polices (fallback sur celle par défaut si non trouvées)
-        try:
-            # On essaie de charger une police serif standard si possible
-            # Sinon Pillow utilisera la police par défaut (très basique)
-            font_title = ImageFont.truetype("arial.ttf", 60)
-            font_text = ImageFont.truetype("arial.ttf", 40)
-        except Exception:
-            font_title = ImageFont.load_default()
-            font_text = ImageFont.load_default()
+        # 2. Charger les polices embarquées (DejaVu Serif → accents OK partout).
+        font_text = _load_font(_FONT_CANDIDATES_REGULAR, 40)
 
-        # 3. Écrire le Titre
+        # On retire les emoji/symboles non couverts par la police (sinon carrés).
+        title = _clean_for_image(title)
+        text = _clean_for_image(text)
+
+        # 3. Écrire le Titre — taille auto-réduite pour tenir dans la largeur.
+        margin = 150
+        max_title_w = width - 2 * margin
+        title_size = 60
+        while title_size > 28:
+            font_title = _load_font(_FONT_CANDIDATES_BOLD, title_size)
+            tb = draw.textbbox((0, 0), title, font=font_title)
+            if (tb[2] - tb[0]) <= max_title_w:
+                break
+            title_size -= 4
         title_bbox = draw.textbbox((0, 0), title, font=font_title)
         title_w = title_bbox[2] - title_bbox[0]
         draw.text(((width - title_w) / 2, 150), title, font=font_title, fill=COLORS["PURPLE"])

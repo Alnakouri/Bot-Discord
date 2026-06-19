@@ -117,6 +117,15 @@ except ImportError as e:
     logger.warning(f"⚠️ [SHEO] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
 
+try:
+    from shared.twitch_announcer import setup_twitch_announcer
+    TWITCH_AVAILABLE = True
+except ImportError:
+    TWITCH_AVAILABLE = False
+    def setup_twitch_announcer(*a, **k): return None
+
+twitch_announcer = None
+
 # GAME LOGIC
 try:
     from minigames import jeu_fromage
@@ -525,6 +534,16 @@ async def on_ready():
     mood_changer.start()  # Démarrage du changeur d'humeur
     daily_rumor_check_sheo.start()  # Rumeur quotidienne (jours impairs)
     birthday_check_sheo.start()  # Vérification anniversaires
+    
+    global twitch_announcer
+    if TWITCH_AVAILABLE and twitch_announcer is None:
+        twitch_announcer = setup_twitch_announcer(
+            bot, "sheogorath", logger,
+            personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Sheogorath")
+        if twitch_announcer:
+            twitch_poll_loop.start()
     daily_backup_check.start()  # Backup automatique
     check_missed_mentions_sheo.start()  # Détection mentions manquées
     # auto_riddle_loop_sheo.start()  # Transféré à M'aiq
@@ -607,6 +626,15 @@ async def on_ready():
             if uid in data:
                 del data[uid]
         save_punishments(data)
+
+@tasks.loop(seconds=90)
+async def twitch_poll_loop():
+    if twitch_announcer:
+        await twitch_announcer.tick()
+
+@twitch_poll_loop.before_loop
+async def before_twitch_poll():
+    await bot.wait_until_ready()
 
 @tasks.loop(minutes=30)
 async def status_loop_sheo():
@@ -754,7 +782,25 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
         title = title[:29] + "..."
 
     # 1. GÉNÉRATION DE L'IMAGE
-    image_buf = generate_decree_image(clean_text, title=title.upper())
+    # Les mentions Discord (<@id>) sont du texte brut dans une image : on les
+    # résout en nom lisible. La mention réelle (le ping) reste dans le message.
+    def _resolve_mentions_for_image(txt):
+        guild = target_channel.guild
+        def repl_user(m):
+            uid = int(m.group(1))
+            member = guild.get_member(uid) if guild else None
+            return f"@{member.display_name}" if member else (
+                f"@{target_user.display_name}" if uid == target_user.id else "@mortel")
+        def repl_role(m):
+            role = guild.get_role(int(m.group(1))) if guild else None
+            return f"@{role.name}" if role else "@rôle"
+        txt = re.sub(r"<@!?(\d+)>", repl_user, txt)
+        txt = re.sub(r"<@&(\d+)>", repl_role, txt)
+        txt = re.sub(r"<a?:(\w+):\d+>", r"\1", txt)  # emoji custom → son nom
+        return txt
+
+    image_text = _resolve_mentions_for_image(clean_text)
+    image_buf = generate_decree_image(image_text, title=title.upper())
     
     # 2. APPLICATION DU RÔLE
     await apply_decree_role(target_channel.guild, target_user, title)
