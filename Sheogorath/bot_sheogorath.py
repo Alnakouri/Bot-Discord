@@ -748,7 +748,8 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
             chat = openrouter_client.chat.completions.create(
                 model="x-ai/grok-4.20",
                 messages=[{"role": "user", "content": rumor_prompt}],
-                temperature=1.0
+                temperature=1.0,
+                max_tokens=300
             )
             full_response = chat.choices[0].message.content
         except Exception as e:
@@ -766,7 +767,18 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
                 logger.warning(f"⚠️ [RUMEUR SHEO] Gemini failed: {e}")
     
     if not full_response:
-        full_response = f"<title>Gardien des Chaussettes</title> Le mortel <@{target_user.id}> est désormais nommé Gardien Officiel de Mes Chaussettes Perdues ! 🦋"
+        # Repli (les 2 IA ont échoué) : décrets variés DANS la voix de Sheogorath,
+        # tirés au hasard pour éviter la répétition.
+        uid = target_user.id
+        _fallback_decrees = [
+            f"<title>Fromager des Abysses</title> MORTEL ! Par Ma volonté capricieuse, <@{uid}> est nommé Grand Fromager des Abysses ! Que ton âme sente le roquefort pour l'éternité ! 🧀",
+            f"<title>Compteur de Papillons</title> Ohhh, délicieux ! <@{uid}> devra désormais compter chaque papillon de Mundus. Un seul oubli et tes intestins deviendront des serpentins ! 🦋",
+            f"<title>Porteur de Cuillères</title> DÉCRET ! <@{uid}> est sacré Porteur Officiel de Mes Cuillères Sales. Lèche-les avec dévotion, ou danse jusqu'à la folie !",
+            f"<title>Duc des Chaussettes</title> Hahaha ! <@{uid}> règne désormais sur Mes Chaussettes Perdues. Un royaume puant, mais ô combien glorieux !",
+            f"<title>Murmureur de Légumes</title> Par la Démence ! <@{uid}> chuchotera des secrets aux navets jusqu'à la fin des temps. Ils répondront. Ils répondent TOUJOURS.",
+            f"<title>Gardien du Chaos</title> MWAHAHA ! <@{uid}> est promu Gardien de Mon Chaos. Tâche impossible, châtiment garanti, fromage en option ! 🧀",
+        ]
+        full_response = random.choice(_fallback_decrees)
     
     # Extraction du Titre et du Texte
     title = "Sujet de la Folie"

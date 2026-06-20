@@ -8,7 +8,6 @@ Gère la superposition de texte sur parchemin et la manipulation des rôles Disc
 import discord
 import os
 import re
-import textwrap
 import logging
 import random
 from PIL import Image, ImageDraw, ImageFont
@@ -64,6 +63,21 @@ def _clean_for_image(text):
     text = _EMOJI_RE.sub("", text or "")
     return re.sub(r"[ \t]{2,}", " ", text).strip()
 
+
+def _wrap_by_width(draw, text, font, max_width):
+    """Découpe `text` en lignes qui tiennent dans `max_width` pixels."""
+    lines, cur = [], ""
+    for word in text.split():
+        trial = (cur + " " + word).strip()
+        if draw.textlength(trial, font=font) <= max_width or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    return lines
+
 # Couleurs Sheogorath (RGB)
 COLORS = {
     "PURPLE": (128, 0, 128),
@@ -87,10 +101,7 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
         draw = ImageDraw.Draw(img)
         width, height = img.size
 
-        # 2. Charger les polices embarquées (DejaVu Serif → accents OK partout).
-        font_text = _load_font(_FONT_CANDIDATES_REGULAR, 40)
-
-        # On retire les emoji/symboles non couverts par la police (sinon carrés).
+        # 2. On retire les emoji/symboles non couverts par la police (sinon carrés).
         title = _clean_for_image(title)
         text = _clean_for_image(text)
 
@@ -108,18 +119,30 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
         title_w = title_bbox[2] - title_bbox[0]
         draw.text(((width - title_w) / 2, 150), title, font=font_title, fill=COLORS["PURPLE"])
 
-        # 4. Écrire le Corps du Texte (avec wrapping)
-        margin = 150
-        max_width = width - (margin * 2)
-        
-        # Estimer le nombre de caractères par ligne selon la largeur
-        avg_char_width = 20 # Estimation grossière
-        chars_per_line = max_width // avg_char_width
-        
-        wrapped_text = textwrap.fill(text, width=int(chars_per_line))
-        
-        # Écrire le texte centré verticalement (plus ou moins)
-        draw.text((margin, 300), wrapped_text, font=font_text, fill=COLORS["BLACK"])
+        # 4. Corps du texte : grande police auto-ajustée + retour à la ligne au
+        #    pixel près, bloc centré horizontalement et verticalement dans le
+        #    parchemin (sous le titre).
+        body_margin = 120
+        max_width = width - 2 * body_margin
+        top = 300                      # sous le titre
+        bottom = height - 150          # marge basse du parchemin
+        zone_h = bottom - top
+
+        body_size = 70
+        while body_size > 30:
+            font_text = _load_font(_FONT_CANDIDATES_REGULAR, body_size)
+            lines = _wrap_by_width(draw, text, font_text, max_width)
+            line_h = int(body_size * 1.35)
+            if line_h * len(lines) <= zone_h:
+                break
+            body_size -= 4
+
+        block_h = line_h * len(lines)
+        y = top + max(0, (zone_h - block_h) // 2)   # centré verticalement
+        for line in lines:
+            lw = draw.textlength(line, font=font_text)
+            draw.text(((width - lw) / 2, y), line, font=font_text, fill=COLORS["BLACK"])
+            y += line_h
 
         # 5. Sauvegarder en mémoire
         buf = BytesIO()
