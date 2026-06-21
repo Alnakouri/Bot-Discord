@@ -65,7 +65,7 @@ try:
         send_imposter_message, fetch_user_style_context,
         get_bot_persona, start_imposter_session, stop_imposter_session, get_active_session
     )
-    from sheo_decrees import generate_decree_image, apply_decree_role
+    from sheo_decrees import generate_decree_image, apply_decree_role, cleanup_old_decree_roles
     from shared.shared_database import add_reputation
 except ImportError:
     from Sheogorath import sheo_data
@@ -82,6 +82,8 @@ except ImportError:
         send_imposter_message, fetch_user_style_context,
         get_bot_persona, start_imposter_session, stop_imposter_session, get_active_session
     )
+    from Sheogorath.sheo_decrees import generate_decree_image, apply_decree_role, cleanup_old_decree_roles
+    from shared.shared_database import add_reputation
 
 # LOGGING STRUCTURÉ
 try:
@@ -546,6 +548,8 @@ async def on_ready():
             twitch_poll_loop.start()
     daily_backup_check.start()  # Backup automatique
     check_missed_mentions_sheo.start()  # Détection mentions manquées
+    if not decree_cleanup_loop.is_running():
+        decree_cleanup_loop.start()  # Nettoyage des rôles de décret expirés/orphelins
     # auto_riddle_loop_sheo.start()  # Transféré à M'aiq
     
     # VOICE TTS — Démarrage du check d'inactivité
@@ -626,6 +630,21 @@ async def on_ready():
             if uid in data:
                 del data[uid]
         save_punishments(data)
+
+@tasks.loop(minutes=5)
+async def decree_cleanup_loop():
+    """Filet anti-redémarrage : supprime les rôles de décret expirés/orphelins.
+    Le premier tick s'exécute peu après on_ready (cf. before_loop) → l'orphelin
+    actuel est nettoyé en quelques secondes."""
+    for guild in bot.guilds:
+        try:
+            await cleanup_old_decree_roles(guild)
+        except Exception as e:
+            logger.error(f"❌ [DECRET] Erreur boucle de nettoyage ({guild.id}): {e}")
+
+@decree_cleanup_loop.before_loop
+async def before_decree_cleanup():
+    await bot.wait_until_ready()
 
 @tasks.loop(seconds=90)
 async def twitch_poll_loop():
