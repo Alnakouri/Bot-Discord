@@ -1,119 +1,46 @@
-# 🔫 Johnny Silverbot - Le Rockerboy de Discord
+# 🎸 Johnny Silverbot
 
-**Johnny Silverbot**, légende rockerboy de Night City, débarque sur votre serveur Discord avec sa rage anti-corpo et son cynisme légendaire (inspiré de Johnny Silverhand, Cyberpunk 2077).
+Le rockerboy anarchiste et légendaire de Night City (univers Cyberpunk 2077) transposé sur Discord pour prêcher la révolution anti-corpo, siffler du whisky et provoquer les mortels.
 
 ## 🎭 Personnalité
+- **Identité** : Johnny Silverhand.
+- **Style de langage** : Vulgaire, cynique, direct, rebelle. Utilise des expressions typiques de Night City ("choom", "eddies", "chrome"). Haine viscérale des corporations (Arasaka, Militech) et mépris pour l'autorité.
 
-Johnny est un **rockerboy anarchiste** de Night City :
-- 🎸 **Anti-Corpo Viscéral** - Crame Arasaka, crame le système
-- 🔫 **Cynique & Provocateur** - Une vérité brutale dans chaque phrase
-- 🥃 **Whisky & Clopes** - Carburant de la révolution
-- 🎤 **Légende Vivante** - Samurai n'est jamais vraiment mort
-- 😤 **Loyal à sa manière** - Une grande gueule au grand cœur
-- 🌃 **Esprit de Night City** - Wake the f*** up, samurai
+## ⚙️ Configuration
+1. Copier [JohnnyBot/.env.example](file:///I:/IA/Bot%20Discord/JohnnyBot/.env.example) → `.env` et renseigner les clés lues par [bot_johnny.py](file:///I:/IA/Bot%20Discord/JohnnyBot/bot_johnny.py) :
+   - `DISCORD_TOKEN`
+   - `GEMINI_KEY_1`, `GEMINI_KEY_2`, `GEMINI_KEY_3`, `GEMINI_KEY_4`
+   - `GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`
+2. Chiffrer la configuration :
+   ```bash
+   python crypto_utils.py encrypt
+   ```
 
-## 🚀 Installation
-
-### 1. Prérequis
-- Python 3.9+
-- Un bot Discord (https://discord.com/developers/applications)
-- Clés API Gemini (https://aistudio.google.com/apikey)
-
-### 2. Configuration des Clés
-
-```bash
-# Copiez le template
-cp .env.example .env
-
-# Éditez .env avec vos vraies clés
-nano .env
-
-# Chiffrez les clés (utilise .master_key du dossier parent)
-cd ..
-python crypto_utils.py encrypt
-
-# Le fichier .env.encrypted sera créé, l'original .env supprimé
-```
-
-### 3. Installation des Dépendances
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Lancer Johnny
-
-```bash
-python bot_johnny.py
-```
-
-Ou utilisez le fichier batch :
-```bash
-start_johnny.bat
-```
+## 🚀 Lancement
+- **Solo** :
+  ```bash
+  python bot_johnny.py
+  ```
+- **Docker** : Lancer le service `johnny` du compose global.
 
 ## 🎮 Commandes
+- **Slash partagées** : Voir [COMMANDES.md](file:///I:/IA/Bot%20Discord/COMMANDES.md) (ne pas dupliquer).
+- **Commandes spécifiques** (préfixe `!`) :
+  - `!gig` (aliases: `job`, `mission`, `run`, `contrat`) : Johnny raconte un de ses braquages ou concerts mythiques.
+  - `!loot` (aliases: `gift`, `chrome`, `eddies`) : Johnny offre un objet de pacotille ou une pièce de cyberware de la rue.
+  - `!nightcity` (aliases: `samurai`, `anti-corpo`) : Johnny exprime son dégoût pour le système de Night City et ses corporations.
+  - `!whisky` (aliases: `clope`, `drink`) : Consomme un verre de whisky Centurion ou allume une clope.
+  - `!rant` (aliases: `corpo`, `systeme`) : Lance une diatribe virulente contre les mégacorporations et le capitalisme sauvage.
+  - `!legends` (aliases: `leaderboard`) : Affiche le classement de réputation locale adapté au style mercenaire de l'Afterlife.
+  - `!oubliemoi` : Purge l'historique et la mémoire de l'utilisateur.
 
-### Commandes Standard
-- `/reputation` - Voir votre réputation à Night City
-- `/top` - Classement des légendes
-- `/anniversaire JJ/MM` - Enregistrer votre date de naissance
-- `/quetes` - Vos quêtes quotidiennes
+## 🧠 Fonctionnalités
+- **Mémoire à Long Terme** : Johnny se souvient des actions passées des utilisateurs qu'il apprécie ou méprise.
+- **Routage Intelligent** : Analyse les messages multimédias (vision des images attachées et décodage de messages vocaux).
+- **Duels inter-bots** : Cible particulièrement Alfred Pennyworth, qu'il considère comme le majordome corpo par excellence.
+- **Statistiques** : Enregistre le nombre total de verres bus, de cadeaux distribués et de missions de mercenaires réussies.
 
-### Commandes Spéciales Johnny
-- `!gig` (alias `!job !mission !run !contrat`) - Johnny raconte un gig
-- `!loot` (alias `!gift !chrome !eddies`) - Johnny balance du loot / chrome
-- `!nightcity` (alias `!samurai !anti-corpo`) - Johnny crache sur le système
-- `!whisky` (alias `!clope !drink`) - Johnny picole et fume
-- `!rant` (alias `!corpo !systeme`) - Johnny part en rant anti-corpo
-- `!legends` (alias `!leaderboard`) - Les légendes de Night City
-
-### Interactions
-- Mentionnez Johnny avec `@Johnny` (ou dites "johnny", "silverhand", "samurai", "silverbot")
-- Johnny peut intervenir dans les conversations (10% de chance)
-
-## 🤖 Mode Duel
-
-Johnny interagit avec les autres bots :
-- **vs Sheogorath** : Méfiance face au Prince de la Folie
-- **vs Khajiit (M'aiq)** : Trafiquant, comme à Night City
-- **vs Alfred** : Le majordome corpo par excellence — cible idéale
-
-## 📊 Système de Réputation
-
-Gagnez des points pour monter en grade à Night City :
-- **🔰 Newbie** (0-49 pts)
-- **🎸 Mercs** (50-149 pts)
-- **🔫 Solo** (150-299 pts)
-- **🌃 Légende de la Rue** (300-499 pts)
-- **💀 Légende Vivante** (500+ pts)
-
-## 🔒 Sécurité
-
-- ✅ Clés API chiffrées avec Fernet
-- ✅ Protection DoS (images max 10 MB)
-- ✅ Rate limiting
-- ✅ `.env` jamais committé
-
-## 🛠️ Architecture
-
-- `bot_johnny.py` - Fichier principal du bot
-- `johnny_data.py` - Personnalité et données
-- `requirements.txt` - Dépendances
-- `.env.encrypted` - Configuration sécurisée
-- `shared_database.py` - Base de données partagée (dossier parent)
-
-## 📊 Statistiques Suivies
-
-Johnny suit ses exploits :
-- 🎸 **Gigs accomplis**
-- 🔫 **Loot récupéré**
-- 🥃 **Verres sifflés**
-
-## 📝 Licence
-
-Projet personnel - Cyberpunk 2077 © CD Projekt RED
-
----
-
-**Johnny Silverbot — Wake the f*** up, samurai. On a une ville à brûler.** 🔫🎸
+## 🗂️ Fichiers
+- [bot_johnny.py](file:///I:/IA/Bot%20Discord/JohnnyBot/bot_johnny.py) : Point d'entrée principal, boucle d'événements et gestion des interactions.
+- [johnny_data.py](file:///I:/IA/Bot%20Discord/JohnnyBot/johnny_data.py) : Contient les traits de caractère, répliques types, anecdotes de concerts et de braquages.
+- [johnny_memory.py](file:///I:/IA/Bot%20Discord/JohnnyBot/johnny_memory.py) : Gestionnaire local de la base de mémoire à long terme de Johnny (fichiers JSON).

@@ -42,15 +42,19 @@
 
 ```
 Bot Discord/
+├── crypto_utils.py          # 🔑 Chiffrement/déchiffrement Fernet (Racine)
+│
 ├── Alfred/                  # Bot Alfred Pennyworth (Majordome cynique)
 │   ├── bot_alfred.py        # Point d'entrée
+│   ├── alfred_data.py       # Répliques, personnalité, surnoms
+│   ├── alfred_memory.py     # Logique de mémoire à long terme
 │   ├── .env                 # 🔒 Secrets (NE PAS TOUCHER)
 │   ├── requirements.txt     # Dépendances propres
-│   └── discloud.config      # Config Discloud (déploiement solo)
+│   └── discloud.config      # Config Discloud (archivé)
 │
 ├── Sheogorath/              # Bot Sheogorath (Prince de la Folie)
-│   ├── bot_sheogorath.py
-│   ├── sheo_voice.py        # 🎤 Système Vocal (Chatterbox Turbo)
+│   ├── bot_sheogorath.py    # Point d'entrée
+│   ├── sheo_voice.py        # 🎤 Système Vocal (Chatterbox Turbo / Piper)
 │   ├── sheo_data.py         # Personnalité, répliques, données
 │   ├── sheo_memory.py       # Système de mémoire
 │   ├── sheo_punishments.py  # Système de punitions (Wabbajack)
@@ -58,30 +62,36 @@ Bot Discord/
 │   ├── sheo_mentions.py     # Conversion mentions
 │   ├── sheo_faveur.py       # Système de Faveur du Prince
 │   ├── sheo_imposter.py     # Usurpation d'identité (Webhook)
-│   ├── minigames.py         # Mini-jeux
-│   └── backup_manager.py    # Backup automatique
+│   ├── sheo_decrees.py      # Génération de décrets
+│   ├── backup_manager.py    # Backup automatique de la base
+│   └── minigames.py         # Mini-jeux (fromage...)
 │
-├── chatterbox-server/       # 🔊 Serveur TTS (Voice Cloning)
+├── chatterbox-server/       # 🔊 Serveur TTS (Voice Cloning) — PARQUÉ
 │   ├── server.py            # API FastAPI pour TTS
 │   ├── Dockerfile           # Image GPU (CUDA)
 │   └── voices/              # Échantillons de voix (.wav)
 │
 ├── MaiqBot/                 # Bot M'aiq le Menteur (Khajiit sage)
-│   ├── bot_maiq.py
-│   └── minigames.py
+│   ├── bot_maiq.py          # Point d'entrée
+│   ├── maiq_data.py         # Répliques et rumeurs de M'aiq
+│   ├── maiq_memory.py       # Gestion de mémoire à long terme
+│   ├── minigames.py         # Mini-jeux (énigmes...)
+│   └── debug_db.py          # Outil de débogage DB
 │
 ├── JohnnyBot/               # Bot Johnny Silverbot (Rockerboy Cyberpunk)
-│   ├── bot_johnny.py
-│   └── johnny_data.py       # Personnalité et données
+│   ├── bot_johnny.py        # Point d'entrée
+│   ├── johnny_data.py       # Personnalité et données
+│   └── johnny_memory.py     # Mémoire à long terme Johnny
 │
 ├── OnizukaBot/              # Bot Eikichi Onizuka (Great Teacher Onizuka)
-│   ├── bot_onizuka.py
-│   └── onizuka_data.py
+│   ├── bot_onizuka.py       # Point d'entrée
+│   ├── onizuka_data.py      # dialogues et expressions d'Onizuka
+│   └── onizuka_memory.py    # Mémoire à long terme Onizuka
 │
 ├── MalenaBot/               # Bot Malena (La Gitana Marseillaise)
-│   ├── bot_malena.py
-│   ├── malena_data.py       # Personnalité et expressions
-│   └── malena_memory.py     # Système de mémoire
+│   ├── bot_malena.py        # Point d'entrée
+│   ├── malena_data.py       # Personnalité, duels, surnoms et humeurs
+│   └── malena_memory.py     # Système de mémoire et consignes
 │
 ├── shared/                  # 📚 Bibliothèque partagée OPTIONNELLE
 │   ├── api_manager.py       # MultiAPIKeyManager (round-robin, cooldowns, TPM)
@@ -97,7 +107,8 @@ Bot Discord/
 │   ├── response_memory.py   # Anti-répétition (RAM)
 │   ├── graceful_shutdown.py # Arrêt propre (SIGTERM/SIGINT)
 │   ├── healthcheck.py       # Health check API
-│   └── crypto_utils.py      # Chiffrement/déchiffrement Fernet
+│   ├── llm_cascade.py       # Inférence multi-modèles cascade unifiée
+│   └── twitch_announcer.py  # Annonceur de streams Twitch (Helix API)
 │
 ├── dashboard/               # 📊 Dashboard de monitoring
 │   ├── backend/             # FastAPI (app.py + 6 modules)
@@ -122,12 +133,12 @@ Bot Discord/
 |---|---|---|
 | Runtime | Python | 3.11 (Docker) |
 | Framework Discord | discord.py | >=2.7.1 |
-| IA Principale | Google Gemini | gemini-2.0-flash / gemini-2.5-pro |
-| IA Fallback #1 | Mistral | mistral-large-latest |
-| IA Fallback #2 | Groq | llama-3.3-70b-versatile |
-| IA Fallback #3 | xAI Grok | grok-3-mini |
-| IA Fallback #4 | OpenRouter | meta-llama/llama-3.3-70b-instruct |
-| Vision locale | Ollama Moondream | moondream (conteneur Docker) |
+| IA Principale | Google Gemini | `gemini-2.0-pro-exp` / `gemini-2.0-flash` |
+| IA Fallback #1 | Mistral | `mistral-large-latest` |
+| IA Fallback #2 | Groq | `llama-3.3-70b-versatile` |
+| IA Fallback #3 | xAI Grok (OpenRouter)| `x-ai/grok-4.20` |
+| IA Fallback #4 | OpenRouter (Gemma) | `google/gemma-4-26b-a4b-it:free` |
+| Vision locale (Parquée) | Ollama Moondream | moondream (conteneur Docker) |
 | Base de données | SQLite | WAL mode, accès concurrent |
 | Dashboard | FastAPI + Vanilla JS | Port 8501 (Orchestration Docker native) |
 | Synthèse Vocale (V2)| Chatterbox (Turbo) | Zero-Shot Voice Cloning (GPU CUDA) |

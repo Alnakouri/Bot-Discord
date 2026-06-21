@@ -1,4 +1,7 @@
-# Guide de Déploiement sur Oracle Cloud Free Tier (ARM64)
+# Guide de Déploiement sur Oracle Cloud Free Tier (ARM64) (ARCHIVÉ)
+
+> [!WARNING]
+> **Déploiement serveur PARKÉ** (Oracle abandonné, Hetzner annulé 2026-06-21). Ce document est conservé uniquement à titre de référence historique.
 
 Ce guide décrit la procédure pas-à-pas pour déployer et faire tourner les 6 bots Discord et le dashboard 24/7 de manière sécurisée et robuste sur une instance **Oracle Cloud Always Free (Ampere A1)**.
 

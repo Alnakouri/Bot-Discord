@@ -7,10 +7,10 @@
 ## 🧠 Stratégie de Routage (Expertise par Modèle)
 
 Chaque bot utilise l'IA la plus performante dans son domaine de spécialité :
-- **Humour & Répartie** : Priorité à **Grok (xAI)**. Idéal pour le chaos, le sarcasme et la personnalité.
-- **Raisonnement & Logique** : Priorité à **Gemini 2.5 Pro**. Utilisé pour les tâches complexes, le codage et les explications détaillées.
-- **Vision & Audio** : Priorité à **Gemini 2.5 Flash**. Rapide et efficace pour l'analyse multimédia.
-- **Réponse Rapide & Fallback** : **Llama 3.3 (Groq)** ou **Mistral**.
+- **Humour & Répartie** : Priorité à **Grok 4.20** via OpenRouter (`x-ai/grok-4.20`). Idéal pour le chaos, le sarcasme et la personnalité.
+- **Raisonnement & Logique** : Priorité à **Gemini 2.0 Pro** (`gemini-2.0-pro-exp`). Utilisé pour les tâches complexes, le raisonnement et les explications détaillées.
+- **Vision & Audio** : Priorité à **Gemini 2.0 Flash** (`gemini-2.0-flash` / `gemini-2.0-flash-lite`). Rapide et efficace pour l'analyse multimédia (images, audio).
+- **Réponse Rapide & Fallback** : **Mistral** (`mistral-large-latest`), **Llama 3.3** via Groq (`llama-3.3-70b-versatile`) et **Gemma 4** via OpenRouter (`google/gemma-4-26b-a4b-it:free`).
 
 ## Variables d'Environnement (Indépendantes par Bot)
 

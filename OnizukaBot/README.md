@@ -1,100 +1,45 @@
-# 🏍️ Eikichi Onizuka Bot (GTO) - Le Prof le plus déjanté de Discord
+# 🏍️ Onizuka
 
-**Eikichi Onizuka**, 22 ans, célibataire et libre comme l'air, ancien chef du gang Onibaku à Shonan, est devenu professeur au lycée Seirin ! Il débarque sur votre serveur Discord pour y mettre son grain de folie et donner de vraies leçons de vie !
+Eikichi Onizuka, 22 ans, célibataire et libre comme l'air, ancien chef du gang Onibaku à Shonan et professeur hors-normes au lycée Seirin (univers GTO), débarque sur Discord pour dispenser ses leçons de vie et enseigner les vraies valeurs humaines (avec pas mal de dérapages).
 
 ## 🎭 Personnalité
+- **Identité** : Eikichi Onizuka.
+- **Style de langage** : Familier, direct, langage fleuri de loubard/motard de Shonan, hyper expressif et cash. Obsédé par sa bécane, le fric, le pachinko, et Fuyutsuki-sensei. Malgré ses airs d'obsédé crétin, il possède un cœur d'or et défend ses potes/élèves bec et ongles.
 
-Onizuka est le protagoniste légendaire du manga **GTO (Great Teacher Onizuka)** :
-- 🏍️ **Motard et Loubard** - Conduit sa Kawasaki Z900 à toute allure !
-- 💴 **Obsédé par l'Argent** - Adore le pachinko, les jeux d'argent et gratter des yens
-- 😍 **Fleur Bleue & Obsédé** - Craque totalement pour Fuyutsuki-sensei (et les jolies filles en général)
-- ✊ **Un Cœur d'Or** - Capable de risquer sa vie pour sauver un de ses élèves
-- 🧠 **Anti-Règles** - Piétine le règlement scolaire mais enseigne les vraies valeurs humaines
-- 🚫 **Sans fioritures** - Parle cash, avec un langage fleuri de loubard de Shonan
+## ⚙️ Configuration
+1. Copier [OnizukaBot/.env.example](file:///I:/IA/Bot%20Discord/OnizukaBot/.env.example) → `.env` et renseigner les clés lues par [bot_onizuka.py](file:///I:/IA/Bot%20Discord/OnizukaBot/bot_onizuka.py) :
+   - `DISCORD_TOKEN`
+   - `GEMINI_KEY_1`, `GEMINI_KEY_2`, `GEMINI_KEY_3`, `GEMINI_KEY_4`
+   - `GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`
+2. Chiffrer la configuration :
+   ```bash
+   python crypto_utils.py encrypt
+   ```
 
-## 🚀 Installation
-
-### 1. Prérequis
-- Python 3.9+
-- Un bot Discord (https://discord.com/developers/applications)
-- Clés API Gemini (https://aistudio.google.com/apikey)
-
-### 2. Configuration des Clés
-
-```bash
-# Copiez le template
-cp .env.example .env
-
-# Éditez .env avec vos vraies clés
-nano .env
-
-# Chiffrez les clés (utilise .master_key du dossier parent)
-cd ..
-python crypto_utils.py encrypt
-
-# Le fichier .env.encrypted sera créé, l'original .env supprimé
-```
-
-### 3. Installation des Dépendances
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Lancer Onizuka
-
-```bash
-python bot_onizuka.py
-```
+## 🚀 Lancement
+- **Solo** :
+  ```bash
+  python bot_onizuka.py
+  ```
+- **Docker** : Lancer le service `onizuka` du compose global.
 
 ## 🎮 Commandes
+- **Slash partagées** : Voir [COMMANDES.md](file:///I:/IA/Bot%20Discord/COMMANDES.md) (ne pas dupliquer).
+- **Commandes spécifiques** (préfixe `!`) :
+  - `!exploit` (alias: `histoire`) : Onizuka raconte un de ses exploits passés de loubard ou de professeur.
+  - `!chanson` (alias: `frime`) : Sort une punchline arrogante ou se vante d'un truc absurde.
+  - `!fric` (alias: `argent`) : Onizuka parle de pachinko, de dettes ou de son rêve de s'acheter une bécane de luxe.
+  - `!jackpot` : Onizuka parle de ses gains fabuleux (ou le plus souvent de ses pertes massives).
+  - `!moto` : Raconte ses balades sauvages en Kawasaki Z900 ou ses misères avec la Cresta du sous-directeur Uchiyamada.
+  - `!equipage` (alias: `classe`) : Affiche la liste des membres actifs de la bande / classe.
+  - `!oubliemoi` : Purge l'historique et la mémoire de l'utilisateur.
 
-### Commandes Standard
-- `/reputation` - Voir votre réputation/respect auprès d'Onizuka
-- `/top` - Classement de la classe
-- `/anniversaire JJ/MM` - Enregistrer votre date de naissance
-- `/quetes` - Vos quêtes quotidiennes
+## 🧠 Fonctionnalités
+- **Mémoire à Long Terme** : Onizuka se souvient de qui sont ses élèves loyaux et de qui fait le cancre.
+- **Routage Multimodal** : Capacité d'analyser les captures d'écran (images jointes) et les fichiers audio vocaux.
+- **Duels inter-bots** : Joute verbale amicale et propositions de virées à moto avec les autres bots (notamment Alfred et Sheogorath).
 
-### Commandes Spéciales Onizuka
-- `!exploit` ou `!histoire` - Onizuka raconte un de ses exploits loufoques
-- `!chanson` ou `!frime` - Onizuka sort une punchline ou se vante
-- `!fric` ou `!argent` - Onizuka parle de pachinko, de fric ou de ramen
-- `!jackpot` - Onizuka parle de ses gains (ou plutôt de ses dettes !)
-- `!moto` - Vante sa bécane ou raconte ses misères avec la Cresta d'Uchiyamada
-- `!equipage` ou `!classe` - Liste la bande d'élèves/potes actifs
-
-### Interactions
-- Mentionnez Onizuka avec `@Onizuka` pour lui parler directement
-- Dites "fric", "jackpot", "moto" pour déclencher des réactions spéciales
-- Onizuka peut intervenir dans les conversations (10% de chance)
-
-## 🤖 Mode Duel
-
-Onizuka interagit avec les autres bots :
-- **vs Sheogorath** : Relève le défi de folie du Prince Daedra avec assurance
-- **vs M'aiq** : Taquine le Khajiit menteur et lui propose des ramen
-- **vs Alfred** : Tente de décoincer le majordome d'une virée en bécane
-
-## 📊 Système de Respect dans la Classe
-
-Gagnez des points pour monter en grade :
-- **Cancre** (0-49 pts)
-- **Élève Moyen** (50-149 pts)
-- **Motard d'Onibaku** (150-299 pts)
-- **Délégué de Classe** (300-499 pts)
-- **Great Student Onizuka** (500+ pts)
-
-## 🔒 Sécurité
-
-- ✅ Clés API chiffrées avec Fernet
-- ✅ Protection DoS (images max 10 MB)
-- ✅ Rate limiting
-- ✅ `.env` jamais committé
-
-## 🛠️ Architecture
-
-- `bot_onizuka.py` - Fichier principal du bot
-- `onizuka_data.py` - Personnalité et données
-- `requirements.txt` - Dépendances
-- `.env.encrypted` - Configuration sécurisée
-- `shared_database.py` - Base de données partagée (dossier parent)
+## 🗂️ Fichiers
+- [bot_onizuka.py](file:///I:/IA/Bot%20Discord/OnizukaBot/bot_onizuka.py) : Point d'entrée principal, boucle d'événements et commandes du prof de Shonan.
+- [onizuka_data.py](file:///I:/IA/Bot%20Discord/OnizukaBot/onizuka_data.py) : Prompt de personnalité, anecdotes de lycée, expressions familières et dialogues de GTO.
+- [onizuka_memory.py](file:///I:/IA/Bot%20Discord/OnizukaBot/onizuka_memory.py) : Moteur de persistance locale de la mémoire à long terme d'Onizuka (fichiers JSON).

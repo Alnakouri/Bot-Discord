@@ -113,3 +113,6 @@ logs/
 # Données bot runtime supplémentaires (cf. liste nommée plus haut)
 data/sheo_faveurs.json
 sheo_faveurs.json
+
+# Rapports générés temporaires
+maintenance_report.md
