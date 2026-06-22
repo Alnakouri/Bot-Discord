@@ -128,6 +128,17 @@ except ImportError:
 
 twitch_announcer = None
 
+try:
+    from shared.twitch_chat import setup_twitch_chat
+    TWITCH_CHAT_AVAILABLE = True
+except ImportError:
+    TWITCH_CHAT_AVAILABLE = False
+    def setup_twitch_chat(*a, **k): return None
+
+twitch_chat = None
+twitch_chat_task = None
+
+
 # GAME LOGIC
 try:
     from minigames import jeu_fromage
@@ -537,7 +548,7 @@ async def on_ready():
     daily_rumor_check_sheo.start()  # Rumeur quotidienne (jours impairs)
     birthday_check_sheo.start()  # Vérification anniversaires
     
-    global twitch_announcer
+    global twitch_announcer, twitch_chat, twitch_chat_task
     if TWITCH_AVAILABLE and twitch_announcer is None:
         twitch_announcer = setup_twitch_announcer(
             bot, "sheogorath", logger,
@@ -546,6 +557,18 @@ async def on_ready():
             openrouter_client=openrouter_client, bot_label="Sheogorath")
         if twitch_announcer:
             twitch_poll_loop.start()
+
+    if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
+        twitch_chat = setup_twitch_chat(
+            "sheogorath", logger,
+            personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Sheogorath",
+            # MÊME config que Discord : prompt d'humeur courant (vivant)
+            system_prompt_provider=lambda: current_system_prompt)
+        if twitch_chat:
+            twitch_chat_task = asyncio.create_task(twitch_chat.run())
+
     daily_backup_check.start()  # Backup automatique
     check_missed_mentions_sheo.start()  # Détection mentions manquées
     if not decree_cleanup_loop.is_running():
@@ -2087,9 +2110,22 @@ async def on_message(message):
         asyncio.create_task(daily_brain.refresh_daily_read(message.author.id, _daily_llm_call))
         response_memory.add(message.guild.id, response_text)
 
+async def on_sheo_shutdown():
+    global twitch_chat, twitch_chat_task
+    if twitch_chat:
+        logger.info("[SHUTDOWN] Arrêt du chat Twitch Sheogorath...")
+        twitch_chat.stop()
+    if twitch_chat_task:
+        twitch_chat_task.cancel()
+        try:
+            await twitch_chat_task
+        except asyncio.CancelledError:
+            pass
+
 if __name__ == "__main__":
     if DISCORD_TOKEN:
-        setup_graceful_shutdown(bot)
+        setup_graceful_shutdown(bot, on_sheo_shutdown)
         bot.run(DISCORD_TOKEN)
     else:
         logger.critical("❌ ERREUR : Aucun token Discord trouvé dans le fichier .env !")
+

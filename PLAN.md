@@ -1,98 +1,183 @@
-# PLAN — Fiabiliser la suppression des rôles de décret (Sheogorath)
+# PLAN — Présence permanente de Sheogorath dans le chat Twitch (industrialisation)
 
-> **STATUT : IMPLÉMENTÉ par Claude 2026-06-21** (Antigravity n'avait rien écrit
-> dans le repo malgré 2 tentatives → fait directement). `py_compile` OK.
-> Reste : **test live manuel** (§6) + commit.
-
----
-
-## 0. Bug corrigé
-
-Un rôle de décret restait actif indéfiniment (constat user : encore là après
-2 jours, durée prévue = 10 min). Cause : dans `Sheogorath/sheo_decrees.py`,
-`apply_decree_role` programmait la suppression via
-`asyncio.create_task(delayed_cleanup)` (`sleep(600)` → `role.delete()`), tâche
-**en RAM** détruite à chaque redémarrage du bot ; et `cleanup_old_decree_roles`
-était un **stub vide** (`pass`). → rôle orphelin éternel, aucun rattrapage.
-
-Solution : **persister** les décrets actifs (JSON local, patron
-`sheo_punishments.json`) + un **filet périodique** (`tasks.loop`) qui supprime
-les rôles expirés/orphelins même après un redémarrage.
+> **Objectif** : transformer le prototype jetable `twitch_test.py` en un module
+> propre, intégré au process du bot, avec **connexion permanente** (auto-refresh
+> du token) et **reconnexion automatique**. **Sheo = pilote**, mais le module est
+> écrit **générique** pour brancher les 5 autres bots ensuite sans réécriture.
+>
+> Décisions validées (user, 2026-06-22) :
+> 1. **Intégré au process du bot** (module `shared/twitch_chat.py`, démarré comme
+>    l'announcer). Pas de service séparé.
+> 2. **Auto-refresh** du token (refresh_token + client_id/secret), persistance
+>    chiffrée/locale, regénération avant expiration.
+> 3. **Sheo pilote**, module shared généralisé (persona + clés par bot).
+>
+> Conventions respectées : indépendance des bots (`try/except ImportError` +
+> fallback no-op), env chiffré (`shared.secure_env`), réutilisation de
+> `shared.llm_cascade.generate_response` + `bot_profiles` (routage par bot),
+> données runtime gitignorées.
 
 ---
 
-## 1. Changements réalisés — `Sheogorath/sheo_decrees.py`
+## 0. État de départ (déjà acquis)
 
-- **Imports** : ajout `json`, `time`.
-- **Store persistant** (clé = `str(role_id)`), dans `DATA_DIR` (env, même volume
-  que `sheo_punishments.json`) → `DECREES_FILE = sheo_decrees_active.json` :
-  - `_load_decrees()` / `_save_decrees()` (**écriture atomique** : tmp + `os.replace`)
-  - `_add_decree(entry)` / `_remove_decree(role_id)`
-  - schéma d'entrée : `{role_id, guild_id, title, expire_at}` (`expire_at = time.time()+duration`).
-- **`apply_decree_role`** : signature **inchangée** (`guild, member, title, duration=600`).
-  Après l'assignation : `_add_decree(...)`. La tâche `delayed_cleanup` best-effort
-  est conservée (cas nominal sans redémarrage) mais : gère désormais
-  `discord.Forbidden`, et **purge le store** (`_remove_decree`) dans un `finally`.
-- **`cleanup_old_decree_roles(guild)`** (remplace le stub ; signature changée,
-  `days` retiré — aucun appelant existant) :
-  1. parcourt le store → supprime les rôles **expirés** de cette guild, purge les
-     entrées (sur `Forbidden` : on ne purge pas, retry au tick suivant) ;
-  2. **filet par-nom** : supprime les rôles `📜` **absents du store** (orphelins
-     créés avant ce mécanisme → nettoie le rôle actuellement bloqué) ;
-  3. collecte `tracked_ids` (toutes guilds) pour ne jamais supprimer par le filet
-     par-nom un décret encore valide ;
-  4. `NotFound`/`Forbidden`/`Exception` gérés partout ; sauvegarde si modifié.
-
-## 2. Changements réalisés — `Sheogorath/bot_sheogorath.py`
-
-- **Import** : `cleanup_old_decree_roles` ajouté aux deux branches
-  (`from sheo_decrees import …` ET le fallback `from Sheogorath.sheo_decrees …`).
-  *Bonus* : le fallback Discloud **n'importait pas du tout `sheo_decrees`**
-  (gap préexistant qui aurait planté `apply_decree_role` en mode Discloud) →
-  corrigé (ajout `generate_decree_image, apply_decree_role, cleanup_old_decree_roles`
-  + `add_reputation`).
-- **Boucle** `@tasks.loop(minutes=5) decree_cleanup_loop` + `@before_loop`
-  `wait_until_ready` (définie après le bloc resume des punitions).
-- **Démarrage** dans `on_ready` avec garde :
-  `if not decree_cleanup_loop.is_running(): decree_cleanup_loop.start()`.
-  Le 1er tick s'exécute peu après le ready → l'orphelin actuel part en quelques
-  secondes (granularité ≤5 min en régime).
-
-## 3. Changements réalisés — `.gitignore`
-
-- Ajout `sheo_decrees_active.json` (donnée runtime, comme `sheo_punishments.json`).
+- Prototype `twitch_test.py` **fonctionnel** : Sheo se connecte au chat IRC
+  (websocket), parse les `PRIVMSG` (préfixe de tags géré), génère une réponse en
+  personnage via la cascade LLM et répond. Sert de **référence** ; sera **supprimé**
+  en fin de tâche (jetable, gitignoré).
+- Bug clé résolu dans le proto : la capability `twitch.tv/tags` préfixe chaque
+  ligne par `@tags ` → la regex de parsing doit accepter `(?:@\S+ )?` avant `:`.
+- Compte bot Twitch dédié : `compte_bot_sheo`. App Twitch (client_id/secret)
+  = celle déjà utilisée par l'announcer (compte perso, OK). User token + refresh
+  token obtenus via `twitch token -u -s "chat:read chat:edit"`.
 
 ---
 
-## 4. Vérifications passées (Claude)
+## 1. Nouveau module — `shared/twitch_chat.py` (générique)
 
-- `python -m py_compile Sheogorath/sheo_decrees.py Sheogorath/bot_sheogorath.py` → **OK**.
-- Symboles présents : `_load_decrees/_save_decrees/_add_decree/_remove_decree`,
-  `sheo_decrees_active`, `os.replace`, `decree_cleanup_loop`,
-  `cleanup_old_decree_roles`.
-- `cleanup_old_decree_roles` ne contient plus `pass` seul.
-- `.gitignore` couvre le nouveau JSON.
+Patron : même esprit que `shared/twitch_announcer.py` (factory `setup_…` +
+classe). Aucune dépendance à un bot précis.
+
+### 1.1 Classe `TwitchChatBot`
+Paramètres (tous optionnels sauf bot_id/logger), **alignés sur l'announcer** :
+`bot_id`, `logger`, `username`, `channels: list[str]`, `client_id`, `client_secret`,
+`personality_prompt`, `key_manager`, `mistral_client`, `groq_client`,
+`openrouter_client`, `bot_label`.
+
+Responsabilités :
+- **Connexion IRC websocket** (`wss://irc-ws.chat.twitch.tv:443`), CAP
+  `twitch.tv/tags twitch.tv/commands`, `PASS oauth:<token>`, `NICK`, `JOIN` (une
+  ou plusieurs chaînes).
+- **Boucle de réception** robuste : gestion `PING/PONG`, parsing `PRIVMSG`
+  (regex avec préfixe de tags optionnel), anti-boucle (`author == username` →
+  ignore ; ignore aussi les autres comptes de bot connus si une liste est fournie).
+- **Déclencheur** : mention `@<username>` ou nom du perso dans le message
+  (paramétrable ; pour Sheo : `sheo`, `sheogorath`, `@compte_bot_sheo`).
+- **Génération** : `shared.llm_cascade.generate_response(...)` avec
+  `system_prompt = personality_prompt`, `bot_label`, `max_tokens≈120`,
+  `temperature≈0.9`. Réponse aplatie sur **une ligne**, tronquée à **480 car.**
+  (limite chat = 500).
+- **Mémoire de conversation courte** (pilote) : par `(channel, user)`, un
+  `deque(maxlen=6)` en RAM (3 derniers échanges) passé en `conversation_history`.
+  *(Mémoire long terme partagée = hors périmètre, note §7.)*
+- **Anti-spam / rate limit** : cooldown par utilisateur (~3 s) + limiteur global
+  (≤ ~18 msgs / 30 s, marge sous la limite Twitch de 20) pour ne jamais se faire
+  couper par Twitch.
+
+### 1.2 Auto-refresh & connexion permanente — `TwitchAuth`
+Petit helper dédié (dans le même fichier) :
+- **Stockage** : `DATA_DIR/twitch_chat_auth_<bot_id>.json` (écriture **atomique**
+  tmp + `os.replace`), schéma `{access_token, refresh_token, expires_at}`.
+  Au **1er** démarrage, si le fichier n'existe pas, on **amorce** depuis l'env
+  (`TWITCH_OAUTH_TOKEN` + `TWITCH_REFRESH_TOKEN`).
+- **Validation** au démarrage : `GET https://id.twitch.tv/oauth2/validate`
+  (header `Authorization: OAuth <token>`) → récupère `expires_in`. Si invalide
+  ou expiration < marge → refresh.
+- **Refresh** : `POST https://id.twitch.tv/oauth2/token`
+  `grant_type=refresh_token&refresh_token=…&client_id=…&client_secret=…`
+  → nouveau `access_token` **et** `refresh_token` (Twitch fait tourner le refresh
+  token : on **persiste les deux**). Met à jour `expires_at`.
+- **Refresh proactif** : tâche périodique (~toutes les 60 min, ou quand
+  `expires_at - now < 30 min`) qui renouvelle avant expiration.
+- **Refresh réactif** : sur `:tmi.twitch.tv NOTICE … Login authentication failed`
+  ou fermeture websocket → refresh puis reconnexion.
+
+### 1.3 Boucle de vie / reconnexion automatique
+- `run()` = boucle `while not self._stopped:` : (re)connecte, écoute ; sur
+  déconnexion/erreur → **backoff exponentiel** (1, 2, 4, … plafonné à 60 s) puis
+  reconnecte. C'est ce qui assure le **24/7**.
+- Démarrée comme **tâche asyncio** (pas une `tasks.loop`, car c'est un consommateur
+  websocket long-vécu), conservée pour pouvoir l'annuler proprement à l'arrêt.
+
+### 1.4 Factory `setup_twitch_chat(...)`
+Comme `setup_twitch_announcer` : retourne `None` (et loggue) si les crédentiels
+manquent (`username`, token amorçable, `client_id/secret`, `channels`). Sinon
+instancie `TwitchChatBot`. **Aucune exception ne doit remonter** au bot.
 
 ---
 
-## 5. Reste à faire (manuel)
+## 2. Câblage dans `Sheogorath/bot_sheogorath.py`
 
-1. **Commit** (sur accord user).
-2. **Déployer** Sheo (rebuild conteneur) → au démarrage, l'orphelin actuel est
-   nettoyé automatiquement (filet par-nom). *(Sinon : suppression manuelle
-   Paramètres serveur → Rôles.)*
+Strictement calqué sur l'announcer :
 
-## 6. Recette de test (live, après déploiement)
+- **Import** (vers la ligne 122) :
+  ```python
+  try:
+      from shared.twitch_chat import setup_twitch_chat
+      TWITCH_CHAT_AVAILABLE = True
+  except ImportError:
+      TWITCH_CHAT_AVAILABLE = False
+      def setup_twitch_chat(*a, **k): return None
+  twitch_chat = None
+  twitch_chat_task = None
+  ```
+- **Démarrage dans `on_ready`** (à côté du bloc announcer, ~ligne 540) :
+  ```python
+  global twitch_chat, twitch_chat_task
+  if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
+      twitch_chat = setup_twitch_chat(
+          "sheogorath", logger,
+          personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
+          mistral_client=mistral_client, groq_client=groq_client,
+          openrouter_client=openrouter_client, bot_label="Sheogorath")
+      if twitch_chat:
+          twitch_chat_task = asyncio.create_task(twitch_chat.run())
+  ```
+- **Arrêt propre** : dans le handler de fermeture (ou `on_disconnect`/close),
+  `if twitch_chat: twitch_chat.stop()` + annuler `twitch_chat_task`. (Best-effort.)
+- ⚠️ Le module chat est **autonome** du client Discord : il n'utilise PAS
+  `bot.get_channel`, juste sa propre connexion IRC. Donc aucune dépendance forte.
 
-1. `!decret` (admin) → rôle `📜` apparaît + entrée dans `sheo_decrees_active.json`.
-2. **Redémarrer Sheo** avant l'expiration (simule le bug d'origine).
-3. À l'échéance (+ ≤5 min de marge boucle) → le rôle **disparaît seul** et
-   l'entrée JSON est **purgée**.
-4. Créer un rôle `📜` bidon à la main → nettoyé au tick suivant (filet par-nom,
-   loggé en `info`).
+---
 
-## 7. Hors périmètre
+## 3. Configuration / secrets
 
-- Pas de migration vers SQLite (JSON local = cohérent + indépendance Sheo).
-- Durée par défaut (600 s) et apparence du décret inchangées.
-- Aucun autre bot que Sheogorath.
+- **Env chiffré de Sheo** (via `shared.secure_env`) — ajouter :
+  - `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` (déjà présents pour l'announcer →
+    réutilisés).
+  - `TWITCH_BOT_USERNAME` = `compte_bot_sheo`
+  - `TWITCH_OAUTH_TOKEN` + `TWITCH_REFRESH_TOKEN` (amorçage initial uniquement ;
+    ensuite la source de vérité = le JSON persistant en §1.2).
+  - `TWITCH_CHAT_CHANNELS` = liste de chaînes à rejoindre (CSV), p. ex.
+    `chaine_du_dev`.
+- **`.gitignore`** : ajouter `twitch_chat_auth_*.json` (donnée runtime, comme
+  `sheo_punishments.json`). *(`twitch_test.env` déjà ignoré + sera supprimé.)*
+
+---
+
+## 4. Nettoyage du jetable
+
+- Supprimer `twitch_test.py` (référence absorbée par `shared/twitch_chat.py`).
+- Supprimer `twitch_test.env` (remplacé par l'env chiffré + JSON persistant).
+- Retirer la trace `RAW> …` de debug (n'existait que dans le proto).
+
+---
+
+## 5. Vérifications (avant test live)
+
+- `python -m py_compile shared/twitch_chat.py Sheogorath/bot_sheogorath.py` → OK.
+- Module **importable seul** (indépendance) : `from shared.twitch_chat import setup_twitch_chat`.
+- `setup_twitch_chat` renvoie `None` proprement si un crédentiel manque (pas d'exception).
+- Regex `PRIVMSG` accepte le préfixe de tags (`@…`), gère 1+ chaînes.
+- Écriture atomique du JSON d'auth vérifiée (tmp + `os.replace`).
+
+## 6. Recette de test (live)
+
+1. Lancer Sheo (process complet, pas le proto) → log « connecté au chat de #… ».
+2. Écrire `sheo coucou` depuis un autre compte → Sheo répond en personnage.
+3. **Forcer l'expiration** : mettre un `access_token` bidon dans le JSON d'auth +
+   relancer → le module doit **refresh via le refresh_token** et se connecter
+   quand même (vérifie la persistance du nouveau refresh token).
+4. **Couper le réseau** quelques secondes → reconnexion auto (backoff) au retour.
+5. Laisser tourner > 4 h → toujours connecté (refresh proactif a joué).
+
+## 7. Hors périmètre (itérations suivantes)
+
+- **Généralisation aux 5 autres bots** : créer un compte Twitch + token par bot,
+  câbler `setup_twitch_chat` dans chaque `bot_*.py` (le module est déjà générique).
+- **Mémoire long terme partagée** dans le chat Twitch (réutiliser le système
+  `shared/` mémoire des bots) — ici on se limite à un contexte court en RAM.
+- **Config via dashboard** (activer/désactiver, liste de chaînes, message) comme
+  l'announcer — pour l'instant tout est en env.
+- **Commandes de chat** (`!…`), modération, réactions aux events (raids, subs).
+- Intégration Docker/compose dédiée si on veut isoler la conso.
