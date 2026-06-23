@@ -559,13 +559,15 @@ async def on_ready():
             twitch_poll_loop.start()
 
     if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
+        profile_bio = getattr(sheo_data, "TWITCH_BIO", None)
         twitch_chat = setup_twitch_chat(
             "sheogorath", logger,
             personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Sheogorath",
             # MÊME config que Discord : prompt d'humeur courant (vivant)
-            system_prompt_provider=lambda: current_system_prompt)
+            system_prompt_provider=lambda: current_system_prompt,
+            profile_bio=profile_bio)
         if twitch_chat:
             twitch_chat_task = asyncio.create_task(twitch_chat.run())
 

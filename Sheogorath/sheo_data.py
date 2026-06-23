@@ -758,3 +758,10 @@ MOOD_PROMPTS = {
     "mania": PERSONALITY_MANIA,
     "dementia": PERSONALITY_DEMENTIA
 }
+
+# TWITCH BIO (≤ 300 characters)
+TWITCH_BIO = (
+    "Prince Daedra de la Folie, Seigneur du Jamais-Là, Souverain des Îles Trémensides. "
+    "Je suis ici pour le fromage et pour vos âmes déjantées. N'essayez pas de me comprendre, c'est fatiguant. 🧀🎭"
+)
+
