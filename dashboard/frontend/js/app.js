@@ -95,6 +95,10 @@ function initNavigation() {
             if(targetId === 'errors') loadErrors();
             if(targetId === 'api-keys') loadApiKeysStatus();
             if(targetId === 'twitch') loadTwitchConfig();
+            if(targetId === 'twitch-presence') loadTwitchPresence();
+            if(targetId === 'twitch-events') loadTwitchEvents();
+            if(targetId === 'twitch-economy') loadTwitchEconomy();
+            if(targetId === 'twitch-listen') loadTwitchListen();
         });
     });
 }
@@ -618,6 +622,268 @@ window.deleteTwitchSubscription = async function(index) {
         } else {
             const data = await res.json();
             alert(`Erreur: ${data.detail || "Impossible de supprimer l'abonnement"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+// --- PRESENCE & CONNEXION ---
+window.onPresenceBotSelect = function() {
+    loadTwitchPresence();
+}
+
+async function loadTwitchPresence() {
+    const botId = document.getElementById('presence-bot-select').value;
+    try {
+        const configRes = await fetch(`${API_BASE}/twitch`);
+        const configData = await configRes.json();
+        const botConfig = configData[botId] || {};
+        const targetChannel = (botConfig.subscriptions || []).map(s => s.twitch_login).join(', ') || 'Aucune';
+        document.getElementById('presence-target-channel').textContent = targetChannel;
+        
+        const res = await fetch(`${API_BASE}/twitch/chat/${botId}`);
+        if (!res.ok) throw new Error("Impossible de charger la config présence Twitch");
+        const chatCfg = await res.json();
+        
+        document.getElementById('presence-status-badge').textContent = botConfig.enabled ? "Active" : "Inactive";
+        document.getElementById('presence-status-badge').className = botConfig.enabled ? "badge badge-success" : "badge badge-secondary";
+        
+        document.getElementById('presence-chat-events').checked = chatCfg.events !== false;
+        document.getElementById('presence-chat-interjections').checked = chatCfg.interjections !== false;
+        document.getElementById('presence-chat-greetings').checked = chatCfg.greetings !== false;
+        document.getElementById('presence-chat-memory').checked = chatCfg.viewer_memory !== false;
+
+        // Charger les chaînes de chat
+        const channelsRes = await fetch(`${API_BASE}/twitch/channels/${botId}`);
+        if (channelsRes.ok) {
+            const channelsData = await channelsRes.json();
+            document.getElementById('presence-chat-channels').value = (channelsData.chat_channels || []).join(', ');
+        } else {
+            document.getElementById('presence-chat-channels').value = '';
+        }
+    } catch (e) {
+        console.error("Twitch presence config error:", e);
+    }
+}
+
+window.savePresenceSettings = async function() {
+    const botId = document.getElementById('presence-bot-select').value;
+    const events = document.getElementById('presence-chat-events').checked;
+    const interjections = document.getElementById('presence-chat-interjections').checked;
+    const greetings = document.getElementById('presence-chat-greetings').checked;
+    const viewer_memory = document.getElementById('presence-chat-memory').checked;
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/chat/${botId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ events, interjections, greetings, viewer_memory })
+        });
+        if (res.ok) {
+            alert("Configuration de présence enregistrée avec succès !");
+            await loadTwitchPresence();
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+window.saveChatChannels = async function() {
+    const botId = document.getElementById('presence-bot-select').value;
+    const rawChannels = document.getElementById('presence-chat-channels').value;
+    const channels = rawChannels.split(/[,\n]/).map(c => c.trim()).filter(c => c.length > 0);
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/channels/${botId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_channels: channels })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            alert("Chaînes de chat enregistrées avec succès !");
+            document.getElementById('presence-chat-channels').value = (data.chat_channels || []).join(', ');
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+// --- EVENTS & REWARDS ---
+let currentRewardMap = {};
+window.onEventsBotSelect = function() {
+    loadTwitchEvents();
+}
+
+async function loadTwitchEvents() {
+    const botId = document.getElementById('events-bot-select').value;
+    try {
+        const res = await fetch(`${API_BASE}/twitch/rewards/${botId}`);
+        if (!res.ok) throw new Error("Impossible de charger le mappage de récompenses");
+        currentRewardMap = await res.json();
+        renderRewardsTable();
+    } catch (e) {
+        console.error("Twitch events config error:", e);
+    }
+}
+
+function renderRewardsTable() {
+    const body = document.getElementById('twitch-rewards-table-body');
+    if (!body) return;
+    body.innerHTML = '';
+    
+    const keys = Object.keys(currentRewardMap);
+    if (keys.length === 0) {
+        body.innerHTML = '<tr><td colspan="3" style="text-align:center;opacity:0.5;">Aucun mappage de récompense défini pour ce bot.</td></tr>';
+        return;
+    }
+    
+    keys.forEach(title => {
+        const action = currentRewardMap[title];
+        const row = `
+            <tr>
+                <td style="color:#a78bfa; font-weight:600;"><i class="fa-solid fa-gift"></i> ${title}</td>
+                <td><code style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:monospace;">!${action}</code></td>
+                <td>
+                    <button class="btn btn-danger" onclick="deleteRewardMapping('${title.replace(/'/g, "\\'")}')" style="padding:4px 8px; font-size:0.85em;">
+                        <i class="fa-solid fa-trash"></i> Retirer
+                    </button>
+                </td>
+            </tr>
+        `;
+        body.insertAdjacentHTML('beforeend', row);
+    });
+}
+
+window.addRewardMapping = function() {
+    const title = document.getElementById('add-reward-title').value.trim();
+    const action = document.getElementById('add-reward-action').value.trim();
+    
+    if (!title || !action) {
+        alert("Le titre de la récompense et l'action/commande sont requis.");
+        return;
+    }
+    
+    currentRewardMap[title] = action;
+    document.getElementById('add-reward-title').value = '';
+    document.getElementById('add-reward-action').value = '';
+    renderRewardsTable();
+}
+
+window.deleteRewardMapping = function(title) {
+    delete currentRewardMap[title];
+    renderRewardsTable();
+}
+
+window.saveRewardsMapping = async function() {
+    const botId = document.getElementById('events-bot-select').value;
+    try {
+        const res = await fetch(`${API_BASE}/twitch/rewards/${botId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentRewardMap)
+        });
+        if (res.ok) {
+            alert("Mappage des récompenses enregistré avec succès !");
+            await loadTwitchEvents();
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+// --- ECONOMY ---
+window.onEconomyBotSelect = function() {
+    loadTwitchEconomy();
+}
+
+async function loadTwitchEconomy() {
+    const botId = document.getElementById('economy-bot-select').value;
+    try {
+        const res = await fetch(`${API_BASE}/twitch/leaderboard/${botId}`);
+        if (!res.ok) throw new Error("Impossible de charger le classement économique");
+        const top = await res.json();
+        
+        const emptyEl = document.getElementById('economy-leaderboard-empty');
+        const tableEl = document.getElementById('economy-leaderboard-table');
+        const bodyEl = document.getElementById('economy-leaderboard-body');
+        
+        if (!bodyEl) return;
+        bodyEl.innerHTML = '';
+        if (!top || top.length === 0) {
+            emptyEl.style.display = 'block';
+            tableEl.style.display = 'none';
+        } else {
+            emptyEl.style.display = 'none';
+            tableEl.style.display = 'table';
+            top.forEach((entry, index) => {
+                const row = `
+                    <tr>
+                        <td style="font-weight:700; opacity:0.6;">#${index+1}</td>
+                        <td style="color:#fff; font-weight:600;"><i class="fa-solid fa-user-ninja"></i> ${entry.name}</td>
+                        <td style="color:#60a5fa; font-weight:700;">${entry.points} pts</td>
+                    </tr>
+                `;
+                bodyEl.insertAdjacentHTML('beforeend', row);
+            });
+        }
+    } catch (e) {
+        console.error("Twitch economy leaderboard error:", e);
+    }
+}
+
+// --- LISTEN (STT) ---
+window.onListenBotSelect = function() {
+    loadTwitchListen();
+}
+
+async function loadTwitchListen() {
+    const botId = document.getElementById('listen-bot-select').value;
+    try {
+        const res = await fetch(`${API_BASE}/twitch/listen/${botId}`);
+        if (!res.ok) throw new Error("Impossible de charger la config écoute Twitch");
+        const listenCfg = await res.json();
+        
+        document.getElementById('listen-enabled').checked = listenCfg.enabled === true;
+        document.getElementById('listen-mode').value = listenCfg.mode || "C";
+        document.getElementById('listen-device').value = listenCfg.device || "default";
+        document.getElementById('listen-chunk').value = String(listenCfg.chunk_ms || 160);
+        document.getElementById('listen-min-interval').value = listenCfg.min_interval || 45;
+    } catch (e) {
+        console.error("Twitch listen config error:", e);
+    }
+}
+
+window.saveListenSettings = async function() {
+    const botId = document.getElementById('listen-bot-select').value;
+    const enabled = document.getElementById('listen-enabled').checked;
+    const mode = document.getElementById('listen-mode').value;
+    const device = document.getElementById('listen-device').value.trim();
+    const chunk_ms = parseInt(document.getElementById('listen-chunk').value);
+    const min_interval = parseInt(document.getElementById('listen-min-interval').value);
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/listen/${botId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled, mode, device, chunk_ms, min_interval })
+        });
+        if (res.ok) {
+            alert("Configuration d'écoute micro enregistrée avec succès !");
+            await loadTwitchListen();
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
         }
     } catch (e) {
         alert(`Erreur réseau: ${e}`);

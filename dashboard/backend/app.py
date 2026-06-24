@@ -293,6 +293,19 @@ class TwitchEnableAll(BaseModel):
     enabled: bool
     poll_interval_seconds: Optional[int] = None
 
+class TwitchChatConfigUpdate(BaseModel):
+    events: bool
+    interjections: bool
+    greetings: bool
+    viewer_memory: bool
+
+class TwitchListenConfigUpdate(BaseModel):
+    enabled: bool
+    mode: str
+    device: str
+    chunk_ms: int
+    min_interval: int
+
 @app.get("/api/twitch")
 async def get_twitch_config():
     return twitch_config_manager.get_all()
@@ -339,6 +352,81 @@ async def delete_twitch_subscription(bot_id: str, index: int):
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/twitch/chat/{bot_id}")
+async def get_twitch_chat_config(bot_id: str):
+    try:
+        cfg = twitch_config_manager.get_bot(bot_id)
+        return cfg.get("chat", {})
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.put("/api/twitch/chat/{bot_id}")
+async def update_twitch_chat_config(bot_id: str, cfg: TwitchChatConfigUpdate):
+    try:
+        twitch_config_manager.update_chat_config(
+            bot_id, cfg.events, cfg.interjections, cfg.greetings, cfg.viewer_memory
+        )
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/twitch/rewards/{bot_id}")
+async def get_twitch_rewards(bot_id: str):
+    try:
+        cfg = twitch_config_manager.get_bot(bot_id)
+        return cfg.get("reward_map", {})
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.put("/api/twitch/rewards/{bot_id}")
+async def update_twitch_rewards(bot_id: str, reward_map: dict = Body(...)):
+    try:
+        twitch_config_manager.update_reward_map(bot_id, reward_map)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/twitch/listen/{bot_id}")
+async def get_twitch_listen_config(bot_id: str):
+    try:
+        cfg = twitch_config_manager.get_bot(bot_id)
+        return cfg.get("listen", {})
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.put("/api/twitch/listen/{bot_id}")
+async def update_twitch_listen_config(bot_id: str, cfg: TwitchListenConfigUpdate):
+    try:
+        twitch_config_manager.update_listen_config(
+            bot_id, cfg.enabled, cfg.mode, cfg.device, cfg.chunk_ms, cfg.min_interval
+        )
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/twitch/channels/{bot_id}")
+async def get_twitch_channels(bot_id: str):
+    try:
+        cfg = twitch_config_manager.get_bot(bot_id)
+        return {"chat_channels": cfg.get("chat_channels", [])}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.put("/api/twitch/channels/{bot_id}")
+async def update_twitch_channels(bot_id: str, payload: dict = Body(...)):
+    try:
+        cleaned = twitch_config_manager.update_chat_channels(bot_id, payload.get("chat_channels", []))
+        return {"status": "ok", "chat_channels": cleaned}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/twitch/leaderboard/{bot_id}")
+async def get_twitch_leaderboard(bot_id: str):
+    try:
+        return twitch_config_manager.get_leaderboard(bot_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 @app.get("/api/health")
 async def health():

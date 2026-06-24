@@ -52,6 +52,33 @@ class TwitchConfigManager:
                     "subscriptions": []
                 }
                 updated = True
+            
+            # Fill missing keys for Twitch V2 config
+            if "chat" not in config[bot_id]:
+                config[bot_id]["chat"] = {
+                    "events": True,
+                    "interjections": True,
+                    "greetings": True,
+                    "viewer_memory": True
+                }
+                updated = True
+            if "reward_map" not in config[bot_id]:
+                config[bot_id]["reward_map"] = {}
+                updated = True
+            if "chat_channels" not in config[bot_id]:
+                # Chaînes Twitch où le bot chatte. Vide => le bot retombe sur TWITCH_CHAT_CHANNELS (env).
+                config[bot_id]["chat_channels"] = []
+                updated = True
+            if "listen" not in config[bot_id]:
+                config[bot_id]["listen"] = {
+                    "enabled": False,
+                    "mode": "C",
+                    "device": "cpu",
+                    "chunk_ms": 160,
+                    "min_interval": 45
+                }
+                updated = True
+
         if updated:
             self._save_raw(config)
         return config
@@ -228,3 +255,91 @@ class TwitchConfigManager:
             added.append(bot_id)
         self._save_raw(config)
         return {"added": added, "skipped": skipped}
+
+    def update_chat_config(self, bot_id: str, events: bool, interjections: bool, greetings: bool, viewer_memory: bool):
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        config = self.get_all()
+        config[bot_id]["chat"] = {
+            "events": events,
+            "interjections": interjections,
+            "greetings": greetings,
+            "viewer_memory": viewer_memory
+        }
+        self._save_raw(config)
+
+    def update_reward_map(self, bot_id: str, reward_map: dict):
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        config = self.get_all()
+        config[bot_id]["reward_map"] = reward_map
+        self._save_raw(config)
+
+    def update_chat_channels(self, bot_id: str, channels) -> list[str]:
+        """Liste des chaînes où le bot chatte. Accepte liste ou CSV. Normalise chaque entrée
+        via extract_login (login ou URL twitch.tv/...). Liste vide => fallback env."""
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        if isinstance(channels, str):
+            channels = channels.split(",")
+        if not isinstance(channels, list):
+            raise ValueError("Les chaînes doivent être une liste ou une chaîne CSV.")
+        cleaned = []
+        for raw in channels:
+            raw = str(raw).strip()
+            if not raw:
+                continue
+            login = self.extract_login(raw)   # réutilise la validation des subscriptions
+            if login not in cleaned:
+                cleaned.append(login)
+        config = self.get_all()
+        config[bot_id]["chat_channels"] = cleaned
+        self._save_raw(config)
+        return cleaned
+
+    def update_listen_config(self, bot_id: str, enabled: bool, mode: str, device: str, chunk_ms: int, min_interval: int):
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        config = self.get_all()
+        config[bot_id]["listen"] = {
+            "enabled": enabled,
+            "mode": mode,
+            "device": device,
+            "chunk_ms": int(chunk_ms),
+            "min_interval": int(min_interval)
+        }
+        self._save_raw(config)
+
+    def get_leaderboard(self, bot_id: str) -> list:
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        
+        if bot_id == "sheogorath":
+            path = self.data_dir / "sheo_faveurs_twitch.json"
+        elif bot_id == "johnny":
+            path = self.data_dir / "johnny_cred_twitch.json"
+        else:
+            path = self.data_dir / f"{bot_id}_cred_twitch.json"
+            
+        if not path.exists():
+            return []
+            
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            res = []
+            for user_key, info in data.items():
+                if isinstance(info, dict):
+                    res.append({
+                        "name": info.get("name", user_key),
+                        "points": info.get("points", 0)
+                    })
+                else:
+                    res.append({
+                        "name": user_key,
+                        "points": int(info)
+                    })
+            res.sort(key=lambda x: x["points"], reverse=True)
+            return res[:20]
+        except Exception:
+            return []
