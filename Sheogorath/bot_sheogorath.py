@@ -607,6 +607,18 @@ async def on_ready():
             rank = twitch_faveur_system.get_rank(author)
             return f"@{author}, tu as {pts} points de Faveur du Prince. Ton rang : {rank['emoji']} {rank['name']} !"
 
+        def cmd_classement(author: str, args: str) -> str:
+            top = twitch_faveur_system.get_leaderboard(limit=10)
+            if not top:
+                return "Le classement de ma Faveur est vide, bande de mortels insignifiants !"
+            lines = []
+            for i, entry in enumerate(top, 1):
+                name = entry["name"]
+                pts = entry["points"]
+                rank = entry["rank"]
+                lines.append(f"{i}. {name} ({pts} pts, {rank['emoji']} {rank['name']})")
+            return f"Voici les courtisans qui ont le plus amusé le Prince de la Folie : " + " | ".join(lines)
+
         async def cmd_decret(author: str, args: str) -> str:
             prompt = (
                 f"Rédige un DÉCRET DAEDRA de la Folie visant @{author}. "
@@ -648,9 +660,18 @@ async def on_ready():
             ]
             return random.choice(fallback_decrees)
 
+        # Anti-farm : 1 gain de Faveur max / 60 s / viewer (parité avec Johnny / try_award).
+        _twitch_faveur_cooldowns = {}
+
         async def twitch_passive_handler(author: str, text: str) -> str | None:
+            import time as _time
+            _now = _time.time()
+            _key = author.lower()
+            if _now - _twitch_faveur_cooldowns.get(_key, 0) < 60.0:
+                return None
             faveur_points = twitch_faveur_system.check_message_for_faveur(text)
             if faveur_points > 0:
+                _twitch_faveur_cooldowns[_key] = _now
                 total, old_rank, new_rank, rank_up = twitch_faveur_system.add_faveur(
                     author, author, faveur_points
                 )
@@ -672,14 +693,16 @@ async def on_ready():
             "folie": cmd_folie,
             "fromage": cmd_fromage,
             "faveur": cmd_faveur,
-            "decret": cmd_decret
+            "decret": cmd_decret,
+            "classement": cmd_classement
         }
         command_aliases = {
             "decree": "decret",
             "décret": "decret",
             "cheese": "fromage",
             "favor": "faveur",
-            "folly": "folie"
+            "folly": "folie",
+            "leaderboard": "classement"
         }
 
         twitch_chat = setup_twitch_chat(
@@ -694,6 +717,14 @@ async def on_ready():
             interjection_chance=0.03,
             interjection_min_interval=600.0,
             enable_greetings=True,
+            enable_viewer_memory=True,
+            viewer_memory_max=8,
+            enable_eventsub=True,
+            eventsub_reward_map={
+                "Décret": "decret",
+                "Fromage": "fromage",
+                "Folie": "folie"
+            },
             commands=commands,
             command_aliases=command_aliases,
             passive_handler=twitch_passive_handler

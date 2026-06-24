@@ -291,7 +291,15 @@ class TwitchChatBot:
         enable_greetings: bool = False,
         commands: dict[str, Callable] | None = None,
         command_aliases: dict[str, str] | None = None,
-        passive_handler: Callable | None = None
+        passive_handler: Callable | None = None,
+        enable_viewer_memory: bool = False,
+        viewer_memory_max: int = 8,
+        enable_eventsub: bool = False,
+        eventsub_subscriptions: list[str] | None = None,
+        eventsub_reward_map: dict | None = None,
+        peer_bots: list[str] | None = None,
+        greeting_templates: dict | None = None,
+        broadcaster_auth=None
     ):
         self.bot_id = bot_id
         self.logger = logger
@@ -325,6 +333,43 @@ class TwitchChatBot:
         self.commands = commands or {}
         self.command_aliases = command_aliases or {}
         self.passive_handler = passive_handler
+        self.enable_viewer_memory = enable_viewer_memory
+        self.viewer_memory_max = viewer_memory_max
+        self.enable_eventsub = enable_eventsub
+        self.eventsub_subscriptions = eventsub_subscriptions or [
+            "channel.channel_points_custom_reward_redemption.add",
+            "channel.follow",
+            "channel.raid",
+            "channel.hype_train.begin",
+            "channel.hype_train.end",
+            "channel.poll.begin",
+            "channel.poll.end"
+        ]
+        self.eventsub_reward_map = eventsub_reward_map or {}
+        self.eventsub_active = False
+        self.eventsub_client = None
+        # Auth SÉPARÉE pour EventSub : les events « channel » (channel points, subs,
+        # hype, polls, follow) exigent le token du BROADCASTER, pas celui du bot. Si
+        # fourni, EventSub l'utilise ; sinon il retombe sur self.auth (→ 403 propre si
+        # le bot n'est pas le streamer).
+        self.broadcaster_auth = broadcaster_auth
+        self.ws = None
+
+        # Bots à ignorer (anti-boucle inter-bots). Sur Twitch il n'existe pas de flag
+        # `author.bot` (les bots sont des comptes normaux) → on exclut par pseudo.
+        # Les pseudos Twitch des AUTRES bots sont CONFIGURÉS par bot (env TWITCH_PEER_BOTS)
+        # et JAMAIS codés en dur ici (cloisonnement, cf. [[bots-independants]] /
+        # silence-total-bots). On y ajoute son propre pseudo + les bots tiers courants.
+        _third_party = {"nightbot", "streamelements", "wizebot", "moobot", "fossabot", "sery_bot"}
+        self.known_bots = {b.strip().lower() for b in (peer_bots or []) if b and b.strip()} | _third_party
+        self.known_bots.add(username.lower())
+        _peers_cfg = sorted(b.strip().lower() for b in (peer_bots or []) if b and b.strip())
+        self.logger.info(f"🤖 [TWITCH_CHAT:{self.bot_id}] Bots pairs ignorés (TWITCH_PEER_BOTS) : {_peers_cfg or 'AUCUN'}")
+
+        # Templates d'accueil EN PERSONNAGE, optionnels et fournis par chaque bot :
+        # {"new": ["... {author} ..."], "returning": ["... {author} ... {count} ..."]}.
+        # Si absent → repli sur _generate_templated_greet (générique / branche Sheo).
+        self.greeting_templates = greeting_templates
 
         self.session_seen = set()
         self.channel_recent = {}
@@ -334,6 +379,7 @@ class TwitchChatBot:
         self._last_greet_ts = 0
         self._last_interjection = 0
         self.viewers_state = self._load_viewers_state()
+        self.viewer_facts = self._load_viewer_facts() if enable_viewer_memory else {}
 
         self._stopped = False
         self.histories = {}  # (channel, user) -> deque(maxlen=6)
@@ -362,6 +408,8 @@ class TwitchChatBot:
         # Démarre la boucle de refresh proactif
         refresh_task = asyncio.create_task(self._token_refresh_loop())
 
+        eventsub_task = None
+
         try:
             while not self._stopped:
                 try:
@@ -376,6 +424,10 @@ class TwitchChatBot:
                     today = datetime.now().strftime("%Y-%m-%d")
                     if self._profile_day != today:
                         asyncio.create_task(self._ensure_daily_profile())
+
+                    # Démarrage de Twitch EventSub
+                    if self.enable_eventsub and not self.eventsub_active:
+                        eventsub_task = asyncio.create_task(self._start_eventsub())
 
                     # On tente de se connecter et de boucler sur les messages
                     await self._connect_and_loop(token)
@@ -396,6 +448,8 @@ class TwitchChatBot:
                     backoff = min(backoff * 2, 60)
         finally:
             refresh_task.cancel()
+            if eventsub_task:
+                eventsub_task.cancel()
             # Sauvegarde finale des viewers
             path = os.path.join(DATA_DIR, f"twitch_viewers_{self.bot_id}.json")
             try:
@@ -434,6 +488,7 @@ class TwitchChatBot:
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.ws_connect(url, heartbeat=30) as ws:
+                self.ws = ws
                 await ws.send_str("CAP REQ :twitch.tv/tags twitch.tv/commands")
                 await ws.send_str(f"PASS {pass_token}")
                 await ws.send_str(f"NICK {self.username.lower()}")
@@ -488,17 +543,10 @@ class TwitchChatBot:
                         chan = m.group("chan")
                         text = m.group("msg").strip()
 
-                        # Anti-boucle
-                        if author.lower() == self.username.lower():
-                            continue
-
-                        # Éviter les autres bots connus
-                        known_bots = {
-                            "compte_bot_sheo", "maiq_bot", "johnny_bot_discord",
-                            "onizuka_bot_discord", "malena_bot_discord", "alfred_bot_discord",
-                            "nightbot", "streamelements", "wizebot", "moobot"
-                        }
-                        if author.lower() in known_bots:
+                        # Anti-boucle : son propre pseudo + les autres bots connus
+                        # (configurés via TWITCH_PEER_BOTS). Évite que deux bots se
+                        # répondent / s'accueillent mutuellement.
+                        if author.lower() in self.known_bots:
                             continue
 
                         await self._handle_privmsg(chan, author, text, tags, ws)
@@ -525,6 +573,15 @@ class TwitchChatBot:
             )
 
         system_prompt = system_prompt + "\n\n" + ANTI_INJECTION_GUARD
+
+        # Injection de la mémoire
+        if self.enable_viewer_memory:
+            facts = self.viewer_facts.get(author.lower(), [])
+            if facts:
+                facts_block = f"\n\n[CE QUE TU SAIS SUR {author}]:\n- " + "\n- ".join(facts) + "\nUtilise ces infos pour personnaliser ta réponse."
+                system_prompt += facts_block
+            
+            system_prompt += f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur {author} dans cette interaction (ex: ses préférences, ses opinions, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
 
         # ANTI-RÉPÉTITION (parité Discord) : on rappelle au bot ses dernières répliques
         # sur ce salon et on lui interdit de les ressortir / les paraphraser.
@@ -581,6 +638,26 @@ class TwitchChatBot:
                 max_tokens=120
             )
             if text:
+                if self.enable_viewer_memory:
+                    matches = re.findall(r"<fact>(.*?)</fact>", text, re.DOTALL | re.IGNORECASE)
+                    for match in matches:
+                        fact_text = match.strip()
+                        if fact_text:
+                            clean_fact, _ = self._sanitize_input(fact_text)
+                            clean_fact = clean_fact[:120].strip()
+                            if clean_fact:
+                                author_lower = author.lower()
+                                if author_lower not in self.viewer_facts:
+                                    self.viewer_facts[author_lower] = []
+                                if clean_fact not in self.viewer_facts[author_lower]:
+                                    self.viewer_facts[author_lower].append(clean_fact)
+                                    if len(self.viewer_facts[author_lower]) > self.viewer_memory_max:
+                                        self.viewer_facts[author_lower].pop(0)
+                                    self._save_viewer_facts_debounced()
+                    text = re.sub(r"<fact>.*?</fact>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+                    text = re.sub(r"<[a-z_-]+>", "", text, flags=re.IGNORECASE)
+                    text = re.sub(r"</[a-z_-]+>", "", text, flags=re.IGNORECASE).strip()
+
                 text = " ".join(text.split())
                 text = self._strip_stage_directions(text)
                 reply = text[:480]
@@ -826,6 +903,17 @@ class TwitchChatBot:
                 json.dump(self.viewers_state, f, indent=2)
         except Exception:
             pass
+        # Sauvegarde finale des facts
+        if hasattr(self, "viewer_facts") and self.viewer_facts:
+            facts_path = os.path.join(DATA_DIR, f"twitch_facts_{self.bot_id}.json")
+            try:
+                with open(facts_path, "w", encoding="utf-8") as f:
+                    json.dump(self.viewer_facts, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+        # Arrêt d'EventSub si actif
+        if hasattr(self, "eventsub_client") and self.eventsub_client:
+            self.eventsub_client.stop()
 
     def _load_viewers_state(self) -> dict:
         path = os.path.join(DATA_DIR, f"twitch_viewers_{self.bot_id}.json")
@@ -852,7 +940,42 @@ class TwitchChatBot:
         except Exception as e:
             self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Échec sauvegarde viewers JSON: {e}")
 
+    def _load_viewer_facts(self) -> dict:
+        path = os.path.join(DATA_DIR, f"twitch_facts_{self.bot_id}.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur lecture facts JSON: {e}")
+        return {}
+
+    def _save_viewer_facts_debounced(self):
+        now = time.time()
+        if now - getattr(self, "_last_facts_save", 0) < 30.0:
+            return
+        self._last_facts_save = now
+        path = os.path.join(DATA_DIR, f"twitch_facts_{self.bot_id}.json")
+        tmp_path = path + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self.viewer_facts, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, path)
+        except Exception as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Échec sauvegarde facts JSON: {e}")
+
     def _generate_templated_greet(self, author: str, count: int) -> str:
+        # Templates en personnage fournis par le bot (prioritaires, 0 LLM).
+        if self.greeting_templates:
+            key = "returning" if count >= 5 else "new"
+            replies = self.greeting_templates.get(key) or self.greeting_templates.get("new") or []
+            if replies:
+                try:
+                    return random.choice(replies).format(author=author, count=count)
+                except (KeyError, IndexError, ValueError):
+                    pass  # template malformé → repli générique ci-dessous
+
         is_sheo = "sheo" in self.bot_id.lower()
         if is_sheo:
             if count >= 5:
@@ -1306,6 +1429,104 @@ class TwitchChatBot:
             self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur lors de l'intégration de l'interjection : {e}")
         return None
 
+    async def get_broadcaster_id(self) -> str | None:
+        # Si on a le token broadcaster, on résout SON propre user-id (helix/users sans
+        # login = propriétaire du token) → garantit broadcaster_user_id == owner du token,
+        # condition obligatoire pour s'abonner aux events « channel ».
+        eventsub_auth = self.broadcaster_auth or self.auth
+        token = await eventsub_auth.get_valid_token()
+        if not token:
+            return None
+        if self.broadcaster_auth:
+            url = "https://api.twitch.tv/helix/users"
+        else:
+            url = f"https://api.twitch.tv/helix/users?login={self.channels[0]}"
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {token}"
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get("data"):
+                            return data["data"][0]["id"]
+        except Exception as e:
+            self.logger.error(f"❌ [TWITCH_CHAT] Erreur récupération broadcaster_id: {e}")
+        return None
+
+    async def _start_eventsub(self):
+        try:
+            from shared.twitch_eventsub import TwitchEventSub
+        except ImportError as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Module EventSub non disponible: {e}")
+            return
+
+        broadcaster_id = await self.get_broadcaster_id()
+        if not broadcaster_id:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Impossible de démarrer EventSub: broadcaster_id non récupéré.")
+            return
+
+        self.logger.info(f"📡 [TWITCH_CHAT:{self.bot_id}] broadcaster_id récupéré: {broadcaster_id}")
+        self.eventsub_active = True
+        
+        async def emit_callback(text: str) -> bool:
+            if self.ws and not self.ws.closed and self.channels:
+                chan = self.channels[0]
+                now = time.time()
+                while self.global_msg_timestamps and now - self.global_msg_timestamps[0] > 30.0:
+                    self.global_msg_timestamps.popleft()
+                if len(self.global_msg_timestamps) >= 18:
+                    self.logger.warning(f"🚨 [TWITCH_CHAT:{self.bot_id}] EventSub callback: rate limit global atteint. Message ignoré.")
+                    return False
+                self.global_msg_timestamps.append(now)
+                await self.ws.send_str(f"PRIVMSG #{chan} :{text}")
+                self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Message EventSub envoyé sur #{chan}: {text}")
+                return True
+            return False
+
+        self.eventsub_client = TwitchEventSub(
+            bot_id=self.bot_id,
+            logger=self.logger,
+            auth=self.broadcaster_auth or self.auth,
+            client_id=self.client_id,
+            broadcaster_id=broadcaster_id,
+            emit_callback=emit_callback,
+            subscriptions=self.eventsub_subscriptions,
+            reward_map=self.eventsub_reward_map,
+            bot_label=self.bot_label,
+            personality_prompt=self.personality_prompt,
+            key_manager=self.key_manager,
+            mistral_client=self.mistral_client,
+            groq_client=self.groq_client,
+            openrouter_client=self.openrouter_client,
+            commands=self.commands
+        )
+        try:
+            await self.eventsub_client.run()
+        except asyncio.CancelledError:
+            self.eventsub_client.stop()
+        except Exception as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur dans la tâche EventSub: {e}")
+        finally:
+            self.eventsub_active = False
+
+
+def _load_dashboard_twitch_config(bot_id: str, logger) -> dict:
+    """Lit data/twitch_config.json pour CE bot. Renvoie {} si absent/illisible → le bot
+    reste autonome sans le dashboard (cf. [[bots-independants]])."""
+    path = os.path.join(DATA_DIR, "twitch_config.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return (data.get(bot_id) or {}) if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] Lecture twitch_config.json échouée (ignoré) : {e}")
+        return {}
+
 
 def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = None,
                       key_manager=None, mistral_client=None, groq_client=None,
@@ -1320,7 +1541,14 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
                       enable_greetings: bool = False,
                       commands: dict[str, Callable] | None = None,
                       command_aliases: dict[str, str] | None = None,
-                      passive_handler: Callable | None = None) -> TwitchChatBot | None:
+                      passive_handler: Callable | None = None,
+                      enable_viewer_memory: bool = False,
+                      viewer_memory_max: int = 8,
+                      enable_eventsub: bool = False,
+                      eventsub_subscriptions: list[str] | None = None,
+                      eventsub_reward_map: dict | None = None,
+                      peer_bots: list[str] | None = None,
+                      greeting_templates: dict | None = None) -> TwitchChatBot | None:
     """
     Initialise TwitchChatBot si les crédentiels d'environnement requis sont définis.
     """
@@ -1331,16 +1559,57 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     default_token = os.getenv("TWITCH_OAUTH_TOKEN")
     default_refresh = os.getenv("TWITCH_REFRESH_TOKEN")
 
-    if not client_id or not client_secret or not username or not channels_csv or not default_token:
-        logger.info(f"📡 [TWITCH_CHAT:{bot_id}] Module chat non activé (crédentiels/variables d'env manquants)")
+    # Secrets => env obligatoire. channels_csv N'EST PLUS requis (dashboard peut fournir).
+    if not client_id or not client_secret or not username or not default_token:
+        logger.info(f"📡 [TWITCH_CHAT:{bot_id}] Module chat non activé (crédentiels manquants)")
         return None
 
-    channels = [c.strip().lower().lstrip("#") for c in channels_csv.split(",") if c.strip()]
+    dash = _load_dashboard_twitch_config(bot_id, logger)   # {} si pas de dashboard
+
+    # Pseudos Twitch des autres bots à ignorer (anti-boucle), fusionnés avec l'éventuel
+    # argument explicite. Source de vérité = config par bot (cloisonnement).
+    env_peers = os.getenv("TWITCH_PEER_BOTS", "")
+    resolved_peers = list(peer_bots or []) + [p.strip() for p in env_peers.split(",") if p.strip()]
+
+    # Chaînes : dashboard prioritaire si non vide, sinon env.
+    dash_channels = [str(c).strip().lower().lstrip("#") for c in dash.get("chat_channels", []) if str(c).strip()]
+    env_channels  = [c.strip().lower().lstrip("#") for c in (channels_csv or "").split(",") if c.strip()]
+    channels = dash_channels or env_channels
     if not channels:
-        logger.info(f"📡 [TWITCH_CHAT:{bot_id}] Aucun canal Twitch configuré (TWITCH_CHAT_CHANNELS vide)")
+        logger.info(f"📡 [TWITCH_CHAT:{bot_id}] Aucune chaîne (ni dashboard ni TWITCH_CHAT_CHANNELS)")
         return None
+    if dash_channels:
+        logger.info(f"📡 [TWITCH_CHAT:{bot_id}] Chaînes pilotées par le dashboard : {channels}")
+
+    # Toggles : le dashboard prime SUR LES ARGS quand la clé est présente.
+    dash_chat = dash.get("chat") or {}
+    if "events" in dash_chat:        enable_events         = bool(dash_chat["events"])
+    if "interjections" in dash_chat: enable_interjections  = bool(dash_chat["interjections"])
+    if "greetings" in dash_chat:     enable_greetings      = bool(dash_chat["greetings"])
+    if "viewer_memory" in dash_chat: enable_viewer_memory  = bool(dash_chat["viewer_memory"])
+
+    # reward_map : merge dashboard PAR-DESSUS les défauts du bot (un dashboard vide ne les efface pas).
+    dash_rewards = dash.get("reward_map") or {}
+    if dash_rewards:
+        eventsub_reward_map = {**(eventsub_reward_map or {}), **dash_rewards}
 
     auth = TwitchAuth(bot_id, logger, client_id, client_secret, default_token, default_refresh)
+
+    # Auth broadcaster (token du STREAMER) pour EventSub. Activée si un token broadcaster
+    # est fourni (env TWITCH_BROADCASTER_OAUTH_TOKEN) ou si le fichier d'auth dédié existe
+    # (généré par `twitch_authorize.py --bot {bot_id}_broadcaster` connecté au compte du
+    # streamer). Stocké séparément → 0 collision avec le token de chat du bot.
+    broadcaster_auth = None
+    if enable_eventsub:
+        b_token = os.getenv("TWITCH_BROADCASTER_OAUTH_TOKEN")
+        b_refresh = os.getenv("TWITCH_BROADCASTER_REFRESH_TOKEN")
+        b_file = os.path.join(DATA_DIR, f"twitch_chat_auth_{bot_id}_broadcaster.json")
+        if b_token or os.path.exists(b_file):
+            broadcaster_auth = TwitchAuth(f"{bot_id}_broadcaster", logger, client_id,
+                                          client_secret, b_token, b_refresh)
+            logger.info(f"📡 [TWITCH_CHAT:{bot_id}] EventSub utilisera le token BROADCASTER (channel points/subs/etc. activables)")
+        else:
+            logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] EventSub activé mais AUCUN token broadcaster → les events « channel » seront refusés (403). Lance twitch_authorize.py --bot {bot_id}_broadcaster avec ton compte streamer.")
 
     # Résolution des informations de profil
     env_bio = os.getenv("TWITCH_PROFILE_BIO")
@@ -1377,5 +1646,13 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         enable_greetings=enable_greetings,
         commands=commands,
         command_aliases=command_aliases,
-        passive_handler=passive_handler
+        passive_handler=passive_handler,
+        enable_viewer_memory=enable_viewer_memory,
+        viewer_memory_max=viewer_memory_max,
+        enable_eventsub=enable_eventsub,
+        eventsub_subscriptions=eventsub_subscriptions,
+        eventsub_reward_map=eventsub_reward_map,
+        peer_bots=resolved_peers,
+        greeting_templates=greeting_templates,
+        broadcaster_auth=broadcaster_auth
     )

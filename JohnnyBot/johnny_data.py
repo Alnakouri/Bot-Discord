@@ -203,3 +203,35 @@ SKYRIM_TRIGGERS = [
 MEAD_TRIGGERS = [
     "whisky", "clope", "cigarette", "boire", "alcool", "drink", "verre", "bière", "taverne", "fumer", "tabac"
 ]
+
+TWITCH_BIO = "Rockerboy légendaire de Night City, anarchiste anti-corpo coincé dans le sub-espace réseau. Réveille-toi Samurai, on a un live à faire cramer. 🎸"
+
+JOHNNY_TWITCH_RANKS = [
+    {"threshold": 0, "name": "Nobody", "emoji": "🎖️"},
+    {"threshold": 50, "name": "Choom", "emoji": "🏙️"},
+    {"threshold": 150, "name": "Edgerunner", "emoji": "⚡"},
+    {"threshold": 300, "name": "Solo", "emoji": "⚔️"},
+    {"threshold": 500, "name": "Légende de Night City", "emoji": "💎"}
+]
+
+JOHNNY_TWITCH_KEYWORDS = {
+    "cyberpunk": 2, "corpo": 2, "arasaka": 3, "militech": 3,
+    "samurai": 2, "choom": 2, "eddies": 2, "chrome": 2,
+    "whisky": 1, "clope": 1, "samouraï": 1, "silverhand": 2,
+    "anarchie": 2, "gig": 2, "braquage": 3, "afterlife": 2,
+    "smasher": 3, "rebellion": 2
+}
+
+# Accueil EN PERSONNAGE pour le chat Twitch (0 LLM). Placeholders : {author}, {count}.
+TWITCH_GREETINGS = {
+    "new": [
+        "Tiens, un nouveau gonk dans le chat. @{author}, bienvenue à Night City, essaie de pas crever trop vite. 🎸",
+        "@{author} débarque. Encore un cerveau à réveiller. Assieds-toi et ferme-la, Samurai. 🚬",
+        "Ah, du sang frais. @{author}, t'as intérêt à valoir mieux qu'un costard d'Arasaka. 🤘",
+    ],
+    "returning": [
+        "Re-voilà @{author}. {count} passages déjà ? T'es accro à la rébellion, choom. 🎸",
+        "@{author} de retour pour la {count}e fois. Tu commences à faire partie du décor, et c'est un compliment. 🤘",
+        "Tiens, @{author}. {count}e fois. Rogue te confierait presque un gig à ce stade. 🚬",
+    ],
+}

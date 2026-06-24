@@ -1,6 +1,7 @@
 # INJECTION SHARED FOLDER
 import sys
 import os
+import asyncio
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
@@ -79,12 +80,33 @@ except ImportError:
 
 twitch_announcer = None
 
+try:
+    from shared.twitch_chat import setup_twitch_chat
+    TWITCH_CHAT_AVAILABLE = True
+except ImportError:
+    TWITCH_CHAT_AVAILABLE = False
+    def setup_twitch_chat(*a, **k): return None
+
+twitch_chat = None
+twitch_chat_task = None
+
+try:
+    from shared.twitch_economy import PointsEconomy
+    TWITCH_ECONOMY_AVAILABLE = True
+except ImportError:
+    TWITCH_ECONOMY_AVAILABLE = False
+    class PointsEconomy:
+        def __init__(self, *a, **k): pass
+
+johnny_cred = None
+
 # IMPORT PERSONNALITÉ JOHNNY
 from johnny_data import (
     PERSONALITY_PROMPT, DIPLOMATIC_TALES, GIFT_RESPONSES,
     SKYRIM_RESPONSES, MEAD_RESPONSES, GREETINGS,
     CULTURAL_CONFUSION, GIFT_TRIGGERS,
-    MISSION_TRIGGERS, SKYRIM_TRIGGERS, MEAD_TRIGGERS
+    MISSION_TRIGGERS, SKYRIM_TRIGGERS, MEAD_TRIGGERS,
+    TWITCH_BIO, JOHNNY_TWITCH_RANKS, JOHNNY_TWITCH_KEYWORDS, TWITCH_GREETINGS
 )
 
 # CREDENTIALS
@@ -280,7 +302,7 @@ async def on_ready():
     if DATABASE_AVAILABLE:
         daily_birthday_check.start()
         
-    global twitch_announcer
+    global twitch_announcer, twitch_chat, twitch_chat_task, johnny_cred
     if TWITCH_AVAILABLE and twitch_announcer is None:
         twitch_announcer = setup_twitch_announcer(
             bot, "johnny", logger,
@@ -289,6 +311,161 @@ async def on_ready():
             openrouter_client=openrouter_client, bot_label="Johnny")
         if twitch_announcer:
             twitch_poll_loop.start()
+
+    if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
+        # Initialisation du système de Street Cred cloisonné pour Twitch
+        if TWITCH_ECONOMY_AVAILABLE:
+            johnny_cred = PointsEconomy(
+                filename=os.path.join(DATA_DIR, "johnny_cred_twitch.json"),
+                ranks=JOHNNY_TWITCH_RANKS,
+                keywords=JOHNNY_TWITCH_KEYWORDS
+            )
+
+        # Commandes Twitch Johnny
+        def cmd_johnny(author: str, args: str) -> str:
+            quotes = [
+                "Réveille-toi, Samurai. On a une ville à faire cramer. 🎸",
+                "Le système est corrompu jusqu'à la moelle, choom. 🚬",
+                "Arasaka a besoin d'une bonne ogive nucléaire. À nouveau. 🔥",
+                "Je ne suis qu'un engramme dans ta tête de gonk.",
+                "Fais cracher le plomb sur le premier corpo venu. 🤘"
+            ]
+            return f"🎸 {random.choice(quotes)}"
+
+        def cmd_chrome(author: str, args: str) -> str:
+            quotes = [
+                "Mon bras argenté ? Le meilleur chrome que j'aie jamais eu. 🤘",
+                "Soit tu te fais poser du chrome de combat, soit tu finis à la morgue de Kabuki.",
+                "Kiroshi, Kerenzikov... peu importe, tant que ça t'aide à flinguer du costume.",
+                "Les rippers de rue te vendraient leur mère pour deux eddies. Fais gaffe.",
+                "Du chrome d'occasion ? Autant se faire sauter la cervelle tout de suite."
+            ]
+            return f"🤘 {random.choice(quotes)}"
+
+        async def cmd_punchline(author: str, args: str) -> str:
+            prompt = f"Balance une punchline cyberpunk cynique et arrogante à @{author}. Reste dans la peau de Johnny Silverhand. Pas de blabla inutile, juste la punchline directe, courte (max 150 caractères), sans guillemets ni astérisques."
+            try:
+                text = await generate_response(
+                    routing={"type": RequestType.TEXT, "reason": "twitch_punchline"},
+                    system_prompt=PERSONALITY_PROMPT,
+                    transcript="",
+                    user_message=prompt,
+                    conversation_history=[],
+                    media_data=None,
+                    mime_type="",
+                    key_manager=key_manager,
+                    mistral_client=mistral_client,
+                    groq_client=groq_client,
+                    openrouter_client=openrouter_client,
+                    bot_label="Johnny",
+                    temperature=0.9,
+                    max_tokens=60
+                )
+                if text:
+                    text = " ".join(text.split()).strip()
+                    from shared.twitch_chat import TwitchChatBot
+                    text = TwitchChatBot._strip_stage_directions(text)
+                    text = text.strip('"\'')
+                    return text[:450]
+            except Exception as e:
+                logger.error(f"❌ [TWITCH_CMD_PUNCHLINE] Erreur LLM : {e}")
+
+            fallback_punchlines = [
+                f"Hé @{author}, t'as l'air d'un costard-cravate qui s'est perdu dans les Badlands. Minable. 🚬",
+                f"@{author}, t'es juste un autre gonk qui attend que le NCPD vienne lui torcher le cul.",
+                f"Dis-moi @{author}, ton chrome vient d'une benne à ordures de Kabuki ?"
+            ]
+            return random.choice(fallback_punchlines)
+
+        def cmd_cred(author: str, args: str) -> str:
+            if not TWITCH_ECONOMY_AVAILABLE or johnny_cred is None:
+                return "Système de Street Cred non disponible. 🚬"
+            pts = johnny_cred.get_points(author)
+            rank = johnny_cred.get_rank(author)
+            return f"@{author}, tu as {pts} points de Street Cred. Rang actuel : {rank['emoji']} {rank['name']} !"
+
+        def cmd_classement(author: str, args: str) -> str:
+            if not TWITCH_ECONOMY_AVAILABLE or johnny_cred is None:
+                return "Système de Street Cred non disponible. 🚬"
+            top = johnny_cred.leaderboard(n=10)
+            if not top:
+                return "Personne n'a encore de Street Cred dans cette décharge !"
+            lines = []
+            for i, (name, pts) in enumerate(top, 1):
+                rank = johnny_cred.get_rank(name)
+                lines.append(f"{i}. {name} ({pts} pts, {rank['emoji']} {rank['name']})")
+            return "Les mercenaires les plus respectés de Night City : " + " | ".join(lines)
+
+        async def twitch_passive_handler(author: str, text: str) -> str | None:
+            if not TWITCH_ECONOMY_AVAILABLE or johnny_cred is None:
+                return None
+            # try_award applique l'anti-farm (cooldown par viewer) avant de créditer.
+            awarded = johnny_cred.try_award(author, text)
+            if awarded:
+                cred_points, total, old_rank, new_rank, rank_up = awarded
+                if rank_up:
+                    rank_up_msgs = [
+                        "🎉 **STREET CRED UP !** {user} passe au rang de **{rank}** {emoji} ! Tu commences à te faire un nom dans cette putain de ville !",
+                        "⚡ **NOUVEAU RANG !** {user} → **{rank}** {emoji} ! Continue comme ça et Rogue te confiera peut-être un vrai gig !",
+                        "🔥 **ASCENSION !** {user} est maintenant **{rank}** {emoji} ! Même Smasher ferait bien de surveiller ses arrières !"
+                    ]
+                    return random.choice(rank_up_msgs).format(
+                        user=f"@{author}",
+                        rank=new_rank["name"],
+                        emoji=new_rank["emoji"]
+                    )
+                elif random.random() < 0.20:
+                    gain_msgs = [
+                        "🤘 +{pts} Street Cred ! Respect, choom. (Total: {total})",
+                        "🚬 {user} gagne +{pts} Street Cred. Ne crache pas dessus. ({total})",
+                        "⚡ +{pts} Street Cred ! Tu montes en puissance, Samurai ! ({total})"
+                    ]
+                    return random.choice(gain_msgs).format(
+                        user=f"@{author}",
+                        pts=cred_points,
+                        total=total
+                    )
+            return None
+
+        commands = {
+            "johnny": cmd_johnny,
+            "chrome": cmd_chrome,
+            "punchline": cmd_punchline,
+            "cred": cmd_cred,
+            "classement": cmd_classement
+        }
+        command_aliases = {
+            "punch": "punchline",
+            "leaderboard": "classement",
+            "rep": "cred"
+        }
+
+        twitch_chat = setup_twitch_chat(
+            "johnny", logger,
+            personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Johnny Silverhand",
+            system_prompt_provider=lambda: PERSONALITY_PROMPT,
+            profile_bio=TWITCH_BIO,
+            enable_events=True,
+            enable_interjections=True,
+            interjection_chance=0.03,
+            interjection_min_interval=600.0,
+            enable_greetings=True,
+            greeting_templates=TWITCH_GREETINGS,
+            enable_viewer_memory=True,
+            viewer_memory_max=8,
+            enable_eventsub=True,
+            eventsub_reward_map={
+                "Punchline": "punchline",
+                "Chrome": "chrome"
+            },
+            commands=commands,
+            command_aliases=command_aliases,
+            passive_handler=twitch_passive_handler
+        )
+        if twitch_chat:
+            twitch_chat_task = asyncio.create_task(twitch_chat.run())
 
 @bot.event
 async def on_member_join(member):
@@ -697,9 +874,21 @@ async def on_message(message):
 
 # LANCEMENT
 
+async def on_johnny_shutdown():
+    global twitch_chat, twitch_chat_task
+    if twitch_chat:
+        logger.info("[SHUTDOWN] Arrêt du chat Twitch Johnny...")
+        twitch_chat.stop()
+    if twitch_chat_task:
+        twitch_chat_task.cancel()
+        try:
+            await twitch_chat_task
+        except asyncio.CancelledError:
+            pass
+
 if __name__ == "__main__":
     if DISCORD_TOKEN:
-        setup_graceful_shutdown(bot)
+        setup_graceful_shutdown(bot, on_johnny_shutdown)
         bot.run(DISCORD_TOKEN)
     else:
         logger.error("ERREUR : Aucun token Discord trouvé dans le fichier .env !")

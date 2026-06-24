@@ -138,6 +138,10 @@ class FaveurSystem:
             })
         return leaderboard
 
+    def leaderboard(self, n=10):
+        """Alias pour get_leaderboard dans PointsEconomy pour compatibilité."""
+        return self.get_leaderboard(limit=n)
+
     def check_message_for_faveur(self, text):
         """Vérifie si un message contient des mots qui rapportent de la Faveur.
         Retourne le total de points gagnés (0 si rien)."""
