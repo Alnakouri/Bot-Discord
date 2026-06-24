@@ -26,6 +26,9 @@ from pathlib import Path
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 
+# Répertoire de données (même convention que sheo_faveur : surchargé par l'env en prod)
+DATA_DIR = os.getenv("DATA_DIR", ".")
+
 # IMPORT VOICE MODULE (TTS Piper — Open Source)
 try:
     from sheo_voice import (
@@ -560,14 +563,141 @@ async def on_ready():
 
     if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
         profile_bio = getattr(sheo_data, "TWITCH_BIO", None)
+        
+        # Initialisation du système de Faveur cloisonné pour Twitch
+        twitch_faveur_system = FaveurSystem(filename=os.path.join(DATA_DIR, "sheo_faveurs_twitch.json"))
+        
+        # Commandes Twitch Sheogorath
+        def cmd_sheo(author: str, args: str) -> str:
+            quotes = [
+                "Le fromage ! C'est pour moi ! Tout pour moi !",
+                "Est-ce que tu as déjà fait de la corde à sauter avec des intestins ? C'est divertissant !",
+                "Haskill ! Haskill ! Où est mon wabbajack ?",
+                "Je suis le Prince de la Folie. Et toi, tu es un vermisseau distrayant.",
+                "Je déteste les papillons. Non, je les adore. Je ne sais plus !"
+            ]
+            return f"🧀 {random.choice(quotes)}"
+            
+        def cmd_folie(author: str, args: str) -> str:
+            quotes = [
+                "La folie est une bénédiction, mortel. Elle libère l'esprit des chaînes de la logique !",
+                "Un peu de démence, un zeste de mania... et paf ! Ça fait des chocapic daedriques !",
+                "Ne me parle pas de Jyggalag et de son ordre ennuyeux ! Le chaos règne !",
+                "Est-ce que ta tête tourne ? C'est le début de la sagesse !"
+            ]
+            return f"🌀 {random.choice(quotes)}"
+
+        def cmd_fromage(author: str, args: str) -> str:
+            user_id = abs(hash(author)) % (10**9)
+            result = jeu_fromage(user_id)
+            effects_text = {
+                "folie": "Tu ressens la folie monter en toi ! EXCELLENT !",
+                "puissance": "Une puissance daedrique coule dans tes veines !",
+                "hallucination": "Les murs commencent à fondre... c'est normal.",
+                "joie": "Tu te sens inexplicablement heureux ! Comme un papillon !",
+                "mélancolie": "Une tristesse profonde t'envahit... mais c'est si délicieux.",
+                "maladie": "Urghhh... Ce fromage était POURRI ! Dommage !",
+                "confusion": "Attends, tu as mangé quoi déjà ? C'était quoi la question ?",
+            }
+            effect_desc = effects_text.get(result['effet'], "Un effet mystérieux...")
+            return f"🧀 @{author} mange un {result['nom']} ! {effect_desc} (Effet : {result['points']} réputation)"
+
+        def cmd_faveur(author: str, args: str) -> str:
+            pts = twitch_faveur_system.get_faveur(author)
+            rank = twitch_faveur_system.get_rank(author)
+            return f"@{author}, tu as {pts} points de Faveur du Prince. Ton rang : {rank['emoji']} {rank['name']} !"
+
+        async def cmd_decret(author: str, args: str) -> str:
+            prompt = (
+                f"Rédige un DÉCRET DAEDRA de la Folie visant @{author}. "
+                f"Style Sheogorath : obsessionnel (fromage, papillons, intestins), absurde et menaçant. "
+                f"Écris une seule phrase de décret courte (max 200 caractères), en personnage, sans guillemets ni didascalies."
+            )
+            from shared.llm_cascade import generate_response
+            from shared.smart_router import RequestType
+            try:
+                text = await generate_response(
+                    routing={"type": RequestType.TEXT, "reason": "twitch_decret"},
+                    system_prompt=sheo_data.PERSONALITY_BASE,
+                    transcript="",
+                    user_message=prompt,
+                    conversation_history=[],
+                    media_data=None,
+                    mime_type="",
+                    key_manager=key_manager,
+                    mistral_client=mistral_client,
+                    groq_client=groq_client,
+                    openrouter_client=openrouter_client,
+                    bot_label="Sheogorath",
+                    temperature=1.0,
+                    max_tokens=80
+                )
+                if text:
+                    text = " ".join(text.split()).strip()
+                    from shared.twitch_chat import TwitchChatBot
+                    text = TwitchChatBot._strip_stage_directions(text)
+                    text = text.strip('"\'')
+                    return text[:450]
+            except Exception as e:
+                logger.error(f"❌ [TWITCH_CMD_DECRET] Erreur LLM : {e}")
+
+            fallback_decrees = [
+                f"Par décret de la folie, @{author} est condamné à manger du roquefort périmé pendant trois millénaires !",
+                f"Je décrète que les oreilles de @{author} appartiennent désormais aux papillons de démence !",
+                f"Par ma volonté, @{author} doit marcher à reculons jusqu'à la fin de la journée sous peine de Wabbajack !"
+            ]
+            return random.choice(fallback_decrees)
+
+        async def twitch_passive_handler(author: str, text: str) -> str | None:
+            faveur_points = twitch_faveur_system.check_message_for_faveur(text)
+            if faveur_points > 0:
+                total, old_rank, new_rank, rank_up = twitch_faveur_system.add_faveur(
+                    author, author, faveur_points
+                )
+                if rank_up:
+                    return random.choice(RANK_UP_MESSAGES).format(
+                        user=f"@{author}",
+                        rank=new_rank["name"],
+                        emoji=new_rank["emoji"]
+                    )
+                elif random.random() < 0.30:
+                    return random.choice(FAVEUR_GAIN_MESSAGES).format(
+                        pts=faveur_points, total=total
+                    )
+            return None
+
+        # Construction des commandes et alias
+        commands = {
+            "sheo": cmd_sheo,
+            "folie": cmd_folie,
+            "fromage": cmd_fromage,
+            "faveur": cmd_faveur,
+            "decret": cmd_decret
+        }
+        command_aliases = {
+            "decree": "decret",
+            "décret": "decret",
+            "cheese": "fromage",
+            "favor": "faveur",
+            "folly": "folie"
+        }
+
         twitch_chat = setup_twitch_chat(
             "sheogorath", logger,
             personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Sheogorath",
-            # MÊME config que Discord : prompt d'humeur courant (vivant)
             system_prompt_provider=lambda: current_system_prompt,
-            profile_bio=profile_bio)
+            profile_bio=profile_bio,
+            enable_events=True,
+            enable_interjections=True,
+            interjection_chance=0.03,
+            interjection_min_interval=600.0,
+            enable_greetings=True,
+            commands=commands,
+            command_aliases=command_aliases,
+            passive_handler=twitch_passive_handler
+        )
         if twitch_chat:
             twitch_chat_task = asyncio.create_task(twitch_chat.run())
 

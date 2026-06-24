@@ -1,152 +1,181 @@
-# PLAN — Profil Twitch autonome (bio + couleur choisies par la persona, 1×/jour) + garde anti-saturation API
+# PLAN — Sheo sur Twitch : présence vivante (événements + interjections + commandes + accueil)
 
-> **Contexte** : `shared/twitch_chat.py` est en prod (présence permanente Sheo sur Twitch).
-> Le profil (bio + couleur) est aujourd'hui **statique** : bio = `sheo_data.TWITCH_BIO`,
-> couleur = `blue_violet` figée, appliquées **une seule fois par process** (`_profile_applied`).
+> **Contexte** : `shared/twitch_chat.py` gère la présence permanente de Sheo (réponse sur
+> mention, anti-injection, profil autonome quotidien — commité e970880). On enrichit Sheo
+> pour qu'il se comporte comme un **vrai co-host de stream**. 4 ajouts, tous **génériques**
+> (Sheo = pilote, paramètres optionnels off par défaut → les autres bots en hériteront).
 >
-> **Objectif** : Sheo choisit **lui-même** sa bio et sa couleur **selon sa personnalité**,
-> **une fois par jour**, et **ça reste fixe pour la journée** (persisté, survit aux
-> redémarrages). Et : **aucune saturation de la clé API** quand on lui parle — il doit se
-> comporter comme sur Discord (cooldowns + cascade + rate-limit déjà en place).
->
-> Conventions : module **générique** (Sheo = pilote, paramètres optionnels, fallback no-op,
-> aucune exception ne remonte au bot), indépendance des bots, données runtime gitignorées.
+> **Périmètre validé par l'utilisateur** : 1 (événements), 2 (interjections), 3 (commandes),
+> 4 (accueil). **Hors périmètre pour l'instant** : annonces de live Discord (feature 5).
 
-> **Déjà fait dans cette session (à conserver / commiter)** :
-> - **Fix bio** : `helix/users` doit être appelé en **`PUT`** (le `PATCH` renvoyait 404).
->   Corrigé dans `shared/twitch_chat.py` (`TwitchProfile.update_profile`, requête bio).
-> - JSON d'auth périmé (`data/twitch_chat_auth_sheogorath.json`) supprimé → ré-amorçage
->   sur le token frais du `.env` (token valide, scopes `chat:read chat:edit user:edit
->   user:manage:chat_color` confirmés via `oauth2/validate`).
+> **PRINCIPE TRANSVERSAL — anti-saturation (exigence forte de l'utilisateur)**
+> Tout message **spontané** de Sheo (événements, interjections, accueil) **doit** :
+> 1. passer par le **plafond global existant** `global_msg_timestamps` (18 msg / 30 s) —
+>    on l'incrémente AVANT chaque envoi spontané, comme pour le chat ;
+> 2. respecter en plus un **cooldown propre à chaque feature** (voir ci-dessous).
+> Conséquence : même pendant un raid de 300 personnes, le total reste borné, on ne sature
+> ni la clé LLM ni la limite d'envoi Twitch (~20 msg/30 s pour un compte non-modérateur).
+> Les **commandes (3)** sont quasi sans coût LLM (scriptées/locales).
 
 ---
 
-## 1. Palette de couleurs valides (contrainte Twitch)
+## 0. Pré-requis technique commun : parser les tags IRC
 
-Un compte **sans Turbo/Prime** ne peut poser que **15 couleurs nommées**. Ajouter une
-constante module dans `shared/twitch_chat.py` :
+La connexion demande déjà `CAP REQ :twitch.tv/tags twitch.tv/commands` → on reçoit les
+**tags** (`@key=val;key=val ...`) sur les lignes `PRIVMSG` et `USERNOTICE`.
 
-```python
-TWITCH_NAMED_COLORS = [
-    "blue", "blue_violet", "cadet_blue", "chocolate", "coral",
-    "dodger_blue", "firebrick", "golden_rod", "green", "hot_pink",
-    "orange_red", "red", "sea_green", "spring_green", "yellow_green",
-]
-```
-
-Le choix de Sheo **doit** appartenir à cette liste (sinon `PUT chat/color` échoue). Toute
-valeur LLM hors-liste → fallback `blue_violet`.
+Ajouter un helper `_parse_tags(line) -> dict` (split `;` puis `=`, unescape `\s`→espace,
+`\:`→`;`, etc.). Servira aux features 1 (events + bits) et 4 (badges habitués).
 
 ---
 
-## 2. Profil autonome 1×/jour — `shared/twitch_chat.py`
+## 1. Réagir aux événements de la chaîne — `shared/twitch_chat.py`
 
-### 2.1 État persistant (fichier runtime, gitignoré)
-Fichier `data/twitch_profile_{bot_id}.json` :
-```json
-{ "date": "2026-06-23", "bio": "...", "color": "hot_pink" }
-```
-- `date` = date **locale** du jour (`datetime.now().strftime("%Y-%m-%d")`).
-- Lu au démarrage ; écrit après chaque (re)génération réussie.
-- Lecture/écriture best-effort (try/except, jamais bloquant).
+### 1.1 Source des événements
+Dans `_connect_and_loop`, en plus de `PRIVMSG_RE`, traiter :
+- **`USERNOTICE`** (subs, resubs, dons de subs, raids…). Le tag clé est **`msg-id`** :
+  - `sub`, `resub` → `display-name`, `msg-param-cumulative-months`, `msg-param-sub-plan`.
+  - `subgift`, `anonsubgift` → `display-name` (offreur) + `msg-param-recipient-display-name`.
+  - `submysterygift` → don groupé : réagir **une seule fois** au résumé
+    (`msg-param-mass-gift-count`) et **ignorer** les `subgift` enfants qui suivent.
+  - `raid` → `msg-param-displayName` + `msg-param-viewerCount`.
+  - Le tag **`system-msg`** donne déjà un résumé lisible → idéal à passer au LLM.
+- **Cheers / bits** : ce sont des `PRIVMSG` **avec un tag `bits`** → si `bits` présent,
+  traiter comme un événement « don de bits » (montant = valeur du tag).
 
-### 2.2 Génération LLM — **un seul appel par jour**
-Méthode `async _generate_daily_profile() -> (bio: str, color: str)` :
-- Réutilise **la même cascade** que le chat (`shared.llm_cascade.generate_response`),
-  donc rotation de clés + fallback providers. `max_tokens` court (~120), `temperature ~0.9`.
-- Base = **la personnalité de fond** (`self.personality_prompt` / `PERSONALITY_BASE`),
-  **pas** l'humeur Discord du moment (l'utilisateur veut un profil stable, « ça reste »).
-- **Un seul prompt** qui renvoie un petit JSON, pour ne faire qu'**un appel** :
-  > « Tu es <persona>. Choisis ta bio de chaîne Twitch et ta couleur de pseudo pour
-  >   aujourd'hui, fidèles à ta personnalité. Réponds UNIQUEMENT par un JSON :
-  >   `{"bio": "<1-2 phrases, 1re personne, en personnage, ≤280 caractères, sans
-  >   guillemets ni didascalies>", "color": "<un nom EXACT parmi: blue, blue_violet,
-  >   cadet_blue, chocolate, coral, dodger_blue, firebrick, golden_rod, green, hot_pink,
-  >   orange_red, red, sea_green, spring_green, yellow_green>"}`. »
-- **Parsing robuste** : extraire le JSON (regex `\{.*\}` en dernier recours), valider :
-  - `bio` : strip didascalies (`_strip_stage_directions`), retirer guillemets encadrants,
-    tronquer à **300** car. Si vide → fallback `self.profile_bio` (bio statique persona).
-  - `color` : `.lower()`; si ∉ `TWITCH_NAMED_COLORS` → fallback `self.chat_color or "blue_violet"`.
-- Si la cascade échoue (exception / texte vide) → renvoyer les **valeurs de secours**
-  (bio statique + couleur par défaut), **sans crash**.
+### 1.2 Génération de la réaction
+- Méthode `async _react_to_event(chan, kind, ctx: dict) -> str | None`.
+- Construit une consigne courte (« {auteur} vient de {sub/raid/bits…} : {détails} ») +
+  prompt système persona (`system_prompt_provider()` sinon `personality_prompt`) +
+  `ANTI_INJECTION_GUARD`. Appelle la **même cascade** (`generate_response`, `max_tokens≈80`).
+- Repli scripté si LLM indisponible/vide (petite liste de réactions en personnage par type).
 
-### 2.3 Application quotidienne — remplace `_apply_profile` / `_profile_applied`
-Nouvelle méthode `async _ensure_daily_profile()` :
-```
-state = _load_profile_state()          # {date, bio, color} ou None
-today = date locale
-if state and state["date"] == today:
-    bio, color = state["bio"], state["color"]      # PAS d'appel LLM
-else:
-    bio, color = await _generate_daily_profile()   # 1 appel LLM/jour
-    _save_profile_state({date: today, bio, color})
-await self.profile_helper.update_profile(bio=bio, chat_color=color)  # best-effort Helix
-```
-- Au **même jour** : on ré-applique les valeurs stockées (appels Helix idempotents, **0**
-  appel LLM) → cohérent même après redémarrage, sans coût LLM.
-- Au **changement de jour** : 1 génération LLM, persistée.
-- Garde un flag mémoire `self._profile_day` pour ne pas spammer Helix dans la même journée
-  (appliquer une fois par process + une fois par bascule de date).
+### 1.3 Garde-fous spécifiques
+- **Cooldown événement** : min ~8 s entre deux réactions d'événement (`self._last_event_ts`).
+- **Anti-rafale** : un seul message par `submysterygift` (pas un par sub offert) ; un seul
+  par `raid`.
+- Incrémente `global_msg_timestamps` avant l'envoi (principe transversal). Si plafond
+  atteint → on log et on **n'envoie pas** (l'événement passe à la trappe, pas de file).
 
-### 2.4 Déclenchement (cycle de vie)
-- **Au démarrage** : appeler `_ensure_daily_profile()` après la 1re connexion réussie
-  (remplace l'actuel `asyncio.create_task(self._apply_profile())` en `run()`), en tâche de
-  fond, non bloquant.
-- **Bascule de minuit** : dans `_token_refresh_loop` (déjà réveillé toutes les 60 s),
-  ajouter un contrôle léger : si `self._profile_day != today` → relancer
-  `_ensure_daily_profile()`. (Pas de nouvelle boucle dédiée nécessaire.)
-- Toujours `try/except` autour : un échec profil ne doit jamais tuer la boucle chat.
-
-### 2.5 Câblage Sheo (`Sheogorath/bot_sheogorath.py`)
-- `setup_twitch_chat("sheogorath", …)` continue de passer `profile_bio=TWITCH_BIO`
-  (devient le **fallback** si la génération LLM échoue) et `chat_color` par défaut.
-- Rien d'autre à changer côté bot : la logique « 1×/jour + persona » vit dans le module
-  générique → les 5 autres bots en hériteront tels quels.
+### 1.4 Activation
+- Param `enable_events: bool = False` sur `setup_twitch_chat`. Sheo le passe à `True`.
 
 ---
 
-## 3. Garde anti-saturation API — parité Discord (vérif + 1 durcissement)
+## 2. Interjections spontanées — `shared/twitch_chat.py`
 
-**Déjà en place (à NE PAS casser, vérifier présence)** :
-- Réponse uniquement si mot déclencheur (`trigger_re`).
-- **Cooldown 3 s / utilisateur** (`user_cooldowns`).
-- **Plafond global 18 msg / 30 s** (`global_msg_timestamps`).
-- Cascade `shared/llm_cascade` + `classify_request` + `key_manager` (rotation de clés),
-  `max_tokens=120`, traitement **séquentiel** des messages.
+### 2.1 Contexte de chat
+- Ajouter un **tampon roulant par salon** `self.channel_recent[chan] = deque(maxlen=8)`
+  (chaque message non-bot, sous forme « auteur: texte ») mis à jour à chaque `PRIVMSG`.
 
-**Durcissement** :
-- **Compter la tentative, pas seulement le succès** : actuellement
-  `global_msg_timestamps.append(...)` n'a lieu qu'**après** une réponse non vide (l.444).
-  Un appel LLM qui échoue/retourne vide n'est donc pas compté → une rafale d'échecs peut
-  multiplier les appels. → Enregistrer le timestamp **au moment où on décide de générer**
-  (juste avant `_generate_response`), pour que chaque **appel** compte dans le plafond.
-- La génération quotidienne de profil = **1 appel/jour** (garanti par l'état persistant
-  §2.3) → négligeable, n'entame pas le budget.
+### 2.2 Déclenchement
+Sur un `PRIVMSG` qui **ne** déclenche **pas** (pas de mention, pas de commande) :
+- Tirage aléatoire `random.random() < interjection_chance` (défaut **0.03**), **ET**
+- `now - self._last_interjection > interjection_min_interval` (défaut **600 s**), **ET**
+- budget global non saturé.
+→ Génère une réplique courte (`_generate_interjection`) basée sur `channel_recent[chan]`,
+  prompt persona + guard, cascade `max_tokens≈70`. Met à jour `self._last_interjection` et
+  `global_msg_timestamps`.
+
+### 2.3 Activation / réglages
+- Params : `enable_interjections=False`, `interjection_chance=0.03`,
+  `interjection_min_interval=600`. Sheo active avec des valeurs prudentes.
 
 ---
 
-## 4. Vérifications (avant test live)
+## 3. Commandes de chat — `shared/twitch_chat.py` (générique) + adaptateurs Sheo
+
+### 3.1 Dispatch générique
+- Param `commands: dict[str, callable] | None = None`. Clé = nom sans `!` (ex. `"decret"`),
+  valeur = callable `(author: str, args: str) -> str | Awaitable[str]`.
+- Dans le handler de message, **avant** le test de mention : si `text` commence par `!`,
+  extraire `cmd` + `args`, et si `cmd ∈ self.commands` → exécuter (await si coroutine),
+  envoyer la chaîne retournée, **stop** (ne pas aussi déclencher une réponse mention).
+- **Cooldown commande** : réutiliser le cooldown par utilisateur (3 s) + un cooldown global
+  léger par commande pour éviter le spam d'une même commande.
+- Alias : accepter une table d'alias (ex. `decree`→`decret`).
+
+### 3.2 Adaptateurs Sheo (`Sheogorath/`)
+- **`!faveur`** → réutiliser `FaveurSystem`, mais **cloisonné Twitch** : nouveau fichier
+  `data/sheo_faveurs_twitch.json` (ou clés préfixées `tw:`) — **ne pas mélanger** avec les
+  identités Discord. Retourne le rang/points du `author` Twitch.
+- **`!décret`** → **nouveau générateur texte seul** (pas de rôle, pas d'image) : recycler le
+  prompt LLM de décret (≈ `bot_sheogorath.py` l.779) en version **texte court**, cible =
+  l'auteur de la commande ; repli sur les templates de décret existants. ~1 appel LLM,
+  initié par le viewer, compté dans le budget.
+- **`!fromage`** → `minigames.jeu_fromage(<hash de l'author>)` → mise en forme texte.
+- **`!sheo`** / **`!folie`** → listes statiques de répliques en personnage (0 LLM).
+- Sheo construit le dict `commands={"decret":…, "faveur":…, "fromage":…, "sheo":…,
+  "folie":…}` (+ alias) et le passe à `setup_twitch_chat`.
+
+---
+
+## 4. Accueil des arrivants / habitués — `shared/twitch_chat.py`
+
+### 4.1 État persistant par viewer
+- Fichier `data/twitch_viewers_{bot_id}.json` :
+  `{ "<login>": { "count": 7, "last_seen": "2026-06-23" } }` (gitignoré).
+- Lecture au démarrage, écriture best-effort (debounce : sauver au plus une fois / 30 s).
+
+### 4.2 Détection « premier message de la session »
+- Set RAM `self.session_seen` (par login). Au **1er message** d'un login dans la session :
+  - incrémenter `count`, mettre `last_seen` = aujourd'hui, marquer vu pour la session ;
+  - produire un **accueil** (voir 4.3) ;
+  - (Twitch ne notifie pas l'arrivée de façon fiable sans EventSub → on se base sur le
+    1er message, c'est suffisant et sans scope supplémentaire.)
+
+### 4.3 Message d'accueil — **templaté par défaut (0 LLM)**
+- Pool de salutations en personnage, formaté avec `@login` ; variante « habitué » si
+  `count >= seuil` (ex. ≥ 5) qui mentionne le nombre de visites.
+- *(Option `greeting_use_llm=False` par défaut — on garde les templates pour éviter tout
+  coût et tout risque de flood lors d'un raid ; activable plus tard.)*
+
+### 4.4 Anti-flood (crucial pendant un raid)
+- **Cap d'accueil** : au plus 1 accueil / ~15 s (`self._last_greet_ts`), et on **saute**
+  l'accueil si le budget global est déjà bien entamé. Mieux vaut rater un bonjour que
+  noyer le chat. Incrémente `global_msg_timestamps`.
+
+### 4.5 Activation
+- Param `enable_greetings: bool = False`. Sheo → `True`.
+
+---
+
+## 5. Ordre de traitement d'un message (handler) — précédence claire
+Pour un `PRIVMSG` (après filtres auteur=self / bots connus / cooldown user) :
+1. **Commande** (`!…` connue) → exécuter, **stop**.
+2. **Mention** (`trigger_re`) → réponse LLM existante, **stop**.
+3. Sinon (message « passif ») : mettre à jour `channel_recent` + faveur passive éventuelle,
+   puis **au plus UNE** sortie spontanée : **accueil** (si 1er message session) **sinon**
+   **interjection** (probabiliste). Jamais les deux sur le même message.
+Les `USERNOTICE`/bits (feature 1) sont une **branche séparée** traitée avant `PRIVMSG_RE`.
+
+---
+
+## 6. Vérifications (avant test live)
 - `python -m py_compile shared/twitch_chat.py Sheogorath/bot_sheogorath.py` → OK.
-- `_generate_daily_profile` : sur réponse LLM bidon / hors-JSON / couleur invalide →
-  renvoie bien les fallbacks, jamais d'exception.
-- `color` retournée **toujours** ∈ `TWITCH_NAMED_COLORS`.
-- `bio` ≤ 300 car., sans didascalie, sans guillemets encadrants.
-- Relancer 2× le bot le **même jour** → **aucun** nouvel appel LLM de profil (état lu),
-  profil ré-appliqué à l'identique.
-- Simuler un changement de date (modifier `date` du JSON) → 1 régénération.
-- Module toujours importable seul ; aucun crash si `key_manager`/cascade indisponibles.
+- `_parse_tags` testé sur des exemples réels de `USERNOTICE`/`PRIVMSG` (unescape correct).
+- Simuler les lignes IRC (sub, resub, subgift, submysterygift, raid, cheer) → 1 seule
+  réaction par événement, jamais de rafale ; cooldown respecté.
+- Commandes : dispatch OK, alias OK, inconnue ignorée, cooldown actif ; `!faveur` écrit
+  bien dans le fichier **Twitch** (pas Discord).
+- Accueil : 1 seul par login/session, variante habitué au-delà du seuil, **cap anti-flood**
+  vérifié sur une rafale simulée.
+- **Anti-saturation** : un flot massif (events + mentions + accueils) ne dépasse jamais
+  18 envois / 30 s (logs `🚨 rate limit`).
+- Module toujours importable seul ; toutes les features **off par défaut** ; aucun crash si
+  cascade/clé indisponibles (replis).
 
-## 5. Recette de test (live)
-1. Démarrer le bot → logs `✅ Description mise à jour` (plus de 404) **et**
-   `✅ Couleur du chat mise à jour (<couleur choisie>)`.
-2. Page `https://www.twitch.tv/compte_bot_sheo` → bio = texte généré en personnage.
-3. Chat : `sheo ...` → réponse en personnage, **pseudo coloré** (refresh du chat).
-4. Redémarrer le même jour → bio/couleur **identiques**, pas de nouvel appel LLM (logs).
-5. Spammer `sheo ...` rapidement → cooldown 3 s + plafond 18/30 s tiennent, pas de
-   saturation de clé (logs `⏳ cooldown` / `🚨 rate limit`).
+## 7. Recette de test (live)
+1. Faire un sub/cheer (ou simuler) → Sheo réagit **en personnage**, une fois.
+2. Simuler un raid → un seul message d'accueil collectif.
+3. `!décret`, `!faveur`, `!fromage`, `!sheo` → réponses correctes ; `!faveur` cumule les
+   points sur Twitch indépendamment de Discord.
+4. Laisser tourner : une **interjection** finit par sortir (rare), pas de spam.
+5. Nouveau pseudo qui parle → accueil ; il revient au stream suivant → variante « habitué ».
+6. Spammer mentions + commandes : cooldowns + plafond tiennent, pas de saturation de clé.
 
-## 6. Hors périmètre
-- Couleurs hex arbitraires (nécessiteraient Turbo/Prime sur le compte) — écarté.
-- Bio basée sur l'humeur Discord du jour (l'utilisateur veut un profil **stable**) — écarté.
-- Photo de profil (non modifiable par l'API Helix) — reste manuelle.
-- Généralisation du profil autonome aux 5 autres bots (le module est déjà générique).
+## 8. Hors périmètre (itérations suivantes)
+- Annonces de live Discord (feature 5, `plan-twitch-announce`) — repoussée par l'utilisateur.
+- Détection d'arrivée temps réel via EventSub (follows en direct) — le 1er message suffit.
+- Modération/timeout (pas de scope, par design).
+- Généralisation des 4 features aux 5 autres bots (le module reste générique).
