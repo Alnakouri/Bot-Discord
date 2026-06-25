@@ -16,6 +16,13 @@ import logging
 from pathlib import Path
 import sys
 
+# Console Windows en cp1252 : forcer l'UTF-8 (les logs contiennent des emojis) avant basicConfig.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("run_stream_listener")
