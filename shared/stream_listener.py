@@ -66,21 +66,28 @@ try:
 except ImportError:
     logger.warning("⚠️ [STREAM_LISTENER] faster-whisper non installé. Mode C non disponible localement.")
 
+# Bascule auto GPU : paliers du plus léger au plus lourd + VRAM approx. (Mo, float16).
+_MODEL_TIERS = ["small", "medium", "large-v3-turbo"]
+_MODEL_VRAM_MB = {"small": 600, "medium": 1600, "large-v3-turbo": 2100}
+
 
 class StreamListenerHub:
     """
     Hub Windows unique capturant le micro et distribuant les transcriptions aux bots.
     Gère également l'arbitrage (1 seule réponse max par énoncé).
     """
-    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None, initial_prompt=None, rms_threshold: float = 0.02, max_segment_sec: float = 12.0):
+    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None, initial_prompt=None, rms_threshold: float = 0.02, max_segment_sec: float = 12.0, auto_switch: bool = False):
         self.port = port
         self.mode = mode  # A (NIM), B (NeMo), C (Whisper)
-        self.model_size = model_size
+        self.model_size = model_size      # modèle ACTUEL (peut changer si auto_switch)
+        self.max_model_size = model_size  # plafond = modèle configuré (jamais au-dessus)
         self.device = device              # device de CALCUL ASR (cpu/cuda)
         self.input_device = input_device  # périphérique micro sounddevice (index/nom) ; None = défaut Windows
         self.initial_prompt = initial_prompt  # biaise Whisper vers le vocabulaire (noms des bots)
         self.rms_threshold = rms_threshold    # seuil anti-silence/bruit (monte-le si bruit de fond)
         self.max_segment_sec = max_segment_sec  # plafond dur de durée d'un énoncé (anti-accumulation)
+        self.auto_switch = auto_switch    # GPU : descend le modèle si la VRAM se remplit (jeu)
+        self._last_switch_ts = 0.0
         self.voice_min_interval = voice_min_interval
         self.last_grant_ts = 0.0
         self.enabled = False
@@ -107,6 +114,7 @@ class StreamListenerHub:
                     logger.warning("↩️ Repli sur CPU (int8)...")
                     try:
                         self.whisper_model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+                        self.device = "cpu"  # repli effectif → pas de bascule VRAM
                         logger.info("✅ Modèle Whisper chargé sur CPU (repli).")
                     except Exception as e2:
                         logger.error(f"❌ Échec repli CPU: {e2}")
@@ -154,6 +162,67 @@ class StreamListenerHub:
             asyncio.create_task(self._capture_and_process())
         else:
             logger.warning("⚠️ Capture audio non démarrée (sounddevice/numpy manquant). Le hub fonctionnera en WS uniquement.")
+
+        if self.auto_switch and self.device == "cuda" and self.whisper_model is not None:
+            asyncio.create_task(self._vram_watch_loop())
+
+    async def _set_model(self, new_size: str):
+        """Recharge Whisper avec une autre taille (bascule auto VRAM). Atomique :
+        on charge le nouveau modèle PUIS on échange la référence."""
+        if new_size == self.model_size or not WHISPER_AVAILABLE:
+            return
+        loop = asyncio.get_running_loop()
+        logger.info(f"🔄 [STREAM_LISTENER] Bascule modèle {self.model_size} → {new_size} (VRAM)...")
+        try:
+            new_model = await loop.run_in_executor(
+                None, lambda: WhisperModel(new_size, device="cuda", compute_type="float16")
+            )
+            old = self.whisper_model
+            self.whisper_model = new_model
+            self.model_size = new_size
+            del old
+            import gc
+            gc.collect()
+            self._last_switch_ts = time.time()
+            logger.info(f"✅ [STREAM_LISTENER] Modèle actif : {new_size}")
+        except Exception as e:
+            logger.error(f"❌ [STREAM_LISTENER] Bascule modèle échouée : {e}")
+
+    async def _vram_watch_loop(self):
+        """Surveille la VRAM libre et descend/remonte le modèle (plafond = max_model_size).
+        Décision basée sur la VRAM 'externe' (hors notre modèle) → stable, pas de flapping."""
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        except Exception as e:
+            logger.warning(f"⚠️ [STREAM_LISTENER] Bascule auto VRAM indisponible (pynvml) : {e}")
+            return
+
+        ceiling_idx = _MODEL_TIERS.index(self.max_model_size) if self.max_model_size in _MODEL_TIERS else len(_MODEL_TIERS) - 1
+        logger.info(f"🎛️ [STREAM_LISTENER] Bascule auto VRAM active (plafond : {self.max_model_size}).")
+
+        while not self._stopped:
+            await asyncio.sleep(8)
+            if time.time() - self._last_switch_ts < 30:  # cooldown anti-flapping
+                continue
+            try:
+                free_mb = pynvml.nvmlDeviceGetMemoryInfo(handle).free / (1024 * 1024)
+            except Exception:
+                continue
+            # VRAM dispo SI notre modèle n'était pas chargé (décision indépendante du modèle courant)
+            external_free = free_mb + _MODEL_VRAM_MB.get(self.model_size, 2000)
+            if external_free >= 3200:
+                want_idx = 2  # large-v3-turbo
+            elif external_free >= 2200:
+                want_idx = 1  # medium
+            else:
+                want_idx = 0  # small
+            want_idx = min(want_idx, ceiling_idx)
+            target = _MODEL_TIERS[want_idx]
+            if target != self.model_size:
+                logger.info(f"🎛️ [STREAM_LISTENER] VRAM libre ~{free_mb:.0f} Mo → cible {target}")
+                await self._set_model(target)
 
     async def _capture_and_process(self):
         logger.info("🎤 [STREAM_LISTENER] Enregistrement audio en cours d'écoute (Input Stream)...")
