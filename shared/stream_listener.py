@@ -178,12 +178,14 @@ class StreamListenerHub:
             try:
                 logger.info(f"🎙️ Transcription d'un segment de {duration:.2f}s...")
                 loop = asyncio.get_running_loop()
-                segments, info = await loop.run_in_executor(
-                    None, 
-                    lambda: list(self.whisper_model.transcribe(audio_data, language="fr", beam_size=5)[0])
-                )
-                
-                text = " ".join([seg.text for seg in segments]).strip()
+
+                def _do_transcribe():
+                    # transcribe() renvoie (générateur de segments, info) ; le vrai calcul
+                    # a lieu en consommant le générateur → tout faire DANS l'executor.
+                    seg_gen, _info = self.whisper_model.transcribe(audio_data, language="fr", beam_size=5)
+                    return " ".join(seg.text for seg in seg_gen).strip()
+
+                text = await loop.run_in_executor(None, _do_transcribe)
                 if text:
                     words = text.split()
                     if len(words) >= 3 and not all(w.lower() in ["euh", "ah", "oh", "hein"] for w in words):
