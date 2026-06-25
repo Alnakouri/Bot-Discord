@@ -60,12 +60,13 @@ def load_listen_config(pilot_bot: str = "johnny") -> dict:
             "enabled": bool(listen_cfg.get("enabled", False)),
             "mode": str(listen_cfg.get("mode", "C")),
             "device": str(listen_cfg.get("device", "cpu")),
+            "model": str(listen_cfg.get("model", "large-v3-turbo")),  # small/medium/large-v3-turbo...
             "min_interval": min_interval,
             "input_device": listen_cfg.get("input_device", None)  # index/nom micro ; None = défaut Windows
         }
     except Exception as e:
         logger.error(f"❌ Erreur lors de la lecture de la configuration : {e}")
-        return {"enabled": False, "mode": "C", "device": "cpu", "min_interval": 45.0, "input_device": None}
+        return {"enabled": False, "mode": "C", "device": "cpu", "model": "large-v3-turbo", "min_interval": 45.0, "input_device": None}
 
 async def main():
     logger.info("🎙️ Démarrage du service d'écoute en arrière-plan...")
@@ -78,7 +79,7 @@ async def main():
         logger.info("Pour l'activer, modifiez les paramètres dans le dashboard et relancez ce script.")
         return
 
-    hub = StreamListenerHub(port=8765, mode=cfg["mode"], device=cfg["device"],
+    hub = StreamListenerHub(port=8765, mode=cfg["mode"], model_size=cfg["model"], device=cfg["device"],
                             voice_min_interval=cfg["min_interval"], input_device=cfg.get("input_device"))
     
     try:
