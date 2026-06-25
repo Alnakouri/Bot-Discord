@@ -41,10 +41,6 @@ class StreamListenerHub:
         self.whisper_model = None
 
     async def start(self):
-        if not DEPS_AVAILABLE:
-            logger.error("❌ Impossible de démarrer le hub d'écoute: dépendances sounddevice/numpy manquantes.")
-            return
-
         self.enabled = True
         logger.info(f"🎤 [STREAM_LISTENER] Démarrage du hub sur le port {self.port} (Mode: {self.mode})")
 
@@ -64,7 +60,7 @@ class StreamListenerHub:
             logger.error("❌ websockets non installé. Hub désactivé.")
             return
 
-        async def handler(websocket, path):
+        async def handler(websocket):
             self.clients.add(websocket)
             logger.info(f"🔌 Client Bot connecté au Hub. Total: {len(self.clients)}")
             try:
@@ -94,17 +90,99 @@ class StreamListenerHub:
                 logger.info(f"🔌 Client Bot déconnecté. Total: {len(self.clients)}")
 
         self.server = await websockets.serve(handler, "localhost", self.port)
-        asyncio.create_task(self._capture_and_process())
+        if DEPS_AVAILABLE:
+            asyncio.create_task(self._capture_and_process())
+        else:
+            logger.warning("⚠️ Capture audio non démarrée (sounddevice/numpy manquant). Le hub fonctionnera en WS uniquement.")
 
     async def _capture_and_process(self):
-        # Capture audio simplifiée pour l'écoute du streamer
-        # En mode continu réel, nous utiliserions sounddevice pour lire les frames PCM
-        logger.info("🎤 Enregistrement audio en cours d'écoute...")
-        while not self._stopped:
-            await asyncio.sleep(1)
-            # Implémentation factice ou allégée du loop pour ne pas bloquer
-            # En production, les frames PCM sont envoyées à l'ASR et quand un énoncé
-            # est finalisé, on le diffuse aux bots via self.broadcast(...)
+        logger.info("🎤 [STREAM_LISTENER] Enregistrement audio en cours d'écoute (Input Stream)...")
+        
+        loop = asyncio.get_running_loop()
+        queue = asyncio.Queue()
+        
+        def audio_callback(indata, frames, time_info, status):
+            if status:
+                logger.warning(f"⚠️ [STREAM_LISTENER] Statut InputStream: {status}")
+            loop.call_soon_threadsafe(queue.put_nowait, indata.copy())
+            
+        sample_rate = 16000
+        channels = 1
+        
+        try:
+            stream = sd.InputStream(
+                samplerate=sample_rate,
+                channels=channels,
+                dtype='float32',
+                callback=audio_callback
+            )
+        except Exception as e:
+            logger.error(f"❌ Échec de l'ouverture du flux audio sounddevice: {e}")
+            return
+            
+        rms_threshold = 0.015
+        accumulated_audio = []
+        silence_duration = 0.0
+        has_speech = False
+        
+        with stream:
+            while not self._stopped:
+                try:
+                    block = await asyncio.wait_for(queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    if has_speech:
+                        silence_duration += 0.1
+                        if silence_duration >= 0.7:
+                            await self._process_accumulated_audio(accumulated_audio)
+                            accumulated_audio = []
+                            silence_duration = 0.0
+                            has_speech = False
+                    continue
+                
+                rms = np.sqrt(np.mean(block**2))
+                block_duration = len(block) / sample_rate
+                
+                if rms > rms_threshold:
+                    has_speech = True
+                    silence_duration = 0.0
+                    accumulated_audio.append(block)
+                else:
+                    if has_speech:
+                        accumulated_audio.append(block)
+                        silence_duration += block_duration
+                        if silence_duration >= 0.7:
+                            await self._process_accumulated_audio(accumulated_audio)
+                            accumulated_audio = []
+                            silence_duration = 0.0
+                            has_speech = False
+
+    async def _process_accumulated_audio(self, blocks):
+        if not blocks or not DEPS_AVAILABLE:
+            return
+        
+        audio_data = np.concatenate(blocks, axis=0).flatten()
+        duration = len(audio_data) / 16000
+        if duration < 0.5:
+            return
+            
+        if self.mode == "C" and self.whisper_model and WHISPER_AVAILABLE:
+            try:
+                logger.info(f"🎙️ Transcription d'un segment de {duration:.2f}s...")
+                loop = asyncio.get_running_loop()
+                segments, info = await loop.run_in_executor(
+                    None, 
+                    lambda: list(self.whisper_model.transcribe(audio_data, language="fr", beam_size=5)[0])
+                )
+                
+                text = " ".join([seg.text for seg in segments]).strip()
+                if text:
+                    words = text.split()
+                    if len(words) >= 3 and not all(w.lower() in ["euh", "ah", "oh", "hein"] for w in words):
+                        await self.broadcast(text)
+                    else:
+                        logger.info(f"🔇 Transcrit ignoré (trop court/bruit): \"{text}\"")
+            except Exception as e:
+                logger.error(f"❌ Erreur lors de la transcription Whisper: {e}")
 
     async def broadcast(self, text: str):
         if not text or not self.clients:
