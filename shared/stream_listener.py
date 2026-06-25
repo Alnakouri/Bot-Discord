@@ -7,6 +7,17 @@ import time
 
 logger = logging.getLogger("stream_listener")
 
+# Phrases d'hallucination typiques de Whisper sur le silence/bruit (à ne jamais diffuser).
+_HALLUCINATION_MARKERS = (
+    "amara.org",
+    "sous-titres réalisés",
+    "sous-titrage",
+    "merci d'avoir regardé",
+    "merci de votre attention",
+    "abonnez-vous",
+    "sous-titres faits par",
+)
+
 # Imports défensifs
 DEPS_AVAILABLE = False
 try:
@@ -182,16 +193,26 @@ class StreamListenerHub:
                 def _do_transcribe():
                     # transcribe() renvoie (générateur de segments, info) ; le vrai calcul
                     # a lieu en consommant le générateur → tout faire DANS l'executor.
-                    seg_gen, _info = self.whisper_model.transcribe(audio_data, language="fr", beam_size=5)
+                    # vad_filter : coupe le silence avant ASR (tue les hallucinations).
+                    # condition_on_previous_text=False : évite les boucles de répétition.
+                    seg_gen, _info = self.whisper_model.transcribe(
+                        audio_data, language="fr", beam_size=5,
+                        vad_filter=True, condition_on_previous_text=False
+                    )
                     return " ".join(seg.text for seg in seg_gen).strip()
 
                 text = await loop.run_in_executor(None, _do_transcribe)
-                if text:
-                    words = text.split()
-                    if len(words) >= 3 and not all(w.lower() in ["euh", "ah", "oh", "hein"] for w in words):
-                        await self.broadcast(text)
-                    else:
-                        logger.info(f"🔇 Transcrit ignoré (trop court/bruit): \"{text}\"")
+                if not text:
+                    return
+                low = text.lower()
+                if any(m in low for m in _HALLUCINATION_MARKERS):
+                    logger.info(f"🔇 Hallucination Whisper ignorée: \"{text}\"")
+                    return
+                words = text.split()
+                if len(words) >= 3 and not all(w.lower() in ["euh", "ah", "oh", "hein"] for w in words):
+                    await self.broadcast(text)
+                else:
+                    logger.info(f"🔇 Transcrit ignoré (trop court/bruit): \"{text}\"")
             except Exception as e:
                 logger.error(f"❌ Erreur lors de la transcription Whisper: {e}")
 
