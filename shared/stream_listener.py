@@ -40,13 +40,15 @@ class StreamListenerHub:
     Hub Windows unique capturant le micro et distribuant les transcriptions aux bots.
     Gère également l'arbitrage (1 seule réponse max par énoncé).
     """
-    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None, initial_prompt=None):
+    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None, initial_prompt=None, rms_threshold: float = 0.02, max_segment_sec: float = 12.0):
         self.port = port
         self.mode = mode  # A (NIM), B (NeMo), C (Whisper)
         self.model_size = model_size
         self.device = device              # device de CALCUL ASR (cpu/cuda)
         self.input_device = input_device  # périphérique micro sounddevice (index/nom) ; None = défaut Windows
         self.initial_prompt = initial_prompt  # biaise Whisper vers le vocabulaire (noms des bots)
+        self.rms_threshold = rms_threshold    # seuil anti-silence/bruit (monte-le si bruit de fond)
+        self.max_segment_sec = max_segment_sec  # plafond dur de durée d'un énoncé (anti-accumulation)
         self.voice_min_interval = voice_min_interval
         self.last_grant_ts = 0.0
         self.enabled = False
@@ -141,11 +143,22 @@ class StreamListenerHub:
             logger.error(f"❌ Échec de l'ouverture du flux audio sounddevice (device={self.input_device}): {e}")
             return
             
-        rms_threshold = 0.015
+        rms_threshold = self.rms_threshold
+        max_segment_sec = self.max_segment_sec
         accumulated_audio = []
+        segment_duration = 0.0
         silence_duration = 0.0
         has_speech = False
-        
+
+        async def _finalize():
+            nonlocal accumulated_audio, segment_duration, silence_duration, has_speech
+            blocks = accumulated_audio
+            accumulated_audio = []
+            segment_duration = 0.0
+            silence_duration = 0.0
+            has_speech = False
+            await self._process_accumulated_audio(blocks)
+
         with stream:
             while not self._stopped:
                 try:
@@ -154,28 +167,31 @@ class StreamListenerHub:
                     if has_speech:
                         silence_duration += 0.1
                         if silence_duration >= 0.7:
-                            await self._process_accumulated_audio(accumulated_audio)
-                            accumulated_audio = []
-                            silence_duration = 0.0
-                            has_speech = False
+                            await _finalize()
                     continue
-                
+
                 rms = np.sqrt(np.mean(block**2))
                 block_duration = len(block) / sample_rate
-                
+
                 if rms > rms_threshold:
                     has_speech = True
                     silence_duration = 0.0
                     accumulated_audio.append(block)
+                    segment_duration += block_duration
                 else:
                     if has_speech:
                         accumulated_audio.append(block)
+                        segment_duration += block_duration
                         silence_duration += block_duration
                         if silence_duration >= 0.7:
-                            await self._process_accumulated_audio(accumulated_audio)
-                            accumulated_audio = []
-                            silence_duration = 0.0
-                            has_speech = False
+                            await _finalize()
+                            continue
+
+                # Filet de sécurité : ne jamais accumuler plus de max_segment_sec
+                # (sinon un bruit de fond continu au-dessus du seuil crée des segments
+                # de plusieurs minutes → latence énorme + audio jeté par le VAD).
+                if has_speech and segment_duration >= max_segment_sec:
+                    await _finalize()
 
     async def _process_accumulated_audio(self, blocks):
         if not blocks or not DEPS_AVAILABLE:
