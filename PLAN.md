@@ -1,170 +1,123 @@
-# PLAN — Phase 5 : Écoute live du streamer (STT continu + jugement) sur Johnny ET Sheo
+# PLAN — Correctifs Phase 5 écoute live : réponse SUR NOM uniquement + arbitrage/intervalle au hub
 
-> **Objectif.** Les bots « entendent » ce que dit le streamer (micro), et **au plus un** des deux
-> réagit en personnage. Aujourd'hui `shared/stream_listener.py` existe mais c'est un **squelette
-> non câblé** : capture factice (`_capture_and_process` = `await asyncio.sleep(1)`), aucun bot ne
-> l'instancie, deps commentées dans `requirements.txt`. Ce plan le rend réel, **derrière flag**,
-> sans toucher au chat existant.
+> **Contexte.** La Phase 5 (écoute live STT) est commitée (`e3975fd`, `b83e1f6`, `54f6c28`). Un test
+> end-to-end du pipeline (vrai hub + 2 clients, micro/Whisper et LLM mockés) a révélé **2 bugs** qui
+> violent l'exigence dure « **au plus 1 bot répond par énoncé** » / « **intervalle ≥ 45 s tous bots
+> confondus** » ([[plan-twitch-phase5-stt]], [[plan-twitch-v2]]) :
 >
-> **Décisions déjà cadrées** (cf. [[plan-twitch-v2]]) : écoute **continue + jugement** ; **1 seul
-> flux micro** (hub unique) partagé Johnny+Sheo ; **arbitrage** (jamais 2 bots sur le même énoncé) ;
-> STT **100 % local** sur le PC de stream (RTX 4060 Ti). Le plus lourd → fait en dernier, isolé.
+> - **Bug B — double réponse sur priorité (19/20).** Quand le streamer prononce le nom d'un bot, le
+>   bot non-nommé réclame le claim en premier (granted), puis le bot nommé l'**écrase** (granted aussi)
+>   → **les deux** envoient. Le « priority override » est intrinsèquement racy en modèle broadcast.
+> - **Bug C — intervalle non global (1 au lieu de 0).** Johnny et Sheo sont des **processus séparés**
+>   (compteurs `_last_voice_ts` / `global_msg_timestamps` **non partagés**). « johnny… » puis « sheo… »
+>   à 1 s d'intervalle → 2 réponses. Le **seul** point partagé est le **hub** ; il n'impose aucun
+>   intervalle global.
 >
-> **Exigences dures :**
-> - **Off par défaut** (`enable_voice_listen=False`) ; bots **toujours** fonctionnels si STT HS/absent.
-> - **Anti-saturation** : toute réponse-voix passe par le plafond global `global_msg_timestamps`
->   (18/30 s) **+** un intervalle mini **global voix** (≥ 45 s, tous bots confondus).
-> - **Cloisonnement/indépendance** ([[bots-independants]]) : imports défensifs, dégradation propre.
-> - **Capture micro = Windows natif** (gotcha WSL2/Docker : le micro n'est pas exposé) → hub local.
+> **Décision produit (utilisateur, 2026-06-25).** Un bot **ne réagit à la voix QUE s'il entend un de
+> ses propres noms** (on **supprime** la gate probabiliste `voice_chance`). Conséquence : pour un
+> énoncé donné, **au plus un** bot est nommé → plus de course → **Bug B disparaît** sans « priority ».
+> Le **Bug C** se règle en déplaçant l'arbitrage + l'intervalle **au hub** (point partagé unique).
+>
+> **Cadre.** Correctif isolé, off par défaut inchangé (`enable_voice_listen=False`). Ne touche ni au
+> chat existant, ni à la capture audio, ni au dashboard. `py_compile` + autonomie ([[bots-independants]])
+> à reconfirmer.
 
 ---
 
-## Phase 5.0 — Prérequis (à trancher AU DÉBUT)
+## Tâche 1 — Bot : réagir UNIQUEMENT sur son nom (`shared/twitch_chat.py`, `_on_voice_transcript` `:1558-1598`)
 
-### 5.0.1 Choix du moteur ASR (un seul, configurable `listen.mode`)
-- **(C) faster-whisper — RECOMMANDÉ pour démarrer** : `pip install faster-whisper`, trivial sous
-  Windows, `large-v3-turbo` en `int8` GPU (ou CPU). Déjà amorcé dans `stream_listener.py:19-24`.
-- **(A) NIM Nemotron streaming** (gRPC localhost:50051, Docker Desktop+WSL2+NVIDIA Toolkit+`NGC_API_KEY`)
-  et **(B) NeMo Python** (`nvidia/nemotron-3.5-asr-streaming-0.6b`, WSL2) : meilleurs (streaming
-  < 100 ms, endpointing natif) mais lourds à installer → **après** que (C) valide la chaîne complète.
-
-### 5.0.2 Dépendances (`requirements.txt`, sous le commentaire « STT optionnel »)
-Décommenter au besoin : `sounddevice`, `numpy`, `faster-whisper`, **`websockets`** (le hub/clients
-l'utilisent). Garder commenté ce qui ne sert pas au mode retenu. Ne **jamais** rendre ces deps
-obligatoires (les autres bots/Docker ne les ont pas).
-
-### 5.0.3 Micro
-Le hub tourne **là où est le micro** (PC de stream, Windows natif). Si les bots sont en Docker, le
-hub reste un **process Windows séparé** ; les bots s'y connectent en client WebSocket
-(`ws://<host>:8765`). ⚠️ Docker→host : exposer/router le port (ou faire tourner le bot concerné en
-natif). Noté pour [[plan-deploy-oracle]].
-
----
-
-## Phase 5.1 — Capture réelle + ASR dans le hub (`shared/stream_listener.py`)
-
-### 5.1.0 Bugs du squelette à corriger D'ABORD (découverts au test tuyauterie 2026-06-24)
-1. **Découpler le serveur WebSocket des deps audio.** `start()` fait `if not DEPS_AVAILABLE: return`
-   (`:44-46`) → impossible de lancer le hub sans `sounddevice`. Or la tuyauterie (WS + arbitrage) n'a
-   pas besoin d'audio. → Ne gater QUE la capture/ASR sur `DEPS_AVAILABLE`, pas le démarrage du serveur
-   WS. (Permet de tester l'arbitrage sans micro.)
-2. **Signature handler `websockets` ≥ 11/16.** Le handler est `async def handler(websocket, path)`
-   (`:67`) ; depuis websockets ≥ 11 il est appelé avec **un seul argument**. → passer à
-   `async def handler(websocket)` et lire le chemin via `websocket.request.path` si besoin.
-   (Env actuel = websockets 16.0, vérifié.) Idem vérifier `websockets.connect`/`serve` côté API 16.0.
-3. Rappel : `_capture_and_process` est factice (`:99-107`) et le client n'est câblé à aucun bot.
-
-
-Remplacer le stub `_capture_and_process` (`stream_listener.py:99-107`) par la vraie boucle :
-- **Capture** : `sounddevice.InputStream` (16 kHz mono, frames PCM), pousser les frames dans une
-  file asyncio. Garder le `DEPS_AVAILABLE` défensif déjà présent (`:11-17`).
-- **Garde d'énergie anti-silence** : ignorer les frames sous un seuil RMS (évite de transcrire le
-  silence/le souffle). Pas besoin de VAD lourd pour (C) ; (A)/(B) ont l'endpointing natif.
-- **Segmentation** : accumuler jusqu'à une pause (silence > ~700 ms) → un **énoncé finalisé**.
-- **Transcription** : mode (C) → `self.whisper_model.transcribe(pcm, language="fr")` (le modèle est
-  déjà chargé dans `start()` `:51-58`). Mode (A) → client gRPC ; (B) → `conformer_stream_step`.
-- **Diffusion** : sur énoncé finalisé **non vide** et de longueur mini (≥ ~3 mots, ignore « euh »),
-  appeler `self.broadcast(text)` (déjà implémenté `:109-123`, hash + envoi à tous les clients).
-
-> `StreamListenerHub` a déjà : serveur WebSocket (`:96`), `broadcast` (`:109`), arbitrage **claim**
-> (`handler` `:74-89`, `claim_locks` : 1er arrivé gagne, `priority` écrase). **Ne pas réécrire** ça.
-
----
-
-## Phase 5.2 — Lanceur du hub (nouveau : `run_stream_listener.py`, racine)
-
-Petit script **autonome** lancé sur le PC de stream (1 seul, possède le micro) :
-- Lit la config dashboard `data/twitch_config.json` (clé `listen` d'un bot « pilote », ex. johnny) :
-  `mode`, `device`, `chunk_ms`, `min_interval`, `enabled` (kill-switch).
-- Instancie `StreamListenerHub(port=8765, mode=…, device=…)`, `await hub.start()`, tourne tant que
-  `enabled`. Si `enabled=false` → ne capture pas (kill-switch). Log clair, `try/except` deps absentes.
-- **Ne dépend d'aucun bot** (autonomie). Doc d'usage en tête du fichier.
-
----
-
-## Phase 5.3 — Câbler le client d'écoute dans `TwitchChatBot` (générique → Johnny+Sheo héritent)
-
-Tout dans `shared/twitch_chat.py` pour que les 2 bots héritent (patron Phases 1-4).
-
-### 5.3.1 Nouveaux params (`__init__` + `setup_twitch_chat`, propager comme les autres flags)
-`enable_voice_listen: bool=False`, `voice_min_interval: float=45.0`, `voice_chance: float=0.5`,
-`listen_port: int=8765`, `listen_host: str="localhost"`. Stocker en attributs. Ajouter
-`self._last_voice_ts = 0`.
-
-### 5.3.2 Lecture dashboard (réutiliser l'existant)
-Dans `setup_twitch_chat`, après le bloc `dash = _load_dashboard_twitch_config(...)` (déjà présent,
-`twitch_chat.py:1567`), lire `dash.get("listen")` : `enabled`→`enable_voice_listen`,
-`min_interval`→`voice_min_interval`. (Le dashboard a déjà `listen` + endpoints `/api/twitch/listen/{bot}`.)
-
-### 5.3.3 Démarrage de la tâche (dans `run()`, calqué sur `eventsub_task` `:411,429-430`)
+Remplacer le bloc gate (`:1571-1576`) :
 ```python
-voice_task = None
-...
-if self.enable_voice_listen and voice_task is None:
-    voice_task = asyncio.create_task(self._start_voice_listen())
+priority = False
+if self.trigger_re.search(text):
+    priority = True
+    self.logger.info(...)
+elif random.random() >= self.voice_chance:
+    return
 ```
-À annuler proprement dans le `finally`/`stop()` (comme eventsub).
+par une **garde stricte sur le nom** (plus de hasard, plus de `priority`) :
+```python
+# Le bot ne réagit à la voix QUE si l'un de ses noms est prononcé (décision produit).
+if not self.trigger_re.search(text):
+    return
+```
+- Adapter l'appel de claim (`:1581`) : `granted = await self.voice_client.request_claim(text_hash)`
+  (sans `priority`). Le claim reste comme **filet de sécurité** pour le cas rare où **deux** noms
+  figurent dans le même énoncé (« johnny et sheo, vous en pensez quoi ») → premier arrivé gagne.
+- **Ne pas** retirer : le filtre longueur (`:1562-1564`), l'intervalle bot-side (`:1566-1569`, défense
+  locale, garde le MÊME bot de répéter), le plafond `global_msg_timestamps` 18/30 s (`:1586-1590`),
+  la génération + envoi (`:1592-1598`).
+- **`voice_chance`** devient inutilisé : retirer l'attribut/param `voice_chance` du `__init__`
+  (`:305`, `:328`) **et** ne plus le câbler ; idem l'import `random` si plus utilisé ailleurs (vérifier
+  `grep -n "random" shared/twitch_chat.py` — il sert ailleurs, donc **garder l'import**, retirer juste
+  l'usage `voice_chance`). Si retirer le param casse un appelant, le garder en param mort documenté
+  « (obsolète, écoute sur nom) » — au choix, mais **aucune gate aléatoire** ne doit subsister.
 
-### 5.3.4 `_start_voice_listen` + handler d'énoncé
-- Import défensif : `from shared.stream_listener import StreamListenerClient` (try/except → no-op log).
-- Instancier `StreamListenerClient(bot_id, logger, on_transcript_received_callback=self._on_voice_transcript, port=self.listen_port)` et `await client.run()` (reconnexion/backoff déjà gérés `:144-175`).
-- `async def _on_voice_transcript(self, text, text_hash)` :
-  1. **Filtre longueur** (déjà filtré côté hub, re-garde ici).
-  2. **Intervalle mini voix global** : `now - self._last_voice_ts < self.voice_min_interval` → drop.
-  3. **Pertinence/gate** : si le **nom du bot** est prononcé (`self.trigger_re.search(text)`) →
-     `priority=True` ; sinon gate proba `random.random() < self.voice_chance`.
-  4. **Arbitrage** : `granted = await client.request_claim(text_hash, priority=...)` (déjà
-     implémenté `:177-196`). Si `granted` est faux → **un autre bot a pris l'énoncé** → drop.
-  5. **Plafond global** : purge + check `global_msg_timestamps` (18/30 s) comme `emit_callback`
-     (`:1461-1474`). Si plein → log + drop.
-  6. **Génération** : réponse courte en personnage (réutiliser le prompt court de
-     `_generate_interjection` `:1346+`, en injectant `text` comme propos du streamer ; `max_tokens≈60`,
-     `_strip_stage_directions`). Envoyer via `self.ws.send_str(f"PRIVMSG #{chan} :{reply}")` sur
-     `self.channels[0]`, push `global_msg_timestamps`, set `self._last_voice_ts = now`.
+## Tâche 2 — Hub : un seul grant par énoncé + intervalle GLOBAL (`shared/stream_listener.py`, handler claim `:70-85`)
 
-> Le `text_hash` du claim = **même hash** que celui diffusé par le hub (`broadcast` `:112`) → l'arbitrage
-> fonctionne entre Johnny et Sheo : le 1er qui claim gagne, le bot **nommé** est prioritaire.
+Le hub est le **seul** état partagé entre Johnny et Sheo → c'est lui qui doit garantir « 1 réponse
+par énoncé » ET « ≥ 45 s tous bots confondus ».
 
-### 5.3.5 Activation côté bots (`bot_johnny.py` ~`:442`, `bot_sheogorath.py` ~`:699`)
-Ajouter aux appels `setup_twitch_chat(...)` : `enable_voice_listen=False` (défaut ; piloté par le
-dashboard ou un flag). **Aucune logique propre** : tout est générique.
+### 2.1 `__init__` (`:32-41`)
+Ajouter : `voice_min_interval: float = 45.0` en param ; `self.voice_min_interval = voice_min_interval` ;
+`self.last_grant_ts = 0.0`.
 
----
+### 2.2 Logique de claim (`:70-85`) — remplacer entièrement la branche `action == "claim"`
+Supprimer le « priority override » (`elif priority and current_claim != bot_id:` `:80-83`). Nouvelle
+logique (1 seul grant par hash + verrou d'intervalle global) :
+```python
+if action == "claim":
+    text_hash = data.get("hash")
+    bot_id = data.get("bot_id")
+    now = time.time()
+    if now - self.last_grant_ts < self.voice_min_interval:
+        granted = False                      # intervalle global (tous bots confondus)
+    elif text_hash not in self.claim_locks:
+        self.claim_locks[text_hash] = bot_id # 1er arrivé gagne, jamais d'écrasement
+        self.last_grant_ts = now
+        granted = True
+    else:
+        granted = False                      # déjà pris par un autre bot
+    await websocket.send(json.dumps(
+        {"type": "claim_response", "hash": text_hash, "granted": granted}))
+    logger.info(f"{'🏆 Claim accordé à' if granted else '⛔ Claim refusé à'} {bot_id} ({text_hash})")
+```
+- `time` est déjà importé (`stream_listener.py:6`).
+- Le champ `priority` envoyé par le client peut rester (ignoré). `claim_locks` n'est jamais purgé
+  aujourd'hui : acceptable (un hash = un énoncé unique, croissance lente). **Ne pas** ajouter de purge
+  dans ce correctif (hors périmètre).
 
-## Phase 5.4 — Garde-fous (saturation = risque élevé ici)
-- Intervalle mini **global voix** ≥ 45 s (5.3.4 #2) **tous bots confondus** (chaque bot a son
-  compteur, et l'arbitrage empêche le doublon par énoncé).
-- Longueur d'énoncé mini (5.1) ; garde d'énergie anti-silence (5.1).
-- **Kill-switch** = `listen.enabled=false` au dashboard (le hub ne capture pas) **et**
-  `enable_voice_listen=false` (le bot ne se connecte pas). Compteur + logs de transcription.
-- Repli : si LLM indispo → pas de réponse (pas de fallback scripté ici, on reste silencieux).
+> Effet combiné : dans le même énoncé, seul le 1er claim passe (Bug B couvert même sans la garde nom) ;
+> après un grant, **tout** claim (n'importe quel bot/énoncé) est refusé pendant 45 s (Bug C réglé).
 
----
+## Tâche 3 — Lanceur : propager l'intervalle au hub (`run_stream_listener.py`)
 
-## Phase 5.5 — Dashboard « Écoute live » (déjà présent, juste vérifier le câblage)
-- Le schéma `listen` (enabled/mode/device/chunk_ms/min_interval) + endpoints `GET/PUT
-  /api/twitch/listen/{bot}` + la vue existent (Phase 6). **Vérifier** que la vue lit/écrit bien, et
-  que 5.3.2 (bot) + 5.2 (hub) consomment ces valeurs. Le kill-switch doit couper net (au redémarrage
-  du bot/hub — pas de hot-reload, cf. Hors périmètre).
+- `load_listen_config` (`:36-53`) : ajouter la lecture `"min_interval": float(listen_cfg.get("min_interval", 45.0))`
+  (try/except → 45.0 par défaut).
+- `main` (`:66`) : `hub = StreamListenerHub(port=8765, mode=cfg["mode"], device=cfg["device"], voice_min_interval=cfg["min_interval"])`.
 
 ---
 
 ## Vérifications (avant test live)
-- `py_compile` : `shared/stream_listener.py`, `shared/twitch_chat.py`, `run_stream_listener.py`,
-  `JohnnyBot/bot_johnny.py`, `Sheogorath/bot_sheogorath.py`.
-- **Autonomie** : bots démarrent **sans** deps STT et **sans** hub (no-op propre, log « inactif »).
-- **Test fonctionnel** : parler dans le micro → **1 seule** réponse (jamais Johnny ET Sheo) ;
-  silence → **0** transcription/0 appel ASR ; prononcer le nom d'un bot → c'est lui qui répond
-  (priorité) ; respect de l'intervalle ≥ 45 s ; `listen.enabled=false` → plus rien.
-- **Anti-saturation** : voix + mentions + events en rafale ≤ 18 envois/30 s par bot.
+1. `py_compile` : `shared/stream_listener.py`, `shared/twitch_chat.py`, `run_stream_listener.py`,
+   `JohnnyBot/bot_johnny.py`, `Sheogorath/bot_sheogorath.py`.
+2. **Autonomie** : bots démarrent sans deps STT et sans hub (no-op, `enable_voice_listen=False`).
+3. **Test fonctionnel pipeline (sans micro)** — rejouer le harnais (vrai `StreamListenerHub` avec
+   `DEPS_AVAILABLE=False`, 2 vrais `StreamListenerClient`, `_on_voice_transcript` réel, LLM+`ws.send_str`
+   mockés). Résultats **attendus après correctif** :
+   - **A** énoncé neutre (aucun nom) → **0** réponse (avant : 1). Les bots ne parlent que nommés.
+   - **B** « …johnny… » → **johnny seul** répond, sheo muet, **0 double** (avant : 19/20).
+   - **C** « …johnny… » puis « …sheo… » à < 45 s → **1 seule** réponse (la 2ᵉ refusée par le hub).
+   - **D** johnny déjà à 18/30 s → johnny muet.
+   Réf. harnais : `scratchpad/test_pipeline.py` (à adapter : retirer la gate `voice_chance`, attendre
+   A=0 et C: 2ᵉ=0).
 
 ## Hors périmètre
-- **Hot-reload** du kill-switch (couper sans redémarrer) : nécessiterait un watcher ; ici on applique
-  au redémarrage. Noté.
-- TTS / voix clonée (le bot répond en **texte** dans le chat, pas en voix) — parqué
-  ([[feature-gpu-parkee-oracle]]).
-- Généralisation aux 4 autres bots : plus tard.
+- Purge de `claim_locks` ; hot-reload du kill-switch ; TTS ; généralisation aux 4 autres bots.
+- Gotcha env **numpy 2 vs faster-whisper/ctranslate2/torch** (warning au chargement Whisper, mode C) :
+  à régler sur le PC de stream avant le test live réel (`pip install "numpy<2"` ou rebuild). Sans impact
+  sur la tuyauterie/arbitrage testés ici. Noté ([[plan-twitch-phase5-stt]]).
 
 ## Rollback
-Phase isolée : `enable_voice_listen=False` (défaut) + hub non lancé = aucun impact sur le chat.
-`shared/stream_listener.py` + `run_stream_listener.py` supprimables sans toucher au reste.
+Correctif local aux 3 fichiers. Revenir aux commits `e3975fd`/`b83e1f6` rétablit l'état précédent
+(avec les 2 bugs). `enable_voice_listen=False` (défaut) = aucun impact tant que non activé.
