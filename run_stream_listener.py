@@ -37,20 +37,27 @@ def load_listen_config(pilot_bot: str = "johnny") -> dict:
     config_path = os.path.join(DATA_DIR, "twitch_config.json")
     if not os.path.exists(config_path):
         logger.warning(f"⚠️ Fichier config introuvable à {config_path}. Utilisation des valeurs par défaut.")
-        return {"enabled": False, "mode": "C", "device": "cpu"}
+        return {"enabled": False, "mode": "C", "device": "cpu", "min_interval": 45.0}
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         bot_data = data.get(pilot_bot, {})
         listen_cfg = bot_data.get("listen", {})
+        
+        try:
+            min_interval = float(listen_cfg.get("min_interval", 45.0))
+        except (ValueError, TypeError):
+            min_interval = 45.0
+            
         return {
             "enabled": bool(listen_cfg.get("enabled", False)),
             "mode": str(listen_cfg.get("mode", "C")),
-            "device": str(listen_cfg.get("device", "cpu"))
+            "device": str(listen_cfg.get("device", "cpu")),
+            "min_interval": min_interval
         }
     except Exception as e:
         logger.error(f"❌ Erreur lors de la lecture de la configuration : {e}")
-        return {"enabled": False, "mode": "C", "device": "cpu"}
+        return {"enabled": False, "mode": "C", "device": "cpu", "min_interval": 45.0}
 
 async def main():
     logger.info("🎙️ Démarrage du service d'écoute en arrière-plan...")
@@ -63,7 +70,7 @@ async def main():
         logger.info("Pour l'activer, modifiez les paramètres dans le dashboard et relancez ce script.")
         return
 
-    hub = StreamListenerHub(port=8765, mode=cfg["mode"], device=cfg["device"])
+    hub = StreamListenerHub(port=8765, mode=cfg["mode"], device=cfg["device"], voice_min_interval=cfg["min_interval"])
     
     try:
         await hub.start()

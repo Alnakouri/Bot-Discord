@@ -302,7 +302,6 @@ class TwitchChatBot:
         broadcaster_auth=None,
         enable_voice_listen: bool = False,
         voice_min_interval: float = 45.0,
-        voice_chance: float = 0.5,
         listen_port: int = 8765,
         listen_host: str = "localhost"
     ):
@@ -325,7 +324,6 @@ class TwitchChatBot:
 
         self.enable_voice_listen = enable_voice_listen
         self.voice_min_interval = voice_min_interval
-        self.voice_chance = voice_chance
         self.listen_port = listen_port
         self.listen_host = listen_host
         self._last_voice_ts = 0
@@ -1568,17 +1566,14 @@ class TwitchChatBot:
             self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Énoncé voix drop (intervalle de {self.voice_min_interval}s non écoulé)")
             return
             
-        priority = False
-        if self.trigger_re.search(text):
-            priority = True
-            self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Énoncé mentionne le bot. Priorité réclamée.")
-        elif random.random() >= self.voice_chance:
+        # Le bot ne réagit à la voix QUE si l'un de ses noms est prononcé (décision produit).
+        if not self.trigger_re.search(text):
             return
             
         if not hasattr(self, "voice_client") or not self.voice_client:
             return
             
-        granted = await self.voice_client.request_claim(text_hash, priority=priority)
+        granted = await self.voice_client.request_claim(text_hash)
         if not granted:
             self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Claim refusé par le hub (déjà pris).")
             return

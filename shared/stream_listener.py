@@ -29,11 +29,13 @@ class StreamListenerHub:
     Hub Windows unique capturant le micro et distribuant les transcriptions aux bots.
     Gère également l'arbitrage (1 seule réponse max par énoncé).
     """
-    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu"):
+    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0):
         self.port = port
         self.mode = mode  # A (NIM), B (NeMo), C (Whisper)
         self.model_size = model_size
         self.device = device
+        self.voice_min_interval = voice_min_interval
+        self.last_grant_ts = 0.0
         self.enabled = False
         self.clients = set()
         self.claim_locks = {}  # text_hash -> bot_id
@@ -70,19 +72,18 @@ class StreamListenerHub:
                     if action == "claim":
                         text_hash = data.get("hash")
                         bot_id = data.get("bot_id")
-                        priority = data.get("priority", False)
-
-                        current_claim = self.claim_locks.get(text_hash)
-                        if not current_claim:
-                            self.claim_locks[text_hash] = bot_id
-                            await websocket.send(json.dumps({"type": "claim_response", "hash": text_hash, "granted": True}))
-                            logger.info(f"🏆 Claim accordé à {bot_id} pour l'énoncé {text_hash}")
-                        elif priority and current_claim != bot_id:
-                            self.claim_locks[text_hash] = bot_id
-                            await websocket.send(json.dumps({"type": "claim_response", "hash": text_hash, "granted": True}))
-                            logger.info(f"🏆 Claim prioritaire accordé à {bot_id} (écrase {current_claim})")
+                        now = time.time()
+                        if now - self.last_grant_ts < self.voice_min_interval:
+                            granted = False                      # intervalle global (tous bots confondus)
+                        elif text_hash not in self.claim_locks:
+                            self.claim_locks[text_hash] = bot_id # 1er arrivé gagne, jamais d'écrasement
+                            self.last_grant_ts = now
+                            granted = True
                         else:
-                            await websocket.send(json.dumps({"type": "claim_response", "hash": text_hash, "granted": False}))
+                            granted = False                      # déjà pris par un autre bot
+                        await websocket.send(json.dumps(
+                            {"type": "claim_response", "hash": text_hash, "granted": granted}))
+                        logger.info(f"{'🏆 Claim accordé à' if granted else '⛔ Claim refusé à'} {bot_id} ({text_hash})")
             except websockets.exceptions.ConnectionClosed:
                 pass
             finally:
