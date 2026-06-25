@@ -29,11 +29,12 @@ class StreamListenerHub:
     Hub Windows unique capturant le micro et distribuant les transcriptions aux bots.
     Gère également l'arbitrage (1 seule réponse max par énoncé).
     """
-    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0):
+    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None):
         self.port = port
         self.mode = mode  # A (NIM), B (NeMo), C (Whisper)
         self.model_size = model_size
-        self.device = device
+        self.device = device              # device de CALCUL ASR (cpu/cuda)
+        self.input_device = input_device  # périphérique micro sounddevice (index/nom) ; None = défaut Windows
         self.voice_min_interval = voice_min_interval
         self.last_grant_ts = 0.0
         self.enabled = False
@@ -111,14 +112,21 @@ class StreamListenerHub:
         channels = 1
         
         try:
+            if self.input_device is not None:
+                try:
+                    _name = sd.query_devices(self.input_device)["name"]
+                except Exception:
+                    _name = "?"
+                logger.info(f"🎚️ [STREAM_LISTENER] Micro forcé : index/nom={self.input_device} ({_name})")
             stream = sd.InputStream(
                 samplerate=sample_rate,
                 channels=channels,
                 dtype='float32',
+                device=self.input_device,
                 callback=audio_callback
             )
         except Exception as e:
-            logger.error(f"❌ Échec de l'ouverture du flux audio sounddevice: {e}")
+            logger.error(f"❌ Échec de l'ouverture du flux audio sounddevice (device={self.input_device}): {e}")
             return
             
         rms_threshold = 0.015
