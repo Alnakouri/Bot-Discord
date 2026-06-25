@@ -40,12 +40,13 @@ class StreamListenerHub:
     Hub Windows unique capturant le micro et distribuant les transcriptions aux bots.
     Gère également l'arbitrage (1 seule réponse max par énoncé).
     """
-    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None):
+    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None, initial_prompt=None):
         self.port = port
         self.mode = mode  # A (NIM), B (NeMo), C (Whisper)
         self.model_size = model_size
         self.device = device              # device de CALCUL ASR (cpu/cuda)
         self.input_device = input_device  # périphérique micro sounddevice (index/nom) ; None = défaut Windows
+        self.initial_prompt = initial_prompt  # biaise Whisper vers le vocabulaire (noms des bots)
         self.voice_min_interval = voice_min_interval
         self.last_grant_ts = 0.0
         self.enabled = False
@@ -197,7 +198,8 @@ class StreamListenerHub:
                     # condition_on_previous_text=False : évite les boucles de répétition.
                     seg_gen, _info = self.whisper_model.transcribe(
                         audio_data, language="fr", beam_size=5,
-                        vad_filter=True, condition_on_previous_text=False
+                        vad_filter=True, condition_on_previous_text=False,
+                        initial_prompt=self.initial_prompt
                     )
                     return " ".join(seg.text for seg in seg_gen).strip()
 

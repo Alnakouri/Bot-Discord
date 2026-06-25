@@ -62,11 +62,12 @@ def load_listen_config(pilot_bot: str = "johnny") -> dict:
             "device": str(listen_cfg.get("device", "cpu")),
             "model": str(listen_cfg.get("model", "large-v3-turbo")),  # small/medium/large-v3-turbo...
             "min_interval": min_interval,
-            "input_device": listen_cfg.get("input_device", None)  # index/nom micro ; None = défaut Windows
+            "input_device": listen_cfg.get("input_device", None),  # index/nom micro ; None = défaut Windows
+            "prompt": listen_cfg.get("prompt", None)  # biais vocabulaire Whisper (noms des bots)
         }
     except Exception as e:
         logger.error(f"❌ Erreur lors de la lecture de la configuration : {e}")
-        return {"enabled": False, "mode": "C", "device": "cpu", "model": "large-v3-turbo", "min_interval": 45.0, "input_device": None}
+        return {"enabled": False, "mode": "C", "device": "cpu", "model": "large-v3-turbo", "min_interval": 45.0, "input_device": None, "prompt": None}
 
 async def main():
     logger.info("🎙️ Démarrage du service d'écoute en arrière-plan...")
@@ -80,7 +81,8 @@ async def main():
         return
 
     hub = StreamListenerHub(port=8765, mode=cfg["mode"], model_size=cfg["model"], device=cfg["device"],
-                            voice_min_interval=cfg["min_interval"], input_device=cfg.get("input_device"))
+                            voice_min_interval=cfg["min_interval"], input_device=cfg.get("input_device"),
+                            initial_prompt=cfg.get("prompt"))
     
     try:
         await hub.start()
