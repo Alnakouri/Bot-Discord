@@ -7,6 +7,38 @@ import time
 
 logger = logging.getLogger("stream_listener")
 
+
+# Handles os.add_dll_directory : DOIVENT rester vivants (sinon le GC retire le dossier
+# DLL → cublas64_12.dll introuvable à la transcription). On les garde au niveau module.
+_CUDA_DLL_HANDLES = []
+
+
+def _ensure_cuda_dll_path():
+    """Windows : ajoute les DLL CUDA (cuBLAS/cuDNN installées via pip dans le venv)
+    au chemin de recherche, sinon ctranslate2 ne les trouve pas pour le GPU. No-op
+    ailleurs (Linux, ou bibliothèques absentes)."""
+    if os.name != "nt":
+        return
+    try:
+        import site, glob
+        roots = list(site.getsitepackages())
+        try:
+            roots.append(site.getusersitepackages())
+        except Exception:
+            pass
+        for sp in roots:
+            for d in glob.glob(os.path.join(sp, "nvidia", "*", "bin")):
+                try:
+                    _CUDA_DLL_HANDLES.append(os.add_dll_directory(d))  # garder le handle vivant
+                except Exception:
+                    pass
+                # Ceinture+bretelles : PATH (persistant) pour les DLL chargées en cascade.
+                if d not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+    except Exception as e:
+        logger.warning(f"⚠️ [STREAM_LISTENER] Ajout DLL CUDA échoué : {e}")
+
+
 # Phrases d'hallucination typiques de Whisper sur le silence/bruit (à ne jamais diffuser).
 _HALLUCINATION_MARKERS = (
     "amara.org",
@@ -63,12 +95,24 @@ class StreamListenerHub:
 
         if self.mode == "C" and WHISPER_AVAILABLE:
             try:
-                logger.info(f"🧠 Chargement du modèle Whisper {self.model_size} sur {self.device}...")
-                self.whisper_model = WhisperModel(self.model_size, device=self.device, compute_type="int8")
+                if self.device == "cuda":
+                    _ensure_cuda_dll_path()
+                compute_type = "float16" if self.device == "cuda" else "int8"
+                logger.info(f"🧠 Chargement du modèle Whisper {self.model_size} sur {self.device} ({compute_type})...")
+                self.whisper_model = WhisperModel(self.model_size, device=self.device, compute_type=compute_type)
                 logger.info("✅ Modèle Whisper chargé avec succès.")
             except Exception as e:
-                logger.error(f"❌ Échec chargement Whisper: {e}")
-                self.whisper_model = None
+                logger.error(f"❌ Échec chargement Whisper ({self.device}): {e}")
+                if self.device == "cuda":
+                    logger.warning("↩️ Repli sur CPU (int8)...")
+                    try:
+                        self.whisper_model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+                        logger.info("✅ Modèle Whisper chargé sur CPU (repli).")
+                    except Exception as e2:
+                        logger.error(f"❌ Échec repli CPU: {e2}")
+                        self.whisper_model = None
+                else:
+                    self.whisper_model = None
 
         # Serveur WebSocket
         try:
