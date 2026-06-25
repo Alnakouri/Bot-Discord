@@ -299,7 +299,12 @@ class TwitchChatBot:
         eventsub_reward_map: dict | None = None,
         peer_bots: list[str] | None = None,
         greeting_templates: dict | None = None,
-        broadcaster_auth=None
+        broadcaster_auth=None,
+        enable_voice_listen: bool = False,
+        voice_min_interval: float = 45.0,
+        voice_chance: float = 0.5,
+        listen_port: int = 8765,
+        listen_host: str = "localhost"
     ):
         self.bot_id = bot_id
         self.logger = logger
@@ -317,6 +322,13 @@ class TwitchChatBot:
         self.groq_client = groq_client
         self.openrouter_client = openrouter_client
         self.bot_label = bot_label
+
+        self.enable_voice_listen = enable_voice_listen
+        self.voice_min_interval = voice_min_interval
+        self.voice_chance = voice_chance
+        self.listen_port = listen_port
+        self.listen_host = listen_host
+        self._last_voice_ts = 0
 
         self.profile_helper = TwitchProfile(bot_id, logger, client_id, auth)
         self.profile_bio = profile_bio
@@ -409,6 +421,7 @@ class TwitchChatBot:
         refresh_task = asyncio.create_task(self._token_refresh_loop())
 
         eventsub_task = None
+        voice_task = None
 
         try:
             while not self._stopped:
@@ -428,6 +441,10 @@ class TwitchChatBot:
                     # Démarrage de Twitch EventSub
                     if self.enable_eventsub and not self.eventsub_active:
                         eventsub_task = asyncio.create_task(self._start_eventsub())
+
+                    # Démarrage du client d'écoute voix (STT)
+                    if self.enable_voice_listen and voice_task is None:
+                        voice_task = asyncio.create_task(self._start_voice_listen())
 
                     # On tente de se connecter et de boucler sur les messages
                     await self._connect_and_loop(token)
@@ -450,6 +467,8 @@ class TwitchChatBot:
             refresh_task.cancel()
             if eventsub_task:
                 eventsub_task.cancel()
+            if voice_task:
+                voice_task.cancel()
             # Sauvegarde finale des viewers
             path = os.path.join(DATA_DIR, f"twitch_viewers_{self.bot_id}.json")
             try:
@@ -1512,6 +1531,126 @@ class TwitchChatBot:
         finally:
             self.eventsub_active = False
 
+    async def _start_voice_listen(self):
+        try:
+            from shared.stream_listener import StreamListenerClient
+        except ImportError as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Module StreamListenerClient non disponible: {e}")
+            return
+
+        self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Initialisation de l'écoute continu...")
+        
+        self.voice_client = StreamListenerClient(
+            bot_id=self.bot_id,
+            logger=self.logger,
+            on_transcript_received_callback=self._on_voice_transcript,
+            port=self.listen_port
+        )
+        try:
+            await self.voice_client.run()
+        except asyncio.CancelledError:
+            self.voice_client.stop()
+        except Exception as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur dans la tâche d'écoute voix : {e}")
+        finally:
+            self.voice_client = None
+
+    async def _on_voice_transcript(self, text: str, text_hash: str):
+        if not text or not self.channels:
+            return
+            
+        words = text.split()
+        if len(words) < 3:
+            return
+            
+        now = time.time()
+        if now - self._last_voice_ts < self.voice_min_interval:
+            self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Énoncé voix drop (intervalle de {self.voice_min_interval}s non écoulé)")
+            return
+            
+        priority = False
+        if self.trigger_re.search(text):
+            priority = True
+            self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Énoncé mentionne le bot. Priorité réclamée.")
+        elif random.random() >= self.voice_chance:
+            return
+            
+        if not hasattr(self, "voice_client") or not self.voice_client:
+            return
+            
+        granted = await self.voice_client.request_claim(text_hash, priority=priority)
+        if not granted:
+            self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Claim refusé par le hub (déjà pris).")
+            return
+            
+        while self.global_msg_timestamps and now - self.global_msg_timestamps[0] > 30.0:
+            self.global_msg_timestamps.popleft()
+        if len(self.global_msg_timestamps) >= 18:
+            self.logger.warning(f"🚨 [TWITCH_CHAT:{self.bot_id}] Écoute voix: rate limit global atteint (18/30s). Message ignoré.")
+            return
+            
+        chan = self.channels[0]
+        reply = await self._generate_voice_response(text)
+        if reply:
+            self.global_msg_timestamps.append(now)
+            await self.ws.send_str(f"PRIVMSG #{chan} :{reply}")
+            self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Réponse voix envoyée sur #{chan}: {reply}")
+            self._last_voice_ts = now
+
+    async def _generate_voice_response(self, text: str) -> str | None:
+        system_prompt = self.personality_prompt
+        if self.system_prompt_provider:
+            try:
+                sp = self.system_prompt_provider()
+                if sp:
+                    system_prompt = sp
+            except Exception as e:
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] system_prompt_provider a échoué dans _generate_voice_response : {e}")
+
+        if not system_prompt or self.key_manager is None:
+            return None
+
+        instruction = (
+            f"Le streamer vient de dire en direct au micro :\n\"{text}\"\n\n"
+            f"Fais une réponse très courte (1 phrase, max 100 caractères), en personnage, "
+            f"pour commenter ou réagir avec dérision/humour à ce que vient de dire le streamer. Sois bref et percutant."
+        )
+
+        full_system_prompt = system_prompt + "\n\n" + ANTI_INJECTION_GUARD
+
+        try:
+            from shared.llm_cascade import generate_response
+            from shared.smart_router import classify_request
+            
+            try:
+                routing = classify_request(instruction)
+            except Exception:
+                routing = {"type": "text"}
+
+            reply = await generate_response(
+                routing=routing,
+                system_prompt=full_system_prompt,
+                transcript="",
+                user_message=instruction,
+                conversation_history=[],
+                media_data=None,
+                mime_type="",
+                key_manager=self.key_manager,
+                mistral_client=self.mistral_client,
+                groq_client=self.groq_client,
+                openrouter_client=self.openrouter_client,
+                bot_label=self.bot_label or self.bot_id,
+                temperature=1.0,
+                max_tokens=60
+            )
+            if reply:
+                reply = " ".join(reply.split())
+                reply = self._strip_stage_directions(reply)
+                return reply[:480]
+        except Exception as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur lors de la génération de la réponse voix: {e}")
+        return None
+
 
 def _load_dashboard_twitch_config(bot_id: str, logger) -> dict:
     """Lit data/twitch_config.json pour CE bot. Renvoie {} si absent/illisible → le bot
@@ -1548,7 +1687,8 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
                       eventsub_subscriptions: list[str] | None = None,
                       eventsub_reward_map: dict | None = None,
                       peer_bots: list[str] | None = None,
-                      greeting_templates: dict | None = None) -> TwitchChatBot | None:
+                      greeting_templates: dict | None = None,
+                      enable_voice_listen: bool = False) -> TwitchChatBot | None:
     """
     Initialise TwitchChatBot si les crédentiels d'environnement requis sont définis.
     """
@@ -1587,6 +1727,17 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     if "interjections" in dash_chat: enable_interjections  = bool(dash_chat["interjections"])
     if "greetings" in dash_chat:     enable_greetings      = bool(dash_chat["greetings"])
     if "viewer_memory" in dash_chat: enable_viewer_memory  = bool(dash_chat["viewer_memory"])
+
+    # Configuration listen/voix depuis le dashboard
+    dash_listen = dash.get("listen") or {}
+    if "enabled" in dash_listen:
+        enable_voice_listen = bool(dash_listen["enabled"])
+    voice_min_interval = 45.0
+    if "min_interval" in dash_listen:
+        try:
+            voice_min_interval = float(dash_listen["min_interval"])
+        except (ValueError, TypeError):
+            pass
 
     # reward_map : merge dashboard PAR-DESSUS les défauts du bot (un dashboard vide ne les efface pas).
     dash_rewards = dash.get("reward_map") or {}
@@ -1654,5 +1805,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         eventsub_reward_map=eventsub_reward_map,
         peer_bots=resolved_peers,
         greeting_templates=greeting_templates,
-        broadcaster_auth=broadcaster_auth
+        broadcaster_auth=broadcaster_auth,
+        enable_voice_listen=enable_voice_listen,
+        voice_min_interval=voice_min_interval
     )

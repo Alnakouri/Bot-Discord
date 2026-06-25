@@ -727,7 +727,8 @@ async def on_ready():
             },
             commands=commands,
             command_aliases=command_aliases,
-            passive_handler=twitch_passive_handler
+            passive_handler=twitch_passive_handler,
+            enable_voice_listen=False
         )
         if twitch_chat:
             twitch_chat_task = asyncio.create_task(twitch_chat.run())
