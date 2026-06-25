@@ -17,6 +17,7 @@ build/
 .master_key.bak_*
 .master_key.RACINE.bak
 .venv
+.venv-stt/
 env/
 venv/
 ENV/
