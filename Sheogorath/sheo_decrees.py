@@ -241,8 +241,23 @@ async def apply_decree_role(guild, member, title, duration=600):
         except discord.Forbidden:
             pass
 
-        # 3. Assignation
-        await member.add_roles(role)
+        # 3. Assignation. Échec attendu si la cible est le PROPRIÉTAIRE du serveur
+        #    (Discord interdit à tout bot de gérer ses rôles) ou si elle a un rôle
+        #    plus haut que le bot. Dans ce cas on annule le rôle qu'on vient de créer
+        #    pour ne pas laisser un 📜 fantôme (non assigné) traîner jusqu'au balayage.
+        try:
+            await member.add_roles(role)
+        except discord.Forbidden:
+            logger.warning(
+                f"⚠️ [DECRET] Impossible d'assigner '{role_name}' à {member.display_name} "
+                f"(propriétaire du serveur ou rôle trop haut) → annulation du rôle."
+            )
+            try:
+                await role.delete(reason="Décret non assignable (cible protégée)")
+            except discord.HTTPException:
+                pass
+            _remove_decree(role.id)
+            return None
         logger.info(f"👑 [DECRET] Rôle '{role_name}' assigné à {member.display_name} pour {duration}s")
 
         # 4. Suppression différée best-effort (cas nominal sans redémarrage).
