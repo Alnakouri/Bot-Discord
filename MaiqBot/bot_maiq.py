@@ -26,6 +26,16 @@ import base64
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 
+try:
+    from shared.memes_fr import build_meme_consigne
+    MEMES_AVAILABLE = True
+except ImportError:
+    MEMES_AVAILABLE = False
+    def build_meme_consigne(*a, **k): return ""
+
+import collections
+meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
+
 # LOGGING STRUCTURÉ
 try:
     from shared.bot_logger import setup_logger
@@ -1291,7 +1301,17 @@ async def on_message(message):
         f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur le voyageur {user_name} dans cette interaction (ex: ses préférences, ses opinions, sa localisation, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
     )
     
-    current_personality_prompt = PERSONALITY_PROMPT + memory_prompt_addition
+    def _get_meme_addition():
+        chan_id = message.channel.id
+        consigne = build_meme_consigne(message.content or "", set(meme_recent[chan_id]))
+        if consigne:
+            import re as _re
+            m = _re.search(r"« (.+?) »", consigne)
+            if m:
+                meme_recent[chan_id].append(m.group(1))
+        return consigne
+
+    current_personality_prompt = PERSONALITY_PROMPT + memory_prompt_addition + _get_meme_addition()
 
     # ANTI-REPETITION INJECTION (NEW!)
     recent_responses = response_memory.get_recent(message.guild.id)

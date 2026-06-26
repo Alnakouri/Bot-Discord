@@ -26,6 +26,21 @@ from pathlib import Path
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 
+try:
+    from shared.memes_fr import build_meme_consigne
+    MEMES_AVAILABLE = True
+except ImportError:
+    MEMES_AVAILABLE = False
+    def build_meme_consigne(*a, **k): return ""
+
+import collections
+meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
+
+try:
+    from shared.bot_features import is_feature_enabled
+except ImportError:
+    def is_feature_enabled(*a, **k): return True
+
 # Répertoire de données (même convention que sheo_faveur : surchargé par l'env en prod)
 DATA_DIR = os.getenv("DATA_DIR", ".")
 
@@ -1922,6 +1937,16 @@ async def on_message(message):
     # LLM EXECUTION
     logger.info(f"🧠 [LLM MODE] Génération d'une réponse intelligente... (Mood: {current_mood})")
     
+    def _get_meme_addition():
+        chan_id = message.channel.id
+        consigne = build_meme_consigne(message.content or "", set(meme_recent[chan_id]))
+        if consigne:
+            import re as _re
+            m = _re.search(r"« (.+?) »", consigne)
+            if m:
+                meme_recent[chan_id].append(m.group(1))
+        return consigne
+    
     # 1. Prepare User Message & System Context
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
     
@@ -1994,6 +2019,7 @@ async def on_message(message):
     
     # Instruction for Extraction
     system_instruction += "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur l'utilisateur dans ce message (ex: il aime/déteste qqch, son métier, une peur), ajoute-le à la fin de ta réponse dans un bloc XML invisible : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+    system_instruction += _get_meme_addition()
     # HISTORY MANAGEMENT
     channel_id = message.channel.id
     if channel_id not in conversation_history: conversation_history[channel_id] = []

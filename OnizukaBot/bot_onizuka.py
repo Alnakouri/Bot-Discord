@@ -22,6 +22,16 @@ from datetime import datetime
 from shared.smart_router import classify_request, RequestType, download_media
 from shared.media_handler import process_image, process_voice_message
 
+try:
+    from shared.memes_fr import build_meme_consigne
+    MEMES_AVAILABLE = True
+except ImportError:
+    MEMES_AVAILABLE = False
+    def build_meme_consigne(*a, **k): return ""
+
+import collections
+meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
+
 # LOGGING STRUCTURÉ
 try:
     from shared.bot_logger import setup_logger
@@ -513,6 +523,17 @@ async def on_message(message):
             )
         return _memory_cache["val"]
 
+    def _get_meme_addition():
+        chan_id = message.channel.id
+        consigne = build_meme_consigne(message.content or "", set(meme_recent[chan_id]))
+        # mémorise la ref proposée pour ne pas la re-proposer en boucle dans ce salon
+        if consigne:
+            import re as _re
+            m = _re.search(r"« (.+?) »", consigne)
+            if m:
+                meme_recent[chan_id].append(m.group(1))
+        return consigne
+
     # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
     # ══════════════════════════════════════════════════
@@ -525,34 +546,34 @@ async def on_message(message):
             if api_key:
                 async with message.channel.typing():
                     # Préparation du prompt consolidé
-                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}\n{keyword_boost}"
+                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}{_get_meme_addition()}\n{keyword_boost}"
                     response = await process_image(
                         attachment=routing["image_attachment"],
                         api_key=api_key,
                         personality_prompt=full_personality,
                         user_message=message.content or ""
                     )
-                if response:
-                    # Clean/extract facts
-                    import re
-                    matches = re.findall(r"<fact>(.*?)</fact>", response, re.DOTALL | re.IGNORECASE)
-                    for f in matches:
-                        fact_text = f.strip()
-                        if fact_text:
-                            fact_memory.add_fact(user_id, fact_text)
-                    response = re.sub(r"<fact>.*?</fact>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
-                    response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
-                    response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
+                    if response:
+                        # Clean/extract facts
+                        import re
+                        matches = re.findall(r"<fact>(.*?)</fact>", response, re.DOTALL | re.IGNORECASE)
+                        for f in matches:
+                            fact_text = f.strip()
+                            if fact_text:
+                                fact_memory.add_fact(user_id, fact_text)
+                        response = re.sub(r"<fact>.*?</fact>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
+                        response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
+                        response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
 
-                    await message.reply(response)
-                    if message.channel.id not in conversation_history:
-                        conversation_history[message.channel.id] = []
-                    conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
-                    
-                    daily_memory.add_interaction(user_id, user_name, message.content or "[IMAGE]", response)
-                    import asyncio
-                    asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
-                    return
+                        await message.reply(response)
+                        if message.channel.id not in conversation_history:
+                            conversation_history[message.channel.id] = []
+                        conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
+                        
+                        daily_memory.add_interaction(user_id, user_name, message.content or "[IMAGE]", response)
+                        import asyncio
+                        asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
+                        return
             else:
                 await message.reply("🏍️ Oï ! Le soleil tape trop fort sur ma visière, je vois que dalle à ton image ! 😎")
                 return
@@ -562,7 +583,7 @@ async def on_message(message):
             api_key = key_manager.get_key("gemini")
             if api_key:
                 async with message.channel.typing():
-                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}\n{keyword_boost}"
+                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}{_get_meme_addition()}\n{keyword_boost}"
                     response = await process_voice_message(
                         attachment=routing["audio_attachment"],
                         api_key=api_key,
@@ -692,7 +713,7 @@ async def on_message(message):
     # GÉNÉRATION (Smart Router)
     
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{_get_memory_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{_get_memory_addition()}{_get_meme_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
     
     async with message.channel.typing():
         

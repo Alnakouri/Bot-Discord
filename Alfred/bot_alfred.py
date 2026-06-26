@@ -40,6 +40,16 @@ import logging
 from datetime import datetime, timedelta
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
 from shared.media_handler import process_image_ollama
+
+try:
+    from shared.memes_fr import build_meme_consigne
+    MEMES_AVAILABLE = True
+except ImportError:
+    MEMES_AVAILABLE = False
+    def build_meme_consigne(*a, **k): return ""
+
+import collections
+meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
 import speech_recognition as sr
 from discord.ext import voice_recv
 import io # For buffer handling
@@ -1506,7 +1516,17 @@ async def on_message(message):
             anti_repeat_prompt += f"{i}. \"{snippet}\"\n"
         anti_repeat_prompt += "Évitez de vous répéter. Un bon majordome est toujours original."
 
-    final_system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{user_context}\n{transcript}{anti_repeat_prompt}"
+    def _get_meme_addition():
+        chan_id = message.channel.id
+        consigne = build_meme_consigne(message.content or "", set(meme_recent[chan_id]))
+        if consigne:
+            import re as _re
+            m = _re.search(r"« (.+?) »", consigne)
+            if m:
+                meme_recent[chan_id].append(m.group(1))
+        return consigne
+
+    final_system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{user_context}\n{transcript}{anti_repeat_prompt}{_get_meme_addition()}"
     
     # GENERATION
     response_text = None

@@ -24,6 +24,16 @@ from shared.smart_router import classify_request, RequestType, download_media, g
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 from shared.llm_cascade import generate_response
 
+try:
+    from shared.memes_fr import build_meme_consigne
+    MEMES_AVAILABLE = True
+except ImportError:
+    MEMES_AVAILABLE = False
+    def build_meme_consigne(*a, **k): return ""
+
+import collections
+meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
+
 # LOGGING STRUCTURÉ
 try:
     from shared.bot_logger import setup_logger
@@ -834,8 +844,18 @@ async def on_message(message):
     
     # GÉNÉRATION (Smart Router)
     
+    def _get_meme_addition():
+        chan_id = message.channel.id
+        consigne = build_meme_consigne(message.content or "", set(meme_recent[chan_id]))
+        if consigne:
+            import re as _re
+            m = _re.search(r"« (.+?) »", consigne)
+            if m:
+                meme_recent[chan_id].append(m.group(1))
+        return consigne
+
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}{_get_meme_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
     
     async with message.channel.typing():
         response_text = await generate_response(

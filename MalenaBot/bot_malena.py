@@ -26,6 +26,16 @@ from shared.safe_client import get_client as get_safe_genai_client
 from groq import Groq
 from mistralai import Mistral
 from pathlib import Path
+
+try:
+    from shared.memes_fr import build_meme_consigne
+    MEMES_AVAILABLE = True
+except ImportError:
+    MEMES_AVAILABLE = False
+    def build_meme_consigne(*a, **k): return ""
+
+import collections
+meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
 try:
     from shared.secure_env import load_secure_env
     load_secure_env(Path(__file__).parent)
@@ -143,13 +153,13 @@ def build_expression_hint(mood):
         f"seulement si ça colle au contexte) : {expr_list}"
     )
 
-async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None, mime_type=None):
+async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None, mime_type=None, meme_consigne=""):
     """Essaie selon le Smart Router : Gemini (Image/Audio) -> Groq (Texte) -> Mistral (Fallback)."""
     
     # SYSTEM PROMPT COMMUN + HUMEUR + EXPRESSIONS CIBLÉES
     mood_instruction = data.MOODS[mood]["prompt"]
     expression_hint = build_expression_hint(mood)
-    sys_prompt = data.PERSONALITY_PROMPT + f"\n\n{mood_instruction}{expression_hint}\n\nET SURTOUT : FAIS COURT (Max 3-4 phrases)."
+    sys_prompt = data.PERSONALITY_PROMPT + f"\n\n{mood_instruction}{expression_hint}\n\nET SURTOUT : FAIS COURT (Max 3-4 phrases).{meme_consigne}"
 
     cascade = get_model_cascade(routing["type"] if routing else RequestType.TEXT)
     
@@ -486,7 +496,17 @@ async def on_message(message):
                 prompt = f"L'utilisateur {message.author.name} te dit : '{user_msg}'. Réponds-lui.{nickname_instruction}{memory_context}"
                 
                 # GÉNÉRATION ROUTÉE
-                reply_text = await generate_response_hybrid(prompt, current_mood, routing, media_data, mime_type)
+                def _get_meme_addition():
+                    chan_id = message.channel.id
+                    consigne = build_meme_consigne(message.content or "", set(meme_recent[chan_id]))
+                    if consigne:
+                        import re as _re
+                        m = _re.search(r"« (.+?) »", consigne)
+                        if m:
+                            meme_recent[chan_id].append(m.group(1))
+                    return consigne
+
+                reply_text = await generate_response_hybrid(prompt, current_mood, routing, media_data, mime_type, meme_consigne=_get_meme_addition())
                 
                 if not reply_text and (has_image or has_audio):
                     media_type_str = "l'image" if has_image else "le message vocal"
