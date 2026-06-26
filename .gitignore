@@ -68,10 +68,12 @@ alfred_response.mp3
 *.swp
 *.swo
 
-# Tests et debug
+# Tests et debug (scripts ad-hoc à la racine : test_bot, check_stt, etc.)
 test_*.py
 check_*.py
 *_test.py
+# … mais on SUIT les vrais tests unitaires versionnés sous tests/
+!tests/test_*.py
 debug/
 diag_results.txt
 found_models.txt
