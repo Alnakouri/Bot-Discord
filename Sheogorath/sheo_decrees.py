@@ -222,6 +222,17 @@ async def apply_decree_role(guild, member, title, duration=600):
             reason=f"Décret de Sheogorath pour {member.display_name}"
         )
 
+        # 1.bis PERSISTANCE IMMÉDIATE (survit aux redémarrages — le vrai filet est la
+        #       boucle). Fait AVANT tout autre await : sinon, pendant les await suivants
+        #       (position/add_roles), la boucle de nettoyage pourrait voir ce rôle 📜
+        #       absent du store et le supprimer comme « orphelin ».
+        _add_decree({
+            "role_id": role.id,
+            "guild_id": guild.id,
+            "title": role_name,
+            "expire_at": time.time() + duration,
+        })
+
         # 2. Placement hiérarchique
         bot_role = guild.me.top_role
         new_pos = max(1, bot_role.position - 1)
@@ -233,14 +244,6 @@ async def apply_decree_role(guild, member, title, duration=600):
         # 3. Assignation
         await member.add_roles(role)
         logger.info(f"👑 [DECRET] Rôle '{role_name}' assigné à {member.display_name} pour {duration}s")
-
-        # 3.bis PERSISTANCE (survit aux redémarrages — le vrai filet est la boucle)
-        _add_decree({
-            "role_id": role.id,
-            "guild_id": guild.id,
-            "title": role_name,
-            "expire_at": time.time() + duration,
-        })
 
         # 4. Suppression différée best-effort (cas nominal sans redémarrage).
         #    En cas de redémarrage, cette tâche est perdue → cleanup_old_decree_roles
