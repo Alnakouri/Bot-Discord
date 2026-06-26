@@ -1,123 +1,160 @@
-# PLAN — Correctifs Phase 5 écoute live : réponse SUR NOM uniquement + arbitrage/intervalle au hub
+# PLAN — Découpage de `shared/twitch_chat.py` (1806 lignes) en modules satellites
 
-> **Contexte.** La Phase 5 (écoute live STT) est commitée (`e3975fd`, `b83e1f6`, `54f6c28`). Un test
-> end-to-end du pipeline (vrai hub + 2 clients, micro/Whisper et LLM mockés) a révélé **2 bugs** qui
-> violent l'exigence dure « **au plus 1 bot répond par énoncé** » / « **intervalle ≥ 45 s tous bots
-> confondus** » ([[plan-twitch-phase5-stt]], [[plan-twitch-v2]]) :
+> **Contexte.** `shared/twitch_chat.py` est le plus gros fichier du projet (1806 lignes) et le
+> dernier monolithe non découpé en `shared/`. Il concentre ~8 préoccupations distinctes dans une
+> seule classe à état `TwitchChatBot`. Objectif : le scinder en **modules satellites** (patron déjà
+> adopté pour `sheo_*` / `*_data.py`) pour la lisibilité, la testabilité unitaire et la réduction du
+> risque de régression à chaque évolution Twitch. **Refactor pur : zéro changement de comportement.**
 >
-> - **Bug B — double réponse sur priorité (19/20).** Quand le streamer prononce le nom d'un bot, le
->   bot non-nommé réclame le claim en premier (granted), puis le bot nommé l'**écrase** (granted aussi)
->   → **les deux** envoient. Le « priority override » est intrinsèquement racy en modèle broadcast.
-> - **Bug C — intervalle non global (1 au lieu de 0).** Johnny et Sheo sont des **processus séparés**
->   (compteurs `_last_voice_ts` / `global_msg_timestamps` **non partagés**). « johnny… » puis « sheo… »
->   à 1 s d'intervalle → 2 réponses. Le **seul** point partagé est le **hub** ; il n'impose aucun
->   intervalle global.
+> **Contrainte de compatibilité (NE PAS CASSER).** La surface publique consommée hors module est :
+> 1. `from shared.twitch_chat import setup_twitch_chat` — utilisée par `JohnnyBot/bot_johnny.py:84`
+>    et `Sheogorath/bot_sheogorath.py:135` (signature à conserver **à l'identique**, cf. lignes
+>    `1665-1690` actuelles : keyword-only).
+> 2. `from shared.twitch_chat import TwitchChatBot` puis `TwitchChatBot._strip_stage_directions(text)`
+>    — appelé en **staticmethod externe** par `bot_johnny.py:385-386`, `bot_sheogorath.py:669-670`
+>    et `shared/twitch_eventsub.py:258-259`.
 >
-> **Décision produit (utilisateur, 2026-06-25).** Un bot **ne réagit à la voix QUE s'il entend un de
-> ses propres noms** (on **supprime** la gate probabiliste `voice_chance`). Conséquence : pour un
-> énoncé donné, **au plus un** bot est nommé → plus de course → **Bug B disparaît** sans « priority ».
-> Le **Bug C** se règle en déplaçant l'arbitrage + l'intervalle **au hub** (point partagé unique).
->
-> **Cadre.** Correctif isolé, off par défaut inchangé (`enable_voice_listen=False`). Ne touche ni au
-> chat existant, ni à la capture audio, ni au dashboard. `py_compile` + autonomie ([[bots-independants]])
-> à reconfirmer.
+> ➡️ `shared/twitch_chat.py` **reste le point d'entrée** (façade) : il continue d'exposer
+> `setup_twitch_chat`, `TwitchChatBot`, `TwitchAuth`, `TwitchProfile`. Les bots ne changent pas
+> d'import. `_strip_stage_directions` reste accessible en `TwitchChatBot._strip_stage_directions`.
+
+> **Cadre.** [[bots-independants]] : `shared/` optionnel, import LLM/voice en try/except. Le découpage
+> ne doit créer **aucune** dépendance runtime nouvelle ni changer les imports des bots. Méthode :
+> **mixins** — `TwitchChatBot` reste défini dans `twitch_chat.py` mais hérite de classes-mixins
+> définies dans des fichiers frères. Chaque mixin ne fait que regrouper des méthodes `self.*` ; l'état
+> (`__init__`) reste centralisé dans `TwitchChatBot`. Aucune méthode ne change de corps.
 
 ---
 
-## Tâche 1 — Bot : réagir UNIQUEMENT sur son nom (`shared/twitch_chat.py`, `_on_voice_transcript` `:1558-1598`)
+## Cartographie actuelle (à conserver mentalement pendant le découpage)
 
-Remplacer le bloc gate (`:1571-1576`) :
-```python
-priority = False
-if self.trigger_re.search(text):
-    priority = True
-    self.logger.info(...)
-elif random.random() >= self.voice_chance:
-    return
-```
-par une **garde stricte sur le nom** (plus de hasard, plus de `priority`) :
-```python
-# Le bot ne réagit à la voix QUE si l'un de ses noms est prononcé (décision produit).
-if not self.trigger_re.search(text):
-    return
-```
-- Adapter l'appel de claim (`:1581`) : `granted = await self.voice_client.request_claim(text_hash)`
-  (sans `priority`). Le claim reste comme **filet de sécurité** pour le cas rare où **deux** noms
-  figurent dans le même énoncé (« johnny et sheo, vous en pensez quoi ») → premier arrivé gagne.
-- **Ne pas** retirer : le filtre longueur (`:1562-1564`), l'intervalle bot-side (`:1566-1569`, défense
-  locale, garde le MÊME bot de répéter), le plafond `global_msg_timestamps` 18/30 s (`:1586-1590`),
-  la génération + envoi (`:1592-1598`).
-- **`voice_chance`** devient inutilisé : retirer l'attribut/param `voice_chance` du `__init__`
-  (`:305`, `:328`) **et** ne plus le câbler ; idem l'import `random` si plus utilisé ailleurs (vérifier
-  `grep -n "random" shared/twitch_chat.py` — il sert ailleurs, donc **garder l'import**, retirer juste
-  l'usage `voice_chance`). Si retirer le param casse un appelant, le garder en param mort documenté
-  « (obsolète, écoute sur nom) » — au choix, mais **aucune gate aléatoire** ne doit subsister.
-
-## Tâche 2 — Hub : un seul grant par énoncé + intervalle GLOBAL (`shared/stream_listener.py`, handler claim `:70-85`)
-
-Le hub est le **seul** état partagé entre Johnny et Sheo → c'est lui qui doit garantir « 1 réponse
-par énoncé » ET « ≥ 45 s tous bots confondus ».
-
-### 2.1 `__init__` (`:32-41`)
-Ajouter : `voice_min_interval: float = 45.0` en param ; `self.voice_min_interval = voice_min_interval` ;
-`self.last_grant_ts = 0.0`.
-
-### 2.2 Logique de claim (`:70-85`) — remplacer entièrement la branche `action == "claim"`
-Supprimer le « priority override » (`elif priority and current_claim != bot_id:` `:80-83`). Nouvelle
-logique (1 seul grant par hash + verrou d'intervalle global) :
-```python
-if action == "claim":
-    text_hash = data.get("hash")
-    bot_id = data.get("bot_id")
-    now = time.time()
-    if now - self.last_grant_ts < self.voice_min_interval:
-        granted = False                      # intervalle global (tous bots confondus)
-    elif text_hash not in self.claim_locks:
-        self.claim_locks[text_hash] = bot_id # 1er arrivé gagne, jamais d'écrasement
-        self.last_grant_ts = now
-        granted = True
-    else:
-        granted = False                      # déjà pris par un autre bot
-    await websocket.send(json.dumps(
-        {"type": "claim_response", "hash": text_hash, "granted": granted}))
-    logger.info(f"{'🏆 Claim accordé à' if granted else '⛔ Claim refusé à'} {bot_id} ({text_hash})")
-```
-- `time` est déjà importé (`stream_listener.py:6`).
-- Le champ `priority` envoyé par le client peut rester (ignoré). `claim_locks` n'est jamais purgé
-  aujourd'hui : acceptable (un hash = un énoncé unique, croissance lente). **Ne pas** ajouter de purge
-  dans ce correctif (hors périmètre).
-
-> Effet combiné : dans le même énoncé, seul le 1er claim passe (Bug B couvert même sans la garde nom) ;
-> après un grant, **tout** claim (n'importe quel bot/énoncé) est refusé pendant 45 s (Bug C réglé).
-
-## Tâche 3 — Lanceur : propager l'intervalle au hub (`run_stream_listener.py`)
-
-- `load_listen_config` (`:36-53`) : ajouter la lecture `"min_interval": float(listen_cfg.get("min_interval", 45.0))`
-  (try/except → 45.0 par défaut).
-- `main` (`:66`) : `hub = StreamListenerHub(port=8765, mode=cfg["mode"], device=cfg["device"], voice_min_interval=cfg["min_interval"])`.
+| Lignes | Bloc | Destination |
+|---|---|---|
+| 40-165 | `class TwitchAuth` | `shared/twitch/auth.py` |
+| 166-240 | `class TwitchProfile` | `shared/twitch/profile.py` |
+| 241-413 | `TwitchChatBot.__init__` + `_parse_tags` | **reste** dans `twitch_chat.py` (état central) |
+| 414-570 | `run`, `_token_refresh_loop`, `_connect_and_loop` | `shared/twitch/connection.py` (mixin) |
+| 571-708 | `_generate_response`, `_strip_stage_directions` | `shared/twitch/llm.py` (mixin) |
+| 709-862 | `_load/_save_profile_state`, `_generate_daily_profile`, `_ensure_daily_profile` | `shared/twitch/daily_profile.py` (mixin) |
+| 863-934 | `_sanitize_input`, `stop` | `_sanitize_input`→`shared/twitch/sanitize.py` ; `stop` reste |
+| 935-1055 | viewers state + facts + `_generate_templated_greet`, `_handle_usernotice` | `shared/twitch/memory.py` (mixin) |
+| 1056-1185 | `_react_to_event*`, `_get_fallback_event_reply` | `shared/twitch/events.py` (mixin) |
+| 1186-1448 | `_handle_privmsg`, `_handle_command`, `_try_greeting`, `_try_interjection`, `_generate_interjection` | `shared/twitch/dispatch.py` (mixin) |
+| 1449-1531 | `get_broadcaster_id`, `_start_eventsub` | `shared/twitch/eventsub_bridge.py` (mixin) |
+| 1532-1648 | `_start_voice_listen`, `_on_voice_transcript`, `_generate_voice_response` | `shared/twitch/voice.py` (mixin) |
+| 1650-1806 | `_load_dashboard_twitch_config`, `setup_twitch_chat` | **reste** dans `twitch_chat.py` (façade) |
 
 ---
 
-## Vérifications (avant test live)
-1. `py_compile` : `shared/stream_listener.py`, `shared/twitch_chat.py`, `run_stream_listener.py`,
-   `JohnnyBot/bot_johnny.py`, `Sheogorath/bot_sheogorath.py`.
-2. **Autonomie** : bots démarrent sans deps STT et sans hub (no-op, `enable_voice_listen=False`).
-3. **Test fonctionnel pipeline (sans micro)** — rejouer le harnais (vrai `StreamListenerHub` avec
-   `DEPS_AVAILABLE=False`, 2 vrais `StreamListenerClient`, `_on_voice_transcript` réel, LLM+`ws.send_str`
-   mockés). Résultats **attendus après correctif** :
-   - **A** énoncé neutre (aucun nom) → **0** réponse (avant : 1). Les bots ne parlent que nommés.
-   - **B** « …johnny… » → **johnny seul** répond, sheo muet, **0 double** (avant : 19/20).
-   - **C** « …johnny… » puis « …sheo… » à < 45 s → **1 seule** réponse (la 2ᵉ refusée par le hub).
-   - **D** johnny déjà à 18/30 s → johnny muet.
-   Réf. harnais : `scratchpad/test_pipeline.py` (à adapter : retirer la gate `voice_chance`, attendre
-   A=0 et C: 2ᵉ=0).
+## Tâche 1 — Créer le paquet `shared/twitch/`
 
-## Hors périmètre
-- Purge de `claim_locks` ; hot-reload du kill-switch ; TTS ; généralisation aux 4 autres bots.
-- Gotcha env **numpy 2 vs faster-whisper/ctranslate2/torch** (warning au chargement Whisper, mode C) :
-  à régler sur le PC de stream avant le test live réel (`pip install "numpy<2"` ou rebuild). Sans impact
-  sur la tuyauterie/arbitrage testés ici. Noté ([[plan-twitch-phase5-stt]]).
+1.1. Créer `shared/twitch/__init__.py` (vide, ou ré-exporte les mixins pour confort).
 
-## Rollback
-Correctif local aux 3 fichiers. Revenir aux commits `e3975fd`/`b83e1f6` rétablit l'état précédent
-(avec les 2 bugs). `enable_voice_listen=False` (défaut) = aucun impact tant que non activé.
+1.2. **Helpers sans état d'abord** (les plus sûrs, aucune dépendance à `self`) :
+- `shared/twitch/sanitize.py` : déplacer `_sanitize_input` **et** `_strip_stage_directions`.
+  - `_strip_stage_directions` est `@staticmethod` (corps ligne 697-708) : la déplacer en **fonction
+    module** `strip_stage_directions(text) -> str`.
+  - `_sanitize_input` (ligne 863) utilise `self.logger`/`self.bot_id` → la garder en méthode via un
+    `class SanitizeMixin` qui la contient (homogène avec les autres blocs).
+
+## Tâche 2 — Extraire les classes déjà autonomes
+
+2.1. `shared/twitch/auth.py` ← couper-coller `class TwitchAuth` (40-165) **tel quel**. Importer en
+tête de `twitch_chat.py` : `from shared.twitch.auth import TwitchAuth`. (Vérifier les imports dont
+TwitchAuth a besoin : `aiohttp`, `json`, `os`, `time` — les ajouter dans `auth.py`.)
+
+2.2. `shared/twitch/profile.py` ← couper-coller `class TwitchProfile` (166-240) **tel quel** + ses
+imports. `from shared.twitch.profile import TwitchProfile` dans la façade.
+
+> Ces deux classes sont indépendantes (pas de couplage à `TwitchChatBot`) → extraction à risque
+> quasi nul. **Commiter ici** (`refactor(twitch): extraire TwitchAuth + TwitchProfile`).
+
+## Tâche 3 — Extraire les mixins de `TwitchChatBot`
+
+Pour chaque bloc du tableau marqué « (mixin) », créer un fichier `shared/twitch/<nom>.py` contenant :
+
+```python
+class <Nom>Mixin:
+    # méthodes déplacées VERBATIM (corps inchangé), elles continuent d'utiliser self.*
+```
+
+Ordre recommandé (du moins au plus couplé), **un commit par mixin** pour bissecter facilement :
+1. `connection.py` → `ConnectionMixin` (run/refresh/connect loop)
+2. `llm.py` → `LlmMixin` (`_generate_response` ; `strip_stage_directions` vit déjà dans `sanitize.py`,
+   `LlmMixin` l'appelle via la fonction module)
+3. `daily_profile.py` → `DailyProfileMixin`
+4. `memory.py` → `ViewerMemoryMixin` (viewers + facts + greet + `_handle_usernotice`)
+5. `events.py` → `EventsMixin`
+6. `dispatch.py` → `DispatchMixin` (privmsg/command/greeting/interjection)
+7. `eventsub_bridge.py` → `EventSubMixin`
+8. `voice.py` → `VoiceMixin`
+
+Puis dans `twitch_chat.py`, la déclaration devient :
+
+```python
+from shared.twitch.connection import ConnectionMixin
+from shared.twitch.llm import LlmMixin
+# ... etc.
+
+class TwitchChatBot(
+    ConnectionMixin, LlmMixin, DailyProfileMixin, ViewerMemoryMixin,
+    EventsMixin, DispatchMixin, EventSubMixin, VoiceMixin, SanitizeMixin,
+):
+    def __init__(self, ...):   # INCHANGÉ (état central)
+    def _parse_tags(...):      # reste (utilisé par connection + dispatch)
+    def stop(self):            # reste
+```
+
+> **Garde-fou MRO/staticmethod :** `_strip_stage_directions` est appelé en **externe** comme
+> `TwitchChatBot._strip_stage_directions(text)`. Comme on déplace le corps en fonction module, ajouter
+> dans `TwitchChatBot` (ou un mixin) un **shim** pour ne pas casser les 3 appelants externes :
+> ```python
+> @staticmethod
+> def _strip_stage_directions(text):
+>     from shared.twitch.sanitize import strip_stage_directions
+>     return strip_stage_directions(text)
+> ```
+> (Ou migrer les 3 appelants vers `from shared.twitch.sanitize import strip_stage_directions` — mais
+> ça touche les bots, donc **préférer le shim** pour rester refactor-pur côté `shared/`.)
+
+## Tâche 4 — Façade `twitch_chat.py`
+
+Après extraction, `twitch_chat.py` ne contient plus que : imports des mixins/classes, la classe
+`TwitchChatBot` (init + `_parse_tags` + `stop` + shim `_strip_stage_directions`), `_load_dashboard_twitch_config`
+et `setup_twitch_chat`. **Cible ≈ 350-450 lignes** (contre 1806).
+
+---
+
+## Vérification (à exécuter après CHAQUE commit de tâche)
+
+1. `python -m py_compile shared/twitch_chat.py shared/twitch/*.py` → exit 0.
+2. **Compat imports bots** (ne doit RIEN renvoyer d'erreur) :
+   ```
+   python -c "from shared.twitch_chat import setup_twitch_chat, TwitchChatBot, TwitchAuth, TwitchProfile; \
+   import inspect; print(len(inspect.signature(setup_twitch_chat).parameters), 'params'); \
+   print(callable(TwitchChatBot._strip_stage_directions))"
+   ```
+   Attendu : le **même** nombre de params qu'avant refactor + `True`.
+3. `python -m py_compile JohnnyBot/bot_johnny.py Sheogorath/bot_sheogorath.py shared/twitch_eventsub.py` → exit 0.
+4. **Diff de comportement = 0** : `git diff` ne doit montrer que des **déplacements** de lignes
+   (corps de méthodes identiques) + imports + la déclaration de classe + le shim. Aucune logique modifiée.
+5. `pytest tests/test_twitch_config.py -q` reste vert.
+
+## Hors périmètre (ne pas faire dans ce plan)
+
+- Ne pas modifier les bots (`bot_johnny.py`, `bot_sheogorath.py`) : la façade absorbe tout.
+- Ne pas toucher `setup_twitch_chat` (signature/corps) au-delà des imports en tête de fichier.
+- Pas de refactor « tant qu'on y est » : aucun renommage de méthode, aucun changement de signature
+  interne. Le seul nouveau symbole public est la fonction module `strip_stage_directions` (le reste
+  passe par les mixins, invisible de l'extérieur).
+
+## Suite possible (séparée, après ce découpage) — ✅ EXÉCUTÉ
+
+Une fois `shared/twitch/` en place, ajouter des **tests unitaires** ciblés sur les helpers désormais
+isolés (`sanitize.py` : injection/strip didascalies ; `daily_profile.py` : cache 1 LLM/jour) — c'est
+la reco #5 de l'audit, plus facile une fois le monolithe scindé.
+
+> **Fait.** `tests/test_twitch_sanitize.py` (strip didascalies + plafond longueur + retrait jetons de
+> contrôle + détection d'injection insensible aux accents) et `tests/test_twitch_daily_profile.py`
+> (garde « 1 appel LLM/jour » : cache mémoire process + cache JSON persistant + régénération si état
+> périmé). `pytest tests/ -q` → **52 passed** (dont 17 nouveaux).
