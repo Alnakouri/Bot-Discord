@@ -100,6 +100,12 @@ except ImportError:
 
 johnny_cred = None
 
+try:
+    from shared.discord_profile import DiscordDailyBio
+except ImportError:
+    DiscordDailyBio = None
+
+
 # IMPORT PERSONNALITÉ JOHNNY
 from johnny_data import (
     PERSONALITY_PROMPT, DIPLOMATIC_TALES, GIFT_RESPONSES,
@@ -167,6 +173,16 @@ openrouter_client = None
 if OPENROUTER_API_KEY:
     try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
     except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
+
+ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
+daily_bio = DiscordDailyBio(
+    bot=bot, bot_id="johnny", bot_label="Johnny Silverhand",
+    personality_prompt=PERSONALITY_PROMPT,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_BIO,
+) if DiscordDailyBio else None
+
 
 # LTM - LONG TERM MEMORY SYSTEM
 import re
@@ -301,6 +317,9 @@ async def on_ready():
     # Tâches périodiques
     if DATABASE_AVAILABLE:
         daily_birthday_check.start()
+    if daily_bio and not daily_bio_loop_johnny.is_running():
+        daily_bio_loop_johnny.start()
+
         
     global twitch_announcer, twitch_chat, twitch_chat_task, johnny_cred
     if TWITCH_AVAILABLE and twitch_announcer is None:
@@ -503,6 +522,16 @@ async def twitch_poll_loop():
 @twitch_poll_loop.before_loop
 async def before_twitch_poll():
     await bot.wait_until_ready()
+
+@tasks.loop(hours=1)
+async def daily_bio_loop_johnny():
+    if daily_bio:
+        await daily_bio.ensure_daily_bio()
+
+@daily_bio_loop_johnny.before_loop
+async def before_daily_bio_johnny():
+    await bot.wait_until_ready()
+
 
 # COMMANDES SPÉCIALES JOHNNY SILVERHAND
 

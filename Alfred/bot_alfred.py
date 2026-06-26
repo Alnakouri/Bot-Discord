@@ -93,6 +93,12 @@ except ImportError:
 
 twitch_announcer = None
 
+try:
+    from shared.discord_profile import DiscordDailyBio
+except ImportError:
+    DiscordDailyBio = None
+
+
 # CREDENTIALS
 # ⚠️ REMPLACEZ CECI PAR LE TOKEN DE VOTRE NOUVEAU BOT ALFRED
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -287,6 +293,16 @@ try:
         openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
 except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
+ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
+daily_bio = DiscordDailyBio(
+    bot=bot, bot_id="alfred", bot_label="Alfred",
+    personality_prompt=PERSONALITY_PROMPT,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_BIO,
+) if DiscordDailyBio else None
+
+
 # EVENTS
 
 @bot.event
@@ -309,6 +325,9 @@ async def on_ready():
     status_loop_alfred.start()
     weekly_protip_alfred.start() # Conseil Hebdomadaire (Vendredi)
     birthday_check_alfred.start() # Anniversaires
+    if daily_bio and not daily_bio_loop_alfred.is_running():
+        daily_bio_loop_alfred.start()
+
     
     global twitch_announcer
     if TWITCH_AVAILABLE and twitch_announcer is None:
@@ -393,6 +412,15 @@ async def weekly_protip_alfred():
                 await asyncio.sleep(3600)
             except Exception as e:
                 logger.error(f"❌ Conseil error: {e}")
+
+@tasks.loop(hours=1)
+async def daily_bio_loop_alfred():
+    if daily_bio:
+        await daily_bio.ensure_daily_bio()
+
+@daily_bio_loop_alfred.before_loop
+async def before_daily_bio_alfred():
+    await bot.wait_until_ready()
 
 # ÉVÉNEMENTS SERVEUR
 

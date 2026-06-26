@@ -65,17 +65,20 @@ def _remove_decree(role_id):
 # fonctionnent IDENTIQUEMENT en local et en Docker (où arial.ttf n'existe pas).
 # On garde des chemins système en repli si jamais le fichier embarqué manque.
 _FONT_CANDIDATES_REGULAR = [
+    os.path.join(ASSETS_DIR, "MedievalSharp.ttf"),
     os.path.join(ASSETS_DIR, "DejaVuSerif.ttf"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
     "DejaVuSerif.ttf",
     "arial.ttf",
 ]
 _FONT_CANDIDATES_BOLD = [
+    os.path.join(ASSETS_DIR, "MedievalSharp.ttf"),  # pas de Bold MedievalSharp → même fichier
     os.path.join(ASSETS_DIR, "DejaVuSerif-Bold.ttf"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
     "DejaVuSerif-Bold.ttf",
     "arialbd.ttf",
 ] + _FONT_CANDIDATES_REGULAR
+
 
 # Emoji et symboles hors-police (ranges non couverts par DejaVu) : on les retire
 # du texte de l'image pour éviter les carrés « tofu ». Ils restent dans le
@@ -103,8 +106,10 @@ def _load_font(candidates, size):
 
 def _clean_for_image(text):
     """Retire emoji/symboles hors-police et normalise les espaces pour l'image."""
-    text = _EMOJI_RE.sub("", text or "")
+    text = (text or "").replace("œ", "oe").replace("Œ", "OE").replace("æ", "ae").replace("Æ", "AE")
+    text = _EMOJI_RE.sub("", text)
     return re.sub(r"[ \t]{2,}", " ", text).strip()
+
 
 
 def _wrap_by_width(draw, text, font, max_width):

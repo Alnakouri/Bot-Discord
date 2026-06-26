@@ -52,6 +52,12 @@ except ImportError:
 
 twitch_announcer = None
 
+try:
+    from shared.discord_profile import DiscordDailyBio
+except ImportError:
+    DiscordDailyBio = None
+
+
 
 # Configuration du Logger
 logger = setup_logger("malena", "logs")
@@ -243,6 +249,16 @@ intents.members = True  # Nécessaire pour les événements de bienvenue/départ
 from discord.ext import commands, tasks
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
+ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
+daily_bio = DiscordDailyBio(
+    bot=bot, bot_id="malena", bot_label="Malena",
+    personality_prompt=data.PERSONALITY_PROMPT,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_BIO,
+) if DiscordDailyBio else None
+
+
 @bot.command(name="oubliemoi")
 async def oubliemoi(ctx):
     """Purge toutes les données de mémoire de l'utilisateur."""
@@ -270,6 +286,9 @@ async def on_ready():
         check_missed_mentions_malena.start()
     if not birthday_loop_malena.is_running():
         birthday_loop_malena.start()
+    if daily_bio and not daily_bio_loop_malena.is_running():
+        daily_bio_loop_malena.start()
+
         
     global twitch_announcer
     if TWITCH_AVAILABLE and twitch_announcer is None:
@@ -641,7 +660,17 @@ async def twitch_poll_loop():
 async def before_twitch_poll():
     await bot.wait_until_ready()
 
+@tasks.loop(hours=1)
+async def daily_bio_loop_malena():
+    if daily_bio:
+        await daily_bio.ensure_daily_bio()
+
+@daily_bio_loop_malena.before_loop
+async def before_daily_bio_malena():
+    await bot.wait_until_ready()
+
 # ÉVÉNEMENTS SERVEUR — BIENVENUE ET DÉPART
+
 
 @bot.event
 async def on_member_join(member):

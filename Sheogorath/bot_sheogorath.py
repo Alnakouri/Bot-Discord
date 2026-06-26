@@ -141,6 +141,12 @@ except ImportError:
 twitch_chat = None
 twitch_chat_task = None
 
+try:
+    from shared.discord_profile import DiscordDailyBio
+except ImportError:
+    DiscordDailyBio = None
+
+
 
 # GAME LOGIC
 try:
@@ -356,6 +362,17 @@ current_sheo_activity = "Compter ses dents"
 current_mood = "neutral"
 current_system_prompt = sheo_data.MOOD_PROMPTS.get("neutral", sheo_data.PERSONALITY_BASE)
 
+ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
+daily_bio = DiscordDailyBio(
+    bot=bot, bot_id="sheogorath", bot_label="Sheogorath",
+    personality_prompt=sheo_data.PERSONALITY_BASE,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    system_prompt_provider=lambda: current_system_prompt,  # suit l'humeur du jour
+    logger=logger, enabled=ENABLE_DAILY_BIO,
+) if DiscordDailyBio else None
+
+
 # ═══════════════════════════════════════════════════════════════
 # TOOLS — FONCTIONS D'AGENTS (Function Calling)
 # ═══════════════════════════════════════════════════════════════
@@ -550,6 +567,9 @@ async def on_ready():
     mood_changer.start()  # Démarrage du changeur d'humeur
     daily_rumor_check_sheo.start()  # Rumeur quotidienne (jours impairs)
     birthday_check_sheo.start()  # Vérification anniversaires
+    if daily_bio and not daily_bio_loop_sheo.is_running():
+        daily_bio_loop_sheo.start()
+
     
     global twitch_announcer, twitch_chat, twitch_chat_task
     if TWITCH_AVAILABLE and twitch_announcer is None:
@@ -1078,6 +1098,16 @@ async def daily_backup_check():
             logger.info("✅ [BACKUP] Sauvegarde quotidienne effectuée")
         except Exception as e:
             logger.error(f"❌ [BACKUP] Erreur: {e}")
+
+@tasks.loop(hours=1)
+async def daily_bio_loop_sheo():
+    if daily_bio:
+        await daily_bio.ensure_daily_bio()
+
+@daily_bio_loop_sheo.before_loop
+async def before_daily_bio_sheo():
+    await bot.wait_until_ready()
+
 
 # DÉTECTION DES MENTIONS MANQUÉES
 

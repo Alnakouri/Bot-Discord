@@ -129,6 +129,10 @@ key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KE
   # {guild_id: ["réponse1", "réponse2", ...]} (max 10)
 response_memory = ResponseMemory()
 
+try:
+    from shared.discord_profile import DiscordDailyBio
+except ImportError:
+    DiscordDailyBio = None
 
 from maiq_data import PERSONALITY_PROMPT
 
@@ -248,6 +252,16 @@ try:
 except Exception as e:
     logger.warning(f"[INIT] OpenRouter: {e}")
 
+ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
+daily_bio = DiscordDailyBio(
+    bot=bot, bot_id="maiq", bot_label="M'aiq le Menteur",
+    personality_prompt=PERSONALITY_PROMPT,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_BIO,
+) if DiscordDailyBio else None
+
+
 # EVENTS
 
 @bot.event
@@ -272,6 +286,9 @@ async def on_ready():
     
     # NOUVELLES TÂCHES
     birthday_check_maiq.start()  # Vérification anniversaires
+    if daily_bio and not daily_bio_loop_maiq.is_running():
+        daily_bio_loop_maiq.start()
+
     
     global twitch_announcer
     if TWITCH_AVAILABLE and twitch_announcer is None:
@@ -386,6 +403,15 @@ async def birthday_check_maiq():
     """Vérifie les anniversaires tous les 12h."""
     if DATABASE_AVAILABLE:
         await check_and_send_birthdays(bot, "M'aiq")
+
+@tasks.loop(hours=1)
+async def daily_bio_loop_maiq():
+    if daily_bio:
+        await daily_bio.ensure_daily_bio()
+
+@daily_bio_loop_maiq.before_loop
+async def before_daily_bio_maiq():
+    await bot.wait_until_ready()
 
 # ÉVÉNEMENTS SERVEUR
 

@@ -94,6 +94,12 @@ except ImportError:
 twitch_announcer = None
 
 try:
+    from shared.discord_profile import DiscordDailyBio
+except ImportError:
+    DiscordDailyBio = None
+
+
+try:
     from onizuka_data import (
         PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS,
         MONEY_RESPONSES, JACKPOT_RESPONSES, BIKE_RESPONSES,
@@ -184,6 +190,16 @@ if OPENROUTER_API_KEY:
     try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
     except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
+ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
+daily_bio = DiscordDailyBio(
+    bot=bot, bot_id="onizuka", bot_label="Onizuka",
+    personality_prompt=PERSONALITY_PROMPT,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_BIO,
+) if DiscordDailyBio else None
+
+
 @bot.event
 async def on_ready():
     logger.info("=" * 60)
@@ -227,6 +243,9 @@ async def on_ready():
     # Tâches périodiques
     if DATABASE_AVAILABLE:
         daily_birthday_check.start()
+    if daily_bio and not daily_bio_loop_onizuka.is_running():
+        daily_bio_loop_onizuka.start()
+
         
     global twitch_announcer
     if TWITCH_AVAILABLE and twitch_announcer is None:
@@ -277,7 +296,17 @@ async def twitch_poll_loop():
 async def before_twitch_poll():
     await bot.wait_until_ready()
 
+@tasks.loop(hours=1)
+async def daily_bio_loop_onizuka():
+    if daily_bio:
+        await daily_bio.ensure_daily_bio()
+
+@daily_bio_loop_onizuka.before_loop
+async def before_daily_bio_onizuka():
+    await bot.wait_until_ready()
+
 # COMMANDES SPÉCIALES ONIZUKA
+
 
 @bot.command(name="exploit", aliases=["histoire", "legende"])
 async def exploit_cmd(ctx):
