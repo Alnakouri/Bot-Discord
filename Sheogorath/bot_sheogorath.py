@@ -655,6 +655,8 @@ async def on_ready():
             return f"Voici les courtisans qui ont le plus amusé le Prince de la Folie : " + " | ".join(lines)
 
         async def cmd_decret(author: str, args: str) -> str:
+            if not is_feature_enabled("sheogorath", "decret_enabled", default=True):
+                return "Le Prince a rangé ses décrets dans un fromage. Reviens plus tard, mortel."  # en personnage
             prompt = (
                 f"Rédige un DÉCRET DAEDRA de la Folie visant @{author}. "
                 f"Style Sheogorath : obsessionnel (fromage, papillons, intestins), absurde et menaçant. "
@@ -939,6 +941,9 @@ async def daily_rumor_check_sheo():
 
 async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     """Publie une rumeur chaotique (Décret Divin). Si target_channel/user sont None, ils sont choisis au hasard."""
+    if not is_feature_enabled("sheogorath", "decret_enabled", default=True):
+        logger.info("🚫 [DÉCRET] Désactivé via dashboard — publication auto ignorée.")
+        return
     if not target_channel:
         for guild in bot.guilds:
             for channel in guild.text_channels:
@@ -1074,6 +1079,9 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
 @commands.has_permissions(administrator=True)
 async def decret_cmd(ctx, target: discord.Member = None):
     """Force la publication d'un décret impérial (Admin only pour test)."""
+    if not is_feature_enabled("sheogorath", "decret_enabled", default=True):
+        await ctx.send("🚫 Le Prince a suspendu ses décrets… pour l'instant. (désactivé via le dashboard)")
+        return
     await publish_daily_rumor_sheo(target_channel=ctx.channel, target_user=target)
 
 @tasks.loop(hours=1)

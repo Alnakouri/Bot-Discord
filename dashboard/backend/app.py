@@ -26,6 +26,7 @@ from api_tracker import APITracker
 from conversation_analyzer import ConversationAnalyzer
 from report_generator import ReportGenerator
 from twitch_config import TwitchConfigManager
+from features_config import FeaturesConfigManager
 from pydantic import BaseModel
 from typing import Optional
 
@@ -132,6 +133,7 @@ api_tracker = APITracker(str(API_DB_PATH))
 conversation_analyzer = ConversationAnalyzer(str(BOTS_DB_PATH))
 report_generator = ReportGenerator(str(BOTS_DB_PATH))
 twitch_config_manager = TwitchConfigManager(DATA_DIR)
+features_config_manager = FeaturesConfigManager(DATA_DIR)
 
 app = FastAPI(title="Bot Discord Dashboard", version="1.0.0")
 
@@ -369,6 +371,21 @@ async def update_twitch_chat_config(bot_id: str, cfg: TwitchChatConfigUpdate):
         )
         return {"status": "ok"}
     except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/features/{bot_id}")
+def get_features(bot_id: str):
+    try:
+        return features_config_manager.get_bot(bot_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.put("/api/features/{bot_id}")
+def set_feature(bot_id: str, body: dict):
+    try:
+        features_config_manager.set_feature(bot_id, body["feature"], body["value"])
+        return {"status": "ok"}
+    except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/twitch/rewards/{bot_id}")

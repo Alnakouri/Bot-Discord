@@ -427,6 +427,15 @@
                     <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
                         ⚠️ Les changements s'appliquent au redémarrage du bot.
                     </span>
+
+                    <div id="discord-features-container" style="display: none; border-top: 1px solid var(--border-glass); padding-top: 1.5rem; margin-top: 1.5rem;">
+                        <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.1em;">🛡️ Fonctionnalités Discord</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                            <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                                <input type="checkbox" id="feat-decret-sheogorath" onchange="window.updateDecret('sheogorath', this.checked)"> Décret activé
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="twitch-card glass" style="padding: 1.5rem; margin-top: 1.5rem;">

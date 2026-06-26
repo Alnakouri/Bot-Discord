@@ -662,8 +662,44 @@ async function loadTwitchPresence() {
         } else {
             document.getElementById('presence-chat-channels').value = '';
         }
+        
+        // Toggle Discord features container visibility and load values
+        const discordContainer = document.getElementById('discord-features-container');
+        if (discordContainer) {
+            if (botId === 'sheogorath') {
+                discordContainer.style.display = 'block';
+                await loadFeatures('sheogorath');
+            } else {
+                discordContainer.style.display = 'none';
+            }
+        }
     } catch (e) {
         console.error("Twitch presence config error:", e);
+    }
+}
+
+async function loadFeatures(botId) {
+    try {
+        const res = await fetch(`${API_BASE}/features/${botId}`);
+        if (res.ok) {
+            const cfg = await res.json();
+            const el = document.getElementById(`feat-decret-${botId}`);
+            if (el) el.checked = cfg.decret_enabled !== false;
+        }
+    } catch (e) {
+        console.error("Failed to load features:", e);
+    }
+}
+
+window.updateDecret = async function(botId, value) {
+    try {
+        await fetch(`${API_BASE}/features/${botId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ feature: "decret_enabled", value })
+        });
+    } catch (e) {
+        console.error("Failed to update decret:", e);
     }
 }
 
