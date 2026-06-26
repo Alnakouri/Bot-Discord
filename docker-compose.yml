@@ -1,6 +1,12 @@
 x-bot-common: &bot-common
   build: .
   restart: unless-stopped
+  # Durcissement : les bots sont de purs clients réseau (aucune capability Linux
+  # requise) et tournent déjà non-root (USER botuser dans le Dockerfile).
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
   logging:
     driver: json-file
     options:
