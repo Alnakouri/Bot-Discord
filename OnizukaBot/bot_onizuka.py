@@ -428,6 +428,33 @@ async def oubliemoi(ctx):
 
 # LOGIQUE CONVERSATIONNELLE
 
+# Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, Onizuka
+# ne s'incruste PAS lors d'une intervention ALÉATOIRE (les mentions/noms directs d'Onizuka
+# restent toujours prioritaires et passent avant cette garde).
+OTHER_BOT_NAMES = [
+    "sheo", "sheogorath", "johnny", "silverhand", "samurai",
+    "alfred", "pennyworth", "m'aiq", "maiq", "malena", "malèna",
+]
+
+
+async def _other_bot_in_focus(message):
+    """True si la conversation est manifestement tournée vers un AUTRE bot (on ne barge pas).
+    N'est consulté QUE pour une intervention aléatoire (rare) → coût historique négligeable."""
+    if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
+        return True
+    try:
+        async for prev in message.channel.history(limit=4, before=message):
+            if prev.author == bot.user:
+                return False  # Onizuka était déjà dans la boucle → ok d'enchaîner
+            if prev.author.bot:
+                return True   # un autre bot vient de parler → c'est SON échange
+            if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
+                return True   # un humain vient de nommer un autre bot
+    except Exception:
+        return False
+    return False
+
+
 @bot.event
 async def on_message(message):
     # Ignorer les messages du bot lui-même
@@ -615,10 +642,13 @@ async def on_message(message):
                 return
     # ══════════════════════════════════════════════════
     
-    # C. Intervention aléatoire (10%)
-    elif not is_bot_talking and random.random() < 0.10:
-        should_respond = True
-        logger.info(f"[INTERVENTION] Onizuka intervient dans {message.channel.name}")
+    # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
+    elif not is_bot_talking and not should_respond and random.random() < 0.10:
+        if await _other_bot_in_focus(message):
+            logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Onizuka se tait.")
+        else:
+            should_respond = True
+            logger.info(f"[INTERVENTION] Onizuka intervient dans {message.channel.name}")
     
     if not should_respond:
         return
