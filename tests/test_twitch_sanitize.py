@@ -14,6 +14,7 @@ if _parent_dir not in sys.path:
 from shared.twitch.sanitize import (
     strip_stage_directions,
     strip_meta_narration,
+    strip_bare_stage_directions,
     SanitizeMixin,
 )
 
@@ -93,6 +94,66 @@ class TestStripMetaNarration(unittest.TestCase):
         self.assertEqual(
             strip_stage_directions("L'utilisateur semble perdu. *il rit* Bienvenue !"),
             "Bienvenue !",
+        )
+
+
+class TestStripBareStageDirections(unittest.TestCase):
+    """Didascalies nues (sans astérisques) observées en prod (Sheogorath, 2026-06-27)."""
+
+    def test_single_word_action_after_period(self):
+        self.assertEqual(
+            strip_bare_stage_directions(
+                "Donc selon TOI, je n'ai pas de dents. sourire Alors explique-moi."
+            ),
+            "Donc selon TOI, je n'ai pas de dents. Alors explique-moi.",
+        )
+
+    def test_single_word_action_after_exclamation(self):
+        self.assertEqual(
+            strip_bare_stage_directions("avec une CUILLÈRE ?! hurle UNE CUILLÈRE ?!"),
+            "avec une CUILLÈRE ?! UNE CUILLÈRE ?!",
+        )
+
+    def test_action_after_ellipsis_then_dash(self):
+        self.assertEqual(
+            strip_bare_stage_directions("Johnny... Sheo... claque des doigts — NON."),
+            "Johnny... Sheo... — NON.",
+        )
+
+    def test_long_multiclause_action_at_start(self):
+        self.assertEqual(
+            strip_bare_stage_directions(
+                "Éclate d'un rire cristallin, puis s'arrête net ...Tu oses."
+            ),
+            "...Tu oses.",
+        )
+
+    def test_reflexive_action_at_start(self):
+        self.assertEqual(
+            strip_bare_stage_directions(
+                "Se penche lentement vers toi, un sourire carnassier aux lèvres ...Mouai ?"
+            ),
+            "...Mouai ?",
+        )
+
+    def test_imperative_not_stripped(self):
+        # « Crache le morceau ou dégage » (Johnny) est de l'IMPÉRATIF, pas une didascalie.
+        msg = "Crache le morceau ou dégage."
+        self.assertEqual(strip_bare_stage_directions(msg), msg)
+
+    def test_first_person_verb_not_stripped(self):
+        # Un verbe d'action AVEC sujet explicite reste du dialogue.
+        msg = "Je claque des doigts et tu disparais, mortel !"
+        self.assertEqual(strip_bare_stage_directions(msg), msg)
+
+    def test_dialogue_with_action_verb_word_unchanged(self):
+        msg = "Aucune didascalie ici, juste du fromage."
+        self.assertEqual(strip_bare_stage_directions(msg), msg)
+
+    def test_wired_into_strip_stage_directions(self):
+        self.assertEqual(
+            strip_stage_directions("Tu n'as rien compris. hurle ENCORE ?!"),
+            "Tu n'as rien compris. ENCORE ?!",
         )
 
 

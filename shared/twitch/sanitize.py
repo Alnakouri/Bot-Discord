@@ -24,12 +24,60 @@ def strip_meta_narration(text: str) -> str:
     return text.strip()
 
 
+# Didascalies « nues » (sans astérisques) : le LLM narre l'action physique du bot à
+# la 3e personne / à l'infinitif, collée au dialogue (« ...je n'ai pas de dents. sourire
+# Alors explique-moi », « ... ?! hurle UNE CUILLÈRE ?! », « Se penche vers toi... »).
+# On NE vise QUE la narration d'action, jamais l'impératif adressé au mortel — sinon on
+# rognerait du vrai dialogue (ex. Johnny « Crache le morceau ou dégage »). D'où :
+#   - une LISTE CURÉE de verbes (on exclut « crache », « souris », « dégage »... = impératifs) ;
+#   - un ancrage en tête de message ou juste après une fin de phrase / un tiret ;
+#   - un arrêt au premier mot CAPITALISÉ (= reprise du dialogue) ou ponctuation forte,
+#     pour ne jamais avaler la réplique qui suit.
+# Les formes RÉFLÉCHIES (« se penche », « s'esclaffe ») sont quasi toujours descriptives
+# (l'impératif réfléchi serait « penche-toi »), donc traitées à part et plus larges.
+_RP_REFLEXIVE = (
+    r"penche|redresse|rapproche|approche|recule|avance|retourne|incline|pivote|"
+    r"l[eè]ve|baisse|fige|d[eé]tourne|esclaffe|gratte|frotte|[eé]tire|cambre|love|"
+    r"tortille|fend|dresse|raidit|crispe|tend|gonfle|tasse|balance"
+)
+_RP_PLAIN = (
+    r"claqu\w*|rican\w*|[eé]clat\w*|soupir\w*|grogn\w*|grond\w*|jongl\w*|gesticul\w*|"
+    r"tourbillonn\w*|virevolt\w*|applaudi\w*|brandi\w*|sourit|sourire|souriant|"
+    r"hurl\w*|riant|sifflot\w*|ronronn\w*|pouffant?|pouffe"
+)
+# Suite de la didascalie : on ne consomme que des mots à initiale MINUSCULE (case-sensitive
+# grâce à `(?-i:...)`), donc on s'arrête net au premier mot capitalisé ou à la ponctuation.
+_STAGE_TAIL = r"(?:[\s,]+(?-i:[a-zà-ÿ])[\w'’-]*)*"
+_BARE_STAGE = re.compile(
+    r"(?:(?<=^)|(?<=[.!?…—])|(?<=\n))\s*"
+    r"(?:(?:s['’]|se\s+)(?:" + _RP_REFLEXIVE + r")\w*|(?:" + _RP_PLAIN + r"))"
+    + _STAGE_TAIL,
+    re.IGNORECASE,
+)
+
+
+def strip_bare_stage_directions(text: str) -> str:
+    """Retire les didascalies de roleplay émises SANS astérisques (narration d'action
+    nue collée au dialogue). Boucle jusqu'à stabilité (didascalies consécutives), puis
+    recolle proprement la ponctuation orpheline."""
+    previous = None
+    while previous != text:
+        previous = text
+        text = _BARE_STAGE.sub("", text)
+    # Nettoyage minimal : espaces multiples seulement (on préserve la typo FR : espace
+    # avant ?! ; et les ellipses « ... » dramatiques de Sheogorath).
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
+
 def strip_stage_directions(text: str) -> str:
     """Retire les didascalies de roleplay (*il se redresse...*) tout en gardant
     l'emphase (*panache* → panache). Les marqueurs `*` ne sont de toute façon
     pas rendus par Twitch. Retire aussi la méta-narration hors-personnage."""
     # 0. Méta-narration hors-personnage en tête ("L'utilisateur semble...")
     text = strip_meta_narration(text)
+    # 0.5 Didascalies nues sans astérisques ("... ?! hurle UNE CUILLÈRE", "Se penche...")
+    text = strip_bare_stage_directions(text)
     # 1. Didascalie en tête de message : "*Il se redresse...* Ah..."
     text = re.sub(r"^\s*\*[^*]+\*\s*", "", text)
     # 2. Didascalie multi-mots juste après une fin de phrase : "... ! *rit doucement* Et..."

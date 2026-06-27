@@ -21,11 +21,14 @@ import logging
 
 logger = logging.getLogger("sheogorath")
 
-# Strip méta-narration hors-personnage (source partagée, optionnelle cf. bots indépendants)
+# Strip méta-narration + didascalies nues (source partagée, optionnelle cf. bots indépendants)
 try:
-    from shared.twitch.sanitize import strip_meta_narration
+    from shared.twitch.sanitize import strip_meta_narration, strip_bare_stage_directions
 except Exception:  # pragma: no cover - fallback no-op si shared/ absent
     def strip_meta_narration(text):
+        return text
+
+    def strip_bare_stage_directions(text):
         return text
 
 
@@ -132,6 +135,9 @@ def postprocess_response(response_text, fact_brain, user_id, original_message):
 
     # 2.5 Suppression de la méta-narration hors-personnage ("L'utilisateur semble...")
     response_text = strip_meta_narration(response_text)
+
+    # 2.6 Suppression des didascalies nues sans astérisques ("... ?! hurle UNE CUILLÈRE")
+    response_text = strip_bare_stage_directions(response_text)
 
     # 3. Easter eggs
     response_text = apply_easter_eggs(response_text, original_message)
