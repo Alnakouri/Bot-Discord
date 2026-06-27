@@ -1983,8 +1983,10 @@ async def on_message(message):
     if not _is_provoked and random.random() < 0.25:
         system_instruction += f"[ACTIVITÉ EN COURS] : En ce moment même, tu es occupé à : '{current_activity_text}'. Si on te demande ce que tu fais, dis-le !\n"
 
-    # Random Obsession Injection (Chaos Factor) — coupée aussi sur provocation
-    if not _is_provoked:
+    # Random Obsession Injection (Chaos Factor) — occasionnelle (~35%) et coupée sur
+    # provocation : injectée en permanence, elle tirait Sheo hors-sujet sur les messages
+    # vagues (« comme ta réponse » → délire incohérent) au lieu de répondre au mortel.
+    if not _is_provoked and random.random() < 0.35:
         current_obsession = random.choice(sheo_data.SHEO_OBSESSIONS)
         system_instruction += f"[OBSESSION DU MOMENT] : {current_obsession}\n"
     
