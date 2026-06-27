@@ -85,34 +85,27 @@ def clean_internal_tags(response_text):
 
 
 def apply_easter_eggs(response_text, original_message):
-    """Applique un easter egg aléatoire (6% chance totale, 1% chacun)."""
+    """Ajoute un grain de folie SANS JAMAIS sacrifier la répartie : l'easter egg
+    DÉCORE la vraie réponse (transformation ou suffixe), il ne la REMPLACE plus.
+    (Avant, ~6% des réponses étaient jetées au profit de bruit type 'ZZZZ 📢'.)"""
+    if not response_text:
+        return response_text
+
     roll = random.random()
 
-    if roll < 0.01:  # 1% - Réponse en miroir
-        response_text = f"🪞 {original_message} 🪞"
-        logger.info("🎰 [EASTER EGG] Réponse en miroir activée !")
+    if roll < 0.02:  # 2% - ALL CAPS EXPLOSION (transforme, garde le contenu)
+        logger.info("🎰 [EASTER EGG] ALL CAPS EXPLOSION !")
+        return response_text.upper() + " 💥"
 
-    elif 0.02 <= roll < 0.03:  # 1% - Multilingue absurde
-        nonsense_words = ["Wabbajack", "Fromage", "Chaos", "Mania", "Démence", "Jyggalag", "Haskill"]
-        languages = ["🇫🇷", "🇬🇧", "🇪🇸", "🇩🇪", "🇮🇹", "🇯🇵", "🇷🇺"]
-        response_text = " ".join([random.choice(nonsense_words) for _ in range(5)]) + " " + "".join(random.sample(languages, 3))
-        logger.info("🎰 [EASTER EGG] Multilingue absurde activé !")
+    elif roll < 0.035:  # 1.5% - Suffixe compte-à-rebours absurde
+        endings = ["FROMAGE !", "WABBAJACK !", "CHAOS !", "POUF !", "TOI !"]
+        logger.info("🎰 [EASTER EGG] Suffixe compte-à-rebours !")
+        return f"{response_text} ...3, 2, 1, {random.choice(endings)} 🎆"
 
-    elif 0.03 <= roll < 0.04:  # 1% - ALL CAPS EXPLOSION
-        response_text = response_text.upper() + " 💥💥💥"
-        logger.info("🎰 [EASTER EGG] ALL CAPS EXPLOSION activée !")
-
-    elif 0.04 <= roll < 0.05:  # 1% - Compte-à-rebours absurde
-        endings = ["FROMAGE !", "WABBAJACK !", "CHAOS !", "POUF !", "EXPLOSION !", "RIEN !", "TOI !"]
-        response_text = f"3... 2... 1... {random.choice(endings)} 🎆"
-        logger.info("🎰 [EASTER EGG] Compte-à-rebours absurde activé !")
-
-    elif 0.05 <= roll < 0.06:  # 1% - Une seule lettre répétée
-        letters = ["A", "E", "O", "Z", "X", "W", "Q"]
-        chosen = random.choice(letters)
-        count = random.randint(10, 30)
-        response_text = chosen * count + " 📢"
-        logger.info(f"🎰 [EASTER EGG] Lettre unique activée ! ({chosen} x{count})")
+    elif roll < 0.05:  # 1.5% - Suffixe daedrique
+        words = ["Wabbajack", "Fromage", "Chaos", "Mania", "Démence", "Jyggalag"]
+        logger.info("🎰 [EASTER EGG] Suffixe daedrique !")
+        return f"{response_text} {random.choice(words)}. 🧀"
 
     return response_text
 

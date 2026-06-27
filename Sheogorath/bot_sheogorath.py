@@ -373,7 +373,6 @@ except Exception as e: logger.warning(f"⚠️ [INIT] Mistral indisponible : {e}
 
 # EVENTS
 # ACTIVITY LOOP
-current_sheo_activity = "Compter ses dents"
 current_mood = "neutral"
 current_system_prompt = sheo_data.MOOD_PROMPTS.get("neutral", sheo_data.PERSONALITY_BASE)
 
@@ -1977,11 +1976,17 @@ async def on_message(message):
     elif "Champion" in user_rank or "Demi-Prince" in user_rank:
         system_instruction += "NOTE: C'est un CHAMPION. Montre un peu de respect (ou une jalousie amusée).\n"
     
-    system_instruction += f"[ACTIVITÉ EN COURS] : En ce moment même, tu es occupé à : '{current_activity_text}'. Si on te demande ce que tu fais, dis-le !\n"
-    
-    # Random Obsession Injection (Chaos Factor)
-    current_obsession = random.choice(sheo_data.SHEO_OBSESSIONS)
-    system_instruction += f"[OBSESSION DU MOMENT] : {current_obsession}\n"
+    # [ACTIVITÉ] : simple flavor d'arrière-plan. On ne l'injecte qu'occasionnellement et
+    # JAMAIS face à une provocation/insulte — sinon Sheo monologue sur son activité au lieu
+    # de claquer une répartie sur ce que le mortel vient de dire.
+    _is_provoked = get_insult_severity(user_message.lower()) > 0
+    if not _is_provoked and random.random() < 0.25:
+        system_instruction += f"[ACTIVITÉ EN COURS] : En ce moment même, tu es occupé à : '{current_activity_text}'. Si on te demande ce que tu fais, dis-le !\n"
+
+    # Random Obsession Injection (Chaos Factor) — coupée aussi sur provocation
+    if not _is_provoked:
+        current_obsession = random.choice(sheo_data.SHEO_OBSESSIONS)
+        system_instruction += f"[OBSESSION DU MOMENT] : {current_obsession}\n"
     
     if is_proactive:
         system_instruction += "NOTE: Tu interviens sans être appelé. Sois surprenant et chaotique, mais pertinent par rapport à la discussion en cours.\n"
@@ -2054,8 +2059,9 @@ async def on_message(message):
             continue
         transcript += f"{hist_msg.author.name} ({hist_msg.author.mention}): {hist_msg.content}\n"
 
-    # INJECTION ACTIVITÉ (STATUS)
-    transcript += f"\n[TON ACTIVITÉ ACTUELLE (STATUS DISCORD)] : Tu es en train de : '{current_sheo_activity}'."
+    # NB : l'activité est déjà injectée (occasionnellement) dans system_instruction.
+    # On ne la ré-injecte PAS ici (l'ancien `current_sheo_activity` était gelé sur
+    # « Compter ses dents » → Sheo comptait au lieu de répliquer).
 
     # Inject Active Mortals List
     if active_mortals:
