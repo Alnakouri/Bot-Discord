@@ -11,7 +11,11 @@ _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
-from shared.twitch.sanitize import strip_stage_directions, SanitizeMixin
+from shared.twitch.sanitize import (
+    strip_stage_directions,
+    strip_meta_narration,
+    SanitizeMixin,
+)
 
 
 class _Host(SanitizeMixin):
@@ -50,6 +54,45 @@ class TestStripStageDirections(unittest.TestCase):
         self.assertEqual(
             strip_stage_directions("Aucune didascalie ici."),
             "Aucune didascalie ici.",
+        )
+
+
+class TestStripMetaNarration(unittest.TestCase):
+    def test_leading_user_analysis_removed(self):
+        # Fuite de raisonnement réelle observée en prod (Sheogorath).
+        self.assertEqual(
+            strip_meta_narration(
+                "L'utilisateur semble obsédé par le mot, qu'il répète. "
+                "...Tu... comptes encore ce mot ?"
+            ),
+            "...Tu... comptes encore ce mot ?",
+        )
+
+    def test_english_user_analysis_removed(self):
+        self.assertEqual(
+            strip_meta_narration("The user keeps repeating it. FROMAGE !"),
+            "FROMAGE !",
+        )
+
+    def test_multiple_leading_meta_sentences_removed(self):
+        self.assertEqual(
+            strip_meta_narration("L'utilisateur insiste. Le joueur teste. Fromage !"),
+            "Fromage !",
+        )
+
+    def test_verb_utilises_not_matched(self):
+        # « utilises » (verbe) ne doit PAS être confondu avec « utilisateur ».
+        msg = "Tu utilises encore ce mot, mortel ? Fromage !"
+        self.assertEqual(strip_meta_narration(msg), msg)
+
+    def test_in_character_message_unchanged(self):
+        msg = "Mmh ! Le mot magique ! +1 Faveur ! (15)"
+        self.assertEqual(strip_meta_narration(msg), msg)
+
+    def test_wired_into_strip_stage_directions(self):
+        self.assertEqual(
+            strip_stage_directions("L'utilisateur semble perdu. *il rit* Bienvenue !"),
+            "Bienvenue !",
         )
 
 

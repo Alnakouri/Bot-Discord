@@ -2,10 +2,34 @@
 import re
 import unicodedata
 
+# Méta-narration hors-personnage : le LLM décrit l'utilisateur (ou la scène) à la
+# 3e personne au lieu de jouer le rôle (ex. « L'utilisateur semble obsédé par… »).
+# Les bots parlent TOUJOURS à la 2e personne (tu/toi/vous) ; une phrase d'analyse
+# clinique en tête de réponse est une fuite de raisonnement, jamais du dialogue.
+_META_NARRATION_LEAD = re.compile(
+    r"^\s*(?:l['’]utilisateur|l['’]user|l['’]interlocuteur|l['’]individu|"
+    r"le joueur|le membre|le sujet|the user)\b[^.!?…\n]*[.!?…\n]+\s*",
+    re.IGNORECASE,
+)
+
+
+def strip_meta_narration(text: str) -> str:
+    """Retire les phrases d'analyse hors-personnage en tête de réponse (le LLM qui
+    narre le comportement de l'utilisateur à la 3e personne). Boucle pour absorber
+    plusieurs phrases de préambule consécutives."""
+    previous = None
+    while previous != text:
+        previous = text
+        text = _META_NARRATION_LEAD.sub("", text, count=1)
+    return text.strip()
+
+
 def strip_stage_directions(text: str) -> str:
     """Retire les didascalies de roleplay (*il se redresse...*) tout en gardant
     l'emphase (*panache* → panache). Les marqueurs `*` ne sont de toute façon
-    pas rendus par Twitch."""
+    pas rendus par Twitch. Retire aussi la méta-narration hors-personnage."""
+    # 0. Méta-narration hors-personnage en tête ("L'utilisateur semble...")
+    text = strip_meta_narration(text)
     # 1. Didascalie en tête de message : "*Il se redresse...* Ah..."
     text = re.sub(r"^\s*\*[^*]+\*\s*", "", text)
     # 2. Didascalie multi-mots juste après une fin de phrase : "... ! *rit doucement* Et..."
