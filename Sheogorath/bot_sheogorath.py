@@ -34,7 +34,18 @@ except ImportError:
     def build_meme_consigne(*a, **k): return ""
 
 import collections
+import time
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
+
+# --- Continuité conversationnelle ---
+# Dernier mortel à qui Sheo a répondu, par salon. Évite que Sheo décroche dès qu'on ne le
+# re-mentionne pas en plein échange (ex. il répond, tu enchaînes « tu es bisard » → il doit
+# poursuivre le fil, pas rester muet).
+last_exchange = {}                 # {channel_id: (user_id, timestamp)}
+CONTINUATION_WINDOW = 90.0         # s — au-delà, l'échange est considéré clos
+CONTINUATION_PROBA = 0.70          # dans la fenêtre, Sheo poursuit ~7 fois sur 10 (grain de folie)
+# Noms des AUTRES bots : si le mortel s'adresse à eux, Sheo ne s'incruste pas via la continuité.
+OTHER_BOT_NAMES = ("m'aiq", "maiq", "onizuka", "eikichi", "alfred", "johnny", "silverhand", "malena", "rigurt")
 
 try:
     from shared.bot_features import is_feature_enabled
@@ -1889,10 +1900,22 @@ async def on_message(message):
     
     is_long_message = len(message.content.split()) > 10
 
+    # Continuité : le mortel poursuit un échange récent avec Sheo (même salon, même auteur,
+    # fenêtre courte) sans le re-mentionner → on garde le fil. Sauf s'il s'adresse clairement
+    # à un autre bot (anti-incrustation). Probabiliste (~70%) pour garder le grain d'imprévisibilité.
+    _prev = last_exchange.get(message.channel.id)
+    is_continuation = bool(
+        _prev
+        and _prev[0] == message.author.id
+        and (time.time() - _prev[1]) <= CONTINUATION_WINDOW
+        and not any(n in msg_lower for n in OTHER_BOT_NAMES)
+        and random.random() < CONTINUATION_PROBA
+    )
+
     # DECISION MATRIX
     should_respond = False
     response_mode = "LLM" # Default
-    
+
     # Check for name specifically
     has_name = any(name in msg_lower for name in ["sheogorath", "sheo", "prince", "dieu fou", "madgod"])
 
@@ -1902,6 +1925,10 @@ async def on_message(message):
     elif has_name and not is_duel:
         should_respond = True
         logger.info(f"👑 [TRIGGER] Mon nom a été prononcé ! ('{msg_lower[:30]}...')")
+    elif is_continuation and not is_duel:
+        should_respond = True
+        response_mode = "LLM"
+        logger.info(f"💬 [TRIGGER] Continuité de conversation (échange récent, sans re-mention)")
     elif has_image and not message.author.bot and (has_name or has_priority_keyword or has_keyword):
         should_respond = True
         logger.info(f"📷 [TRIGGER] Image + Name/Keyword detected -> 100% Response")
@@ -1927,6 +1954,10 @@ async def on_message(message):
 
     if not should_respond:
         return
+
+    # Mémorise l'interlocuteur courant → permet de poursuivre le fil au prochain message
+    # sans exiger une nouvelle mention (continuité conversationnelle).
+    last_exchange[message.channel.id] = (message.author.id, time.time())
 
     # HYBRID EXECUTION
     if response_mode == "HYBRID" and not is_proactive and not has_image: # Always LLM for images
