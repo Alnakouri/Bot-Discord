@@ -2011,6 +2011,22 @@ async def on_message(message):
     # JAMAIS face à une provocation/insulte — sinon Sheo monologue sur son activité au lieu
     # de claquer une répartie sur ce que le mortel vient de dire.
     _is_provoked = get_insult_severity(user_message.lower()) > 0
+
+    # TON PAR DÉFAUT (fidélité au personnage) : sans provocation, Sheogorath n'est PAS un brute
+    # qui menace de mort à chaque message. Il est d'abord le Prince de la Folie : joueur, exalté,
+    # curieux, théâtral (Mania) — ou inquiétant et énigmatique (Dementia) — mais il ne sort pas
+    # les menaces de torture/dents pour un message anodin. Les vraies menaces = pour un vrai
+    # manque de respect (géré par la branche provoquée du prompt).
+    if not _is_provoked:
+        system_instruction += (
+            "[TON — PAS DE MENACE GRATUITE] : Le mortel ne t'a NI insulté NI manqué de respect. "
+            "Reste pleinement Sheogorath — joueur, exalté, curieux et imprévisible (Mania), ou "
+            "inquiétant et énigmatique (Dementia) — mais NE le menace PAS de mort, de torture ou "
+            "de lui arracher les dents pour un message aussi anodin. Rebondis VRAIMENT sur ce qu'il "
+            "vient de dire, avec malice et absurde. Les menaces glaciales sont réservées au manque "
+            "de respect réel.\n"
+        )
+
     if not _is_provoked and random.random() < 0.25:
         system_instruction += f"[ACTIVITÉ EN COURS] : En ce moment même, tu es occupé à : '{current_activity_text}'. Si on te demande ce que tu fais, dis-le !\n"
 
