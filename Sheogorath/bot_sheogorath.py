@@ -2026,6 +2026,18 @@ async def on_message(message):
             "vient de dire, avec malice et absurde. Les menaces glaciales sont réservées au manque "
             "de respect réel.\n"
         )
+        # ANTI-ÉCHO (tic de continuité) : hors provocation, Sheo bouclait sur un gabarit
+        # répétitif — reprendre le DERNIER MOT du mortel en MAJUSCULES suivi de « ?! » puis
+        # « HAHA ! Tu as osé... » (ex. « Un VER ?! MOI ?! », « ...ET ?! »). Ce réflexe vient des
+        # templates de comeback (réservés aux VRAIES insultes) que le LLM généralise à tort.
+        system_instruction += (
+            "[ANTI-ÉCHO — OUVERTURE VARIÉE] : NE commence PAS ta réplique en recrachant le dernier "
+            "mot du mortel en MAJUSCULES suivi de « ?! » (interdits : « Un VER ?! », « ...ET ?! », "
+            "« MOI ?! »). N'utilise PAS la formule « Tu as osé... ». Ce gabarit « [MOT] ?! » est "
+            "RÉSERVÉ aux vraies insultes — ici il n'y en a pas. Ouvre AUTREMENT à chaque fois : "
+            "enchaîne sur l'IDÉE du mortel, questionne-le, dévie vers l'absurde, surprends — "
+            "JAMAIS son dernier mot répété en majuscules.\n"
+        )
 
     if not _is_provoked and random.random() < 0.25:
         system_instruction += f"[ACTIVITÉ EN COURS] : En ce moment même, tu es occupé à : '{current_activity_text}'. Si on te demande ce que tu fais, dis-le !\n"
