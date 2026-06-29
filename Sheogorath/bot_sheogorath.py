@@ -2026,18 +2026,21 @@ async def on_message(message):
             "vient de dire, avec malice et absurde. Les menaces glaciales sont réservées au manque "
             "de respect réel.\n"
         )
-        # ANTI-ÉCHO (tic de continuité) : hors provocation, Sheo bouclait sur un gabarit
-        # répétitif — reprendre le DERNIER MOT du mortel en MAJUSCULES suivi de « ?! » puis
-        # « HAHA ! Tu as osé... » (ex. « Un VER ?! MOI ?! », « ...ET ?! »). Ce réflexe vient des
-        # templates de comeback (réservés aux VRAIES insultes) que le LLM généralise à tort.
-        system_instruction += (
-            "[ANTI-ÉCHO — OUVERTURE VARIÉE] : NE commence PAS ta réplique en recrachant le dernier "
-            "mot du mortel en MAJUSCULES suivi de « ?! » (interdits : « Un VER ?! », « ...ET ?! », "
-            "« MOI ?! »). N'utilise PAS la formule « Tu as osé... ». Ce gabarit « [MOT] ?! » est "
-            "RÉSERVÉ aux vraies insultes — ici il n'y en a pas. Ouvre AUTREMENT à chaque fois : "
-            "enchaîne sur l'IDÉE du mortel, questionne-le, dévie vers l'absurde, surprends — "
-            "JAMAIS son dernier mot répété en majuscules.\n"
-        )
+
+    # ANTI-ÉCHO (tic récurrent — TOUTES situations, provoqué OU NON). Sheo ouvrait
+    # mécaniquement en recrachant le dernier mot du mortel en MAJUSCULES + « ?! » + « HAHA !
+    # Tu as osé... » (« Un CODE wifi ?! », « Un VER ?! », « Johnny ?! »). C'est répétitif même
+    # sur une vraie pique. On bannit le GABARIT D'OUVERTURE, pas le droit de retourner l'argument.
+    # NB : ce bloc N'EST PLUS gaté sur not _is_provoked — une taquinerie (« chiant ») compte
+    # comme provocation légère et le tic ressortait justement là.
+    system_instruction += (
+        "[ANTI-ÉCHO — VARIE TON OUVERTURE] : NE commence JAMAIS ta réplique en répétant le dernier "
+        "mot du mortel en MAJUSCULES suivi de « ?! » (gabarit STRICTEMENT INTERDIT : « Un CODE wifi ?! », "
+        "« Un VER ?! », « MOI ?! », « Johnny ?! »). N'enchaîne PAS avec « HAHA ! Tu as osé... ». Tu PEUX "
+        "retourner son propos contre lui, mais avec une OUVERTURE DIFFÉRENTE à chaque fois : attaque par "
+        "une image saugrenue, une question piège, un constat absurde, un changement de sujet brutal. "
+        "Surprends — ne récite pas ton tic.\n"
+    )
 
     if not _is_provoked and random.random() < 0.25:
         system_instruction += f"[ACTIVITÉ EN COURS] : En ce moment même, tu es occupé à : '{current_activity_text}'. Si on te demande ce que tu fais, dis-le !\n"
