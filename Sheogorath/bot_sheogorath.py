@@ -2132,7 +2132,11 @@ async def on_message(message):
     system_instruction += f"\n\n[MENTIONS DISCORD] : Quand tu mentionnes un utilisateur, utilise TOUJOURS le format Discord '<@ID>' que tu vois dans le transcript (ex: <@123456789>). Ne mets JAMAIS le pseudo entre chevrons comme '<pseudo>' ou '@pseudo'. L'utilisateur actuel est <@{message.author.id}>."
 
     # ═══ SMART ROUTER — Classification du message ═══
-    routing = classify_request(user_message, message.attachments)
+    # Sheo est-il DIRECTEMENT interpellé ? (mention / reply / nom prononcé / continuité)
+    # Si oui et que c'est du banter court, le routeur vise la cascade REPARTEE (Grok) pour
+    # une répartie plus mordante. Sinon, comportement inchangé (cascade TEXT/REASONING).
+    _addressed = bool(is_mentioned or is_reply or has_name or is_continuation)
+    routing = classify_request(user_message, message.attachments, addressed=_addressed)
     
     # Télécharger le média si nécessaire (image ou audio)
     media_data = None

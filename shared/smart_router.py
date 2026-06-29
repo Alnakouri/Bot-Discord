@@ -57,14 +57,19 @@ class RequestType:
 # CLASSIFICATION
 # ═══════════════════════════════════════════
 
-def classify_request(message_text, attachments=None):
+def classify_request(message_text, attachments=None, *, addressed: bool = False):
     """
     Classifie un message Discord pour déterminer le modèle optimal.
-    
+
     Args:
         message_text: Le texte du message
         attachments: Liste des pièces jointes Discord (message.attachments)
-    
+        addressed: True si le bot est DIRECTEMENT interpellé (mention / reply / nom
+            prononcé / continuité de conversation). Défaut False → comportement d'origine
+            inchangé pour tout appelant qui ne passe pas ce signal (rétro-compatible).
+            Quand True et que le message est du banter court (ni raisonnement, ni demande
+            d'info), on vise la cascade REPARTEE (Grok) pour une répartie plus mordante.
+
     Returns:
         dict avec type, model, reason, has_image, has_audio, 
         image_attachment, audio_attachment
@@ -130,8 +135,18 @@ def classify_request(message_text, attachments=None):
         result["reason"] = "🎭 Humour / Répartie → Grok (xAI)"
         logger.info(f"[ROUTER] {result['reason']}")
         return result
-    
-    # 3. Texte simple → cascade économique
+
+    # 3b. Banter ADRESSÉ : le bot est directement interpellé (mention/reply/nom/continuité)
+    # et ce n'est ni du raisonnement ni une demande d'info → on vise le meilleur modèle
+    # d'humour (cascade REPARTEE / Grok). Gardé sur `addressed` pour MAÎTRISER LE COÛT :
+    # Grok est payant, on ne l'engage que sur les vrais moments de répartie, pas sur tout.
+    if addressed and _is_banter(message_text):
+        result["type"] = RequestType.REPARTEE
+        result["reason"] = "🎭 Banter adressé → Grok (xAI)"
+        logger.info(f"[ROUTER] {result['reason']}")
+        return result
+
+    # 4. Texte simple → cascade économique
     logger.debug(f"[ROUTER] 💬 Texte simple → cascade Mistral/Groq/OpenRouter")
     return result
 
@@ -193,6 +208,51 @@ def _needs_humor(text):
 
     # Grok est réservé aux cas explicites de répartie/humour
     return has_keywords or is_expressive
+
+
+# Marqueurs d'une VRAIE demande d'info/aide → ce n'est PAS du banter, on laisse la
+# cascade TEXT/REASONING répondre sérieusement (et on évite de payer Grok pour ça).
+_INFO_REQUEST_PATTERNS = [
+    r"\bc'?est\s+quoi\b", r"\bc'?est\s+qui\b", r"\bqu'?est-?ce\b",
+    r"\baide(?:-moi)?\b", r"\btuto\b", r"\btutoriel\b", r"\bdonne-?moi\b",
+    r"\bliste\b", r"\bsource\b", r"\bdéfinis?\b", r"\bdéfinition\b",
+    r"\bhttps?://", r"\bwww\.",
+    # Interrogatifs d'une vraie question (réponse sérieuse attendue, pas une vanne).
+    r"\bcomment\b", r"\bcombien\b", r"\bquand\b", r"\bquels?\b", r"\bquelles?\b",
+]
+
+
+def _is_banter(text):
+    """
+    True si le message (adressé au bot) est un échange de RÉPARTIE court → on vise Grok.
+    False quand mieux vaut une réponse sérieuse (raisonnement / demande d'info / message long).
+
+    Conservateur par dessein : on ne bascule en répartie/Grok (payant) que pour le banter
+    court. Tout ce qui ressemble à une vraie question reste sur la cascade TEXT/REASONING.
+    """
+    if not text:
+        # Ping nu / "(le mortel te regarde fixement)" : c'est un moment d'interaction
+        # persona pure → répartie bienvenue.
+        return True
+
+    text_lower = text.lower()
+
+    # Demande de raisonnement : ici on est PLUS strict que _needs_reasoning (qui exige 2
+    # mots-clés) — un SEUL marqueur (« explique », « pourquoi », « comment fonctionne »…)
+    # suffit à dire « ce n'est pas une vanne » et à laisser une réponse sérieuse.
+    if any(re.search(p, text_lower) for p in ALL_REASONING_PATTERNS):
+        return False
+
+    # Demande d'info explicite (incl. interrogatifs) → réponse sérieuse, pas Grok.
+    if any(re.search(p, text_lower) for p in _INFO_REQUEST_PATTERNS):
+        return False
+
+    # Message long = probablement une vraie requête, pas une vanne.
+    if len(text) > 200:
+        return False
+
+    # Sinon : banter court adressé → répartie.
+    return True
 
 
 def _needs_reasoning(text):

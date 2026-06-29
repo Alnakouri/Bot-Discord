@@ -79,6 +79,39 @@ class TestClassifyRequest(unittest.TestCase):
         self.assertEqual(r["type"], RequestType.AUDIO)
 
 
+class TestAddressedBanter(unittest.TestCase):
+    """Phase 1 répartie : banter ADRESSÉ → cascade REPARTEE (Grok), coût maîtrisé."""
+
+    def test_addressed_banter_triggers_repartee(self):
+        # Vanne courte sans mot-clé humour explicite : seulement si le bot est adressé.
+        r = classify_request("t'es lourd aujourd'hui", addressed=True)
+        self.assertEqual(r["type"], RequestType.REPARTEE)
+
+    def test_same_banter_not_addressed_stays_text(self):
+        # Rétro-compat : défaut addressed=False → comportement d'origine (TEXT).
+        r = classify_request("t'es lourd aujourd'hui")
+        self.assertEqual(r["type"], RequestType.TEXT)
+        r2 = classify_request("t'es lourd aujourd'hui", addressed=False)
+        self.assertEqual(r2["type"], RequestType.TEXT)
+
+    def test_empty_ping_addressed_is_repartee(self):
+        # Ping nu (le mortel fixe le bot) = interaction persona pure → répartie.
+        self.assertEqual(classify_request("", addressed=True)["type"], RequestType.REPARTEE)
+
+    def test_addressed_real_question_stays_serious(self):
+        # Une vraie question adressée NE doit PAS partir sur Grok (coût + sérieux).
+        for q in ("comment fonctionne un moteur ?", "comment tu fais ça ?",
+                  "c'est quoi le roquefort ?", "explique-moi la folie",
+                  "pourquoi t'es là ?"):
+            r = classify_request(q, addressed=True)
+            self.assertNotEqual(r["type"], RequestType.REPARTEE, f"{q!r} ne doit pas être REPARTEE")
+
+    def test_addressed_long_message_stays_text(self):
+        # Message long adressé = probablement une vraie requête, pas une vanne.
+        r = classify_request("blabla " * 40, addressed=True)
+        self.assertEqual(r["type"], RequestType.TEXT)
+
+
 class TestModelCascade(unittest.TestCase):
     def test_each_type_returns_nonempty_tuples(self):
         for t in (RequestType.TEXT, RequestType.REPARTEE, RequestType.IMAGE,
