@@ -1580,7 +1580,8 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
                 chat = openrouter_client.chat.completions.create(
                     model="x-ai/grok-4.20",
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=1.0
+                    temperature=1.0,
+                    max_tokens=300
                 )
                 fake_text = chat.choices[0].message.content
             except Exception: pass
@@ -1788,7 +1789,8 @@ async def on_message(message):
                 try:
                     chat = openrouter_client.chat.completions.create(
                         model="x-ai/grok-4.20",
-                        messages=[{"role": "user", "content": full_prompt}]
+                        messages=[{"role": "user", "content": full_prompt}],
+                        max_tokens=300
                     )
                     fake_text = chat.choices[0].message.content
                 except Exception: pass
@@ -1830,7 +1832,8 @@ async def on_message(message):
                     chat = openrouter_client.chat.completions.create(
                         model="x-ai/grok-4.20",
                         messages=[{"role": "user", "content": prompt}],
-                        temperature=1.0
+                        temperature=1.0,
+                        max_tokens=300
                     )
                     fake_text = chat.choices[0].message.content
                 except Exception: pass
@@ -2259,9 +2262,10 @@ async def on_message(message):
                 msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
                 
                 chat = openrouter_client.chat.completions.create(
-                    model=model_name, 
-                    messages=msgs, 
+                    model=model_name,
+                    messages=msgs,
                     temperature=1.0,
+                    max_tokens=300,
                     tools=OPENAI_TOOLS_DEFINITION,
                     tool_choice="auto"
                 )
@@ -2295,7 +2299,7 @@ async def on_message(message):
                         })
                     
                     # Seconde passe
-                    chat = openrouter_client.chat.completions.create(model=model_name, messages=msgs)
+                    chat = openrouter_client.chat.completions.create(model=model_name, messages=msgs, max_tokens=300)
                     response_text = chat.choices[0].message.content
                 else:
                     response_text = resp_msg.content

@@ -1477,7 +1477,7 @@ async def on_message(message):
                     msgs.append({"role": "user", "content": user_message})
                 
                 chat = openrouter_client.chat.completions.create(
-                    model=model_name, messages=msgs, temperature=0.8,
+                    model=model_name, messages=msgs, temperature=0.8, max_tokens=300,
                     extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Maiq Bot"}
                 )
                 response_text = chat.choices[0].message.content
