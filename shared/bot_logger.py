@@ -66,26 +66,36 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
         datefmt='%H:%M:%S'
     )
     
-    # Handler fichier (rotation : 5 MB max, 3 backups)
-    file_handler = RotatingFileHandler(
-        log_filename, encoding='utf-8',
-        maxBytes=5 * 1024 * 1024,  # 5 MB
-        backupCount=3
-    )
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(formatter)
-    
-    # Handler console
+    # Handler console (toujours dispo : c'est le filet de sécurité capturé par
+    # `docker logs`, donc on l'ajoute en premier et sans condition)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-    
-    # Handler JSON Lines pour le dashboard
+    logger.addHandler(console_handler)
+
+    # Handler fichier (rotation : 5 MB max, 3 backups).
+    # IMPORTANT : ne JAMAIS faire planter le bot si le fichier de log n'est pas
+    # ouvrable (ex. bind-mount Docker Desktop Windows où les fichiers existants
+    # apparaissent root:644 et l'utilisateur non-root ne peut pas les rouvrir).
+    # On dégrade proprement : console seule au lieu de crasher au démarrage.
+    try:
+        file_handler = RotatingFileHandler(
+            log_filename, encoding='utf-8',
+            maxBytes=5 * 1024 * 1024,  # 5 MB
+            backupCount=3
+        )
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except OSError as e:
+        logger.warning(
+            f"⚠️ [LOGGER] Fichier de log '{log_filename}' non ouvrable "
+            f"({e}). Journalisation fichier désactivée, console seule."
+        )
+
+    # Handler JSON Lines pour le dashboard (l'emit est déjà tolérant aux erreurs)
     jsonl_handler = JSONLHandler(log_dir, bot_name)
     jsonl_handler.setLevel(logging.INFO)
-    
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
     logger.addHandler(jsonl_handler)
     
     logger.info(f"=== {bot_name.upper()} STARTED ===")
