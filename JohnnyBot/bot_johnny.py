@@ -316,14 +316,10 @@ async def on_ready():
     logger.info("🎯 Johnny est prêt à faire cramer la ville !")
     logger.info("=" * 60)
     
-    # Status
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.listening,
-            name="Chippin' In | 🎸 Samurai"
-        )
-    )
-    
+    # Statut tournant (1er tick immédiat, puis toutes les 30 min)
+    if not status_loop_johnny.is_running():
+        status_loop_johnny.start()
+
     # Tâches périodiques
     if DATABASE_AVAILABLE:
         daily_birthday_check.start()
@@ -540,6 +536,35 @@ async def daily_bio_loop_johnny():
 
 @daily_bio_loop_johnny.before_loop
 async def before_daily_bio_johnny():
+    await bot.wait_until_ready()
+
+
+# STATUT TOURNANT (présence Discord)
+@tasks.loop(minutes=30)
+async def status_loop_johnny():
+    activities = [
+        "Chippin' In | 🎸 Samurai",
+        "Never Fade Away | 🎸 Samurai",
+        "A Like Supreme | 🎸 Samurai",
+        "The Ballad of Buck Ravers | 🎸 Samurai",
+        "Black Dog | 🎸 Samurai",
+        "Archangel | 🎸 Samurai",
+        "Night City cramer 🔥",
+        "les corpos crever",
+        "Arasaka tomber",
+        "un vieux vinyle dans l'AV",
+        "la révolution gronder",
+        "le silence avant l'émeute",
+    ]
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.listening,
+            name=random.choice(activities)
+        )
+    )
+
+@status_loop_johnny.before_loop
+async def before_status_johnny():
     await bot.wait_until_ready()
 
 

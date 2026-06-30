@@ -298,6 +298,8 @@ async def on_ready():
         birthday_loop_malena.start()
     if daily_bio and not daily_bio_loop_malena.is_running():
         daily_bio_loop_malena.start()
+    if not status_loop_malena.is_running():
+        status_loop_malena.start()
 
         
     global twitch_announcer
@@ -688,6 +690,32 @@ async def daily_bio_loop_malena():
 
 @daily_bio_loop_malena.before_loop
 async def before_daily_bio_malena():
+    await bot.wait_until_ready()
+
+# STATUT TOURNANT (présence Discord)
+@tasks.loop(minutes=30)
+async def status_loop_malena():
+    activities = [
+        "le flamenco gronder 💃",
+        "les esprits murmurer",
+        "ton destin chuchoter",
+        "une guitare gitane 🎸",
+        "le vent de l'Andalousie",
+        "les cartes parler 🔮",
+        "la lune se lever",
+        "une vieille complainte rom",
+        "le feu crépiter au campement",
+        "les secrets du voyage",
+    ]
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.listening,
+            name=random.choice(activities)
+        )
+    )
+
+@status_loop_malena.before_loop
+async def before_status_malena():
     await bot.wait_until_ready()
 
 # ÉVÉNEMENTS SERVEUR — BIENVENUE ET DÉPART

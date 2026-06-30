@@ -242,14 +242,10 @@ async def on_ready():
     logger.info("🎯 Onizuka est prêt à enseigner !")
     logger.info("=" * 60)
     
-    # Status
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="les élèves | 🏍️ Kawasaki Z-II"
-        )
-    )
-    
+    # Statut tournant (1er tick immédiat, puis toutes les 30 min)
+    if not status_loop_onizuka.is_running():
+        status_loop_onizuka.start()
+
     # Tâches périodiques
     if DATABASE_AVAILABLE:
         daily_birthday_check.start()
@@ -313,6 +309,32 @@ async def daily_bio_loop_onizuka():
 
 @daily_bio_loop_onizuka.before_loop
 async def before_daily_bio_onizuka():
+    await bot.wait_until_ready()
+
+# STATUT TOURNANT (présence Discord)
+@tasks.loop(minutes=30)
+async def status_loop_onizuka():
+    activities = [
+        "les élèves | 🏍️ Kawasaki Z-II",
+        "la classe 3-4 grandir",
+        "Fuyutsuki-sensei ❤️",
+        "un combat de rue",
+        "Tokyo depuis son toit",
+        "des films d'arts martiaux",
+        "le Onibaku rouler 🏍️",
+        "ses plans foireux marcher",
+        "la jeunesse en détresse",
+        "Uchiyamada péter un câble 😈",
+    ]
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name=random.choice(activities)
+        )
+    )
+
+@status_loop_onizuka.before_loop
+async def before_status_onizuka():
     await bot.wait_until_ready()
 
 # COMMANDES SPÉCIALES ONIZUKA
