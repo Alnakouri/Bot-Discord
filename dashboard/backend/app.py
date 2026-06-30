@@ -250,7 +250,7 @@ async def log_stream(websocket: WebSocket, bot: str = None):
     finally:
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
 
 # --- ERRORS ---

@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+# La collecte est restreinte au dossier tests/ : les 9 suites versionnées y
+# vivent toutes. Sans cette borne, pytest balaie tout l'arbre et ramasse des
+# scripts de diagnostic locaux (non versionnés) nommés test_*.py
+# (ex. MalenaBot/test_api.py, shared/test_ollama_vision.py), ce qui faisait
+# planter la collecte / échouer la suite alors que le code est sain.
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"

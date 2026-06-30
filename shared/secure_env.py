@@ -43,7 +43,7 @@ def load_secure_env(bot_path: Path):
                     try:
                         fernet = Fernet(key)
                         break
-                    except:
+                    except Exception:
                         continue
         
         if not fernet:
