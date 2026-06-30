@@ -94,7 +94,7 @@ N'ajoute aucune introduction, aucune conclusion, pas de texte de présentation. 
             logger.info("Juge LLM : tentative avec Gemini...")
             client = get_safe_genai_client(api_key=gemini_key, http_options={'api_version': 'v1beta'})
             resp = client.models.generate_content(
-                model='gemini-2.0-flash',
+                model='gemini-2.5-flash',
                 contents=prompt
             )
             if resp.text:

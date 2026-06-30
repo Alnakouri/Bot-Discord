@@ -94,7 +94,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             is_voice = getattr(att, 'is_voice_message', False) or (filename.endswith('.ogg') and "audio" in ct)
             if is_voice:
                 result["type"] = RequestType.AUDIO
-                result["model"] = "gemini-2.0-flash"
+                result["model"] = "gemini-2.5-flash"
                 result["reason"] = "🎤 Message vocal Discord → Gemini Audio"
                 result["has_audio"] = True
                 result["audio_attachment"] = att
@@ -104,7 +104,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             # Image détectée
             if any(ct.startswith(mime) for mime in IMAGE_MIME_TYPES):
                 result["type"] = RequestType.IMAGE
-                result["model"] = "gemini-2.0-flash"
+                result["model"] = "gemini-2.5-flash"
                 result["reason"] = f"🖼️ Image ({ct}) → Gemini Vision"
                 result["has_image"] = True
                 result["image_attachment"] = att
@@ -114,7 +114,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             # Audio standard détecté
             if any(ct.startswith(mime) for mime in AUDIO_MIME_TYPES):
                 result["type"] = RequestType.AUDIO
-                result["model"] = "gemini-2.0-flash"
+                result["model"] = "gemini-2.5-flash"
                 result["reason"] = f"🎵 Fichier Audio ({ct}) → Gemini Audio"
                 result["has_audio"] = True
                 result["audio_attachment"] = att
@@ -124,7 +124,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
     # 2. Vérifier si raisonnement complexe requis
     if _needs_reasoning(message_text):
         result["type"] = RequestType.REASONING
-        result["model"] = "gemini-2.0-pro-exp"
+        result["model"] = "gemini-2.5-pro"
         result["reason"] = "🧠 Raisonnement complexe → Gemini Pro"
         logger.info(f"[ROUTER] {result['reason']}")
         return result
@@ -157,16 +157,18 @@ def get_model_cascade(routing_type):
     """
     if routing_type == RequestType.REASONING:
         return [
-            ("gemini", "gemini-2.0-pro-exp"),
-            ("gemini", "gemini-2.0-flash"),
+            ("gemini", "gemini-2.5-pro"),
+            ("gemini", "gemini-2.5-flash"),
         ]
-    
+
     if routing_type in (RequestType.IMAGE, RequestType.AUDIO):
+        # Vision/audio via Gemini direct (clé propre) + Ollama local.
+        # Ancien échelon OpenRouter google/gemini-2.0-flash-lite-001 retiré
+        # (payant → 402 sur compte vide, et Gemini direct couvre déjà gratis).
         return [
-            ("gemini", "gemini-2.0-flash"),
-            ("gemini", "gemini-2.0-flash-lite"),
+            ("gemini", "gemini-2.5-flash"),
+            ("gemini", "gemini-2.5-flash-lite"),
             ("ollama", "moondream"),
-            ("openrouter", "google/gemini-2.0-flash-lite-001"),
         ]
     
     if routing_type == RequestType.REPARTEE:
@@ -185,7 +187,7 @@ def get_model_cascade(routing_type):
     return [
         ("mistral", "mistral-large-latest"),
         ("groq", "llama-3.3-70b-versatile"),
-        ("gemini", "gemini-2.0-flash-lite"),
+        ("gemini", "gemini-2.5-flash-lite"),
     ]
 
 

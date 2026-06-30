@@ -78,7 +78,7 @@ async def process_image(attachment, api_key: str, personality_prompt: str,
         client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
         
         response = client.models.generate_content(
-            model="gemini-2.0-flash", 
+            model="gemini-2.5-flash",
             contents=[
                 types.Content(role="user", parts=[
                     types.Part(text=f"SYSTEM: {personality_prompt}\n\n[VISION] {text_part} Réponds en restant dans ta personnalité."),
@@ -226,7 +226,7 @@ async def process_voice_message(attachment, api_key: str,
         client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
         
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Content(role="user", parts=[
                     types.Part(text=(

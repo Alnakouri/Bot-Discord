@@ -754,7 +754,7 @@ async def analyze_audio_with_gemini(wav_data, user_names=None):
         
         # Envoyer l'audio à Gemini
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Content(
                     role="user",

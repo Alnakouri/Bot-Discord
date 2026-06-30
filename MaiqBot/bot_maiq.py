@@ -535,7 +535,7 @@ async def publish_daily_rumor():
         if api_key:
             try:
                 client = get_safe_genai_client(api_key=api_key)
-                resp = client.models.generate_content(model='gemini-2.0-flash', contents=rumor_prompt)
+                resp = client.models.generate_content(model='gemini-2.5-flash', contents=rumor_prompt)
                 rumor_text = resp.text
             except Exception as e:
                 error_code = getattr(e, "code", getattr(e, "status_code", 0))
@@ -786,7 +786,7 @@ async def generate_and_post_riddle(target_channel):
                 try:
                     client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
                     resp = client.models.generate_content(
-                        model='gemini-2.0-flash', 
+                        model='gemini-2.5-flash', 
                         contents=prompt,
                         config=types.GenerateContentConfig(response_mime_type="application/json")
                     )
@@ -949,7 +949,7 @@ async def maiq_rumeur(ctx):
             try:
                 client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
                 resp = client.models.generate_content(
-                    model='gemini-2.0-flash', 
+                    model='gemini-2.5-flash', 
                     contents=prompt
                 )
                 response_text = resp.text

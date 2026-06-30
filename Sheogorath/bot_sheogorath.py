@@ -1023,7 +1023,7 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
         if api_key:
             try:
                 client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                resp = client.models.generate_content(model='gemini-2.0-flash', contents=rumor_prompt)
+                resp = client.models.generate_content(model='gemini-2.5-flash', contents=rumor_prompt)
                 full_response = resp.text
             except Exception as e:
                 logger.warning(f"⚠️ [RUMEUR SHEO] Gemini failed: {e}")
@@ -1251,7 +1251,7 @@ async def check_missed_mentions_sheo():
                         if api_key:
                             try:
                                 gclient = get_safe_genai_client(api_key=api_key)
-                                resp = gclient.models.generate_content(model='gemini-2.0-flash', contents=late_prompt)
+                                resp = gclient.models.generate_content(model='gemini-2.5-flash', contents=late_prompt)
                                 response_text = resp.text
                             except Exception as e:
                                 error_code = getattr(e, "code", getattr(e, "status_code", 0))
