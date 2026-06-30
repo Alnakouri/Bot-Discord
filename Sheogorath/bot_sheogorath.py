@@ -387,13 +387,19 @@ except Exception as e: logger.warning(f"⚠️ [INIT] Mistral indisponible : {e}
 current_mood = "neutral"
 current_system_prompt = sheo_data.MOOD_PROMPTS.get("neutral", sheo_data.PERSONALITY_BASE)
 
+def get_current_system_prompt():
+    prompt = current_system_prompt
+    if "{comebacks_placeholder}" in prompt:
+        prompt = prompt.replace("{comebacks_placeholder}", sheo_data.get_random_comebacks(5))
+    return prompt
+
 ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
 daily_bio = DiscordDailyBio(
     bot=bot, bot_id="sheogorath", bot_label="Sheogorath",
     personality_prompt=sheo_data.PERSONALITY_BASE,
     key_manager=key_manager, mistral_client=mistral_client,
     groq_client=groq_client, openrouter_client=openrouter_client,
-    system_prompt_provider=lambda: current_system_prompt,  # suit l'humeur du jour
+    system_prompt_provider=get_current_system_prompt,  # suit l'humeur du jour
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
@@ -757,7 +763,7 @@ async def on_ready():
             personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Sheogorath",
-            system_prompt_provider=lambda: current_system_prompt,
+            system_prompt_provider=get_current_system_prompt,
             profile_bio=profile_bio,
             enable_events=True,
             enable_interjections=True,
@@ -1216,7 +1222,7 @@ async def check_missed_mentions_sheo():
                         user_text = "(Le mortel t'a juste mentionné sans rien dire.)"
                     
                     late_prompt = (
-                        f"SYSTEM: {current_system_prompt}\n"
+                        f"SYSTEM: {get_current_system_prompt()}\n"
                         f"CONTEXTE: Tu viens de te rendre compte que {msg.author.name} t'a parlé il y a quelques minutes "
                         f"mais tu n'as PAS répondu (tu étais occupé à {current_activity_text}). "
                         f"Son message était : '{user_text}'.\n"
@@ -2000,7 +2006,7 @@ async def on_message(message):
     user_points = user_rep.get("points", 0)
 
     # UTILISATION DU PROMPT DYNAMIQUE SELON L'HUMEUR
-    system_instruction = f"{current_system_prompt}\n"
+    system_instruction = f"{get_current_system_prompt()}\n"
     system_instruction += f"[CONTEXTE UTILISATEUR] : Tu parles à {message.author.display_name}. Son Rang est : {user_rank} ({user_points} pts).\n"
     if "Paria" in user_rank:
         system_instruction += "NOTE: C'est un PARIA. Traite-le comme un ver de terre. Moque-toi de lui.\n"

@@ -1327,7 +1327,8 @@ async def on_message(message):
     MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
     
     # ═══ SMART ROUTER — Classification du message ═══
-    routing = classify_request(user_message, message.attachments)
+    _addressed = bool(is_mentioned or is_reply or is_name_mentioned)
+    routing = classify_request(user_message, message.attachments, addressed=_addressed)
     
     media_data = None
     mime_type = "image/jpeg"

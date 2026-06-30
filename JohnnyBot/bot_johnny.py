@@ -811,7 +811,8 @@ async def on_message(message):
         anti_repeat_prompt += "Ne répète PAS ces phrases ! Sois ORIGINAL !"
     
     # ═══ SMART ROUTER — Classification du message ═══
-    routing = classify_request(user_message, message.attachments)
+    _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
+    routing = classify_request(user_message, message.attachments, addressed=_addressed)
 
     # Johnny est un perso de pure répartie → Grok en priorité pour tout texte.
     # On garde le routage image/audio/raisonnement intact ; seul le TEXT simple

@@ -1484,7 +1484,8 @@ async def on_message(message):
         transcript += f"{hist_msg.author.name} ({hist_msg.author.mention}): {hist_msg.content}\n"
     
     # ═══ SMART ROUTER — Classification du message ═══
-    routing = classify_request(user_message, message.attachments)
+    _addressed = bool(is_mentioned or is_reply or is_name_mentioned)
+    routing = classify_request(user_message, message.attachments, addressed=_addressed)
     
     # Téléchargements Médias AVANCÉS
     mime_type = "image/jpeg"

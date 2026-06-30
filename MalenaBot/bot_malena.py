@@ -470,7 +470,8 @@ async def on_message(message):
                 # ══════════════════════════════════════════════════
 
                 # SMART ROUTER (Media & Intention)
-                routing = classify_request(user_msg, message.attachments)
+                _addressed = bool(is_mentioned or is_reply or is_name_mentioned or has_trigger_word)
+                routing = classify_request(user_msg, message.attachments, addressed=_addressed)
                 
                 media_data = None
                 mime_type = "image/jpeg"
