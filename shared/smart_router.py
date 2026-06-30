@@ -170,11 +170,12 @@ def get_model_cascade(routing_type):
         ]
     
     if routing_type == RequestType.REPARTEE:
+        # Cascade FREE-TIER optimisée répartie/humour, 3 fournisseurs distincts
+        # (pools de rate-limit indépendants → si l'un throttle, l'autre prend le relais) :
         return [
-            ("openrouter", "x-ai/grok-4.20"),  # Grok via OpenRouter (xAI direct abandonné : 0 crédit)
-            ("mistral", "mistral-large-latest"),
-            ("groq", "llama-3.3-70b-versatile"),
-            ("openrouter", "google/gemma-4-26b-a4b-it:free"),
+            ("openrouter", "x-ai/grok-4-fast:free"),  # Grok gratuit — le plus mordant/irrévérent pour la vanne
+            ("groq", "llama-3.3-70b-versatile"),       # Groq : ultra-rapide + bon banter (clé Groq, gratuit)
+            ("mistral", "mistral-large-latest"),       # repli fiable, prouvé en prod
         ]
     
     # TEXT par défaut

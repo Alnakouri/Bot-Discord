@@ -1008,7 +1008,7 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     if openrouter_client:
         try:
             chat = openrouter_client.chat.completions.create(
-                model="x-ai/grok-4.20",
+                model="x-ai/grok-4-fast:free",
                 messages=[{"role": "user", "content": rumor_prompt}],
                 temperature=1.0,
                 max_tokens=300
@@ -1578,7 +1578,7 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         if openrouter_client:
             try:
                 chat = openrouter_client.chat.completions.create(
-                    model="x-ai/grok-4.20",
+                    model="x-ai/grok-4-fast:free",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=1.0,
                     max_tokens=300
@@ -1788,7 +1788,7 @@ async def on_message(message):
             elif openrouter_client:
                 try:
                     chat = openrouter_client.chat.completions.create(
-                        model="x-ai/grok-4.20",
+                        model="x-ai/grok-4-fast:free",
                         messages=[{"role": "user", "content": full_prompt}],
                         max_tokens=300
                     )
@@ -1830,7 +1830,7 @@ async def on_message(message):
             if openrouter_client:
                 try:
                     chat = openrouter_client.chat.completions.create(
-                        model="x-ai/grok-4.20",
+                        model="x-ai/grok-4-fast:free",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=1.0,
                         max_tokens=300
