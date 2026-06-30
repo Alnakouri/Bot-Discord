@@ -178,11 +178,13 @@ def get_model_cascade(routing_type):
             ("mistral", "mistral-large-latest"),       # repli fiable, prouvé en prod
         ]
     
-    # TEXT par défaut
+    # TEXT par défaut — 3 fournisseurs à clé propre (Mistral/Groq/Gemini),
+    # aucune dépendance au crédit OpenRouter. (Ancien échelon
+    # google/gemma-4-26b-a4b-it:free retiré : ce slug :free n'existe pas
+    # sur OpenRouter → erreur systématique avant le repli Gemini.)
     return [
         ("mistral", "mistral-large-latest"),
         ("groq", "llama-3.3-70b-versatile"),
-        ("openrouter", "google/gemma-4-26b-a4b-it:free"),
         ("gemini", "gemini-2.0-flash-lite"),
     ]
 
