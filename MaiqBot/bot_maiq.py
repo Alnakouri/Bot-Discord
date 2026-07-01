@@ -25,7 +25,12 @@ from datetime import datetime
 import base64
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
-from game_views import setup_games
+try:
+    from shared.games import setup_games
+    from games_persona import PERSONA
+    GAMES_AVAILABLE = True
+except ImportError:
+    GAMES_AVAILABLE = False
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -288,7 +293,8 @@ async def on_ready():
         logger.info("[SLASH] Commandes slash initialisées")
 
     # INITIALISATION DES MINI-JEUX
-    setup_games(bot, logger)
+    if GAMES_AVAILABLE:
+        setup_games(bot, logger, PERSONA)
 
 async def check_missed_riddle_answers():
     """
