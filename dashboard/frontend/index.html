@@ -553,6 +553,14 @@
         <section id="twitch-listen" class="view">
             <div class="glass" style="padding: 2rem; margin-bottom: 2rem;">
                 <h2>🎙️ Écoute Live du Streamer (STT Continu)</h2>
+                <div style="background:rgba(88,101,242,0.12); border:1px solid rgba(88,101,242,0.35); border-radius:10px; padding:1rem 1.2rem; margin-bottom:1.5rem; font-size:0.88em; line-height:1.5;">
+                    <strong>💡 Comment ça marche</strong>
+                    <ul style="margin:0.5rem 0 0 0; padding-left:1.2rem; opacity:0.9;">
+                        <li>Le <strong>toggle « Activer l'écoute micro »</strong> connecte/déconnecte ce bot <strong>à chaud</strong> (pris en compte en ≤ 15 s, sans redémarrage).</li>
+                        <li>Un <strong>hub d'écoute</strong> (<code>run_stream_listener.py</code>) doit tourner sur le PC équipé du micro : c'est lui qui capte l'audio et transcrit. Sans lui, le bot réessaie en silence.</li>
+                        <li>Les réglages <strong>Mode / Calcul / Chunk</strong> concernent le hub : relance <code>run_stream_listener.py</code> pour les appliquer.</li>
+                    </ul>
+                </div>
                 <div class="form-group" style="margin-bottom: 2rem; max-width: 300px;">
                     <label for="listen-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">Sélectionner un Bot</label>
                     <select id="listen-bot-select" onchange="onListenBotSelect()" class="bot-selector-custom" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer;">
@@ -587,8 +595,11 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Périphérique (Micro)</label>
-                            <input type="text" id="listen-device" placeholder="Ex: default" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                            <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Calcul ASR</label>
+                            <select id="listen-device" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                <option value="cpu">CPU</option>
+                                <option value="cuda">GPU (CUDA)</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Taille du Chunk (ms)</label>

@@ -892,7 +892,7 @@ async function loadTwitchListen() {
         
         document.getElementById('listen-enabled').checked = listenCfg.enabled === true;
         document.getElementById('listen-mode').value = listenCfg.mode || "C";
-        document.getElementById('listen-device').value = listenCfg.device || "default";
+        document.getElementById('listen-device').value = (listenCfg.device === "cuda") ? "cuda" : "cpu";
         document.getElementById('listen-chunk').value = String(listenCfg.chunk_ms || 160);
         document.getElementById('listen-min-interval').value = listenCfg.min_interval || 45;
     } catch (e) {
