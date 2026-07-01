@@ -90,6 +90,12 @@ try:
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
     DATABASE_AVAILABLE = True
+    try:
+        from shared.games import setup_games
+        from games_persona import PERSONA
+        GAMES_AVAILABLE = True
+    except ImportError:
+        GAMES_AVAILABLE = False
 except ImportError as e:
     logger.warning(f"⚠️ [ALFRED] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
@@ -354,6 +360,14 @@ async def on_ready():
         setup_slash_commands(bot, "Alfred")
         await sync_slash_commands(bot)
         logger.info("[SLASH] Commandes slash initialisées")
+        
+    # INITIALISATION DES MINI-JEUX
+    if DATABASE_AVAILABLE and GAMES_AVAILABLE:
+        try:
+            setup_games(bot, logger, PERSONA)
+            logger.info("☕ [GAMES] Mini-jeux initialisés pour Alfred")
+        except Exception as e:
+            logger.error(f"[GAMES] Erreur d'initialisation des mini-jeux: {e}")
 
 # ACTIVITY LOOP
 current_alfred_activity = "Cirer l'argenterie"

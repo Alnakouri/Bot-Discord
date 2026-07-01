@@ -3,15 +3,16 @@ from discord.ext import commands
 import random
 import logging
 
-from game_engines import (
+from shared.games.engines import (
     TicTacToe, get_ttt_best_move,
     Connect4, get_c4_best_col,
     RPSGame,
     BlackjackGame,
     QuizGame
 )
+from shared.games.rewards import try_award, REWARD_VALUES
 
-logger = logging.getLogger("maiq_game_views")
+logger = logging.getLogger("shared_game_views")
 
 # Active games registry: user_id -> message_id
 active_games = {}
@@ -68,7 +69,7 @@ class DuelInviteView(discord.ui.View):
         unregister_players(self.challenger.id, self.opponent.id)
         embed = discord.Embed(
             title="Duel refusé",
-            description=f"{self.opponent.mention} a refusé de défier {self.challenger.mention}.",
+            description=f"{self.opponent.mention} a refusé d'affronter {self.challenger.mention}.",
             color=discord.Color.red()
         )
         await interaction.response.edit_message(embed=embed, view=None)
@@ -89,10 +90,12 @@ class DuelInviteView(discord.ui.View):
 
 
 class DefiSelectView(discord.ui.View):
-    def __init__(self, challenger: discord.Member, opponent: discord.Member, timeout=60.0):
+    def __init__(self, challenger: discord.Member, opponent, persona: dict, is_vs_bot=False, timeout=60.0):
         super().__init__(timeout=timeout)
         self.challenger = challenger
         self.opponent = opponent
+        self.persona = persona
+        self.is_vs_bot = is_vs_bot
         self.chosen = False
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -105,23 +108,35 @@ class DefiSelectView(discord.ui.View):
     async def ttt(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.chosen = True
         self.stop()
-        await start_duel_invite(interaction, self.challenger, self.opponent, "tictactoe")
+        if self.is_vs_bot:
+            await start_bot_game_direct(interaction, self.challenger, "tictactoe", self.persona)
+        else:
+            await start_duel_invite(interaction, self.challenger, self.opponent, "tictactoe", self.persona)
 
     @discord.ui.button(label="Puissance 4", style=discord.ButtonStyle.primary, emoji="🟡")
     async def c4(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.chosen = True
         self.stop()
-        await start_duel_invite(interaction, self.challenger, self.opponent, "connect4")
+        if self.is_vs_bot:
+            await start_bot_game_direct(interaction, self.challenger, "connect4", self.persona)
+        else:
+            await start_duel_invite(interaction, self.challenger, self.opponent, "connect4", self.persona)
 
     @discord.ui.button(label="Pierre-Feuille-Ciseaux", style=discord.ButtonStyle.primary, emoji="✂️")
     async def rps(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.chosen = True
         self.stop()
-        await start_duel_invite(interaction, self.challenger, self.opponent, "rps")
+        if self.is_vs_bot:
+            await start_bot_game_direct(interaction, self.challenger, "rps", self.persona)
+        else:
+            await start_duel_invite(interaction, self.challenger, self.opponent, "rps", self.persona)
 
     async def on_timeout(self):
         if not self.chosen:
-            unregister_players(self.challenger.id, self.opponent.id)
+            if self.is_vs_bot:
+                unregister_player(self.challenger.id)
+            else:
+                unregister_players(self.challenger.id, self.opponent.id)
             if hasattr(self, 'message') and self.message:
                 try:
                     await self.message.edit(content="Le choix du défi a expiré.", view=None)
@@ -144,11 +159,12 @@ class TicTacToeButton(discord.ui.Button):
 
 
 class TicTacToeView(discord.ui.View):
-    def __init__(self, player_x: discord.Member, player_o, timeout=180.0):
+    def __init__(self, player_x: discord.Member, player_o, persona: dict, timeout=180.0):
         super().__init__(timeout=timeout)
         self.player_x = player_x
         self.player_o = player_o
-        self.is_vs_bot = isinstance(player_o, str)
+        self.persona = persona
+        self.is_vs_bot = isinstance(player_o, str) or (hasattr(player_o, 'bot') and player_o.bot)
         self.engine = TicTacToe()
         
         for i in range(9):
@@ -211,14 +227,15 @@ class TicTacToeView(discord.ui.View):
                     item.disabled = False
 
     def build_embed(self) -> discord.Embed:
-        title = "🎮 Morpion vs M'aiq" if self.is_vs_bot else f"🎮 Morpion : {self.player_x.display_name} vs {self.player_o.display_name}"
+        bot_name = self.persona["name"]
+        title = f"🎮 Morpion vs {bot_name}" if self.is_vs_bot else f"🎮 Morpion : {self.player_x.display_name} vs {self.player_o.display_name}"
         color = discord.Color.gold()
         
         turn_str = ""
         winner = self.engine.winner()
         if not winner:
             current = self.player_x if self.engine.current_turn == "X" else self.player_o
-            turn_str = f"Tour de : **M'aiq**" if isinstance(current, str) else f"Tour de : {current.mention}"
+            turn_str = f"Tour de : **{bot_name}**" if (isinstance(current, str) or (hasattr(current, 'bot') and current.bot)) else f"Tour de : {current.mention}"
 
         embed = discord.Embed(title=title, description=turn_str, color=color)
         return embed
@@ -229,10 +246,8 @@ class TicTacToeView(discord.ui.View):
             item.disabled = True
         self.stop()
         
+        bot_name = self.persona["name"]
         unregister_players(self.player_x.id, 0 if self.is_vs_bot else self.player_o.id)
-
-        from game_data import WIN_LINES, LOSE_LINES, DRAW_LINES
-        from game_rewards import try_award, REWARD_VALUES
 
         embed = self.build_embed()
         flavor_text = ""
@@ -240,28 +255,28 @@ class TicTacToeView(discord.ui.View):
         
         if winner == "draw":
             embed.description = "Match nul !"
-            flavor_text = random.choice(DRAW_LINES)
+            flavor_text = random.choice(self.persona["draw_lines"])
             if self.is_vs_bot:
-                points_awarded = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["draw"])
+                points_awarded = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["draw"], bot_name)
             else:
-                p1 = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["draw"], self.player_o.id)
-                p2 = try_award(self.player_o.id, "tictactoe", REWARD_VALUES["tictactoe"]["draw"], self.player_x.id)
+                p1 = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["draw"], bot_name, self.player_o.id)
+                p2 = try_award(self.player_o.id, "tictactoe", REWARD_VALUES["tictactoe"]["draw"], bot_name, self.player_x.id)
                 points_awarded = (p1, p2)
         elif winner == "X":
             embed.description = f"{self.player_x.mention} a gagné !"
-            flavor_text = random.choice(LOSE_LINES) if self.is_vs_bot else "Un beau combat !"
+            flavor_text = random.choice(self.persona["lose_lines"]) if self.is_vs_bot else "Un beau combat !"
             if self.is_vs_bot:
-                points_awarded = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["win"])
+                points_awarded = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["win"], bot_name)
             else:
-                points_awarded = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["win"], self.player_o.id)
+                points_awarded = try_award(self.player_x.id, "tictactoe", REWARD_VALUES["tictactoe"]["win"], bot_name, self.player_o.id)
         else:
             if self.is_vs_bot:
-                embed.description = "M'aiq a gagné !"
-                flavor_text = random.choice(WIN_LINES)
+                embed.description = f"{bot_name} a gagné !"
+                flavor_text = random.choice(self.persona["win_lines"])
             else:
                 embed.description = f"{self.player_o.mention} a gagné !"
                 flavor_text = "Un beau combat !"
-                points_awarded = try_award(self.player_o.id, "tictactoe", REWARD_VALUES["tictactoe"]["win"], self.player_x.id)
+                points_awarded = try_award(self.player_o.id, "tictactoe", REWARD_VALUES["tictactoe"]["win"], bot_name, self.player_x.id)
 
         rep_str = ""
         if isinstance(points_awarded, tuple):
@@ -270,7 +285,7 @@ class TicTacToeView(discord.ui.View):
             if points_awarded > 0:
                 rep_str = f"\n\n🏆 *Gain réputation : +{points_awarded}*"
             elif points_awarded == 0 and winner != "draw" and (winner == "X" or (winner == "O" and not self.is_vs_bot)):
-                rep_str = "\n\n🤥 *M'aiq ne récompense pas la gourmandise.*"
+                rep_str = f"\n\n*Le gain de réputation a échoué (cooldown ou plafond journalier atteint).*"
 
         embed.description += f"\n\n*« {flavor_text} »*{rep_str}"
         await interaction.response.edit_message(embed=embed, view=self)
@@ -281,9 +296,8 @@ class TicTacToeView(discord.ui.View):
             item.disabled = True
         if hasattr(self, 'message') and self.message:
             try:
-                from game_data import TIMEOUT_LINES
                 embed = self.build_embed()
-                embed.description = f"Temps écoulé. \n\n*« {random.choice(TIMEOUT_LINES)} »*"
+                embed.description = f"Temps écoulé. \n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
             except Exception:
                 pass
@@ -305,11 +319,12 @@ class Connect4Button(discord.ui.Button):
 
 
 class Connect4View(discord.ui.View):
-    def __init__(self, player_r: discord.Member, player_y, timeout=180.0):
+    def __init__(self, player_r: discord.Member, player_y, persona: dict, timeout=180.0):
         super().__init__(timeout=timeout)
         self.player_r = player_r
         self.player_y = player_y
-        self.is_vs_bot = isinstance(player_y, str)
+        self.persona = persona
+        self.is_vs_bot = isinstance(player_y, str) or (hasattr(player_y, 'bot') and player_y.bot)
         self.engine = Connect4()
         
         for col in range(7):
@@ -362,14 +377,15 @@ class Connect4View(discord.ui.View):
                 item.disabled = (item.col not in valid)
 
     def build_embed(self) -> discord.Embed:
-        title = "🎮 Puissance 4 vs M'aiq" if self.is_vs_bot else f"🎮 Puissance 4 : {self.player_r.display_name} vs {self.player_y.display_name}"
+        bot_name = self.persona["name"]
+        title = f"🎮 Puissance 4 vs {bot_name}" if self.is_vs_bot else f"🎮 Puissance 4 : {self.player_r.display_name} vs {self.player_y.display_name}"
         color = discord.Color.gold()
         
         turn_str = ""
         winner = self.engine.winner()
         if not winner:
             current = self.player_r if self.engine.current_turn == "R" else self.player_y
-            turn_str = f"Tour de : **M'aiq**" if isinstance(current, str) else f"Tour de : {current.mention}"
+            turn_str = f"Tour de : **{bot_name}**" if (isinstance(current, str) or (hasattr(current, 'bot') and current.bot)) else f"Tour de : {current.mention}"
 
         grid_text = self.engine.serialize() + "\n1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣"
         embed = discord.Embed(title=title, description=f"{turn_str}\n\n{grid_text}", color=color)
@@ -380,10 +396,8 @@ class Connect4View(discord.ui.View):
             item.disabled = True
         self.stop()
         
+        bot_name = self.persona["name"]
         unregister_players(self.player_r.id, 0 if self.is_vs_bot else self.player_y.id)
-
-        from game_data import WIN_LINES, LOSE_LINES, DRAW_LINES
-        from game_rewards import try_award, REWARD_VALUES
 
         embed = self.build_embed()
         flavor_text = ""
@@ -393,28 +407,28 @@ class Connect4View(discord.ui.View):
         res_header = ""
         if winner == "draw":
             res_header = "Match nul !"
-            flavor_text = random.choice(DRAW_LINES)
+            flavor_text = random.choice(self.persona["draw_lines"])
             if self.is_vs_bot:
-                points_awarded = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["draw"])
+                points_awarded = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["draw"], bot_name)
             else:
-                p1 = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["draw"], self.player_y.id)
-                p2 = try_award(self.player_y.id, "connect4", REWARD_VALUES["connect4"]["draw"], self.player_r.id)
+                p1 = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["draw"], bot_name, self.player_y.id)
+                p2 = try_award(self.player_y.id, "connect4", REWARD_VALUES["connect4"]["draw"], bot_name, self.player_r.id)
                 points_awarded = (p1, p2)
         elif winner == "R":
             res_header = f"{self.player_r.mention} a gagné !"
-            flavor_text = random.choice(LOSE_LINES) if self.is_vs_bot else "Un beau combat !"
+            flavor_text = random.choice(self.persona["lose_lines"]) if self.is_vs_bot else "Un beau combat !"
             if self.is_vs_bot:
-                points_awarded = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["win"])
+                points_awarded = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["win"], bot_name)
             else:
-                points_awarded = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["win"], self.player_y.id)
+                points_awarded = try_award(self.player_r.id, "connect4", REWARD_VALUES["connect4"]["win"], bot_name, self.player_y.id)
         else:
             if self.is_vs_bot:
-                res_header = "M'aiq a gagné !"
-                flavor_text = random.choice(WIN_LINES)
+                res_header = f"{bot_name} a gagné !"
+                flavor_text = random.choice(self.persona["win_lines"])
             else:
                 res_header = f"{self.player_y.mention} a gagné !"
                 flavor_text = "Un beau combat !"
-                points_awarded = try_award(self.player_y.id, "connect4", REWARD_VALUES["connect4"]["win"], self.player_r.id)
+                points_awarded = try_award(self.player_y.id, "connect4", REWARD_VALUES["connect4"]["win"], bot_name, self.player_r.id)
 
         rep_str = ""
         if isinstance(points_awarded, tuple):
@@ -423,7 +437,7 @@ class Connect4View(discord.ui.View):
             if points_awarded > 0:
                 rep_str = f"\n\n🏆 *Gain réputation : +{points_awarded}*"
             elif points_awarded == 0 and winner != "draw" and (winner == "R" or (winner == "Y" and not self.is_vs_bot)):
-                rep_str = "\n\n🤥 *M'aiq ne récompense pas la gourmandise.*"
+                rep_str = f"\n\n*Le gain de réputation a échoué (cooldown ou plafond journalier atteint).*"
 
         embed.description = f"**{res_header}**\n\n{grid_text}\n\n*« {flavor_text} »*{rep_str}"
         await interaction.response.edit_message(embed=embed, view=self)
@@ -434,10 +448,9 @@ class Connect4View(discord.ui.View):
             item.disabled = True
         if hasattr(self, 'message') and self.message:
             try:
-                from game_data import TIMEOUT_LINES
                 embed = self.build_embed()
                 grid_text = self.engine.serialize() + "\n1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣"
-                embed.description = f"**Temps écoulé.**\n\n{grid_text}\n\n*« {random.choice(TIMEOUT_LINES)} »*"
+                embed.description = f"**Temps écoulé.**\n\n{grid_text}\n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
             except Exception:
                 pass
@@ -448,11 +461,12 @@ class Connect4View(discord.ui.View):
 # ==========================================
 
 class RPSView(discord.ui.View):
-    def __init__(self, player_a: discord.Member, player_b, timeout=180.0):
+    def __init__(self, player_a: discord.Member, player_b, persona: dict, timeout=180.0):
         super().__init__(timeout=timeout)
         self.player_a = player_a
         self.player_b = player_b
-        self.is_vs_bot = isinstance(player_b, str)
+        self.persona = persona
+        self.is_vs_bot = isinstance(player_b, str) or (hasattr(player_b, 'bot') and player_b.bot)
         self.engine = RPSGame()
         self.round_moves = {}
 
@@ -517,13 +531,14 @@ class RPSView(discord.ui.View):
                 await interaction.followup.send("Choix enregistré !", ephemeral=True)
 
     def build_embed(self, last_round=None) -> discord.Embed:
-        title = "🎮 Pierre-Feuille-Ciseaux vs M'aiq" if self.is_vs_bot else f"🎮 Pierre-Feuille-Ciseaux : {self.player_a.display_name} vs {self.player_b.display_name}"
+        bot_name = self.persona["name"]
+        title = f"🎮 Pierre-Feuille-Ciseaux vs {bot_name}" if self.is_vs_bot else f"🎮 Pierre-Feuille-Ciseaux : {self.player_a.display_name} vs {self.player_b.display_name}"
         color = discord.Color.gold()
         
         desc = f"**Score :**\n"
         desc += f"- {self.player_a.display_name} : **{self.engine.score_a}**\n"
         if self.is_vs_bot:
-            desc += f"- M'aiq : **{self.engine.score_b}**\n"
+            desc += f"- {bot_name} : **{self.engine.score_b}**\n"
         else:
             desc += f"- {self.player_b.display_name} : **{self.engine.score_b}**\n"
             
@@ -544,7 +559,7 @@ class RPSView(discord.ui.View):
         if last_round:
             choice_a, choice_b, res = last_round
             emojis = {"pierre": "🪨", "feuille": "📄", "ciseaux": "✂️"}
-            name_b = "M'aiq" if self.is_vs_bot else self.player_b.display_name
+            name_b = bot_name if self.is_vs_bot else self.player_b.display_name
             desc += f"\n\n**Dernière manche :**\n"
             desc += f"- {self.player_a.display_name} a joué {emojis[choice_a]}\n"
             desc += f"- {name_b} a joué {emojis[choice_b]}\n"
@@ -563,10 +578,8 @@ class RPSView(discord.ui.View):
             item.disabled = True
         self.stop()
         
+        bot_name = self.persona["name"]
         unregister_players(self.player_a.id, 0 if self.is_vs_bot else self.player_b.id)
-
-        from game_data import WIN_LINES, LOSE_LINES
-        from game_rewards import try_award, REWARD_VALUES
 
         embed = self.build_embed(last_round)
         flavor_text = ""
@@ -575,25 +588,25 @@ class RPSView(discord.ui.View):
         res_header = ""
         if winner == "a":
             res_header = f"{self.player_a.mention} a gagné le match !"
-            flavor_text = random.choice(LOSE_LINES) if self.is_vs_bot else "Un beau combat !"
+            flavor_text = random.choice(self.persona["lose_lines"]) if self.is_vs_bot else "Un beau combat !"
             if self.is_vs_bot:
-                points_awarded = try_award(self.player_a.id, "rps", REWARD_VALUES["rps"]["win"])
+                points_awarded = try_award(self.player_a.id, "rps", REWARD_VALUES["rps"]["win"], bot_name)
             else:
-                points_awarded = try_award(self.player_a.id, "rps", REWARD_VALUES["rps"]["win"], self.player_b.id)
+                points_awarded = try_award(self.player_a.id, "rps", REWARD_VALUES["rps"]["win"], bot_name, self.player_b.id)
         else:
             if self.is_vs_bot:
-                res_header = "M'aiq a gagné le match !"
-                flavor_text = random.choice(WIN_LINES)
+                res_header = f"{bot_name} a gagné le match !"
+                flavor_text = random.choice(self.persona["win_lines"])
             else:
                 res_header = f"{self.player_b.mention} a gagné le match !"
                 flavor_text = "Un beau combat !"
-                points_awarded = try_award(self.player_b.id, "rps", REWARD_VALUES["rps"]["win"], self.player_a.id)
+                points_awarded = try_award(self.player_b.id, "rps", REWARD_VALUES["rps"]["win"], bot_name, self.player_a.id)
 
         rep_str = ""
         if points_awarded > 0:
             rep_str = f"\n\n🏆 *Gain réputation : +{points_awarded}*"
         elif points_awarded == 0 and (winner == "a" or (winner == "b" and not self.is_vs_bot)):
-            rep_str = "\n\n🤥 *M'aiq ne récompense pas la gourmandise.*"
+            rep_str = f"\n\n*Le gain de réputation a échoué (cooldown ou plafond journalier atteint).*"
 
         embed.description += f"\n\n**{res_header}**\n\n*« {flavor_text} »*{rep_str}"
         await interaction.response.edit_message(embed=embed, view=self)
@@ -604,9 +617,8 @@ class RPSView(discord.ui.View):
             item.disabled = True
         if hasattr(self, 'message') and self.message:
             try:
-                from game_data import TIMEOUT_LINES
                 embed = self.build_embed()
-                embed.description += f"\n\n**Temps écoulé.**\n\n*« {random.choice(TIMEOUT_LINES)} »*"
+                embed.description += f"\n\n**Temps écoulé.**\n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
             except Exception:
                 pass
@@ -617,9 +629,10 @@ class RPSView(discord.ui.View):
 # ==========================================
 
 class BlackjackView(discord.ui.View):
-    def __init__(self, player: discord.Member, timeout=180.0):
+    def __init__(self, player: discord.Member, persona: dict, timeout=180.0):
         super().__init__(timeout=timeout)
         self.player = player
+        self.persona = persona
         self.engine = BlackjackGame()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -644,7 +657,8 @@ class BlackjackView(discord.ui.View):
         await self.end_game(interaction, res)
 
     def build_embed(self, reveal=False) -> discord.Embed:
-        title = "🃏 Blackjack vs M'aiq"
+        bot_name = self.persona["name"]
+        title = f"🃏 Blackjack vs {bot_name}"
         color = discord.Color.gold()
         
         p_val = self.engine.hand_value(self.engine.player_hand)
@@ -658,7 +672,7 @@ class BlackjackView(discord.ui.View):
             d_cards = f"{self.engine.dealer_hand[0]}, ❓"
             
         desc = f"**Ta main :** {p_cards} *(Total: {p_val})*\n"
-        desc += f"**Main de M'aiq :** {d_cards} *(Total: {d_val})*\n"
+        desc += f"**Main de {bot_name} :** {d_cards} *(Total: {d_val})*\n"
         embed = discord.Embed(title=title, description=desc, color=color)
         return embed
 
@@ -667,10 +681,8 @@ class BlackjackView(discord.ui.View):
             item.disabled = True
         self.stop()
         
+        bot_name = self.persona["name"]
         unregister_player(self.player.id)
-
-        from game_data import WIN_LINES, LOSE_LINES, DRAW_LINES
-        from game_rewards import try_award, REWARD_VALUES
 
         embed = self.build_embed(reveal=True)
         flavor_text = ""
@@ -678,27 +690,27 @@ class BlackjackView(discord.ui.View):
         
         res_header = ""
         if result == "blackjack":
-            res_header = "🎉 Blackjack naturel ! Tu as gagné !"
-            flavor_text = random.choice(LOSE_LINES)
-            points_awarded = try_award(self.player.id, "blackjack", REWARD_VALUES["blackjack"]["blackjack"])
+            res_header = f"🎉 Blackjack naturel ! Tu as gagné !"
+            flavor_text = random.choice(self.persona["lose_lines"])
+            points_awarded = try_award(self.player.id, "blackjack", REWARD_VALUES["blackjack"]["blackjack"], bot_name)
         elif result == "player":
             res_header = "🏆 Tu as gagné !"
-            flavor_text = random.choice(LOSE_LINES)
-            points_awarded = try_award(self.player.id, "blackjack", REWARD_VALUES["blackjack"]["win"])
+            flavor_text = random.choice(self.persona["lose_lines"])
+            points_awarded = try_award(self.player.id, "blackjack", REWARD_VALUES["blackjack"]["win"], bot_name)
         elif result == "push":
             res_header = "🤝 Égalité (Push) !"
-            flavor_text = random.choice(DRAW_LINES)
-            points_awarded = try_award(self.player.id, "blackjack", REWARD_VALUES["blackjack"]["draw"])
+            flavor_text = random.choice(self.persona["draw_lines"])
+            points_awarded = try_award(self.player.id, "blackjack", REWARD_VALUES["blackjack"]["draw"], bot_name)
         else:
-            res_header = "❌ M'aiq a gagné !"
-            flavor_text = random.choice(WIN_LINES)
+            res_header = f"❌ {bot_name} a gagné !"
+            flavor_text = random.choice(self.persona["win_lines"])
             points_awarded = 0
 
         rep_str = ""
         if points_awarded > 0:
             rep_str = f"\n\n🏆 *Gain réputation : +{points_awarded}*"
         elif points_awarded == 0 and result in ["player", "blackjack", "push"]:
-            rep_str = "\n\n🤥 *M'aiq ne récompense pas la gourmandise.*"
+            rep_str = f"\n\n*Le gain de réputation a échoué (cooldown ou plafond journalier atteint).*"
 
         embed.description += f"\n\n**{res_header}**\n\n*« {flavor_text} »*{rep_str}"
         await interaction.response.edit_message(embed=embed, view=self)
@@ -709,9 +721,8 @@ class BlackjackView(discord.ui.View):
             item.disabled = True
         if hasattr(self, 'message') and self.message:
             try:
-                from game_data import TIMEOUT_LINES
                 embed = self.build_embed(reveal=True)
-                embed.description += f"\n\n**Temps écoulé.**\n\n*« {random.choice(TIMEOUT_LINES)} »*"
+                embed.description += f"\n\n**Temps écoulé.**\n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
             except Exception:
                 pass
@@ -733,10 +744,11 @@ class QuizButton(discord.ui.Button):
 
 
 class QuizView(discord.ui.View):
-    def __init__(self, player: discord.Member, questions: list[dict], timeout=180.0):
+    def __init__(self, player: discord.Member, persona: dict, timeout=180.0):
         super().__init__(timeout=timeout)
         self.player = player
-        self.engine = QuizGame(questions, num_questions=5)
+        self.persona = persona
+        self.engine = QuizGame(persona["quiz_questions"], num_questions=5)
         self.last_answer_correct = None
         
         for idx in range(4):
@@ -758,7 +770,8 @@ class QuizView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=self)
 
     def build_embed(self) -> discord.Embed:
-        title = "🎯 Quiz Persona de M'aiq"
+        bot_name = self.persona["name"]
+        title = f"🎯 Quiz Persona de {bot_name}"
         color = discord.Color.gold()
         
         q = self.engine.get_current_question()
@@ -782,28 +795,27 @@ class QuizView(discord.ui.View):
             item.disabled = True
         self.stop()
         
+        bot_name = self.persona["name"]
         unregister_player(self.player.id)
 
-        from game_rewards import try_award, REWARD_VALUES
-
-        title = "🎯 Quiz Terminé !"
-        color = discord.Color.gold()
         points = self.engine.score * REWARD_VALUES["quiz"]["per_correct"]
-        points_awarded = try_award(self.player.id, "quiz", points)
+        points_awarded = try_award(self.player.id, "quiz", points, bot_name)
         
+        title = "🎯 Quiz Terminé !"
         desc = f"Score final : **{self.engine.score}/5**\n\n"
+        
         if self.engine.score == 5:
-            flavor = "M'aiq est impressionné. Vous savez presque autant de choses que lui !"
+            flavor = f"{bot_name} est impressionné. Vous savez presque autant de choses que lui !"
         elif self.engine.score >= 3:
-            flavor = "Pas mal. Mais M'aiq en sait beaucoup plus."
+            flavor = f"Pas mal. Mais {bot_name} en sait beaucoup plus."
         else:
-            flavor = "M'aiq pense que vous devriez relire vos livres d'histoire."
+            flavor = f"{bot_name} pense que vous devriez relire vos livres."
             
         rep_str = ""
         if points_awarded > 0:
             rep_str = f"\n\n🏆 *Gain réputation : +{points_awarded}*"
         elif points_awarded == 0:
-            rep_str = "\n\n🤥 *M'aiq ne récompense pas la gourmandise.*"
+            rep_str = f"\n\n*Le gain de réputation a échoué (cooldown ou plafond journalier atteint).*"
             
         desc += f"*« {flavor} »*{rep_str}"
         embed = discord.Embed(title=title, description=desc, color=color)
@@ -826,17 +838,33 @@ class QuizView(discord.ui.View):
 
 
 # ==========================================
-# PvP Invitation Dispatcher (Interact-to-invite)
+# PvP & Bot Invitation Dispatchers
 # ==========================================
 
-async def start_duel_invite(interaction: discord.Interaction, challenger: discord.Member, opponent: discord.Member, game_type: str):
+async def start_bot_game_direct(interaction: discord.Interaction, challenger: discord.Member, game_type: str, persona: dict):
+    # Plays vs the bot immediately, bypassing invitation
+    bot_name = persona["name"]
+    if game_type == "tictactoe":
+        view = TicTacToeView(challenger, bot_name, persona)
+    elif game_type == "connect4":
+        view = Connect4View(challenger, bot_name, persona)
+    else:
+        view = RPSView(challenger, bot_name, persona)
+        
+    embed = view.build_embed()
+    await interaction.response.edit_message(content=None, embed=embed, view=view)
+    view.message = interaction.message
+    active_games[challenger.id] = interaction.message.id
+
+
+async def start_duel_invite(interaction: discord.Interaction, challenger: discord.Member, opponent: discord.Member, game_type: str, persona: dict):
     async def on_accept(inter: discord.Interaction):
         if game_type == "tictactoe":
-            view = TicTacToeView(challenger, opponent)
+            view = TicTacToeView(challenger, opponent, persona)
         elif game_type == "connect4":
-            view = Connect4View(challenger, opponent)
+            view = Connect4View(challenger, opponent, persona)
         else:
-            view = RPSView(challenger, opponent)
+            view = RPSView(challenger, opponent, persona)
             
         embed = view.build_embed()
         await inter.response.edit_message(content=None, embed=embed, view=view)
@@ -855,14 +883,14 @@ async def start_duel_invite(interaction: discord.Interaction, challenger: discor
     view.message = interaction.message
 
 
-async def start_duel_invite_with_ctx(ctx, challenger: discord.Member, opponent: discord.Member, game_type: str):
+async def start_duel_invite_with_ctx(ctx, challenger: discord.Member, opponent: discord.Member, game_type: str, persona: dict):
     async def on_accept(inter: discord.Interaction):
         if game_type == "tictactoe":
-            view = TicTacToeView(challenger, opponent)
+            view = TicTacToeView(challenger, opponent, persona)
         elif game_type == "connect4":
-            view = Connect4View(challenger, opponent)
+            view = Connect4View(challenger, opponent, persona)
         else:
-            view = RPSView(challenger, opponent)
+            view = RPSView(challenger, opponent, persona)
             
         embed = view.build_embed()
         await inter.response.edit_message(content=None, embed=embed, view=view)
@@ -883,30 +911,37 @@ async def start_duel_invite_with_ctx(ctx, challenger: discord.Member, opponent: 
     active_games[opponent.id] = msg.id
 
 
-async def handle_pvp_start(ctx, challenger, opponent, game_type):
+async def handle_pvp_start(ctx, challenger, opponent, game_type, persona: dict):
+    bot_name = persona["name"]
     if opponent.id == challenger.id:
         return await ctx.send("Tu ne peux pas te défier toi-même, voyageur.")
     if opponent.bot:
-        return await ctx.send("M'aiq pense que les autres automates n'ont pas le temps pour tes jeux.")
+        return await ctx.send(f"M'aiq pense que les autres automates n'ont pas le temps pour tes jeux.")
     if challenger.id in active_games or opponent.id in active_games:
         return await ctx.send("L'un de vous est déjà occupé par une partie.")
         
     register_players(challenger.id, opponent.id, 0)
-    await start_duel_invite_with_ctx(ctx, challenger, opponent, game_type)
+    await start_duel_invite_with_ctx(ctx, challenger, opponent, game_type, persona)
 
 
 # ==========================================
 # commands Registration
 # ==========================================
 
-def setup_games(bot: commands.Bot, logger_param, ctx_helpers=None):
-    """Hooks all games commands onto M'aiq bot."""
+def setup_games(bot: commands.Bot, logger_param, persona: dict):
+    """Hooks all games commands onto M'aiq or any other bot."""
     global logger
     logger = logger_param
+    
+    bot_name = persona["name"]
+    is_default = persona.get("is_default_host", False)
     
     @bot.command(name="jeux", aliases=["games"])
     async def cmd_jeux(ctx):
         """Affiche la liste des jeux disponibles et comment y jouer."""
+        if not is_default:
+            return  # Default host M'aiq only
+
         embed = discord.Embed(
             title="🎮 Les Jeux de M'aiq",
             description="M'aiq adore jouer. Voici les divertissements qu'il propose :",
@@ -925,67 +960,208 @@ def setup_games(bot: commands.Bot, logger_param, ctx_helpers=None):
     async def cmd_morpion(ctx, opponent: discord.Member = None):
         """Lance une partie de Morpion (TicTacToe)."""
         challenger = ctx.author
-        if opponent is None:
+        
+        # Target bot resolution
+        is_me = False
+        is_other_bot = False
+        is_human = False
+        
+        if opponent is not None:
+            if opponent.bot:
+                if opponent.id == bot.user.id:
+                    is_me = True
+                else:
+                    is_other_bot = True
+            else:
+                is_human = True
+        
+        if is_other_bot:
+            return # Silence total
+            
+        if is_me:
+            # Play vs this bot
             if not register_player(challenger.id, 0):
                 return await ctx.send("Tu as déjà une partie en cours, voyageur.")
-            view = TicTacToeView(challenger, "maiq")
+            view = TicTacToeView(challenger, bot.user, persona)
             embed = view.build_embed()
             msg = await ctx.send(embed=embed, view=view)
             view.message = msg
             active_games[challenger.id] = msg.id
+        elif is_human:
+            # Duel
+            if is_default:
+                await handle_pvp_start(ctx, challenger, opponent, "tictactoe", persona)
+            else:
+                return # Silence total
         else:
-            await handle_pvp_start(ctx, challenger, opponent, "tictactoe")
+            # No target -> vs default host M'aiq
+            if is_default:
+                if not register_player(challenger.id, 0):
+                    return await ctx.send("Tu as déjà une partie en cours, voyageur.")
+                view = TicTacToeView(challenger, bot.user, persona)
+                embed = view.build_embed()
+                msg = await ctx.send(embed=embed, view=view)
+                view.message = msg
+                active_games[challenger.id] = msg.id
+            else:
+                return # Silence total
 
     @bot.command(name="puissance4", aliases=["p4", "c4"])
     async def cmd_puissance4(ctx, opponent: discord.Member = None):
         """Lance une partie de Puissance 4 (Connect4)."""
         challenger = ctx.author
-        if opponent is None:
+        
+        is_me = False
+        is_other_bot = False
+        is_human = False
+        
+        if opponent is not None:
+            if opponent.bot:
+                if opponent.id == bot.user.id:
+                    is_me = True
+                else:
+                    is_other_bot = True
+            else:
+                is_human = True
+        
+        if is_other_bot:
+            return
+            
+        if is_me:
             if not register_player(challenger.id, 0):
                 return await ctx.send("Tu as déjà une partie en cours, voyageur.")
-            view = Connect4View(challenger, "maiq")
+            view = Connect4View(challenger, bot.user, persona)
             embed = view.build_embed()
             msg = await ctx.send(embed=embed, view=view)
             view.message = msg
             active_games[challenger.id] = msg.id
+        elif is_human:
+            if is_default:
+                await handle_pvp_start(ctx, challenger, opponent, "connect4", persona)
+            else:
+                return
         else:
-            await handle_pvp_start(ctx, challenger, opponent, "connect4")
+            if is_default:
+                if not register_player(challenger.id, 0):
+                    return await ctx.send("Tu as déjà une partie en cours, voyageur.")
+                view = Connect4View(challenger, bot.user, persona)
+                embed = view.build_embed()
+                msg = await ctx.send(embed=embed, view=view)
+                view.message = msg
+                active_games[challenger.id] = msg.id
+            else:
+                return
 
     @bot.command(name="pfc", aliases=["rps"])
     async def cmd_pfc(ctx, opponent: discord.Member = None):
         """Lance une partie de Pierre-Feuille-Ciseaux (RPS)."""
         challenger = ctx.author
-        if opponent is None:
+        
+        is_me = False
+        is_other_bot = False
+        is_human = False
+        
+        if opponent is not None:
+            if opponent.bot:
+                if opponent.id == bot.user.id:
+                    is_me = True
+                else:
+                    is_other_bot = True
+            else:
+                is_human = True
+        
+        if is_other_bot:
+            return
+            
+        if is_me:
             if not register_player(challenger.id, 0):
                 return await ctx.send("Tu as déjà une partie en cours, voyageur.")
-            view = RPSView(challenger, "maiq")
+            view = RPSView(challenger, bot.user, persona)
             embed = view.build_embed()
             msg = await ctx.send(embed=embed, view=view)
             view.message = msg
             active_games[challenger.id] = msg.id
+        elif is_human:
+            if is_default:
+                await handle_pvp_start(ctx, challenger, opponent, "rps", persona)
+            else:
+                return
         else:
-            await handle_pvp_start(ctx, challenger, opponent, "rps")
+            if is_default:
+                if not register_player(challenger.id, 0):
+                    return await ctx.send("Tu as déjà une partie en cours, voyageur.")
+                view = RPSView(challenger, bot.user, persona)
+                embed = view.build_embed()
+                msg = await ctx.send(embed=embed, view=view)
+                view.message = msg
+                active_games[challenger.id] = msg.id
+            else:
+                return
 
     @bot.command(name="blackjack", aliases=["bj"])
-    async def cmd_blackjack(ctx):
-        """Lance une partie de Blackjack contre la banque (M'aiq)."""
+    async def cmd_blackjack(ctx, opponent: discord.Member = None):
+        """Lance une partie de Blackjack contre la banque."""
         challenger = ctx.author
+        
+        is_me = False
+        is_other_bot = False
+        
+        if opponent is not None:
+            if opponent.bot:
+                if opponent.id == bot.user.id:
+                    is_me = True
+                else:
+                    is_other_bot = True
+            else:
+                # opponent is human
+                if not is_default:
+                    return # Silence total
+        else:
+            # no target
+            if not is_default:
+                return
+                
+        if is_other_bot:
+            return
+            
         if not register_player(challenger.id, 0):
             return await ctx.send("Tu as déjà une partie en cours, voyageur.")
-        view = BlackjackView(challenger)
+            
+        view = BlackjackView(challenger, persona)
         embed = view.build_embed()
         msg = await ctx.send(embed=embed, view=view)
         view.message = msg
         active_games[challenger.id] = msg.id
 
     @bot.command(name="quiz")
-    async def cmd_quiz(ctx):
+    async def cmd_quiz(ctx, opponent: discord.Member = None):
         """Démarre un quiz persona solo de 5 questions."""
         challenger = ctx.author
+        
+        is_me = False
+        is_other_bot = False
+        
+        if opponent is not None:
+            if opponent.bot:
+                if opponent.id == bot.user.id:
+                    is_me = True
+                else:
+                    is_other_bot = True
+            else:
+                # opponent is human
+                if not is_default:
+                    return
+        else:
+            if not is_default:
+                return
+                
+        if is_other_bot:
+            return
+            
         if not register_player(challenger.id, 0):
             return await ctx.send("Tu as déjà une partie en cours, voyageur.")
-        from game_data import QUIZ_QUESTIONS
-        view = QuizView(challenger, QUIZ_QUESTIONS)
+            
+        view = QuizView(challenger, persona)
         embed = view.build_embed()
         msg = await ctx.send(embed=embed, view=view)
         view.message = msg
@@ -993,20 +1169,45 @@ def setup_games(bot: commands.Bot, logger_param, ctx_helpers=None):
 
     @bot.command(name="defi")
     async def cmd_defi(ctx, opponent: discord.Member):
-        """Propose un menu de défis PvP à un autre joueur."""
+        """Propose un menu de défis PvP ou PvE (contre un bot)."""
         challenger = ctx.author
-        if opponent.id == challenger.id:
-            return await ctx.send("Tu ne peux pas te défier toi-même, voyageur.")
+        
+        is_me = False
+        is_other_bot = False
         if opponent.bot:
-            return await ctx.send("M'aiq pense que les autres automates n'ont pas le temps pour tes défis.")
-        if challenger.id in active_games or opponent.id in active_games:
-            return await ctx.send("L'un de vous est déjà occupé par une partie.")
+            if opponent.id == bot.user.id:
+                is_me = True
+            else:
+                is_other_bot = True
+        
+        if is_other_bot:
+            return # Silence total
             
-        register_players(challenger.id, opponent.id, 0)
-        view = DefiSelectView(challenger, opponent)
-        msg = await ctx.send(f"{challenger.mention} défie {opponent.mention} ! Choisissez le jeu :", view=view)
-        view.message = msg
-        active_games[challenger.id] = msg.id
-        active_games[opponent.id] = msg.id
+        if not is_me:
+            # Opponent is human -> Default host M'aiq handles it
+            if not is_default:
+                return # Silence total
+                
+            if opponent.id == challenger.id:
+                return await ctx.send("Tu ne peux pas te défier toi-même, voyageur.")
+            if challenger.id in active_games or opponent.id in active_games:
+                return await ctx.send("L'un de vous est déjà occupé par une partie.")
+                
+            register_players(challenger.id, opponent.id, 0)
+            view = DefiSelectView(challenger, opponent, persona, is_vs_bot=False)
+            msg = await ctx.send(f"{challenger.mention} défie {opponent.mention} ! Choisissez le jeu :", view=view)
+            view.message = msg
+            active_games[challenger.id] = msg.id
+            active_games[opponent.id] = msg.id
+        else:
+            # Opponent is ME (the bot) -> play vs ME
+            if challenger.id in active_games:
+                return await ctx.send("Tu as déjà une partie en cours, voyageur.")
+                
+            register_player(challenger.id, 0)
+            view = DefiSelectView(challenger, opponent, persona, is_vs_bot=True)
+            msg = await ctx.send(f"{challenger.mention}, tu défies {bot.user.mention} ! Choisis ton jeu :", view=view)
+            view.message = msg
+            active_games[challenger.id] = msg.id
 
-    logger.info("🐱 [GAMES SYSTEM] Les mini-jeux ont été initialisés avec succès.")
+    logger.info(f"🐱 [{bot_name} GAMES] Les mini-jeux ont été initialisés avec succès.")

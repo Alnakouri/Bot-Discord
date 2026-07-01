@@ -136,6 +136,12 @@ try:
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
     DATABASE_AVAILABLE = True
+    try:
+        from shared.games import setup_games
+        from games_persona import PERSONA
+        GAMES_AVAILABLE = True
+    except ImportError:
+        GAMES_AVAILABLE = False
     
     def get_maiq_riddle(channel_id: int):
         """Récupère l'énigme active (DB partagée avec M'aiq)."""
@@ -804,6 +810,11 @@ async def on_ready():
         setup_slash_commands(bot, "Sheogorath")
         await sync_slash_commands(bot)
         logger.info(f"✅ [SLASH] Commandes slash initialisées")
+        
+    # INITIALISATION DES MINI-JEUX
+    if DATABASE_AVAILABLE and GAMES_AVAILABLE:
+        setup_games(bot, logger, PERSONA)
+        logger.info(f"✅ [GAMES] Mini-jeux initialisés")
     
     # RESUME PUNISHMENTS
     data = load_punishments()

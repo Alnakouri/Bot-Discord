@@ -232,6 +232,31 @@ def init_database():
         except Exception as e:
             print(f"[DATABASE] Erreur migration reputation (riddle_streak): {e}")
 
+    # Tables pour le système de mini-jeux partagé (cooldowns, daily caps et pvp pairs)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS game_cooldowns (
+            user_id INTEGER,
+            game_key TEXT,
+            bot_name TEXT,
+            last_reward_time REAL,
+            PRIMARY KEY (user_id, game_key, bot_name)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS game_daily_caps (
+            user_id INTEGER,
+            date_str TEXT,
+            points INTEGER,
+            PRIMARY KEY (user_id, date_str)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS game_pvp_cooldowns (
+            pair_key TEXT PRIMARY KEY,
+            last_reward_time REAL
+        )
+    """)
+
     conn.commit()
     conn.close()
     print(f"[DATABASE] Base initialisee: {DB_PATH}")
@@ -1050,6 +1075,75 @@ def add_to_riddle_history(question: str, answers: List[str] = None):
         conn.commit()
     except sqlite3.IntegrityError:
         pass # Déjà présent
+    conn.close()
+
+
+def get_game_cooldown(user_id: int, game_key: str, bot_name: str) -> float | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT last_reward_time FROM game_cooldowns 
+        WHERE user_id = ? AND game_key = ? AND bot_name = ?
+    """, (user_id, game_key, bot_name))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def set_game_cooldown(user_id: int, game_key: str, bot_name: str, ts: float):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT OR REPLACE INTO game_cooldowns (user_id, game_key, bot_name, last_reward_time)
+        VALUES (?, ?, ?, ?)
+    """, (user_id, game_key, bot_name, ts))
+    conn.commit()
+    conn.close()
+
+def get_game_daily_points(user_id: int, date_str: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT points FROM game_daily_caps 
+        WHERE user_id = ? AND date_str = ?
+    """, (user_id, date_str))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def add_game_daily_points(user_id: int, date_str: str, points: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT points FROM game_daily_caps WHERE user_id = ? AND date_str = ?", (user_id, date_str))
+    row = cursor.fetchone()
+    if row is None:
+        cursor.execute("""
+            INSERT INTO game_daily_caps (user_id, date_str, points)
+            VALUES (?, ?, ?)
+        """, (user_id, date_str, points))
+    else:
+        cursor.execute("""
+            UPDATE game_daily_caps SET points = ?
+            WHERE user_id = ? AND date_str = ?
+        """, (row[0] + points, user_id, date_str))
+    conn.commit()
+    conn.close()
+
+def get_game_pvp_cooldown(pair_key: str) -> float | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT last_reward_time FROM game_pvp_cooldowns WHERE pair_key = ?", (pair_key,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def set_game_pvp_cooldown(pair_key: str, ts: float):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT OR REPLACE INTO game_pvp_cooldowns (pair_key, last_reward_time)
+        VALUES (?, ?)
+    """, (pair_key, ts))
+    conn.commit()
     conn.close()
 
 

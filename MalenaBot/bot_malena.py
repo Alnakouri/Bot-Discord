@@ -46,6 +46,12 @@ except ImportError:
 # Import modules partagés
 from shared.bot_logger import setup_logger
 from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel
+try:
+    from shared.games import setup_games
+    from games_persona import PERSONA
+    GAMES_AVAILABLE = True
+except ImportError:
+    GAMES_AVAILABLE = False
 
 # Import données spécifiques
 import malena_data as data
@@ -300,6 +306,14 @@ async def on_ready():
         daily_bio_loop_malena.start()
     if not status_loop_malena.is_running():
         status_loop_malena.start()
+        
+    # Setup Mini-Games
+    if GAMES_AVAILABLE:
+        try:
+            setup_games(bot, logger, PERSONA)
+            logger.info("💅 [GAMES] Mini-jeux initialisés pour Malena")
+        except Exception as e:
+            logger.error(f"[GAMES] Erreur d'initialisation des mini-jeux: {e}")
 
         
     global twitch_announcer
