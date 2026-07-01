@@ -38,9 +38,13 @@ class ViewerMemoryMixin:
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    content = f.read().strip()
+                # Fichier vide = pas encore de facts : état NORMAL, pas une erreur.
+                if not content:
+                    return {}
+                return json.loads(content)
             except Exception as e:
-                self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur lecture facts JSON: {e}")
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] Facts JSON illisible (ignoré) : {e}")
         return {}
 
     def _save_viewer_facts_debounced(self):
