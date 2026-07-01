@@ -18,7 +18,9 @@ class ConnectionMixin:
         refresh_task = asyncio.create_task(self._token_refresh_loop())
 
         eventsub_task = None
-        voice_task = None
+        # Superviseur d'écoute micro : applique en continu le toggle du dashboard
+        # (activable/désactivable À CHAUD, sans redémarrer le bot).
+        voice_task = asyncio.create_task(self._voice_supervisor())
 
         try:
             while not self._stopped:
@@ -38,10 +40,6 @@ class ConnectionMixin:
                     # Démarrage de Twitch EventSub
                     if self.enable_eventsub and not self.eventsub_active:
                         eventsub_task = asyncio.create_task(self._start_eventsub())
-
-                    # Démarrage du client d'écoute voix (STT)
-                    if self.enable_voice_listen and voice_task is None:
-                        voice_task = asyncio.create_task(self._start_voice_listen())
 
                     # On tente de se connecter et de boucler sur les messages
                     await self._connect_and_loop(token)
@@ -74,6 +72,47 @@ class ConnectionMixin:
             except Exception:
                 pass
             self.logger.info(f"👋 [TWITCH_CHAT:{self.bot_id}] Arrêt de la boucle Twitch Chat.")
+
+    def _desired_voice_listen(self) -> bool:
+        """État SOUHAITÉ de l'écoute micro. Le dashboard (data/twitch_config.json →
+        listen.enabled) prime, relu à chaque tick pour un toggle à chaud ; à défaut on
+        retombe sur la valeur d'initialisation. Toute erreur de lecture = état courant."""
+        path = os.path.join(DATA_DIR, "twitch_config.json")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            listen = ((data.get(self.bot_id) or {}).get("listen") or {})
+            if "enabled" in listen:
+                return bool(listen["enabled"])
+        except Exception:
+            pass
+        return bool(self.enable_voice_listen)
+
+    async def _voice_supervisor(self):
+        """Connecte/déconnecte le client d'écoute micro selon le toggle du dashboard,
+        relu toutes les 15 s. Permet d'activer/désactiver l'écoute SANS redémarrer le bot."""
+        inner = None
+        try:
+            while not self._stopped:
+                desired = self._desired_voice_listen()
+                running = inner is not None and not inner.done()
+                if desired and not running:
+                    self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Écoute micro ACTIVÉE (dashboard).")
+                    inner = asyncio.create_task(self._start_voice_listen())
+                elif not desired and running:
+                    self.logger.info(f"🎙️ [TWITCH_CHAT:{self.bot_id}] Écoute micro DÉSACTIVÉE (dashboard).")
+                    inner.cancel()
+                    try:
+                        await inner
+                    except asyncio.CancelledError:
+                        pass
+                    inner = None
+                await asyncio.sleep(15)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if inner is not None and not inner.done():
+                inner.cancel()
 
     async def _token_refresh_loop(self):
         while not self._stopped:

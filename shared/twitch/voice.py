@@ -18,7 +18,8 @@ class VoiceMixin:
             bot_id=self.bot_id,
             logger=self.logger,
             on_transcript_received_callback=self._on_voice_transcript,
-            port=self.listen_port
+            port=self.listen_port,
+            host=self.listen_host
         )
         try:
             await self.voice_client.run()

@@ -76,8 +76,12 @@ class StreamListenerHub:
     Hub Windows unique capturant le micro et distribuant les transcriptions aux bots.
     Gère également l'arbitrage (1 seule réponse max par énoncé).
     """
-    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None, initial_prompt=None, rms_threshold: float = 0.02, max_segment_sec: float = 12.0, auto_switch: bool = False):
+    def __init__(self, port: int = 8765, mode: str = "C", model_size: str = "large-v3-turbo", device: str = "cpu", voice_min_interval: float = 45.0, input_device=None, initial_prompt=None, rms_threshold: float = 0.02, max_segment_sec: float = 12.0, auto_switch: bool = False, bind_host: str = "127.0.0.1"):
         self.port = port
+        # Interface d'écoute du WebSocket. 127.0.0.1 (IPv4 loopback) par défaut : bots sur
+        # la même machine. Mettre "0.0.0.0" si les bots tournent en conteneur et joignent
+        # le hub via host.docker.internal.
+        self.bind_host = bind_host
         self.mode = mode  # A (NIM), B (NeMo), C (Whisper)
         self.model_size = model_size      # modèle ACTUEL (peut changer si auto_switch)
         self.max_model_size = model_size  # plafond = modèle configuré (jamais au-dessus)
@@ -157,7 +161,7 @@ class StreamListenerHub:
                 self.clients.remove(websocket)
                 logger.info(f"🔌 Client Bot déconnecté. Total: {len(self.clients)}")
 
-        self.server = await websockets.serve(handler, "localhost", self.port)
+        self.server = await websockets.serve(handler, self.bind_host, self.port)
         if DEPS_AVAILABLE:
             asyncio.create_task(self._capture_and_process())
         else:
@@ -373,14 +377,21 @@ class StreamListenerClient:
     """
     Client à instancier dans chaque bot pour se connecter au Hub d'écoute continu.
     """
-    def __init__(self, bot_id: str, logger, on_transcript_received_callback, port: int = 8765):
+    def __init__(self, bot_id: str, logger, on_transcript_received_callback, port: int = 8765,
+                 host: str = "127.0.0.1"):
         self.bot_id = bot_id
         self.logger = logger
         self.on_transcript = on_transcript_received_callback
         self.port = port
+        # IPv4 explicite par défaut : "localhost" résout d'abord en ::1 (IPv6) puis 127.0.0.1,
+        # ce qui double les tentatives et pollue les logs d'erreur. Surchargeable (ex.
+        # "host.docker.internal" quand le bot est en conteneur et le hub sur l'hôte).
+        self.host = host or "127.0.0.1"
         self._stopped = False
         self.ws = None
         self.pending_claims = {} # hash -> future
+        self._was_connected = False   # a-t-on déjà eu une session établie ?
+        self._down_logged = False     # WARNING d'indisponibilité déjà émis ?
 
     async def run(self):
         self.logger.info(f"🎙️ [STREAM_CLIENT:{self.bot_id}] Connexion au Hub d'écoute continu...")
@@ -388,19 +399,21 @@ class StreamListenerClient:
         while not self._stopped:
             try:
                 import websockets
-                async with websockets.connect(f"ws://localhost:{self.port}") as ws:
+                async with websockets.connect(f"ws://{self.host}:{self.port}") as ws:
                     self.ws = ws
                     backoff = 1
+                    self._was_connected = True
+                    self._down_logged = False
                     self.logger.info(f"🎙️ [STREAM_CLIENT:{self.bot_id}] Connecté au Hub.")
                     async for message in ws:
                         data = json.loads(message)
                         msg_type = data.get("type")
-                        
+
                         if msg_type == "transcript":
                             text = data.get("text")
                             text_hash = data.get("hash")
                             asyncio.create_task(self.on_transcript(text, text_hash))
-                            
+
                         elif msg_type == "claim_response":
                             text_hash = data.get("hash")
                             granted = data.get("granted", False)
@@ -408,8 +421,21 @@ class StreamListenerClient:
                             if future and not future.done():
                                 future.set_result(granted)
             except Exception as e:
-                self.logger.warning(f"🎙️ [STREAM_CLIENT:{self.bot_id}] Déconnecté du Hub : {e}")
-            
+                # On log au CHANGEMENT d'état seulement, sinon un hub absent inonde
+                # les logs (une ligne par retry, à l'infini). WARNING la 1re fois,
+                # puis DEBUG tant que rien ne change ; INFO à la reconnexion (ci-dessus).
+                if self._was_connected:
+                    self.logger.warning(f"🎙️ [STREAM_CLIENT:{self.bot_id}] Déconnecté du Hub : {e}")
+                elif not self._down_logged:
+                    self.logger.warning(
+                        f"🎙️ [STREAM_CLIENT:{self.bot_id}] Hub d'écoute injoignable (port {self.port}) : {e}. "
+                        f"Reconnexions silencieuses en arrière-plan jusqu'à ce qu'il démarre."
+                    )
+                else:
+                    self.logger.debug(f"🎙️ [STREAM_CLIENT:{self.bot_id}] Hub toujours injoignable : {e}")
+                self._was_connected = False
+                self._down_logged = True
+
             if self._stopped:
                 break
             await asyncio.sleep(backoff)

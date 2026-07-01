@@ -83,10 +83,15 @@ async def main():
         logger.info("Pour l'activer, modifiez les paramètres dans le dashboard et relancez ce script.")
         return
 
+    # Interface d'écoute : loopback IPv4 par défaut ; HUB_BIND_HOST=0.0.0.0 si les bots
+    # tournent en conteneur et joignent le hub via host.docker.internal.
+    bind_host = os.getenv("HUB_BIND_HOST", "127.0.0.1").strip() or "127.0.0.1"
+
     hub = StreamListenerHub(port=8765, mode=cfg["mode"], model_size=cfg["model"], device=cfg["device"],
                             voice_min_interval=cfg["min_interval"], input_device=cfg.get("input_device"),
                             initial_prompt=cfg.get("prompt"), rms_threshold=cfg.get("rms_threshold", 0.02),
-                            max_segment_sec=cfg.get("max_segment_sec", 12.0), auto_switch=cfg.get("auto_switch", False))
+                            max_segment_sec=cfg.get("max_segment_sec", 12.0), auto_switch=cfg.get("auto_switch", False),
+                            bind_host=bind_host)
     
     try:
         await hub.start()

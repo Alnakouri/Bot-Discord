@@ -101,7 +101,7 @@ class TwitchChatBot(
         enable_voice_listen: bool = False,
         voice_min_interval: float = 45.0,
         listen_port: int = 8765,
-        listen_host: str = "localhost"
+        listen_host: str = "127.0.0.1"
     ):
         self.bot_id = bot_id
         self.logger = logger
@@ -322,6 +322,9 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
             voice_min_interval = float(dash_listen["min_interval"])
         except (ValueError, TypeError):
             pass
+    # Hôte du hub d'écoute : 127.0.0.1 par défaut (IPv4, évite le ::1). En conteneur avec
+    # le hub sur la machine hôte, poser TWITCH_LISTEN_HOST=host.docker.internal.
+    listen_host = os.getenv("TWITCH_LISTEN_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
     # reward_map : merge dashboard PAR-DESSUS les défauts du bot (un dashboard vide ne les efface pas).
     dash_rewards = dash.get("reward_map") or {}
@@ -391,5 +394,6 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         greeting_templates=greeting_templates,
         broadcaster_auth=broadcaster_auth,
         enable_voice_listen=enable_voice_listen,
-        voice_min_interval=voice_min_interval
+        voice_min_interval=voice_min_interval,
+        listen_host=listen_host
     )
