@@ -25,6 +25,7 @@ from datetime import datetime
 import base64
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
+from game_views import setup_games
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -171,29 +172,6 @@ async def _daily_llm_call(system_prompt, user_message):
 # TOOLS — FONCTIONS D'AGENTS (M'aiq Edition)
 # ═══════════════════════════════════════════════════════════════
 
-async def tool_start_custom_riddle(question: str, answer: str, hint: str, channel):
-    """Lance une énigme personnalisée générée par M'aiq."""
-    try:
-        # On définit une récompense aléatoire entre 10 et 25
-        reward = random.randint(10, 25)
-        
-        # Envoi de l'énigme
-        embed = discord.Embed(
-            title="🎯 L'Énigme de M'aiq 🎯",
-            description=f"**{question}**",
-            color=discord.Color.gold()
-        )
-        embed.set_footer(text="Répondez avec !reponse <votre reponse>")
-        msg = await channel.send(embed=embed)
-        
-        # Tracking dans la DB
-        start_tracking_riddle(channel.id, question, [answer], hint, reward, msg.id)
-        
-        logger.info(f"🧩 [TOOL RIDDLE] M'aiq a lancé une énigme : {question}")
-        return f"SUCCÈS : L'énigme a été lancée dans le salon {channel.name}."
-    except Exception as e:
-        return f"ERREUR : M'aiq a oublié la question ! ({e})"
-
 def tool_set_lie_density(percentage: int):
     """Ajuste le niveau de mensonge de M'aiq (0-100)."""
     # Ici on peut imaginer un réglage global ou local
@@ -204,19 +182,6 @@ def tool_set_lie_density(percentage: int):
 MAIQ_TOOLS_DEFINITION = [
     {
         "function_declarations": [
-            {
-                "name": "start_custom_riddle",
-                "description": "Lance une énigme unique que tu as inventée pour les utilisateurs. Les énigmes doivent être universelles et ne PAS faire référence au lore d'Elder Scrolls (Tamriel, Skyrim, etc.) pour que tout le monde comprenne.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "question": {"type": "STRING", "description": "L'énigme elle-même."},
-                        "answer": {"type": "STRING", "description": "La réponse attendue (un seul mot si possible)."},
-                        "hint": {"type": "STRING", "description": "Un indice cryptique."}
-                    },
-                    "required": ["question", "answer", "hint"]
-                }
-            },
             {
                 "name": "set_lie_density",
                 "description": "Ajuste ton envie de mentir aujourd'hui.",
@@ -290,7 +255,7 @@ async def on_ready():
     
     status_loop_maiq.start()
     daily_rumor_check.start()  # Rumeur quotidienne (jours pairs)
-    auto_riddle_loop_maiq.start() # Énigmes de M'aiq
+    # auto_riddle_loop_maiq.start() # Énigmes de M'aiq - DEACTIVATED (ON COMMAND ONLY)
     riddle_passive_hint_loop.start() # Relance des indices
 
     
@@ -321,6 +286,9 @@ async def on_ready():
         setup_slash_commands(bot, "M'aiq")
         await sync_slash_commands(bot)
         logger.info("[SLASH] Commandes slash initialisées")
+
+    # INITIALISATION DES MINI-JEUX
+    setup_games(bot, logger)
 
 async def check_missed_riddle_answers():
     """
@@ -560,53 +528,6 @@ async def publish_daily_rumor():
     logger.info(f"🐱 [RUMEUR PUBLIÉE] Cible: {target_user.display_name}")
 
 # ÉNIGMES DE M'AIQ (Transféré de Sheogorath)
-
-@tasks.loop(minutes=45)
-async def auto_riddle_loop_maiq():
-    """M'aiq pose une devinette... ou un mensonge ?"""
-    await bot.wait_until_ready()
-    
-    # Heure stricte (09h - 23h)
-    hour = datetime.now().hour
-    if hour >= 23 or hour < 9: return
-    
-    # 40% de chance de passer (M'aiq est fatigué)
-    if random.random() < 0.4: return
-
-    # Trouver le canal
-    target_channel = None
-    for guild in bot.guilds:
-        for channel in guild.text_channels:
-            if "taverne" in channel.name.lower() and "bot" in channel.name.lower():
-                target_channel = channel
-                break
-        if target_channel: break
-    
-    if not target_channel: return
-
-    # SILENCE STREAM
-    if is_ignored_channel(target_channel): return
-
-    # Déjà une énigme en cours ?
-    active_riddle = get_active_riddle(target_channel.id)
-    if active_riddle:
-        # Si l'énigme a moins de 2h → on la laisse en place (ex: redémarrage du bot)
-        age_hours = 99  # Valeur par défaut (vieille) si parsing échoue
-        try:
-            started_at = datetime.fromisoformat(active_riddle["started_at"])
-            age_hours = (datetime.now() - started_at).total_seconds() / 3600
-            if age_hours < 2.0:
-                logger.info(f"⏳ [RIDDLE MAIQ] Énigme en cours depuis {age_hours:.1f}h → on la garde, pas de nouvelle.")
-                return
-        except Exception:
-            pass  # En cas d'erreur de parsing, age_hours reste à 99 → on remplace
-        
-        # L'énigme est vieille (>2h) → on la ferme et on en poste une nouvelle
-        logger.info(f"🗑️ [RIDDLE MAIQ] Ancienne énigme expirée ({age_hours:.1f}h) → nouvelle en cours de génération")
-        await close_riddle_cleanup(target_channel, active_riddle.get("message_id"))
-
-    # Génération et envoi de l'énigme
-    await generate_and_post_riddle(target_channel)
 
 @tasks.loop(minutes=5)
 async def riddle_passive_hint_loop():
@@ -1386,9 +1307,7 @@ async def on_message(message):
                     logger.info(f"🛠️ [IA AGENT] M'aiq appelle l'outil : {tool_name}")
                     
                     tool_result = "Action impossible."
-                    if tool_name == "start_custom_riddle":
-                        tool_result = await tool_start_custom_riddle(args["question"], args["answer"], args["hint"], message.channel)
-                    elif tool_name == "set_lie_density":
+                    if tool_name == "set_lie_density":
                         tool_result = tool_set_lie_density(args["percentage"])
                     
                     # Feed back
