@@ -45,6 +45,10 @@ data/*.bak
 chroma.sqlite3
 # Rapports d'évaluation générés
 tests/eval/reports/
+dashboard/reports/report_all_*.md
+
+# Canvas Obsidian (notes de travail hors git)
+*.canvas
 
 # Bases de données SQLite (pas de commit, persistées en volume Docker)
 *.db
