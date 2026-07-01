@@ -1019,7 +1019,7 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     if openrouter_client:
         try:
             chat = openrouter_client.chat.completions.create(
-                model="x-ai/grok-4-fast:free",
+                model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                 messages=[{"role": "user", "content": rumor_prompt}],
                 temperature=1.0,
                 max_tokens=300
@@ -1589,7 +1589,7 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         if openrouter_client:
             try:
                 chat = openrouter_client.chat.completions.create(
-                    model="x-ai/grok-4-fast:free",
+                    model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=1.0,
                     max_tokens=300
@@ -1797,7 +1797,7 @@ async def on_message(message):
             elif openrouter_client:
                 try:
                     chat = openrouter_client.chat.completions.create(
-                        model="x-ai/grok-4-fast:free",
+                        model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                         messages=[{"role": "user", "content": full_prompt}],
                         max_tokens=300
                     )
@@ -1839,7 +1839,7 @@ async def on_message(message):
             if openrouter_client:
                 try:
                     chat = openrouter_client.chat.completions.create(
-                        model="x-ai/grok-4-fast:free",
+                        model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=1.0,
                         max_tokens=300
@@ -2255,23 +2255,36 @@ async def on_message(message):
                 else:
                     continue
 
-            # 2. Grok via OpenRouter (avec tool-calling)
-            elif client_type == "openrouter" and openrouter_client and "grok" in (model_name or ""):
+            # 2. OpenRouter (tout modèle OpenRouter de la cascade, avec tool-calling)
+            #    NB: garde élargie — plus de filtre "grok" (le modèle :free n'est plus un Grok).
+            elif client_type == "openrouter" and openrouter_client:
                 msgs = [{"role": "system", "content": f"{system_instruction}\nCONTEXT: {transcript}"}]
                 for msg in conversation_history[channel_id]:
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
                 msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
                 
-                chat = openrouter_client.chat.completions.create(
-                    model=model_name,
-                    messages=msgs,
-                    temperature=1.0,
-                    max_tokens=300,
-                    tools=OPENAI_TOOLS_DEFINITION,
-                    tool_choice="auto"
-                )
-                
+                try:
+                    chat = openrouter_client.chat.completions.create(
+                        model=model_name,
+                        messages=msgs,
+                        temperature=1.0,
+                        max_tokens=300,
+                        tools=OPENAI_TOOLS_DEFINITION,
+                        tool_choice="auto"
+                    )
+                except Exception as _tool_err:
+                    # Modèle sans support tool-use (ex. Dolphin-Venice:free → 404 "No endpoints
+                    # found that support tool use") : on réessaie SANS outils au lieu de tomber
+                    # en cascade. On perd le tool-calling pour CE modèle, pas la réponse.
+                    logger.info(f"🔧 [OpenRouter] {model_name} sans tool-use → réessai sans outils")
+                    chat = openrouter_client.chat.completions.create(
+                        model=model_name,
+                        messages=msgs,
+                        temperature=1.0,
+                        max_tokens=300
+                    )
+
                 resp_msg = chat.choices[0].message
                 
                 # Handling Tool Calls
@@ -2281,7 +2294,7 @@ async def on_message(message):
                         import json
                         args = json.loads(tool_call.function.arguments)
                         
-                        logger.info(f"🛠️ [Grok Agent] Sheogorath appelle l'outil : {tool_name}({args})")
+                        logger.info(f"🛠️ [OpenRouter Agent] Sheogorath appelle l'outil : {tool_name}({args})")
                         
                         tool_result = "Action impossible."
                         if tool_name == "wabbajack":
@@ -2305,8 +2318,14 @@ async def on_message(message):
                     response_text = chat.choices[0].message.content
                 else:
                     response_text = resp_msg.content
-                
-                logger.info(f"😈 [GROK {model_name}] Sheogorath a parlé !")
+
+                # Un modèle :free peut renvoyer un contenu VIDE sans exception →
+                # on ne casse pas la cascade sur du vide, on tente l'échelon suivant.
+                if not (response_text and response_text.strip()):
+                    logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")
+                    response_text = None
+                    continue
+                logger.info(f"😈 [OPENROUTER {model_name}] Sheogorath a parlé !")
                 break
 
             # 3. MISTRAL

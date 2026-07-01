@@ -122,6 +122,12 @@ async def generate_response(
                     extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": bot_label},
                 )
                 response_text = chat.choices[0].message.content
+                # Un modèle :free peut renvoyer un contenu VIDE sans lever d'exception →
+                # on ne casse pas la cascade sur du vide, on tente l'échelon suivant.
+                if not (response_text and response_text.strip()):
+                    logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")
+                    response_text = None
+                    continue
                 logger.info(f"🌌 [OPENROUTER {model_name}] {bot_label}")
                 break
 

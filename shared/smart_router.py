@@ -175,9 +175,14 @@ def get_model_cascade(routing_type):
         # Cascade FREE-TIER optimisée répartie/humour, 3 fournisseurs distincts
         # (pools de rate-limit indépendants → si l'un throttle, l'autre prend le relais) :
         return [
-            ("openrouter", "x-ai/grok-4-fast:free"),  # Grok gratuit — le plus mordant/irrévérent pour la vanne
-            ("groq", "llama-3.3-70b-versatile"),       # Groq : ultra-rapide + bon banter (clé Groq, gratuit)
-            ("mistral", "mistral-large-latest"),       # repli fiable, prouvé en prod
+            # Ordre pour un rendu FR PROPRE et fidèle à la persona (1er qui répond gagne) :
+            # Mistral Large (modèle FR, français le plus propre, obéit bien → moins de tics) en
+            # tête, Llama-3.3-70b (Groq, rapide) en secours, puis Dolphin-Venice :free (mordant
+            # décensuré, base Mistral) tout en bas pour la variété quand les deux propres tombent.
+            # NB : plus aucun Grok gratuit sur OpenRouter (x-ai/grok-4-fast:free déprécié → 404, 2026-07).
+            ("mistral", "mistral-large-latest"),
+            ("groq", "llama-3.3-70b-versatile"),
+            ("openrouter", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"),
         ]
     
     # TEXT par défaut — 3 fournisseurs à clé propre (Mistral/Groq/Gemini),
