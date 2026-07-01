@@ -1025,8 +1025,6 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    is_duel = False  # conservé pour compatibilité (toujours False désormais)
-
     # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
     # ══════════════════════════════════════════════════
@@ -1168,8 +1166,8 @@ async def on_message(message):
     # Détection d'images
     has_attachment_image = any(a.content_type and a.content_type.startswith('image/') for a in message.attachments) if message.attachments else False
     
-    # "L'Oreille qui traîne" (Si mot-clé + pas de mention + pas de duel + random 20%)
-    if has_keyword and not is_mentioned and not is_reply and not is_duel:
+    # "L'Oreille qui traîne" (Si mot-clé + pas de mention + random 20%)
+    if has_keyword and not is_mentioned and not is_reply:
          if random.random() < 0.20:
             is_eavesdropping = True
             logger.info(f"[OREILLE] Mot-clé détecté dans : {message.content[:50]}")
@@ -1197,7 +1195,7 @@ async def on_message(message):
             is_image_trigger = True
             logger.info("[IMAGE RANDOM] M'aiq décide de commenter l'image")
     
-    should_respond = is_mentioned or is_reply or is_name_mentioned or is_eavesdropping or is_duel or is_image_trigger or is_rumor_defense
+    should_respond = is_mentioned or is_reply or is_name_mentioned or is_eavesdropping or is_image_trigger or is_rumor_defense
 
     if not should_respond:
         return

@@ -100,7 +100,6 @@ Bot Discord/
 │   ├── shared_database.py   # SQLite centralisé (WAL mode)
 │   ├── slash_commands.py    # Commandes slash Discord unifiées
 │   ├── server_events.py     # Événements serveur (join/leave/birthday)
-│   ├── bot_duel_tracker.py  # Anti-boucle duels inter-bots (JSON)
 │   ├── secure_env.py        # Chargement .env chiffré (Fernet)
 │   ├── safe_client.py       # Fix Gemini "Invalid project name"
 │   ├── bot_logger.py        # Logger structuré (JSONL + Console)
@@ -228,6 +227,6 @@ Les requêtes sont classifiées puis routées pour optimiser les coûts :
 
 3. **La base SQLite est en mode WAL** pour supporter 6 processus concurrents. Ne pas changer le mode journal.
 
-4. **Le duel tracker utilise un JSON partagé** (`duel_state.json`). C'est un point de fragilité connu (race conditions en Docker).
+4. **Silence total entre bots** : chaque `on_message` commence par `if message.author.bot: return`. Les bots ne se répondent JAMAIS entre eux (l'ancien « duel tracker » inter-bots a été retiré).
 
 5. **Sheogorath bénéficie d'une voix haute fidélité** : Performance de Philippe Bozo (VF TESO) clonée via Chatterbox TTS. Le moteur vocal tourne sur GPU (CUDA) via un conteneur dédié (`chatterbox-tts`).

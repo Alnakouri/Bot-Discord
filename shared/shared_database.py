@@ -177,18 +177,6 @@ def init_database():
         )
     """)
 
-    # Table des duels inter-bots
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS duel_state (
-            channel_id INTEGER NOT NULL,
-            bot_a TEXT NOT NULL,
-            bot_b TEXT NOT NULL,
-            started_at REAL NOT NULL,
-            expires_at REAL NOT NULL,
-            PRIMARY KEY (channel_id)
-        )
-    """)
-
     # Check if columns exist (Migration Manual)
     try:
         cursor.execute("SELECT message_id FROM riddles LIMIT 1")

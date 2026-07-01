@@ -1665,8 +1665,6 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    is_duel = False  # conservé pour compatibilité (toujours False désormais)
-
     # Gestion des mentions ou réponses
     is_mentioned = bot.user.mentioned_in(message)
     is_reply = (message.reference and message.reference.resolved and 
@@ -1931,10 +1929,10 @@ async def on_message(message):
     if is_mentioned or is_reply:
         should_respond = True
         logger.info(f"🤖 [TRIGGER] Mention/Reply")
-    elif has_name and not is_duel:
+    elif has_name:
         should_respond = True
         logger.info(f"👑 [TRIGGER] Mon nom a été prononcé ! ('{msg_lower[:30]}...')")
-    elif is_continuation and not is_duel:
+    elif is_continuation:
         should_respond = True
         response_mode = "LLM"
         logger.info(f"💬 [TRIGGER] Continuité de conversation (échange récent, sans re-mention)")
@@ -1947,19 +1945,17 @@ async def on_message(message):
     elif is_proactive:
         should_respond = True
         logger.info(f"🤖 [TRIGGER] Proactivity")
-    elif has_priority_keyword and not is_duel and not is_long_message:
+    elif has_priority_keyword and not is_long_message:
         # Court message + Keyword fort -> On passe TOUT en LLM pour éviter les réponses hors-sol
         # L'IA est assez intelligente pour gérer les demandes de fromage
         should_respond = True
         response_mode = "LLM"
-    elif has_priority_keyword and not is_duel and is_long_message:
+    elif has_priority_keyword and is_long_message:
         should_respond = True
         response_mode = "LLM" # Force LLM for context
-    elif has_keyword and not is_duel and random.random() < 0.60:
+    elif has_keyword and random.random() < 0.60:
         should_respond = True
         response_mode = "LLM" # WAS HYBRID - FORCED TO LLM FOR BETTER CONVERSATION
-    elif is_duel:
-         should_respond = True
 
     if not should_respond:
         return
@@ -2071,7 +2067,6 @@ async def on_message(message):
         system_instruction += f"{memory_context}\n"
 
     # Context Injection for Empty Pings - SYSTEM-LEVEL ONLY (No leakage!)
-    duel_context = ""
     if is_mentioned and not user_message and not has_image:
          user_message = "(Le mortel vous regarde fixement sans rien dire.)"
     elif has_image and not user_message:
@@ -2098,10 +2093,6 @@ async def on_message(message):
         for i, snippet in enumerate(recent_snippets, 1):
             system_instruction += f"{i}. \"{snippet}\"\n"
         system_instruction += "⚠️ INTERDICTION TOTALE de répéter ces phrases ou des variations proches. Trouve une idée COMPLÈTEMENT DIFFÉRENTE !"
-    
-    # DUEL CONTEXT INJECTION (Safe - won't leak into response)
-    if duel_context:
-        system_instruction += duel_context
     
     # Instruction for Extraction
     system_instruction += "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur l'utilisateur dans ce message (ex: il aime/déteste qqch, son métier, une peur), ajoute-le à la fin de ta réponse dans un bloc XML invisible : <fact>Le fait appris</fact>. Sinon, ne mets rien."
