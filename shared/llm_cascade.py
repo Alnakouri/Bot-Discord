@@ -2,6 +2,7 @@
 Cascade LLM partagée — essaie les modèles dans l'ordre renvoyé par get_model_cascade()
 jusqu'à obtenir une réponse. Extrait de bot_johnny.py (référence) pour dédupliquer les 6 bots.
 """
+import asyncio
 import base64
 import logging
 
@@ -57,7 +58,8 @@ async def generate_response(
                 if media_data:
                     last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
                 gemini_messages.append(types.Content(role="user", parts=last_turn_parts))
-                resp = client.models.generate_content(
+                resp = await asyncio.to_thread(
+                    client.models.generate_content,
                     model=model_name, contents=gemini_messages,
                     config=types.GenerateContentConfig(temperature=temperature, max_output_tokens=gemini_max_tokens or max_tokens),
                 )
@@ -82,7 +84,8 @@ async def generate_response(
 
             # 2. MISTRAL
             elif client_type == "mistral" and mistral_client:
-                chat = mistral_client.chat.complete(
+                chat = await asyncio.to_thread(
+                    mistral_client.chat.complete,
                     model=model_name,
                     messages=[{"role": "system", "content": system_prompt},
                               {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nMESSAGE: {user_message}"}],
@@ -98,7 +101,8 @@ async def generate_response(
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
                 msgs.append({"role": "user", "content": user_message})
-                chat = groq_client.chat.completions.create(
+                chat = await asyncio.to_thread(
+                    groq_client.chat.completions.create,
                     messages=msgs, model=model_name, temperature=temperature,
                 )
                 response_text = chat.choices[0].message.content
@@ -114,7 +118,8 @@ async def generate_response(
                         {"type": "text", "text": f"{transcript}\n{user_message}"},
                         {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}},
                     ]
-                chat = openrouter_client.chat.completions.create(
+                chat = await asyncio.to_thread(
+                    openrouter_client.chat.completions.create,
                     model=model_name,
                     messages=[{"role": "system", "content": system_prompt},
                               {"role": "user", "content": user_content}],

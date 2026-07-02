@@ -1865,6 +1865,11 @@ async def on_message(message):
     # 📌 1. Commandes Admin/Debug
     if message.content.startswith("!debug_sheo") and message.author.guild_permissions.administrator:
         pass # This is a placeholder, actual debug commands would follow
+    if message.content.startswith("!humeur ") and message.author.guild_permissions.administrator:
+        target_mood = message.content[len("!humeur "):].strip()
+        res = tool_set_mood(target_mood)
+        await message.channel.send(res)
+        return
     
     # ---------------------------------------------------------
     # SYSTÈME DE FAVEUR DU PRINCE
@@ -2182,6 +2187,14 @@ async def on_message(message):
     
     cascade = get_model_cascade(routing["type"])
     
+    # Determine length adaptation
+    if routing["type"] == RequestType.REPARTEE:
+        max_tokens_val = 120
+        max_sentences_val = 3
+    else:
+        max_tokens_val = 300
+        max_sentences_val = 6
+    
     for client_type, model_name in cascade:
         try:
             # 1. GEMINI
@@ -2191,12 +2204,16 @@ async def on_message(message):
                 client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
                 
                 # Gemini Call
-                resp = client.models.generate_content(
-                    model=model_name, contents=gemini_messages,
-                    config=types.GenerateContentConfig(
-                        temperature=1.0,
-                        tools=SHEO_TOOLS_DEFINITION
-                    )
+                resp = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.models.generate_content,
+                        model=model_name, contents=gemini_messages,
+                        config=types.GenerateContentConfig(
+                            temperature=1.0,
+                            tools=SHEO_TOOLS_DEFINITION
+                        )
+                    ),
+                    timeout=15
                 )
                 
                 # Handling Tool Calls (IA Agentique)
@@ -2225,12 +2242,16 @@ async def on_message(message):
                     ))
                     
                     # Seconde passe pour la réponse textuelle
-                    resp = client.models.generate_content(
-                        model=model_name, contents=gemini_messages,
-                        config=types.GenerateContentConfig(
-                            temperature=0.9,
-                            tools=SHEO_TOOLS_DEFINITION # Redonner les tools peut aider à la stabilité
-                        )
+                    resp = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.models.generate_content,
+                            model=model_name, contents=gemini_messages,
+                            config=types.GenerateContentConfig(
+                                temperature=0.9,
+                                tools=SHEO_TOOLS_DEFINITION # Redonner les tools peut aider à la stabilité
+                            )
+                        ),
+                        timeout=15
                     )
                 
                 response_text = resp.text
@@ -2265,24 +2286,32 @@ async def on_message(message):
                 msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
                 
                 try:
-                    chat = openrouter_client.chat.completions.create(
-                        model=model_name,
-                        messages=msgs,
-                        temperature=1.0,
-                        max_tokens=300,
-                        tools=OPENAI_TOOLS_DEFINITION,
-                        tool_choice="auto"
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            openrouter_client.chat.completions.create,
+                            model=model_name,
+                            messages=msgs,
+                            temperature=1.0,
+                            max_tokens=max_tokens_val,
+                            tools=OPENAI_TOOLS_DEFINITION,
+                            tool_choice="auto"
+                        ),
+                        timeout=15
                     )
                 except Exception as _tool_err:
                     # Modèle sans support tool-use (ex. Dolphin-Venice:free → 404 "No endpoints
                     # found that support tool use") : on réessaie SANS outils au lieu de tomber
                     # en cascade. On perd le tool-calling pour CE modèle, pas la réponse.
-                    logger.info(f"🔧 [OpenRouter] {model_name} sans tool-use → réessai sans outils")
-                    chat = openrouter_client.chat.completions.create(
-                        model=model_name,
-                        messages=msgs,
-                        temperature=1.0,
-                        max_tokens=300
+                    logger.info(f"🔧 [OpenRouter] {model_name} sans tool-use → réessai sans outils : {_tool_err}")
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            openrouter_client.chat.completions.create,
+                            model=model_name,
+                            messages=msgs,
+                            temperature=1.0,
+                            max_tokens=max_tokens_val
+                        ),
+                        timeout=15
                     )
 
                 resp_msg = chat.choices[0].message
@@ -2314,7 +2343,12 @@ async def on_message(message):
                         })
                     
                     # Seconde passe
-                    chat = openrouter_client.chat.completions.create(model=model_name, messages=msgs, max_tokens=300)
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            openrouter_client.chat.completions.create, model=model_name, messages=msgs, max_tokens=max_tokens_val
+                        ),
+                        timeout=15
+                    )
                     response_text = chat.choices[0].message.content
                 else:
                     response_text = resp_msg.content
@@ -2330,10 +2364,15 @@ async def on_message(message):
 
             # 3. MISTRAL
             elif client_type == "mistral" and mistral_client:
-                chat = mistral_client.chat.complete(
-                    model=model_name,
-                    messages=[{"role": "system", "content": system_instruction},
-                              {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}]
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        mistral_client.chat.complete,
+                        model=model_name,
+                        messages=[{"role": "system", "content": system_instruction},
+                                  {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}],
+                        max_tokens=max_tokens_val
+                    ),
+                    timeout=15
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"🌪️ [MISTRAL {model_name}] Sheogorath souffle des vents de folie !")
@@ -2341,10 +2380,14 @@ async def on_message(message):
 
             # 4. GROQ
             elif client_type == "groq" and groq_client:
-                chat = groq_client.chat.completions.create(
-                    messages=[{"role": "system", "content": system_instruction},
-                              {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}],
-                    model=model_name, temperature=0.9
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        groq_client.chat.completions.create,
+                        messages=[{"role": "system", "content": system_instruction},
+                                  {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}],
+                        model=model_name, temperature=0.9, max_tokens=max_tokens_val
+                    ),
+                    timeout=15
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"⚡ [GROQ {model_name}] Sheogorath a répondu !")
@@ -2371,10 +2414,14 @@ async def on_message(message):
                 else:
                     msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
                 
-                chat = openrouter_client.chat.completions.create(
-                    model=model_name, messages=msgs,
-                    temperature=0.9, max_tokens=300,
-                    extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        openrouter_client.chat.completions.create,
+                        model=model_name, messages=msgs,
+                        temperature=0.9, max_tokens=max_tokens_val,
+                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
+                    ),
+                    timeout=15
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"🌌 [OPENROUTER {model_name}] Sheogorath a utilisé un secours visuel !")
@@ -2401,7 +2448,7 @@ async def on_message(message):
     if response_text:
         # POST-PROCESSING via sheo_llm.py
         response_text = postprocess_response(
-            response_text, fact_brain, message.author.id, message.content
+            response_text, fact_brain, message.author.id, message.content, max_sentences=max_sentences_val
         )
         
         # VÉRIFICATION MESSAGE NON VIDE

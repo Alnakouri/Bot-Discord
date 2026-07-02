@@ -116,11 +116,11 @@ class TwitchEventSub:
                 "condition": {"to_broadcaster_user_id": self.broadcaster_id}
             },
             "channel.hype_train.begin": {
-                "version": "1",
+                "version": "2",
                 "condition": {"broadcaster_user_id": self.broadcaster_id}
             },
             "channel.hype_train.end": {
-                "version": "1",
+                "version": "2",
                 "condition": {"broadcaster_user_id": self.broadcaster_id}
             },
             "channel.poll.begin": {
