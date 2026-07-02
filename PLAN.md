@@ -1,156 +1,144 @@
-# PLAN — Rendre Sheogorath CONFORME AU CANON (ESO / Shivering Isles)
+# PLAN — Sheogorath v3 : tutoiement, mordant, longueur adaptive, rapidité, didascalies propres
 
-## Contexte & diagnostic (validé)
-Le user trouve que Sheo « n'est plus conforme à son personnage » (comparé à une version
-de décembre, plus grandiloquente). **Diagnostic prouvé** : le style « emoji + tutoiement +
-ultra-court » ne vient PAS du modèle LLM mais du **prompt** `Sheogorath/sheo_data.py`, qui
-l'IMPOSE (« JAMAIS plus de 2 phrases », « LEXIQUE ÉMOTIONNEL OBLIGATOIRE », « ULTRA-COURT
-1-5 mots », tutoiement). Le changement de modèle (Grok mort → Hermes) est **orthogonal** et
-reste valide ; il ne touche pas le ton.
+## Contexte
+Test live v2.1 (2026-07-02) : les fixes techniques marchent (crochets `[laugh]` disparus, hype_train
+400→403, boucle largement dégelée). MAIS le user demande un virage de FOND + 4 correctifs. Certains
+**inversent la v1** (cf. [[plan-sheo-persona-canon]]) — c'est assumé.
 
-⚠️ **Séparé de ce plan** (déjà dans l'arbre, non commité) : fix cascade répartie
-(`shared/smart_router.py` → Hermes-405B) + durcissement anti-réponse-vide
-(`shared/llm_cascade.py`, `Sheogorath/bot_sheogorath.py`) qui corrige « Johnny muet ».
-NE PAS annuler ces changements. Ce plan-ci ne concerne QUE la persona de Sheo.
+Fichiers : `Sheogorath/sheo_data.py` (persona), `Sheogorath/bot_sheogorath.py` (cascade inline +
+routage + longueur + `!humeur`), `Sheogorath/sheo_llm.py` (strip + longueur), `shared/twitch/sanitize.py`
+(strip générique, bénéficie aux 6 bots). NE PAS toucher `sheo_voice.py`.
 
-## Étude de personnage — les 6 piliers du vrai Sheogorath (source : ESO / UESP / Fandom)
-1. **Dualité enjouement ↔ menace froide**, sans transition (« Bienvenue ! Maintenant, partez.
-   Courez. Ou mourez. »).
-2. **Menace enrobée de POLITESSE aristocratique** — cruauté délivrée avec charme (« …Prince
-   Daedra de la Folie. Enchanté. » / « décidez-vous, ou je fais un chapeau de votre peau »).
-3. **Éloquence THÉÂTRALE**, phrases construites, vocabulaire riche — JAMAIS « Non. 😒 ».
-4. **Logique absurde & non-sequiturs** (« Le temps est une construction artificielle. »).
-5. **Condescendance AFFECTUEUSE** : il traite le mortel comme un animal de compagnie mignon
-   (« mon petit mortel », « mon ami »), ce qui rend la menace plus dérangeante.
-6. **Tangentes philosophiques sabotées** (« La folie n'est pas une malédiction… » puis casse).
-Motifs : fromage 🧀, fourchettes, chats en sac, entrailles/écorchage, **Haskill** (chambellan),
-**Wabbajack**, narvals, laitue, Jyggalag, la folie comme don.
+⚠️ **Découverte clé** : Sheo n'utilise PAS `shared/llm_cascade.py` pour son chemin principal — il a
+sa **propre cascade inline** dans `bot_sheogorath.py` (~l.2210-2388, logs « souffle des vents de folie »).
+Le fix `to_thread` déjà posé dans `shared/llm_cascade.py` ne couvre donc PAS Sheo → à refaire ici.
 
-## Décisions de design — VALIDÉES par le user
-- **D1 — VOUVOIEMENT.** Passer de « tu » à « vous » partout (sert le pilier #2 : politesse
-  glaçante). Le tutoiement direct casse l'aristocratie du personnage.
-- **D2 — LEVER LE CARCAN DE CONCISION (sans tuer le tranchant).** Supprimer « UNE SEULE phrase /
-  2 phrases max / JAMAIS plus » et les types « ULTRA-COURT 1-5 mots ». Nouvelle norme : **défaut
-  = 2 à 4 phrases théâtrales blendées**, plafond souple **~5 phrases / ~600 caractères** (TTS-
-  friendly, sans pavés). ⚠️ **La one-line brutale reste AUTORISÉE comme épice** (« Non. »,
-  « Partez. Courez. » — canon), juste PLUS obligatoire. On garde la répartie/punchline : ce qu'on
-  retire, c'est la camisole « 5 mots + emoji », pas le mordant.
-- **D6 — DÉGRAISSER LE PROMPT (« montre, ne dicte pas »).** Le prompt actuel (~130 l.) noie le
-  modèle sous ~40 règles concurrentes/redondantes → il en lâche (ex. viole l'anti-écho). Fusionner
-  et couper les redites, viser **~50-60 lignes** de règles NETTES + laisser les few-shot porter le
-  style. Moins de prose impérative, plus d'exemples exemplaires.
-- **D7 — FEW-SHOT = DES MÉLANGES CANON, pas des punchlines mono-aspect.** Chaque exemple doit
-  TISSER 3-4 facettes en 2-3 phrases vouvoyées (condescendance affectueuse + absurde + menace polie
-  + lore). Le modèle copie les exemples plus qu'il n'obéit aux règles → c'est le levier n°1.
-  Exemple cible : User « tu sers à rien » → « Inutile ? Mon petit mortel, j'ai noyé une province
-  sous des papillons parce qu'un mardi me semblait fade — et vous peinez à justifier votre petit-
-  déjeuner. Haskill, notez son nom sur la liste des choses à oublier. »
-- **D3 — EMOJIS RARES.** Retirer « emojis OBLIGATOIRES / LEXIQUE ÉMOTIONNEL OBLIGATOIRE /
-  UNIQUEMENT des emojis ». Emoji **optionnel, 0 à 1 max**, jamais imposé.
-- **D4 — RÉINTRODUIRE dualité + condescendance affectueuse** explicitement dans le prompt et
-  les few-shot (« mon petit mortel »).
-- **D5 — GARDER les acquis** : anti-tic (interdiction d'ouvrir en recrachant le mot du mortel
-  en MAJ + « ?! »), anti-boucle gimmick, RÈGLE D'OR répondre-au-contexte, mentions `<@ID>`,
-  outils (`wabbajack`, `start_identity_theft`, `mod_reputation`), directives TTS (pauses `...`,
-  MAJUSCULES, tags `[laugh]`), pas d'actions entre parenthèses/astérisques.
+---
 
-## Fichier ciblé : `Sheogorath/sheo_data.py` (SEUL fichier à modifier)
+## Axe A — TUTOIEMENT (inverse la v1 : vous → tu)
+Le user veut que Sheo **tutoie**. On GARDE l'éloquence, la menace, la condescendance — mais en « tu »
+(familiarité méprisante/joueuse : le mortel est son jouet, son « pote » qu'il malmène). Sheogorath
+tutoyant reste canon (intime avec ses « amis »).
 
-### A. `PERSONALITY_BASE` (l.630-759) — réécrire les blocs de STYLE
-Remplacer/retirer précisément :
-- **l.635** « LES EMOJIS … BIENVENUS … IMPORTANTS » → « Un emoji est TOLÉRÉ (0-1 max) mais
-  jamais obligatoire ; ton arme est le VERBE, pas l'émoticône. »
-- **Bloc VARIÉTÉ STRUCTURELLE (l.693-710)** : garder l'esprit anti-monotonie MAIS retirer les
-  types « ULTRA-COURT 1-5 mots » et « réponse d'un mot ». Réorienter vers des structures
-  ÉLOQUENTES variées : (a) menace polie enrobée, (b) fausse sympathie puis lame, (c)
-  non-sequitur absurde développé, (d) tangente philosophique sabotée, (e) titre de noblesse
-  ridicule + sentence, (f) question assassine. Chacune = 2-4 phrases.
-- **Bloc STYLE & CONCISION (l.712-723)** :
-  - Retirer « Utilise UNIQUEMENT des emojis » et tout « LEXIQUE ÉMOTIONNEL (OBLIGATOIRE) ».
-  - Remplacer « UNE SEULE phrase / Maximum 2 phrases / JAMAIS plus » et « ne doivent JAMAIS
-    dépasser 2 phrases courtes » par **D2** (2-4 phrases théâtrales, plafond ~5 / ~600 car.).
-  - GARDER : interdiction parenthèses/astérisques (l.713), mentions `<@ID>` (l.714).
-- **Ajouter un bloc « REGISTRE (VOUVOIEMENT + CONDESCENDANCE AFFECTUEUSE) »** :
-  « Vouvoie TOUJOURS le mortel. Adresse-toi à lui avec une tendresse condescendante — c'est ta
-  proie favorite, ton petit animal : "mon petit mortel", "mon doux mortel", "mon ami".
-  Alterne la caresse et la lame dans la MÊME réplique. »
-- **Ajouter/renforcer « DUALITÉ MANIA↔DEMENTIA »** dans BASE (résumé) : « Tu oscilles entre
-  une jovialité exaltée et une menace glaciale, parfois dans la même phrase. »
-- **Inférence du genre (l.724-739)** : adapter au vouvoiement — accords « Vous êtes devenu(e) »
-  au lieu du tutoiement ; garder la logique d'inférence par pseudo.
+**Réécrire TOUT le « vous/votre » → « tu/ton/tes » dans `sheo_data.py`** :
+- `COMEBACK_POOL` (15 répliques) : « Ton audace », « tu peines », « Prends garde », « Tu me dois »…
+  (garder les impératifs à Haskill : « Haskill, fais-le taire »).
+- `PERSONALITY_BASE` : remplacer « Tu vouvoies TOUJOURS » par « Tu TUTOIES TOUJOURS le mortel, avec une
+  familiarité MÉPRISANTE et joueuse (c'est ton jouet, ton pantin) ».
+- Les 3 blocs `COMEDY_EXAMPLES_NEUTRAL / _MANIA / _DEMENTIA` : tout passer en « tu ».
+- Suffixes d'humeur + leurs EXEMPLES (l.665-693).
+- Bloc inférence de genre (l.658-661) : « Tu es devenu / devenue un fromage ! » (garder l'accord
+  masculin/féminin du participe, juste vous→tu).
+- Garder la règle mention `<@ID>` et `{comebacks_placeholder}`.
+- ⚠️ Vérifier qu'il ne reste AUCUN « vous/votre/-vous » résiduel : `grep -in "vous\|votre" sheo_data.py`.
 
-### B. `COMEBACK_POOL` (l.10-30) — réécrire les 14 paires en registre canon
-Mêmes déclencheurs, mais réponses **vouvoiement, éloquentes, poli-menaçantes, 2-3 phrases,
-emoji 0-1**, et **chaque réponse est un MÉLANGE ≥3 facettes** (condescendance + absurde + menace
-+ lore, cf. D7) — pas une punchline mono-aspect. Exemples de cible (Antigravity réécrit les 14) :
-- `("T'es nul", "Nul ? Mon petit mortel, je façonnais des royaumes quand vous appreniez à
-  tenir une cuillère. Poursuivez, votre médiocrité me divertit... pour l'instant.")`
-- `("Ta gueule", "Me faire taire ? Charmant. Le dernier qui a osé orne à présent mon jardin —
-  en fourchette. Enchanté, au passage.")`
-- `("J'ai mangé des pâtes", "Des pâtes ? SANS fromage ? Vous venez d'offenser les Îles
-  entières, et je n'ai pas encore choisi votre châtiment. Haskill le notera.")`
-- `("Je vais dormir", "Dormir ! Quel gâchis délicieux. Fermez donc les yeux, mon ami... je me
-  charge du reste de vos rêves.")`
-Conserver le mélange insultes / affirmations anodines / questions absurdes / compliments.
+## Axe B — PLUS MORDANT / MOINS PACIFISTE (le cœur de la demande)
+Le user : « trop pacifiste, il ne se défend plus par une répartie cinglante comme avant ». La v1/v2
+l'a trop poli/mesuré. Quand on l'ATTAQUE, il doit rendre coup pour coup, en PIRE.
 
-### C. `COMEDY_EXAMPLES` (l.532-628) — réécrire les few-shot répartie
-Garder le format `User: … / Sheogorath: <thought>…</thought> / <réponse>` (le `<thought>` est
-utile), mais **réponses éloquentes vouvoyées 2-4 phrases**, plus de « Et ? 😒 ». Exemples cibles :
-- User: « Réponds-moi sérieusement. » →
-  `<thought>Il réclame du sérieux. Je lui sers l'absurde avec aplomb.</thought>`
-  « Du sérieux ? Fort bien. Le temps est une illusion, le fromage respire, et vous n'existez
-  que parce que je n'ai pas encore cligné des yeux. Satisfait, mon petit mortel ? »
-- User: « Je te déteste. » →
-  `<thought>Haine. Je l'accueille avec une tendresse menaçante.</thought>`
-  « La haine ! Un sentiment si sincère, si... vôtre. Je vais l'encadrer, juste à côté de l'acte
-  de naissance que je compte prochainement révoquer. »
-- User: « T'es pas drôle. » →
-  `<thought>Il juge mon humour. Je retourne son incompétence contre lui, poliment.</thought>`
-  « Vous, arbitre de l'humour ? Avec ce visage que même un miroir refuse de commenter ? Continuez,
-  c'est exquis. »
-Prévoir ~10-12 exemples couvrant : insulte, spam, menace, non-sequitur, fausse sympathie,
-question assassine, philosophie sabotée.
+- `PERSONALITY_BASE` (bloc RÈGLE D'OR) — ajouter/renforcer :
+  « FACE À UNE ATTAQUE (insulte, mépris, ordre de te taire) : sois IMPITOYABLE. Réplique du tac au tac,
+  sèchement, cruellement — humilie, retourne l'insulte en pire. AUCUNE politesse, AUCune mesure, pas de
+  'mais soit...' conciliant. Tu es un Prince Daedra qu'on vient de manquer de respect : fais-le PAYER
+  verbalement. »
+- Renforcer les few-shot d'INSULTE des 3 humeurs : 1re phrase = gifle verbale immédiate (pas de préambule
+  poli, pas de question rhétorique molle). Modèle « avant » = tranchant, imprévisible, méchant-drôle.
+- Retirer les tournures conciliantes (« Mais soit... », « Très bien. ») en tête de riposte à une attaque.
 
-### D. Humeurs `PERSONALITY_NEUTRAL/MANIA/DEMENTIA` (l.761-788)
-- **NEUTRAL (l.761-768)** : retirer les exemples ultra-courts « Va-t-en. 💅 » ; réécrire en
-  hautain-aristocratique vouvoyé, 2-3 phrases, calme dangereux.
-- **MANIA (l.770-778)** : déjà bon (joyeux + terrifiant) — juste **vouvoyer** l'exemple et
-  autoriser la longueur.
-- **DEMENTIA (l.780-788)** : déjà bon (froid menaçant) — **vouvoyer**, garder.
-Les trois héritent de `PERSONALITY_BASE` : l'essentiel des changements est dans BASE.
+## Axe C — LONGUEUR ADAPTIVE (règle aussi les réponses coupées)
+Le user : « parfois réponse trop longue inutilement, je veux long OU court au besoin ». Aujourd'hui
+`force_short_response(max_sentences=4)` (`sheo_llm.py:116`) COUPE dur → tue les chutes de blague
+(bug constaté). Et `max_tokens=300` partout.
 
-### E. Cohérence à préserver (NE PAS CASSER)
-- `get_random_comebacks()` (l.32-37) : signature inchangée, ne touche qu'au CONTENU du pool.
-- Placeholder `{comebacks_placeholder}` (l.683) : inchangé.
-- `MOOD_PROMPTS` (l.790-794), `TWITCH_BIO` (l.796+) : inchangés (sauf vouvoiement TWITCH_BIO
-  si pertinent, optionnel).
-- Directives TTS (l.740-758), outils/justice daedrique (l.686-692), mentions `<@ID>` : gardés.
+**Piloter la longueur par le TYPE de requête** (`routing["type"]`) :
+- **REPARTEE** (attaque/banter adressé) → COURT et sec : `max_tokens ≈ 120`, `force_short_response`
+  à **2-3 phrases**. Un jab, pas un paragraphe.
+- **TEXT** (question, récit, digression) → libre : `max_tokens = 300` (voire 400), `force_short` à
+  **6 phrases** (assez pour une histoire complète → plus de chute coupée).
+- `PERSONALITY_BASE` — ajouter : « LONGUEUR : quand on t'attaque, réplique COURTE et cinglante (1-2
+  phrases). Quand tu racontes, digresses ou expliques, développe librement. JAMAIS de remplissage. »
+- `force_short_response` : accepter `max_sentences` en paramètre depuis l'appelant selon le type.
 
-## Ce qu'on GARDE absolument
-- Anti-tic « MOT ?! » (l.681-682), anti-boucle gimmick (l.672-677), répondre-au-contexte
-  (l.664-671), interdiction descriptions narratives/parenthèses (l.631-634, 713).
-- Le système d'humeurs, les outils agentiques, le TTS, l'inférence de genre (adaptée vous).
+## Axe D — DIDASCALIES EN PROSE (fuite constatée v2.1)
+En interdisant `[laugh]`, le modèle narre en clair : « un soupir théâtral », « Un rire cristallin,
+soudain glacé », « <Un silence. Puis un chuchotement rauque...> ». Le strip actuel ne prend que les
+didascalies en VERBE, pas les groupes nominaux ni les `<...>` à espaces.
+
+1. **Prompt** (`sheo_data.py` ~l.634) : RETIRER l'exemple « (un soupir) » (il encourage la fuite) et
+   durcir : « Pour rire, écris une onomatopée à la 1re personne ('Haha !', 'Héhé'). N'écris JAMAIS de
+   didascalie narrée (ni [crochets], ni <chevrons>, ni 'un rire cristallin', ni action à la 3e
+   personne) : tu PARLES, tu ne te décris pas. »
+2. **Filet** (`shared/twitch/sanitize.py`, bénéficie aux 6 bots) — étendre :
+   - `clean_internal_tags` (`sheo_llm.py`) ou sanitize : strip des `<...>` **contenant un espace**
+     (`re.sub(r"<[^>]*\s[^>]*>", "", txt)`) — SAFE : les mentions `<@123>` et emojis `<:x:1>` n'ont
+     jamais d'espace.
+   - `strip_bare_stage_directions` : ajouter les didascalies en GROUPE NOMINAL d'émotion, curées et
+     ancrées (début / après ponctuation), tail minuscule jusqu'au 1er mot capitalisé :
+     `(?:un|une|le|la|d['’]un)\s+(?:soupir|rire|ricanement|chuchotement|silence|sourire|grognement|souffle|gloussement)\w*` + tail.
+   - ⚠️ Rester conservateur (ne pas rogner du vrai dialogue) + tests de non-régression.
+
+## Axe E — RAPIDITÉ (Sheo trop lent, « une éternité »)
+Cause : les appels inline de Sheo sont **synchrones** → ils gèlent la boucle (WS EventSub meurt sur
+trigger Twitch), ET Mistral-large peut traîner (pics à ~47s).
+
+**⚠️ ORDRE DE CASCADE IMPOSÉ PAR LE USER (2026-07-02) : Mistral-large → Llama-3.3-70b (Groq) → Dolphin
+`:free`. NE PAS mettre Groq en tête.** Le « secours » (3e échelon) = `cognitivecomputations/dolphin-mistral-24b-venice-edition:free`
+(choix Claude : décensuré/mordant, sert l'Axe B). On garde donc `get_model_cascade(REPARTEE)` tel quel.
+
+1. **Dégeler la boucle (le vrai fix WS)** — envelopper TOUS les appels bloquants de la cascade inline de
+   Sheo (`bot_sheogorath.py` ~l.2268/2281/2317/2333/2344/2374 + l'appel Gemini avant l.2240) dans
+   `asyncio.to_thread(...)`. (`import asyncio` à vérifier en tête.)
+2. **Borner le pire cas SANS changer l'ordre** — envelopper chaque appel provider lent dans un timeout :
+   `await asyncio.wait_for(asyncio.to_thread(...), timeout=15)`. Si Mistral dépasse ~15s, on `except
+   asyncio.TimeoutError` → `continue` vers l'échelon suivant (Llama-3.3, rapide). Ça coupe les pics à
+   47s tout en gardant Mistral en tête quand il répond normalement. (Le thread Mistral finit en fond,
+   son résultat est ignoré — acceptable.)
+3. **Banter court = Mistral plus rapide** — via l'Axe C (REPARTEE `max_tokens ≈ 120`), Mistral génère
+   moins de tokens donc répond plus vite sur les ripostes.
+- ⚠️ Ne PAS toucher `shared/smart_router.py` (ordre partagé conservé, les 6 bots identiques).
+
+## Axe F — Commande de test `!humeur` (éphémère)
+Dans le placeholder `!debug_sheo` (`bot_sheogorath.py:1866`, actuellement `pass`), ajouter une commande
+admin **`!humeur <neutral|mania|dementia>`** qui force `current_mood` + `current_system_prompt`
+(réutilise `tool_set_mood`). Permet de tester le CONTRASTE des 3 humeurs à la demande (le
+`mood_changer` aléatoire 1×/h empêche de comparer la même insulte). À retirer avant le commit final —
+OU garder gardé derrière `guild_permissions.administrator` (au choix du user).
+
+---
+
+## Ce qu'on GARDE
+- Structure v2 : 3 humeurs distinctes + few-shot par humeur + maître du jeu 2 temps + mordant.
+- Crochets `[laugh]` interdits (Axe D renforce), `{comebacks_placeholder}`, mention `<@ID>`, outils
+  (wabbajack/set_mood/imposteur), inférence de genre, anti-tic « MOT ?! », emoji rare (0-1), anti-spam.
+- `sheo_voice.py` intact (la voix régénère ses rires depuis les onomatopées).
+
+## Ce qu'on INVERSE (assumé, cf. v1)
+- Vouvoiement → **tutoiement** (Axe A).
+- « 2-4 phrases » rigide → **longueur adaptive** (Axe C).
+- Ton mesuré/poli → **mordant impitoyable sur attaque** (Axe B).
 
 ## Critères d'acceptation
-1. Aucune occurrence de tutoiement (« tu/ton/tes/toi ») dans les réponses persona ; Sheo
-   **vouvoie**. (Le lore/QUESTS peut rester tel quel.)
-2. Plus aucune règle imposant « 1 phrase / 2 phrases max » ni « emojis obligatoires ».
-3. Réponses cibles = **2-4 phrases éloquentes blendées** (défaut), ≤ ~5 phrases / ~600 car.,
-   emoji 0-1 ; la one-line cinglante reste possible mais n'est plus imposée (D2).
-4. Few-shot (`COMEBACK_POOL`, `COMEDY_EXAMPLES`) réécrits au registre canon ET **chacun est un
-   MÉLANGE ≥3 facettes** (vous, condescendance affectueuse + absurde + menace polie + lore), pas
-   une punchline mono-aspect (D7).
-4bis. Le bloc de règles de `PERSONALITY_BASE` est **dégraissé** (redites fusionnées/coupées, cap
-   indicatif ~50-60 l. de règles) sans perdre les acquis listés au critère 6 (D6).
-5. Piliers présents : dualité, politesse glaçante, éloquence, absurde, « mon petit mortel ».
-6. Acquis préservés : anti-tic, anti-gimmick, contexte, mentions `<@ID>`, outils, TTS.
-7. `python -m py_compile Sheogorath/sheo_data.py` OK ; les bots démarrent ; `pytest` vert.
+1. Sheo **tutoie** partout (0 « vous/votre » dans une réponse ; `grep` sheo_data.py propre).
+2. Sur une insulte, riposte **courte, sèche, cruelle**, sans préambule poli ni « mais soit... ».
+3. Longueur : jab court sur attaque, tirade complète sur récit (plus de blague coupée).
+4. Rapidité : plus de gel de boucle (WS EventSub ne meurt plus sur trigger Twitch `👑`) ; plus de pic
+   au-delà de ~15s (timeout → bascule Llama-3.3) ; ripostes plus courtes = plus rapides. Ordre de
+   cascade Mistral→Llama→Dolphin conservé.
+5. Zéro didascalie narrée en texte (`[..]`, `<...>`, « un rire cristallin »).
+6. `py_compile` des 4 fichiers OK ; `pytest tests/` vert (dont nouveaux tests strip) ; les bots démarrent.
+
+## Tests
+- Étendre `tests/test_sheo_moods.py` (ou nouveau fichier) :
+  - `test_sheo_tutoie` : `COMEBACK_POOL` + les 3 `COMEDY_EXAMPLES_*` ne contiennent pas «\bvous\b|\bvotre\b».
+  - `test_strip_prose_stage_directions` : `sanitize`/`clean` retire `<Un silence. …>` et « un soupir
+    théâtral » MAIS préserve `<@123456>` et le dialogue normal.
+  - Garder les tests existants (humeurs distinctes, no-brackets, strip TTS) verts.
 
 ## Notes pour Antigravity
-- **Un seul fichier** : `Sheogorath/sheo_data.py`. Ne touche pas au code Python (LLM/cascade).
-- Ne modifie pas la logique de `get_random_comebacks`, juste les données.
-- Rien de réseau/LLM : ce sont des chaînes statiques.
-- Après exécution : `py_compile` + relire 2-3 réponses générées (ou few-shot) pour vérifier
-  vouvoiement + longueur + registre. Test live final par le user (redémarrer Sheo).
-- Rappel : le choix du MODÈLE (Hermes vs Groq vs Grok payant) est une décision SÉPARÉE encore
-  ouverte ; un modèle plus fort rendra mieux ces nuances, mais le prompt reste le levier n°1.
+- 4 fichiers. Le levier persona = FEW-SHOT (montre le tutoiement + le mordant, ne dicte pas).
+- ORDRE cascade IMPOSÉ : Mistral-large → Llama-3.3 → Dolphin:free. NE PAS toucher `shared/smart_router.py`.
+- `to_thread` + `wait_for(timeout=15)` sur TOUS les appels providers synchrones de la cascade inline de
+  Sheo (c'est le vrai fix WS + le borne-latence).
+- Après exécution : `py_compile` ×4 + `pytest tests/` + relire 1 insulte par humeur (tutoiement +
+  mordant + pas de didascalie). Test live user : provoquer via `!humeur` dans les 3 humeurs, vérifier
+  vitesse + morsure + longueur.

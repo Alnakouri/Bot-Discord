@@ -79,6 +79,9 @@ def clean_internal_tags(response_text):
     for artifact in LLM_ARTIFACTS:
         response_text = response_text.replace(artifact, "")
 
+    # Strip des didascalies entre crochets (tags TTS)
+    response_text = re.sub(r"\[(laugh|chuckle|sigh|shout|laughs|giggle|whisper|sob|cough|gasp)\]", "", response_text, flags=re.IGNORECASE)
+
     # Espaces multiples
     response_text = re.sub(r"\s+", " ", response_text).strip()
     return response_text
@@ -118,7 +121,7 @@ def force_short_response(response_text, max_sentences=4):
     return response_text
 
 
-def postprocess_response(response_text, fact_brain, user_id, original_message):
+def postprocess_response(response_text, fact_brain, user_id, original_message, max_sentences=4):
     """Pipeline complet de post-processing de la réponse LLM."""
     # 1. Extraction de faits
     response_text = extract_facts(response_text, fact_brain, user_id)
@@ -136,6 +139,6 @@ def postprocess_response(response_text, fact_brain, user_id, original_message):
     response_text = apply_easter_eggs(response_text, original_message)
 
     # 4. Forcer réponse courte
-    response_text = force_short_response(response_text)
+    response_text = force_short_response(response_text, max_sentences=max_sentences)
 
     return response_text

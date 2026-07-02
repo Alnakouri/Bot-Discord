@@ -50,7 +50,8 @@ _RP_PLAIN = (
 _STAGE_TAIL = r"(?:[\s,]+(?-i:[a-zà-ÿ])[\w'’-]*)*"
 _BARE_STAGE = re.compile(
     r"(?:(?<=^)|(?<=[.!?…—])|(?<=\n))\s*"
-    r"(?:(?:s['’]|se\s+)(?:" + _RP_REFLEXIVE + r")\w*|(?:" + _RP_PLAIN + r"))"
+    r"(?:(?:s['’]|se\s+)(?:" + _RP_REFLEXIVE + r")\w*|(?:" + _RP_PLAIN + r")"
+    r"|(?:un|une|le|la|d['’]un)\s+(?:soupir|rire|ricanement|chuchotement|silence|sourire|grognement|souffle|gloussement)\w*)"
     + _STAGE_TAIL,
     re.IGNORECASE,
 )
@@ -60,6 +61,9 @@ def strip_bare_stage_directions(text: str) -> str:
     """Retire les didascalies de roleplay émises SANS astérisques (narration d'action
     nue collée au dialogue). Boucle jusqu'à stabilité (didascalies consécutives), puis
     recolle proprement la ponctuation orpheline."""
+    # Retrait des didascalies en chevrons contenant au moins un espace (ex: <Un silence.>)
+    text = re.sub(r"<[^>]*\s[^>]*>", "", text)
+
     previous = None
     while previous != text:
         previous = text
