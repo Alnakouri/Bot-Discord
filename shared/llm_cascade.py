@@ -31,14 +31,23 @@ async def generate_response(
     temperature: float = 0.8,
     max_tokens: int = 300,
     gemini_max_tokens: int | None = None,
+    call_timeout: float | None = None,   # borne par appel (s) : si un provider traîne, on bascule
 ) -> str | None:
     """Retourne le texte de réponse, ou None si toute la cascade a échoué.
     Le fallback spécifique au bot (message d'échec multimodal, phrase par défaut)
-    reste géré par l'appelant."""
+    reste géré par l'appelant.
+
+    Si `call_timeout` est fourni, chaque appel provider est borné dans le temps :
+    au-delà, on lève TimeoutError → la boucle bascule vers l'échelon suivant (plus rapide)."""
     cascade = get_model_cascade(routing["type"])
     has_image = routing.get("has_image") and media_data is not None
     has_audio = routing.get("has_audio") and media_data is not None
     response_text = None
+
+    async def _call(func, **kwargs):
+        """Exécute l'appel SDK bloquant hors boucle (to_thread), avec timeout optionnel."""
+        coro = asyncio.to_thread(func, **kwargs)
+        return await (asyncio.wait_for(coro, timeout=call_timeout) if call_timeout else coro)
 
     for client_type, model_name in cascade:
         try:
@@ -58,7 +67,7 @@ async def generate_response(
                 if media_data:
                     last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
                 gemini_messages.append(types.Content(role="user", parts=last_turn_parts))
-                resp = await asyncio.to_thread(
+                resp = await _call(
                     client.models.generate_content,
                     model=model_name, contents=gemini_messages,
                     config=types.GenerateContentConfig(temperature=temperature, max_output_tokens=gemini_max_tokens or max_tokens),
@@ -84,7 +93,7 @@ async def generate_response(
 
             # 2. MISTRAL
             elif client_type == "mistral" and mistral_client:
-                chat = await asyncio.to_thread(
+                chat = await _call(
                     mistral_client.chat.complete,
                     model=model_name,
                     messages=[{"role": "system", "content": system_prompt},
@@ -101,7 +110,7 @@ async def generate_response(
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
                 msgs.append({"role": "user", "content": user_message})
-                chat = await asyncio.to_thread(
+                chat = await _call(
                     groq_client.chat.completions.create,
                     messages=msgs, model=model_name, temperature=temperature,
                 )
@@ -118,7 +127,7 @@ async def generate_response(
                         {"type": "text", "text": f"{transcript}\n{user_message}"},
                         {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}},
                     ]
-                chat = await asyncio.to_thread(
+                chat = await _call(
                     openrouter_client.chat.completions.create,
                     model=model_name,
                     messages=[{"role": "system", "content": system_prompt},
