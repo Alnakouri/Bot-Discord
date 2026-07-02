@@ -19,14 +19,14 @@ except ImportError:  # dotenv optionnel : fonctionne aussi si la variable est d�
         return False
 
 # Importer les composants créés
-from bot_manager import BotManager
+from bot_manager import BotManager, BOT_REGISTRY
 from log_collector import LogCollector
 from error_analyzer import ErrorAnalyzer
 from api_tracker import APITracker
 from conversation_analyzer import ConversationAnalyzer
 from report_generator import ReportGenerator
 from twitch_config import TwitchConfigManager
-from features_config import FeaturesConfigManager
+from features_config import FeaturesConfigManager, DEFAULTS
 from pydantic import BaseModel
 from typing import Optional
 
@@ -384,6 +384,22 @@ def get_features(bot_id: str):
 def set_feature(bot_id: str, body: dict):
     try:
         features_config_manager.set_feature(bot_id, body["feature"], body["value"])
+        return {"status": "ok"}
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/features/all")
+def set_feature_all(body: dict):
+    try:
+        feature = body.get("feature")
+        value = body.get("value")
+        if feature not in DEFAULTS:
+            raise HTTPException(status_code=400, detail=f"Feature '{feature}' inconnue.")
+        if not isinstance(value, bool):
+            raise HTTPException(status_code=400, detail="'value' doit être un booléen.")
+        
+        for bot_id in BOT_REGISTRY:
+            features_config_manager.set_feature(bot_id, feature, value)
         return {"status": "ok"}
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initClock();
     refreshAllData();
     initLogsWebSocket();
+    initConfigBotSelect();
 
     // Bind buttons
     document.getElementById('btn-refresh-logs')?.addEventListener('click', loadLogs);
@@ -94,14 +95,220 @@ function initNavigation() {
             if(targetId === 'logs') loadLogs();
             if(targetId === 'errors') loadErrors();
             if(targetId === 'api-keys') loadApiKeysStatus();
-            if(targetId === 'twitch') loadTwitchConfig();
-            if(targetId === 'twitch-presence') loadTwitchPresence();
-            if(targetId === 'twitch-events') loadTwitchEvents();
-            if(targetId === 'twitch-economy') loadTwitchEconomy();
-            if(targetId === 'twitch-listen') loadTwitchListen();
+            if(targetId === 'bot-config') loadBotConfig();
         });
     });
 }
+
+// --- BOT CONFIGURATION PLATFORM TABS & LOADING ---
+window.switchPlatform = function(platform) {
+    document.querySelectorAll('.tabs-platforms .btn-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-platform') === platform);
+    });
+    
+    document.querySelectorAll('.platform-view').forEach(view => {
+        view.style.display = view.id === `platform-${platform}` ? 'block' : 'none';
+    });
+    
+    loadBotConfig();
+};
+
+window.switchTwitchSubtab = function(subtab) {
+    document.querySelectorAll('.twitch-subtabs .btn-subtab').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-subtab') === subtab);
+    });
+    
+    document.querySelectorAll('.twitch-subview-container').forEach(view => {
+        view.style.display = view.id === `${subtab}-container` ? 'block' : 'none';
+    });
+    
+    loadBotConfig();
+};
+
+window.loadBotConfig = async function() {
+    const select = document.getElementById('config-bot-select');
+    if (!select) return;
+    const botId = select.value;
+    
+    const activePlatformEl = document.querySelector('.tabs-platforms .btn-tab.active');
+    if (!activePlatformEl) return;
+    const activePlatform = activePlatformEl.getAttribute('data-platform');
+    
+    if (activePlatform === 'discord') {
+        await loadDiscordConfig(botId);
+    } else if (activePlatform === 'twitch') {
+        const activeSubtabEl = document.querySelector('.twitch-subtabs .btn-subtab.active');
+        const activeSubtab = activeSubtabEl ? activeSubtabEl.getAttribute('data-subtab') : 'twitch-presence';
+        await loadTwitchSubtabConfig(botId, activeSubtab);
+    }
+};
+
+window.onConfigBotSelect = function() {
+    loadBotConfig();
+};
+
+window.initConfigBotSelect = function() {
+    const select = document.getElementById('config-bot-select');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="all">👥 Tous les bots</option>';
+    for (const [botId, botData] of Object.entries(BOT_REGISTRY_JS)) {
+        const displayName = botData.display || botId;
+        select.innerHTML += `<option value="${botId}">${displayName}</option>`;
+    }
+};
+
+window.loadDiscordConfig = async function(botId) {
+    const listContainer = document.getElementById('discord-features-list');
+    const bulkContainer = document.getElementById('discord-features-bulk');
+    if (!listContainer || !bulkContainer) return;
+    
+    if (botId === 'all') {
+        listContainer.style.display = 'none';
+        bulkContainer.style.display = 'block';
+        return;
+    }
+    
+    listContainer.style.display = 'grid';
+    bulkContainer.style.display = 'none';
+    
+    try {
+        const res = await fetch(`${API_BASE}/features/${botId}`);
+        if (res.ok) {
+            const cfg = await res.json();
+            listContainer.innerHTML = '';
+            
+            for (const [featureName, value] of Object.entries(cfg)) {
+                let displayName = featureName;
+                if (featureName === 'decret_enabled') displayName = "Décret activé";
+                
+                let disabledAttr = '';
+                let note = '';
+                if (featureName === 'decret_enabled' && botId !== 'sheogorath') {
+                    disabledAttr = 'disabled';
+                    note = ' <span style="font-size:0.8em; opacity:0.5;">(Uniquement pour Sheogorath)</span>';
+                }
+                
+                listContainer.innerHTML += `
+                    <label style="display:flex; align-items:center; gap:10px; cursor:pointer; opacity: ${disabledAttr ? 0.5 : 1}">
+                        <input type="checkbox" id="feat-${featureName}-${botId}" ${value ? 'checked' : ''} ${disabledAttr} onchange="window.updateDiscordFeature('${botId}', '${featureName}', this.checked)"> 
+                        <b>${displayName}</b>${note}
+                    </label>
+                `;
+            }
+            if (listContainer.innerHTML === '') {
+                listContainer.innerHTML = '<div class="placeholder-text">Aucune fonctionnalité Discord configurable pour ce bot.</div>';
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load Discord features:", e);
+    }
+};
+
+window.updateDiscordFeature = async function(botId, featureName, value) {
+    try {
+        await fetch(`${API_BASE}/features/${botId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ feature: featureName, value: value })
+        });
+    } catch (e) {
+        console.error("Failed to update feature:", e);
+    }
+};
+
+window.setDiscordFeatureAll = async function(featureName, value) {
+    try {
+        const res = await fetch(`${API_BASE}/features/all`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ feature: featureName, value: value })
+        });
+        if (res.ok) {
+            alert("Action globale appliquée avec succès !");
+            await loadBotConfig();
+        } else {
+            const d = await res.json();
+            alert(`Erreur: ${d.detail || "Sauvegarde impossible"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+};
+
+window.loadTwitchSubtabConfig = async function(botId, activeSubtab) {
+    const presenceStatusPanel = document.getElementById('twitch-bot-status-panel');
+    const presenceConfigCard = document.querySelector('#twitch-presence-container .twitch-card');
+    const presenceChannelsCard = document.querySelector('#twitch-presence-container div.twitch-card:nth-of-type(2)');
+    const presenceAllMsg = document.getElementById('twitch-presence-all-msg');
+    
+    if (activeSubtab === 'twitch-presence') {
+        if (botId === 'all') {
+            if (presenceStatusPanel) presenceStatusPanel.style.display = 'none';
+            if (presenceConfigCard) presenceConfigCard.style.display = 'none';
+            if (presenceChannelsCard) presenceChannelsCard.style.display = 'none';
+            if (presenceAllMsg) presenceAllMsg.style.display = 'block';
+        } else {
+            if (presenceStatusPanel) presenceStatusPanel.style.display = 'flex';
+            if (presenceConfigCard) presenceConfigCard.style.display = 'block';
+            if (presenceChannelsCard) presenceChannelsCard.style.display = 'block';
+            if (presenceAllMsg) presenceAllMsg.style.display = 'none';
+            await loadTwitchPresence();
+        }
+    }
+    
+    const eventsConfigCard = document.querySelector('#twitch-events-container .twitch-card');
+    const eventsAllMsg = document.getElementById('twitch-events-all-msg');
+    if (activeSubtab === 'twitch-events') {
+        if (botId === 'all') {
+            if (eventsConfigCard) eventsConfigCard.style.display = 'none';
+            if (eventsAllMsg) eventsAllMsg.style.display = 'block';
+        } else {
+            if (eventsConfigCard) eventsConfigCard.style.display = 'block';
+            if (eventsAllMsg) eventsAllMsg.style.display = 'none';
+            await loadTwitchEvents();
+        }
+    }
+    
+    const economyConfigCard = document.querySelector('#twitch-economy-container .twitch-card');
+    const economyAllMsg = document.getElementById('twitch-economy-all-msg');
+    if (activeSubtab === 'twitch-economy') {
+        if (botId === 'all') {
+            if (economyConfigCard) economyConfigCard.style.display = 'none';
+            if (economyAllMsg) economyAllMsg.style.display = 'block';
+        } else {
+            if (economyConfigCard) economyConfigCard.style.display = 'block';
+            if (economyAllMsg) economyAllMsg.style.display = 'none';
+            await loadTwitchEconomy();
+        }
+    }
+    
+    const listenConfigCard = document.querySelector('#twitch-listen-container .twitch-card');
+    const listenAllMsg = document.getElementById('twitch-listen-all-msg');
+    if (activeSubtab === 'twitch-listen') {
+        if (botId === 'all') {
+            if (listenConfigCard) listenConfigCard.style.display = 'none';
+            if (listenAllMsg) listenAllMsg.style.display = 'block';
+        } else {
+            if (listenConfigCard) listenConfigCard.style.display = 'block';
+            if (listenAllMsg) listenAllMsg.style.display = 'none';
+            await loadTwitchListen();
+        }
+    }
+    
+    const announcesConfigCard = document.getElementById('twitch-bot-status-panel');
+    const announcesLayout = document.getElementById('twitch-announces-individual-layout');
+    if (activeSubtab === 'twitch-announces') {
+        if (botId === 'all') {
+            if (announcesConfigCard) announcesConfigCard.style.display = 'none';
+            if (announcesLayout) announcesLayout.style.display = 'none';
+        } else {
+            if (announcesConfigCard) announcesConfigCard.style.display = 'flex';
+            if (announcesLayout) announcesLayout.style.display = 'grid';
+            await loadTwitchConfig();
+        }
+    }
+};
 
 function initClock() {
     const clockEl = document.getElementById('clock');
@@ -189,7 +396,7 @@ window.botAction = async function(botId, action) {
 }
 
 window.actionAllBots = async function(action) {
-    const bots = ["sheogorath", "maiq", "alfred", "onizuka", "johnny", "malena"];
+    const bots = Object.keys(BOT_REGISTRY_JS);
     let successCount = 0;
     
     // UI update to prevent spamming
@@ -307,12 +514,12 @@ function appendLogLine(log) {
 }
 
 const BOT_REGISTRY_JS = {
-    "sheogorath": { color: "#d946ef" },
-    "maiq": { color: "#f97316" },
-    "alfred": { color: "#475569" },
-    "johnny": { color: "#22c55e" },
-    "onizuka": { color: "#0ea5e9" },
-    "malena": { color: "#f43f5e" }
+    "sheogorath": { name: "sheogorath", display: "🧀 Sheogorath", color: "#d946ef" },
+    "maiq": { name: "maiq", display: "🐱 M'aiq le Menteur", color: "#f97316" },
+    "alfred": { name: "alfred", display: "☕ Alfred Pennyworth", color: "#475569" },
+    "johnny": { name: "johnny", display: "🔫 Johnny Silverbot", color: "#22c55e" },
+    "onizuka": { name: "onizuka", display: "🏍️ Eikichi Onizuka", color: "#0ea5e9" },
+    "malena": { name: "malena", display: "💃 Malena la Gitana", color: "#f43f5e" }
 };
 
 // --- ERRORS ---
@@ -447,7 +654,7 @@ window.onTwitchBotSelect = function() {
 }
 
 function renderTwitchBotView() {
-    const botId = document.getElementById('twitch-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     const botConfig = twitchConfig[botId];
     
     if (!botConfig) return;
@@ -502,7 +709,7 @@ function renderTwitchBotView() {
 }
 
 window.saveTwitchBotSettings = async function() {
-    const botId = document.getElementById('twitch-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     const enabled = document.getElementById('twitch-bot-enabled').checked;
     const interval = parseInt(document.getElementById('twitch-bot-interval').value);
     
@@ -531,7 +738,7 @@ window.saveTwitchBotSettings = async function() {
 }
 
 window.addTwitchSubscription = async function() {
-    const botId = document.getElementById('twitch-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     const twitchLogin = document.getElementById('twitch-add-login').value.trim();
     const channelId = document.getElementById('twitch-add-channel').value.trim();
     const customMessage = document.getElementById('twitch-add-message').value.trim() || null;
@@ -609,7 +816,7 @@ window.addTwitchSubscriptionAll = async function() {
 }
 
 window.deleteTwitchSubscription = async function(index) {
-    const botId = document.getElementById('twitch-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     if (!confirm("Voulez-vous vraiment supprimer cet abonnement ?")) return;
     
     try {
@@ -634,7 +841,7 @@ window.onPresenceBotSelect = function() {
 }
 
 async function loadTwitchPresence() {
-    const botId = document.getElementById('presence-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     try {
         const configRes = await fetch(`${API_BASE}/twitch`);
         const configData = await configRes.json();
@@ -662,49 +869,13 @@ async function loadTwitchPresence() {
         } else {
             document.getElementById('presence-chat-channels').value = '';
         }
-        
-        // Toggle Discord features container visibility and load values
-        const discordContainer = document.getElementById('discord-features-container');
-        if (discordContainer) {
-            if (botId === 'sheogorath') {
-                discordContainer.style.display = 'block';
-                await loadFeatures('sheogorath');
-            } else {
-                discordContainer.style.display = 'none';
-            }
-        }
     } catch (e) {
         console.error("Twitch presence config error:", e);
     }
 }
 
-async function loadFeatures(botId) {
-    try {
-        const res = await fetch(`${API_BASE}/features/${botId}`);
-        if (res.ok) {
-            const cfg = await res.json();
-            const el = document.getElementById(`feat-decret-${botId}`);
-            if (el) el.checked = cfg.decret_enabled !== false;
-        }
-    } catch (e) {
-        console.error("Failed to load features:", e);
-    }
-}
-
-window.updateDecret = async function(botId, value) {
-    try {
-        await fetch(`${API_BASE}/features/${botId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ feature: "decret_enabled", value })
-        });
-    } catch (e) {
-        console.error("Failed to update decret:", e);
-    }
-}
-
 window.savePresenceSettings = async function() {
-    const botId = document.getElementById('presence-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     const events = document.getElementById('presence-chat-events').checked;
     const interjections = document.getElementById('presence-chat-interjections').checked;
     const greetings = document.getElementById('presence-chat-greetings').checked;
@@ -729,7 +900,7 @@ window.savePresenceSettings = async function() {
 }
 
 window.saveChatChannels = async function() {
-    const botId = document.getElementById('presence-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     const rawChannels = document.getElementById('presence-chat-channels').value;
     const channels = rawChannels.split(/[,\n]/).map(c => c.trim()).filter(c => c.length > 0);
     
@@ -759,7 +930,7 @@ window.onEventsBotSelect = function() {
 }
 
 async function loadTwitchEvents() {
-    const botId = document.getElementById('events-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     try {
         const res = await fetch(`${API_BASE}/twitch/rewards/${botId}`);
         if (!res.ok) throw new Error("Impossible de charger le mappage de récompenses");
@@ -819,7 +990,7 @@ window.deleteRewardMapping = function(title) {
 }
 
 window.saveRewardsMapping = async function() {
-    const botId = document.getElementById('events-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     try {
         const res = await fetch(`${API_BASE}/twitch/rewards/${botId}`, {
             method: 'PUT',
@@ -844,7 +1015,7 @@ window.onEconomyBotSelect = function() {
 }
 
 async function loadTwitchEconomy() {
-    const botId = document.getElementById('economy-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     try {
         const res = await fetch(`${API_BASE}/twitch/leaderboard/${botId}`);
         if (!res.ok) throw new Error("Impossible de charger le classement économique");
@@ -884,7 +1055,7 @@ window.onListenBotSelect = function() {
 }
 
 async function loadTwitchListen() {
-    const botId = document.getElementById('listen-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     try {
         const res = await fetch(`${API_BASE}/twitch/listen/${botId}`);
         if (!res.ok) throw new Error("Impossible de charger la config écoute Twitch");
@@ -901,7 +1072,7 @@ async function loadTwitchListen() {
 }
 
 window.saveListenSettings = async function() {
-    const botId = document.getElementById('listen-bot-select').value;
+    const botId = document.getElementById('config-bot-select').value;
     const enabled = document.getElementById('listen-enabled').checked;
     const mode = document.getElementById('listen-mode').value;
     const device = document.getElementById('listen-device').value.trim();

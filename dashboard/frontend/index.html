@@ -44,7 +44,7 @@
         </div>
         
         <ul class="nav-links">
-            <li class="section-title">▸ DISCORD</li>
+            <li class="section-title">▸ SUPERVISION</li>
             <li class="active" data-target="overview"><i class="fa-solid fa-chart-pie"></i> Vue d'ensemble</li>
             <li data-target="logs"><i class="fa-solid fa-terminal"></i> Logs en direct</li>
             <li data-target="errors"><i class="fa-solid fa-triangle-exclamation"></i> Analyse Erreurs</li>
@@ -52,12 +52,8 @@
             <li data-target="conversations"><i class="fa-solid fa-comments"></i> Conversations</li>
             <li data-target="reports"><i class="fa-solid fa-file-export"></i> Rapports GenAI</li>
             
-            <li class="section-title" style="margin-top: 15px;">▸ TWITCH</li>
-            <li data-target="twitch-presence"><i class="fa-solid fa-signal"></i> Présence & connexion</li>
-            <li data-target="twitch-events"><i class="fa-solid fa-bolt"></i> Événements & Rewards</li>
-            <li data-target="twitch-economy"><i class="fa-solid fa-coins"></i> Habitués & éco</li>
-            <li data-target="twitch-listen"><i class="fa-solid fa-microphone"></i> Écoute live</li>
-            <li data-target="twitch"><i class="fa-solid fa-satellite-dish"></i> Annonces</li>
+            <li class="section-title" style="margin-top: 15px;">▸ CONFIGURATION</li>
+            <li data-target="bot-config"><i class="fa-solid fa-sliders"></i> Configuration des bots</li>
         </ul>
         
         <div class="system-status">
@@ -264,364 +260,403 @@
             </div>
         </section>
 
-        <!-- SECTION: TWITCH -->
-        <section id="twitch" class="view">
-            <div class="twitch-container glass" style="padding: 2rem; margin-bottom: 2rem;">
-                <h2>📡 Configuration des Annonces Twitch</h2>
+        <!-- SECTION: CONFIGURATION DES BOTS -->
+        <section id="bot-config" class="view">
+            <!-- Custom CSS rules for tabs and layout inside the config section -->
+            <style>
+                .tabs-platforms .btn-tab {
+                    font-size: 1.1em;
+                    padding: 10px 20px;
+                    background: transparent;
+                    border: none;
+                    color: rgba(255, 255, 255, 0.6);
+                    border-bottom: 3px solid transparent;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .tabs-platforms .btn-tab:hover {
+                    color: #fff;
+                    background: rgba(255, 255, 255, 0.05);
+                }
+                .tabs-platforms .btn-tab.active {
+                    color: #fff;
+                    border-bottom: 3px solid var(--accent, #6366f1);
+                }
+                .twitch-subtabs .btn-subtab {
+                    font-size: 0.9em;
+                    padding: 8px 16px;
+                    background: transparent;
+                    border: 1px solid transparent;
+                    color: rgba(255, 255, 255, 0.7);
+                    border-radius: 6px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                .twitch-subtabs .btn-subtab:hover {
+                    color: #fff;
+                    background: rgba(255, 255, 255, 0.05);
+                }
+                .twitch-subtabs .btn-subtab.active {
+                    color: #fff;
+                    background: var(--accent, #6366f1);
+                    border-color: var(--accent, #6366f1);
+                }
+                .placeholder-text {
+                    color: rgba(255, 255, 255, 0.5);
+                    font-style: italic;
+                }
+            </style>
+
+            <div class="glass" style="padding: 2rem; margin-bottom: 2rem;">
+                <h2>⚙️ Configuration des Bots</h2>
                 <p style="margin-bottom: 1.5rem; opacity: 0.8; line-height: 1.5;">
-                    Configurez pour chaque bot les salons de destination et les chaînes Twitch à surveiller.
-                    Les credentials API Twitch (<code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 4px;">TWITCH_CLIENT_ID</code> et <code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 4px;">TWITCH_CLIENT_SECRET</code>) doivent être définis dans les secrets du bot.
+                    Sélectionnez un bot pour configurer ses paramètres Discord et ses modules Twitch.
                 </p>
 
-                <!-- GLOBAL : appliquer à tous les bots -->
-                <div class="glass" style="padding:1.5rem; margin-bottom:2rem; border:1px solid rgba(167,139,250,0.3); background:rgba(167,139,250,0.05);">
-                  <h3 style="color:#fff; margin:0 0 6px 0;"><i class="fa-solid fa-layer-group"></i> Tous les bots (en un clic)</h3>
-                  <p style="margin:0 0 1rem 0; font-size:0.85em; opacity:0.7; line-height:1.4;">
-                    Active/désactive la surveillance et ajoute une chaîne à <b>tous</b> les bots d'un coup.
-                    Grâce à l'anti-doublon, une même chaîne + salon n'est annoncée qu'<b>une seule fois</b>
-                    même si tous les bots l'ont.
-                  </p>
-                  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:1.2rem;">
-                    <button class="btn btn-primary" onclick="setTwitchEnabledAll(true)" style="padding:10px 16px;"><i class="fa-solid fa-toggle-on"></i> Activer tous</button>
-                    <button class="btn btn-danger" onclick="setTwitchEnabledAll(false)" style="padding:10px 16px;"><i class="fa-solid fa-toggle-off"></i> Désactiver tous</button>
-                  </div>
-                  <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end;">
-                    <div class="form-group">
-                      <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Chaîne Twitch (Nom ou URL)</label>
-                      <input type="text" id="twitch-all-login" placeholder="Ex: ninja" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
-                    </div>
-                    <div class="form-group">
-                      <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Salon Discord (ID ou lien)</label>
-                      <input type="text" id="twitch-all-channel" placeholder="ID ou lien Discord" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
-                    </div>
-                    <div class="form-group">
-                      <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Message (optionnel)</label>
-                      <input type="text" id="twitch-all-message" placeholder="Vide = message IA auto" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
-                    </div>
-                    <button class="btn btn-primary" onclick="addTwitchSubscriptionAll()" style="padding:11px 16px; white-space:nowrap;"><i class="fa-solid fa-plus-circle"></i> Ajouter à tous</button>
-                  </div>
-                </div>
-
-                <!-- Bot Selector -->
-                <div class="form-group" style="margin-bottom: 2rem; max-width: 300px;">
-                    <label for="twitch-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">Sélectionner un Bot</label>
-                    <select id="twitch-bot-select" onchange="onTwitchBotSelect()" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer;">
-                        <option value="sheogorath">🧀 Sheogorath</option>
-                        <option value="maiq">🐱 M'aiq le Menteur</option>
-                        <option value="alfred">☕ Alfred Pennyworth</option>
-                        <option value="johnny">🔫 Johnny Silverbot</option>
-                        <option value="onizuka">🏍️ Eikichi Onizuka</option>
-                        <option value="malena">💃 Malena la Gitana</option>
-                    </select>
-                </div>
-
-                <!-- Bot Status & Main Toggle -->
-                <div id="twitch-bot-status-panel" class="glass" style="padding: 1.5rem; margin-bottom: 2rem; display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05);">
-                    <div>
-                        <h3 id="twitch-bot-status-title" style="margin: 0; color: #fff;">Configuration Twitch</h3>
-                        <p style="margin: 5px 0 0 0; font-size: 0.9em; opacity: 0.7;">Activer ou désactiver la surveillance automatique pour ce bot</p>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
-                            <input type="checkbox" id="twitch-bot-enabled" style="transform: scale(1.3); cursor: pointer;">
-                            Activer la surveillance Twitch
-                        </label>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <label for="twitch-bot-interval" style="font-size:0.9em; font-weight:500;">Polling (sec) :</label>
-                            <input type="number" id="twitch-bot-interval" min="60" value="90" style="width: 80px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-glass); background: #111520; color: #fff;">
-                        </div>
-                        <button class="btn btn-primary" onclick="saveTwitchBotSettings()" style="padding: 10px 20px;">
-                            <i class="fa-solid fa-floppy-disk"></i> Enregistrer
-                        </button>
+                <!-- Sélecteur Global Unique -->
+                <div class="glass" style="padding: 1.5rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; border-color: rgba(255,255,255,0.05);">
+                    <div class="form-group" style="margin: 0; min-width: 250px;">
+                        <label for="config-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">🤖 Sélectionner un Bot</label>
+                        <select id="config-bot-select" onchange="onConfigBotSelect()" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer; font-size: 1em;">
+                            <!-- Options injectées dynamiquement en JS -->
+                        </select>
                     </div>
                 </div>
 
-                <div class="twitch-layout" style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 2rem;">
-                    <!-- Left: Subscriptions list -->
-                    <div class="twitch-subs-panel glass" style="padding: 1.5rem; background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.05);">
-                        <h3 style="color:#fff; margin-bottom: 1.2rem;"><i class="fa-solid fa-list"></i> Abonnements Actifs</h3>
-                        <div id="twitch-subs-empty" style="padding: 3rem 2rem; text-align: center; opacity: 0.5;">
-                            <i class="fa-solid fa-circle-info" style="font-size: 2rem; margin-bottom: 10px; display: block; color: var(--accent);"></i>
-                            Aucune chaîne Twitch surveillée pour ce bot.
-                        </div>
-                        <div id="twitch-subs-list" style="display: flex; flex-direction: column; gap: 12px; display: none;"></div>
-                    </div>
+                <!-- Onglets Plateforme (Discord / Twitch) -->
+                <div class="tabs-platforms" style="display: flex; gap: 15px; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-glass); padding-bottom: 5px;">
+                    <button class="btn btn-tab active" data-platform="discord" onclick="switchPlatform('discord')">
+                        <i class="fa-brands fa-discord" style="color:#5865F2;"></i> Discord
+                    </button>
+                    <button class="btn btn-tab" data-platform="twitch" onclick="switchPlatform('twitch')">
+                        <i class="fa-brands fa-twitch" style="color:#9146FF;"></i> Twitch
+                    </button>
+                </div>
 
-                    <!-- Right: Add subscription form -->
-                    <div class="twitch-add-panel glass" style="padding: 1.5rem; background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.05);">
-                        <h3 style="color:#fff; margin-bottom: 1.2rem;"><i class="fa-solid fa-plus"></i> Ajouter une surveillance</h3>
+                <!-- PLATEFORME : DISCORD -->
+                <div id="platform-discord" class="platform-view active">
+                    <div class="glass" style="padding: 1.5rem; background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.05);">
+                        <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.15em;"><i class="fa-brands fa-discord" style="color: #5865F2;"></i> Fonctionnalités Discord</h3>
                         
-                        <div class="form-group" style="margin-bottom: 1.2rem;">
-                            <label for="twitch-add-login" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Chaîne Twitch (Nom ou URL)</label>
-                            <input type="text" id="twitch-add-login" placeholder="Ex: ninja ou https://twitch.tv/ninja" style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff;">
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 1.2rem;">
-                            <label for="twitch-add-channel" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Salon Discord (ID ou lien)</label>
-                            <input type="text" id="twitch-add-channel" placeholder="Ex: 112233445566778899 ou https://discord.com/channels/.../..." style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff;">
-                            <span style="font-size:0.75em; opacity:0.6; display:block; margin-top:6px; line-height: 1.3;">
-                                Collez l'<b>ID du salon</b> (Mode Développeur > clic droit sur le salon > <i>Copier l'identifiant</i>) <b>ou</b> directement le lien Discord du salon : l'ID est extrait automatiquement.
-                            </span>
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 1.5rem;">
-                            <label for="twitch-add-message" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Message personnalisé (optionnel)</label>
-                            <textarea id="twitch-add-message" rows="3" placeholder="Ex: Hey ! {streamer} est en live ! Viens voir : {url}" style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff; font-family: inherit; resize: vertical; line-height: 1.4;"></textarea>
-                            <span style="font-size:0.75em; opacity:0.6; display:block; margin-top:6px; line-height: 1.3;">
-                                Variables injectées : <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{streamer}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{title}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{game}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{url}</code>
-                            </span>
-                        </div>
-
-                        <button class="btn btn-primary" onclick="addTwitchSubscription()" style="width:100%; padding: 12px; font-weight:600; font-size: 1em;">
-                            <i class="fa-solid fa-plus-circle"></i> Ajouter l'abonnement
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- SECTION: TWITCH PRESENCE -->
-        <section id="twitch-presence" class="view">
-            <div class="glass" style="padding: 2rem; margin-bottom: 2rem;">
-                <h2>📡 Présence & Connexion Twitch</h2>
-                <div class="form-group" style="margin-bottom: 2rem; max-width: 300px;">
-                    <label for="presence-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">Sélectionner un Bot</label>
-                    <select id="presence-bot-select" onchange="onPresenceBotSelect()" class="bot-selector-custom" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer;">
-                        <option value="sheogorath">🧀 Sheogorath</option>
-                        <option value="maiq">🐱 M'aiq le Menteur</option>
-                        <option value="alfred">☕ Alfred Pennyworth</option>
-                        <option value="johnny">🔫 Johnny Silverbot</option>
-                        <option value="onizuka">🏍️ Eikichi Onizuka</option>
-                        <option value="malena">💃 Malena la Gitana</option>
-                    </select>
-                </div>
-
-                <div class="twitch-card glass" style="padding: 1.5rem; margin-bottom: 1.5rem;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
-                        <h3 style="margin:0; color:#fff;">Statut de Connexion</h3>
-                        <span id="presence-status-badge" class="badge badge-secondary">Inconnu</span>
-                    </div>
-                    <p style="opacity: 0.8; font-size: 0.9em; margin-bottom: 1.5rem;">
-                        Chaîne ciblée : <b id="presence-target-channel">-</b>
-                    </p>
-                    
-                    <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.1em;">Configuration des Fonctionnalités</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                            <input type="checkbox" id="presence-chat-events"> Activer les événements (Sub/Follow/Bits)
-                        </label>
-                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                            <input type="checkbox" id="presence-chat-interjections"> Activer les interjections spontanées
-                        </label>
-                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                            <input type="checkbox" id="presence-chat-greetings"> Activer l'accueil des nouveaux de session
-                        </label>
-                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                            <input type="checkbox" id="presence-chat-memory"> Activer la mémoire long terme
-                        </label>
-                    </div>
-
-                    <button class="btn btn-primary" onclick="savePresenceSettings()" style="padding: 10px 20px;">
-                        <i class="fa-solid fa-floppy-disk"></i> Enregistrer la configuration
-                    </button>
-                    <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
-                        ⚠️ Les changements s'appliquent au redémarrage du bot.
-                    </span>
-
-                    <div id="discord-features-container" style="display: none; border-top: 1px solid var(--border-glass); padding-top: 1.5rem; margin-top: 1.5rem;">
-                        <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.1em;">🛡️ Fonctionnalités Discord</h3>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
-                            <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                                <input type="checkbox" id="feat-decret-sheogorath" onchange="window.updateDecret('sheogorath', this.checked)"> Décret activé
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="twitch-card glass" style="padding: 1.5rem; margin-top: 1.5rem;">
-                    <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.1em;">💬 Chaînes de chat</h3>
-                    <p style="font-size:0.85em; opacity:0.7; margin-bottom:1.2rem;">
-                        Liste des chaînes Twitch où le bot doit se connecter pour chatter (séparées par des virgules ou des retours à la ligne). Si vide, le bot utilise les chaînes de l'environnement (TWITCH_CHAT_CHANNELS).
-                    </p>
-                    <div class="form-group" style="margin-bottom: 1.5rem;">
-                        <textarea id="presence-chat-channels" rows="3" placeholder="Ex: streamer1, streamer2" style="width:100%; padding:10px; border-radius:8px; background:#111520; border:1px solid var(--border-glass); color:#fff; font-family:inherit; resize:vertical;"></textarea>
-                    </div>
-                    <button class="btn btn-primary" onclick="saveChatChannels()" style="padding: 10px 20px;">
-                        <i class="fa-solid fa-floppy-disk"></i> Enregistrer les chaînes
-                    </button>
-                    <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
-                        ⚠️ Les changements s'appliquent au redémarrage du bot.
-                    </span>
-                </div>
-            </div>
-        </section>
-
-        <!-- SECTION: TWITCH EVENTS & REWARDS -->
-        <section id="twitch-events" class="view">
-            <div class="glass" style="padding: 2rem; margin-bottom: 2rem;">
-                <h2>🎁 Événements & Rewards (Channel Points)</h2>
-                <div class="form-group" style="margin-bottom: 2rem; max-width: 300px;">
-                    <label for="events-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">Sélectionner un Bot</label>
-                    <select id="events-bot-select" onchange="onEventsBotSelect()" class="bot-selector-custom" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer;">
-                        <option value="sheogorath">🧀 Sheogorath</option>
-                        <option value="maiq">🐱 M'aiq le Menteur</option>
-                        <option value="alfred">☕ Alfred Pennyworth</option>
-                        <option value="johnny">🔫 Johnny Silverbot</option>
-                        <option value="onizuka">🏍️ Eikichi Onizuka</option>
-                        <option value="malena">💃 Malena la Gitana</option>
-                    </select>
-                </div>
-
-                <div class="twitch-card glass" style="padding: 1.5rem; margin-bottom: 1.5rem;">
-                    <h3 style="color:#fff; margin-bottom: 1rem;">Mappage des Récompenses de Chaîne</h3>
-                    <p style="font-size:0.85em; opacity:0.7; margin-bottom:1.5rem;">
-                        Associez les titres exacts de vos récompenses personnalisées Twitch à des commandes du bot.
-                    </p>
-                    
-                    <div style="margin-bottom: 1.5rem;">
-                        <table class="table" style="width:100%;">
-                            <thead>
-                                <tr>
-                                    <th>Titre Récompense Twitch</th>
-                                    <th>Commande Bot à Déclencher</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="twitch-rewards-table-body">
-                                <!-- Rempli dynamiquement -->
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="glass" style="padding: 1rem; border-color: rgba(255,255,255,0.05); display: flex; gap: 12px; align-items: flex-end;">
-                        <div class="form-group" style="flex:1;">
-                            <label style="font-size:0.85em; display:block; margin-bottom:6px;">Titre de la récompense</label>
-                            <input type="text" id="add-reward-title" placeholder="Ex: Décret de la Folie" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
-                        </div>
-                        <div class="form-group" style="flex:1;">
-                            <label style="font-size:0.85em; display:block; margin-bottom:6px;">Action / Commande</label>
-                            <input type="text" id="add-reward-action" placeholder="Ex: decret" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
-                        </div>
-                        <button class="btn btn-primary" onclick="addRewardMapping()" style="padding: 9px 16px;"><i class="fa-solid fa-plus"></i> Ajouter</button>
-                    </div>
-
-                    <button class="btn btn-primary" onclick="saveRewardsMapping()" style="padding: 10px 20px; margin-top: 1.5rem;">
-                        <i class="fa-solid fa-floppy-disk"></i> Enregistrer le Mappage
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- SECTION: TWITCH ECONOMY -->
-        <section id="twitch-economy" class="view">
-            <div class="glass" style="padding: 2rem; margin-bottom: 2rem;">
-                <h2>🪙 Habitués & Économie Twitch</h2>
-                <div class="form-group" style="margin-bottom: 2rem; max-width: 300px;">
-                    <label for="economy-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">Sélectionner un Bot</label>
-                    <select id="economy-bot-select" onchange="onEconomyBotSelect()" class="bot-selector-custom" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer;">
-                        <option value="sheogorath">🧀 Sheogorath</option>
-                        <option value="maiq">🐱 M'aiq le Menteur</option>
-                        <option value="alfred">☕ Alfred Pennyworth</option>
-                        <option value="johnny">🔫 Johnny Silverbot</option>
-                        <option value="onizuka">🏍️ Eikichi Onizuka</option>
-                        <option value="malena">💃 Malena la Gitana</option>
-                    </select>
-                </div>
-
-                <div class="twitch-card glass" style="padding: 1.5rem;">
-                    <h3 style="color:#fff; margin-bottom: 1rem;"><i class="fa-solid fa-ranking-star"></i> Classement de la Faveur / Street Cred (Twitch)</h3>
-                    <div id="economy-leaderboard-empty" style="padding: 2rem; text-align: center; opacity: 0.5;">
-                        Aucun score enregistré pour ce bot.
-                    </div>
-                    <table id="economy-leaderboard-table" class="table" style="width:100%; display:none;">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Utilisateur</th>
-                                <th>Points</th>
-                            </tr>
-                        </thead>
-                        <tbody id="economy-leaderboard-body">
+                        <!-- Conteneur générique pour les features du bot -->
+                        <div id="discord-features-list" style="display: grid; grid-template-columns: 1fr; gap: 1.2rem; margin-bottom: 1rem;">
                             <!-- Rempli dynamiquement -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
-        <!-- SECTION: TWITCH LISTEN (STT continu) -->
-        <section id="twitch-listen" class="view">
-            <div class="glass" style="padding: 2rem; margin-bottom: 2rem;">
-                <h2>🎙️ Écoute Live du Streamer (STT Continu)</h2>
-                <div style="background:rgba(88,101,242,0.12); border:1px solid rgba(88,101,242,0.35); border-radius:10px; padding:1rem 1.2rem; margin-bottom:1.5rem; font-size:0.88em; line-height:1.5;">
-                    <strong>💡 Comment ça marche</strong>
-                    <ul style="margin:0.5rem 0 0 0; padding-left:1.2rem; opacity:0.9;">
-                        <li>Le <strong>toggle « Activer l'écoute micro »</strong> connecte/déconnecte ce bot <strong>à chaud</strong> (pris en compte en ≤ 15 s, sans redémarrage).</li>
-                        <li>Un <strong>hub d'écoute</strong> (<code>run_stream_listener.py</code>) doit tourner sur le PC équipé du micro : c'est lui qui capte l'audio et transcrit. Sans lui, le bot réessaie en silence.</li>
-                        <li>Les réglages <strong>Mode / Calcul / Chunk</strong> concernent le hub : relance <code>run_stream_listener.py</code> pour les appliquer.</li>
-                    </ul>
-                </div>
-                <div class="form-group" style="margin-bottom: 2rem; max-width: 300px;">
-                    <label for="listen-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">Sélectionner un Bot</label>
-                    <select id="listen-bot-select" onchange="onListenBotSelect()" class="bot-selector-custom" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer;">
-                        <option value="sheogorath">🧀 Sheogorath</option>
-                        <option value="maiq">🐱 M'aiq le Menteur</option>
-                        <option value="alfred">☕ Alfred Pennyworth</option>
-                        <option value="johnny">🔫 Johnny Silverbot</option>
-                        <option value="onizuka">🏍️ Eikichi Onizuka</option>
-                        <option value="malena">💃 Malena la Gitana</option>
-                    </select>
-                </div>
-
-                <div class="twitch-card glass" style="padding: 1.5rem; margin-bottom: 1.5rem;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem;">
-                        <div>
-                            <h3 style="margin:0; color:#fff;">Configuration de l'écoute micro</h3>
-                            <p style="margin:5px 0 0 0; font-size:0.85em; opacity:0.7;">Kill-switch et configuration de l'ASR partagé</p>
                         </div>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-weight:600; font-size:1.1em; color:var(--accent);">
-                            <input type="checkbox" id="listen-enabled" style="transform: scale(1.4); cursor: pointer;">
-                            ACTIVER L'ÉCOUTE MICRO
-                        </label>
-                    </div>
 
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.2rem; margin-bottom:1.5rem;">
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Mode ASR</label>
-                            <select id="listen-mode" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
-                                <option value="A">NIM (Docker localhost)</option>
-                                <option value="B">NeMo (Python WSL2)</option>
-                                <option value="C">Whisper (Local CPU/GPU)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Calcul ASR</label>
-                            <select id="listen-device" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
-                                <option value="cpu">CPU</option>
-                                <option value="cuda">GPU (CUDA)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Taille du Chunk (ms)</label>
-                            <select id="listen-chunk" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
-                                <option value="80">80 ms</option>
-                                <option value="160">160 ms</option>
-                                <option value="560">560 ms</option>
-                                <option value="1120">1120 ms</option>
-                            </select>
+                        <!-- Mode "Tous" pour les features Discord -->
+                        <div id="discord-features-bulk" style="display: none; border-top: 1px solid var(--border-glass); padding-top: 1.5rem; margin-top: 1.5rem;">
+                            <h4 style="color:#fff; margin-bottom: 1rem; font-size:1.05em;"><i class="fa-solid fa-layer-group"></i> Actions sur tous les bots</h4>
+                            <p style="font-size:0.85em; opacity:0.7; margin-bottom:1.2rem;">
+                                Activer ou désactiver des fonctionnalités globales pour l'ensemble des bots d'un clic.
+                            </p>
+                            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                                <button class="btn btn-primary" onclick="setDiscordFeatureAll('decret_enabled', true)"><i class="fa-solid fa-toggle-on"></i> Activer Décret sur tous</button>
+                                <button class="btn btn-danger" onclick="setDiscordFeatureAll('decret_enabled', false)"><i class="fa-solid fa-toggle-off"></i> Désactiver Décret sur tous</button>
+                            </div>
                         </div>
                     </div>
+                </div>
 
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; margin-bottom:1.5rem;">
-                        <div class="form-group">
-                            <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Intervalle min entre réponses (s)</label>
-                            <input type="number" id="listen-min-interval" min="10" value="45" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                <!-- PLATEFORME : TWITCH -->
+                <div id="platform-twitch" class="platform-view" style="display: none;">
+                    <!-- Sous-onglets Twitch -->
+                    <div class="twitch-subtabs" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; background: rgba(255,255,255,0.02); padding: 8px; border-radius: 8px; border: 1px solid var(--border-glass);">
+                        <button class="btn btn-subtab active" data-subtab="twitch-presence" onclick="switchTwitchSubtab('twitch-presence')">Présence & connexion</button>
+                        <button class="btn btn-subtab" data-subtab="twitch-events" onclick="switchTwitchSubtab('twitch-events')">Événements & Rewards</button>
+                        <button class="btn btn-subtab" data-subtab="twitch-economy" onclick="switchTwitchSubtab('twitch-economy')">Habitués & éco</button>
+                        <button class="btn btn-subtab" data-subtab="twitch-listen" onclick="switchTwitchSubtab('twitch-listen')">Écoute live</button>
+                        <button class="btn btn-subtab" data-subtab="twitch-announces" onclick="switchTwitchSubtab('twitch-announces')">Annonces</button>
+                    </div>
+
+                    <!-- 1. Twitch Presence Subview -->
+                    <div id="twitch-presence-container" class="twitch-subview-container active">
+                        <div id="twitch-presence-all-msg" class="glass placeholder-text" style="display: none; padding: 2rem; text-align: center;">
+                            👥 Veuillez sélectionner un bot individuel pour configurer sa présence Twitch.
+                        </div>
+                        
+                        <div class="twitch-card glass" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                                <h3 style="margin:0; color:#fff;">Statut de Connexion</h3>
+                                <span id="presence-status-badge" class="badge badge-secondary">Inconnu</span>
+                            </div>
+                            <p style="opacity: 0.8; font-size: 0.9em; margin-bottom: 1.5rem;">
+                                Chaîne ciblée : <b id="presence-target-channel">-</b>
+                            </p>
+                            
+                            <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.1em;">Configuration des Fonctionnalités</h3>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                                <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" id="presence-chat-events"> Activer les événements (Sub/Follow/Bits)
+                                </label>
+                                <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" id="presence-chat-interjections"> Activer les interjections spontanées
+                                </label>
+                                <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" id="presence-chat-greetings"> Activer l'accueil des nouveaux de session
+                                </label>
+                                <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" id="presence-chat-memory"> Activer la mémoire long terme
+                                </label>
+                            </div>
+
+                            <button class="btn btn-primary" onclick="savePresenceSettings()" style="padding: 10px 20px;">
+                                <i class="fa-solid fa-floppy-disk"></i> Enregistrer la configuration
+                            </button>
+                            <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
+                                ⚠️ Les changements s'appliquent au redémarrage du bot.
+                            </span>
+                        </div>
+
+                        <div class="twitch-card glass" style="padding: 1.5rem; margin-top: 1.5rem;">
+                            <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.1em;">💬 Chaînes de chat</h3>
+                            <p style="font-size:0.85em; opacity:0.7; margin-bottom:1.2rem;">
+                                Liste des chaînes Twitch où le bot doit se connecter pour chatter (séparées par des virgules ou des retours à la ligne). Si vide, le bot utilise les chaînes de l'environnement (TWITCH_CHAT_CHANNELS).
+                            </p>
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <textarea id="presence-chat-channels" rows="3" placeholder="Ex: streamer1, streamer2" style="width:100%; padding:10px; border-radius:8px; background:#111520; border:1px solid var(--border-glass); color:#fff; font-family:inherit; resize:vertical;"></textarea>
+                            </div>
+                            <button class="btn btn-primary" onclick="saveChatChannels()" style="padding: 10px 20px;">
+                                <i class="fa-solid fa-floppy-disk"></i> Enregistrer les chaînes
+                            </button>
+                            <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
+                                ⚠️ Les changements s'appliquent au redémarrage du bot.
+                            </span>
                         </div>
                     </div>
 
-                    <button class="btn btn-primary" onclick="saveListenSettings()" style="padding: 10px 20px;">
-                        <i class="fa-solid fa-floppy-disk"></i> Enregistrer les paramètres d'écoute
-                    </button>
+                    <!-- 2. Twitch Events Subview -->
+                    <div id="twitch-events-container" class="twitch-subview-container" style="display: none;">
+                        <div id="twitch-events-all-msg" class="glass placeholder-text" style="display: none; padding: 2rem; text-align: center;">
+                            👥 Veuillez sélectionner un bot individuel pour configurer ses événements.
+                        </div>
+                        
+                        <div class="twitch-card glass" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <h3 style="color:#fff; margin-bottom: 1rem;">Mappage des Récompenses de Chaîne</h3>
+                            <p style="font-size:0.85em; opacity:0.7; margin-bottom:1.5rem;">
+                                Associez les titres exacts de vos récompenses personnalisées Twitch à des commandes du bot.
+                            </p>
+                            
+                            <div style="margin-bottom: 1.5rem;">
+                                <table class="table" style="width:100%;">
+                                    <thead>
+                                        <tr>
+                                            <th>Titre Récompense Twitch</th>
+                                            <th>Commande Bot à Déclencher</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="twitch-rewards-table-body">
+                                        <!-- Rempli dynamiquement -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="glass" style="padding: 1rem; border-color: rgba(255,255,255,0.05); display: flex; gap: 12px; align-items: flex-end;">
+                                <div class="form-group" style="flex:1;">
+                                    <label style="font-size:0.85em; display:block; margin-bottom:6px;">Titre de la récompense</label>
+                                    <input type="text" id="add-reward-title" placeholder="Ex: Décret de la Folie" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label style="font-size:0.85em; display:block; margin-bottom:6px;">Action / Commande</label>
+                                    <input type="text" id="add-reward-action" placeholder="Ex: decret" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                </div>
+                                <button class="btn btn-primary" onclick="addRewardMapping()" style="padding: 9px 16px;"><i class="fa-solid fa-plus"></i> Ajouter</button>
+                            </div>
+
+                            <button class="btn btn-primary" onclick="saveRewardsMapping()" style="padding: 10px 20px; margin-top: 1.5rem;">
+                                <i class="fa-solid fa-floppy-disk"></i> Enregistrer le Mappage
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 3. Twitch Economy Subview -->
+                    <div id="twitch-economy-container" class="twitch-subview-container" style="display: none;">
+                        <div id="twitch-economy-all-msg" class="glass placeholder-text" style="display: none; padding: 2rem; text-align: center;">
+                            👥 Veuillez sélectionner un bot individuel pour voir le classement économique.
+                        </div>
+                        
+                        <div class="twitch-card glass" style="padding: 1.5rem;">
+                            <h3 style="color:#fff; margin-bottom: 1rem;"><i class="fa-solid fa-ranking-star"></i> Classement de la Faveur / Street Cred (Twitch)</h3>
+                            <div id="economy-leaderboard-empty" style="padding: 2rem; text-align: center; opacity: 0.5;">
+                                Aucun score enregistré pour ce bot.
+                            </div>
+                            <table id="economy-leaderboard-table" class="table" style="width:100%; display:none;">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Utilisateur</th>
+                                        <th>Points</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="economy-leaderboard-body">
+                                    <!-- Rempli dynamiquement -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 4. Twitch Listen Subview -->
+                    <div id="twitch-listen-container" class="twitch-subview-container" style="display: none;">
+                        <div id="twitch-listen-all-msg" class="glass placeholder-text" style="display: none; padding: 2rem; text-align: center;">
+                            👥 Veuillez sélectionner un bot individuel pour configurer l'écoute micro.
+                        </div>
+                        
+                        <div class="twitch-card glass" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem;">
+                                <div>
+                                    <h3 style="margin:0; color:#fff;">Configuration de l'écoute micro</h3>
+                                    <p style="margin:5px 0 0 0; font-size:0.85em; opacity:0.7;">Kill-switch et configuration de l'ASR partagé</p>
+                                </div>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-weight:600; font-size:1.1em; color:var(--accent);">
+                                    <input type="checkbox" id="listen-enabled" style="transform: scale(1.4); cursor: pointer;">
+                                    ACTIVER L'ÉCOUTE MICRO
+                                </label>
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.2rem; margin-bottom:1.5rem;">
+                                <div class="form-group">
+                                    <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Mode ASR</label>
+                                    <select id="listen-mode" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                        <option value="A">NIM (Docker localhost)</option>
+                                        <option value="B">NeMo (Python WSL2)</option>
+                                        <option value="C">Whisper (Local CPU/GPU)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Calcul ASR</label>
+                                    <select id="listen-device" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                        <option value="cpu">CPU</option>
+                                        <option value="cuda">GPU (CUDA)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Taille du Chunk (ms)</label>
+                                    <select id="listen-chunk" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                        <option value="80">80 ms</option>
+                                        <option value="160">160 ms</option>
+                                        <option value="560">560 ms</option>
+                                        <option value="1120">1120 ms</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; margin-bottom:1.5rem;">
+                                <div class="form-group">
+                                    <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Intervalle min entre réponses (s)</label>
+                                    <input type="number" id="listen-min-interval" min="10" value="45" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                </div>
+                            </div>
+
+                            <button class="btn btn-primary" onclick="saveListenSettings()" style="padding: 10px 20px;">
+                                <i class="fa-solid fa-floppy-disk"></i> Enregistrer les paramètres d'écoute
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 5. Twitch Announces Subview (Annonces) -->
+                    <div id="twitch-announces-container" class="twitch-subview-container" style="display: none;">
+                        <div class="twitch-container glass" style="padding: 2rem; margin-bottom: 2rem; background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.05);">
+                            <h2>📡 Configuration des Annonces Twitch</h2>
+                            <p style="margin-bottom: 1.5rem; opacity: 0.8; line-height: 1.5;">
+                                Configurez pour chaque bot les salons de destination et les chaînes Twitch à surveiller.
+                            </p>
+
+                            <!-- GLOBAL : appliquer à tous les bots (always visible in Announces subview) -->
+                            <div class="glass" style="padding:1.5rem; margin-bottom:2rem; border:1px solid rgba(167,139,250,0.3); background:rgba(167,139,250,0.05);">
+                              <h3 style="color:#fff; margin:0 0 6px 0;"><i class="fa-solid fa-layer-group"></i> Tous les bots (en un clic)</h3>
+                              <p style="margin:0 0 1rem 0; font-size:0.85em; opacity:0.7; line-height:1.4;">
+                                Active/désactive la surveillance et ajoute une chaîne à <b>tous</b> les bots d'un coup.
+                              </p>
+                              <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:1.2rem;">
+                                <button class="btn btn-primary" onclick="setTwitchEnabledAll(true)" style="padding:10px 16px;"><i class="fa-solid fa-toggle-on"></i> Activer tous</button>
+                                <button class="btn btn-danger" onclick="setTwitchEnabledAll(false)" style="padding:10px 16px;"><i class="fa-solid fa-toggle-off"></i> Désactiver tous</button>
+                              </div>
+                              <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end;">
+                                <div class="form-group">
+                                  <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Chaîne Twitch (Nom ou URL)</label>
+                                  <input type="text" id="twitch-all-login" placeholder="Ex: ninja" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
+                                </div>
+                                <div class="form-group">
+                                  <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Salon Discord (ID ou lien)</label>
+                                  <input type="text" id="twitch-all-channel" placeholder="ID ou lien Discord" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
+                                </div>
+                                <div class="form-group">
+                                  <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Message (optionnel)</label>
+                                  <input type="text" id="twitch-all-message" placeholder="Vide = message IA auto" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
+                                </div>
+                                <button class="btn btn-primary" onclick="addTwitchSubscriptionAll()" style="padding:11px 16px; white-space:nowrap;"><i class="fa-solid fa-plus-circle"></i> Ajouter à tous</button>
+                              </div>
+                            </div>
+
+                            <!-- Bot Status & Main Toggle (Individual bot view only) -->
+                            <div id="twitch-bot-status-panel" class="glass" style="padding: 1.5rem; margin-bottom: 2rem; display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05);">
+                                <div>
+                                    <h3 id="twitch-bot-status-title" style="margin: 0; color: #fff;">Configuration Twitch</h3>
+                                    <p style="margin: 5px 0 0 0; font-size: 0.9em; opacity: 0.7;">Activer ou désactiver la surveillance automatique pour ce bot</p>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+                                        <input type="checkbox" id="twitch-bot-enabled" style="transform: scale(1.3); cursor: pointer;">
+                                        Activer la surveillance Twitch
+                                    </label>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label for="twitch-bot-interval" style="font-size:0.9em; font-weight:500;">Polling (sec) :</label>
+                                        <input type="number" id="twitch-bot-interval" min="60" value="90" style="width: 80px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-glass); background: #111520; color: #fff;">
+                                    </div>
+                                    <button class="btn btn-primary" onclick="saveTwitchBotSettings()" style="padding: 10px 20px;">
+                                        <i class="fa-solid fa-floppy-disk"></i> Enregistrer
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="twitch-announces-individual-layout" class="twitch-layout" style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 2rem;">
+                                <!-- Left: Subscriptions list -->
+                                <div class="twitch-subs-panel glass" style="padding: 1.5rem; background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.05);">
+                                    <h3 style="color:#fff; margin-bottom: 1.2rem;"><i class="fa-solid fa-list"></i> Abonnements Actifs</h3>
+                                    <div id="twitch-subs-empty" style="padding: 3rem 2rem; text-align: center; opacity: 0.5;">
+                                        <i class="fa-solid fa-circle-info" style="font-size: 2rem; margin-bottom: 10px; display: block; color: var(--accent);"></i>
+                                        Aucune chaîne Twitch surveillée pour ce bot.
+                                    </div>
+                                    <div id="twitch-subs-list" style="display: flex; flex-direction: column; gap: 12px; display: none;"></div>
+                                </div>
+
+                                <!-- Right: Add subscription form -->
+                                <div class="twitch-add-panel glass" style="padding: 1.5rem; background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.05);">
+                                    <h3 style="color:#fff; margin-bottom: 1.2rem;"><i class="fa-solid fa-plus"></i> Ajouter une surveillance</h3>
+                                    
+                                    <div class="form-group" style="margin-bottom: 1.2rem;">
+                                        <label for="twitch-add-login" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Chaîne Twitch (Nom ou URL)</label>
+                                        <input type="text" id="twitch-add-login" placeholder="Ex: ninja ou https://twitch.tv/ninja" style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff;">
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 1.2rem;">
+                                        <label for="twitch-add-channel" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Salon Discord (ID ou lien)</label>
+                                        <input type="text" id="twitch-add-channel" placeholder="Ex: 112233445566778899 ou https://discord.com/channels/.../..." style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff;">
+                                        <span style="font-size:0.75em; opacity:0.6; display:block; margin-top:6px; line-height: 1.3;">
+                                            Collez l'<b>ID du salon</b> (Mode Développeur > clic droit sur le salon > <i>Copier l'identifiant</i>) <b>ou</b> directement le lien Discord du salon : l'ID est extrait automatiquement.
+                                        </span>
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 1.5rem;">
+                                        <label for="twitch-add-message" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Message personnalisé (optionnel)</label>
+                                        <textarea id="twitch-add-message" rows="3" placeholder="Ex: Hey ! {streamer} est en live ! Viens voir : {url}" style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff; font-family: inherit; resize: vertical; line-height: 1.4;"></textarea>
+                                        <span style="font-size:0.75em; opacity:0.6; display:block; margin-top:6px; line-height: 1.3;">
+                                            Variables injectées : <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{streamer}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{title}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{game}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{url}</code>
+                                        </span>
+                                    </div>
+
+                                    <button class="btn btn-primary" onclick="addTwitchSubscription()" style="width:100%; padding: 12px; font-weight:600; font-size: 1em;">
+                                        <i class="fa-solid fa-plus-circle"></i> Ajouter l'abonnement
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
