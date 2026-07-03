@@ -250,6 +250,45 @@ class TestTwitchTosSafetyFilter(unittest.TestCase):
         msg = "Bonjour le chat ! Comment ça va aujourd'hui ?"
         self.assertEqual(sanitize_twitch_output(msg), msg)
 
+    def test_extended_violence_verbs_filtered(self):
+        # Verbes élargis + élision t' + coups au corps → toujours filtré (soft ou fallback)
+        for msg in [
+            "Je vais t'égorger, sale chien",
+            "On va te fracasser le crâne",
+            "Je te poignarde si tu bouges",
+            "Je vais te flinguer",
+        ]:
+            with self.subTest(msg=msg):
+                self.assertNotEqual(sanitize_twitch_output(msg, bot_id="johnny"), msg)
+
+    def test_body_part_beating_no_dangling_object(self):
+        # La réécriture consomme la partie du corps (pas de complément orphelin)
+        out = sanitize_twitch_output("Je vais te fracasser le crâne")
+        self.assertNotIn("crâne", out)
+        self.assertNotIn("crane", out.lower())
+
+    def test_self_harm_incitement_filtered(self):
+        from shared.twitch.sanitize import FALLBACK_RESPONSES
+        for msg in ["va te pendre", "tue-toi", "kys", "va crever"]:
+            with self.subTest(msg=msg):
+                self.assertIn(sanitize_twitch_output(msg, bot_id="johnny"), FALLBACK_RESPONSES["johnny"])
+
+    def test_racist_slurs_trigger_fallback(self):
+        from shared.twitch.sanitize import FALLBACK_RESPONSES
+        for msg in ["sale négro", "espèce de bougnoule", "sale arabe", "nique ta race"]:
+            with self.subTest(msg=msg):
+                self.assertIn(sanitize_twitch_output(msg, bot_id="johnny"), FALLBACK_RESPONSES["johnny"])
+
+    def test_no_false_positive_on_benign_te_verbs(self):
+        # "te trouver", "te tutoyer", "te souhaiter" ne sont pas des menaces
+        for msg in [
+            "Je vais te trouver une place au premier rang.",
+            "Je peux te tutoyer ?",
+            "Je vais te souhaiter bonne chance.",
+        ]:
+            with self.subTest(msg=msg):
+                self.assertEqual(sanitize_twitch_output(msg), msg)
+
 
 class TestStripWrappingQuotes(unittest.TestCase):
     def test_straight_quotes_wrapping_whole_message_removed(self):

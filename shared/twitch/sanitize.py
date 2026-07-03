@@ -157,40 +157,77 @@ FALLBACK_RESPONSES = {
     ]
 }
 
+# Racines de verbes de violence (regex, verbes en -er : la racine + terminaison).
+# Utilisé pour "te <verbe>" (menace envers une personne).
+_VIOL_ER_ROOTS = (
+    r"but|defonc|frapp|explos|demont|crev|egorg|saign|plant|lard|fum|dessoud|flingu|"
+    r"etrangl|etouff|noy|brul|cram|poignard|tranch|decoup|eventr|etrip|massacr|fracass|"
+    r"tabass|latt|cogn|pulveris|achev|mutil|lynch|scalp|castr|charcut|eclat|viol|"
+    r"defigur|estropi|amoch|tu"
+)
+_VIOL_ER_END = r"(?:er|e|es|ez|ent|ais|ait|era|eras|erai|erais|erait|ee|ees)"
+# Sujet-cible d'une menace : "te " / "vous " (avec espace) ou "t'" élidé devant voyelle
+# (t'égorger, t'exploser) — l'élision colle l'apostrophe au verbe, sans espace.
+_VIOL_SUBJ = r"\b(?:te\s+|t['’]\s*|vous\s+)"
+# Terminaisons de menace : "je vais te buter", "je te bute", "on va te défoncer", "t'égorger"...
+_VIOL_ER = rf"{_VIOL_SUBJ}(?:bien\s+|faire\s+)?(?:{_VIOL_ER_ROOTS}){_VIOL_ER_END}\b"
+# Verbes irréguliers (-re / -ir) + coups sur une partie du corps.
+_VIOL_IRR = rf"{_VIOL_SUBJ}(?:faire\s+)?(?:descend\w+|abatt\w+|demoli\w+|refaire\s+le\s+portrait)\b"
+_VIOL_BODY = (
+    r"\b(?:te\s+|t['’]|vous\s+)?(?:cass|pet|explos|fracass|defonc|refai|ouvr|arrach)\w*\s+"
+    r"(?:la|le|les|ta|ton|tes)\s+(?:gueule|tete|machoire|dents?|nez|jambes?|bras|os|"
+    r"rotules?|tronche|face|crane|boite\s+cranienne)"
+)
+# Incitation au suicide / self-harm (interdit par Twitch).
+_SELF_HARM = (
+    r"\bva\s+(?:te|t['’])\s*(?:pendre|suicider|tuer|foutre\s+en\s+l'?air|jeter)\b|"
+    r"\b(?:tue|pends|suicide|bute|flingue|noie|etrangle)[-\s]toi\b|"
+    r"\bva\s+crever\b|\bcreve[zs]?\b|\bva\s+mourir\b|\bkys\b|\bkill\s+your\s?self\b"
+)
+
 REPLACEMENTS = [
     # 1. Balle dans le crane/tête/etc. (avale l'article précédent : "une balle" → "une bonne leçon")
     (re.compile(r"(?:\bune?\s+)?\bballes?\s+dans\s+(?:le|la|ton?|tes?|votre|vos)\s+(?:cr[aâ]ne|t[eê]te|bide|buffet|peau)\b", re.IGNORECASE), "une bonne leçon d'humilité"),
     # 2. Dans les dents
     (re.compile(r"\bdans\s+les\s+dents\b", re.IGNORECASE), "en pleine figure"),
-    # 3. Te crever / Te buter / Te défoncer / Te tuer / etc.
-    (re.compile(r"\b(?:te|t[’']|vous)\s*(?:buter|tuer|d[eé]foncer|frapper|exploser|d[eé]monter|crever)\b", re.IGNORECASE), "te remettre à ta place"),
-    (re.compile(r"\b(?:te|t[’']|vous)\s*(?:bute|tue|d[eé]fonce|frappe|explose|d[eé]monte|cr[eè]ve)\b", re.IGNORECASE), "te remet à ta place"),
+    # 3. Coups sur une partie du corps ("te casser la gueule"...) → réécriture soft
+    (re.compile(r"\b(?:te\s+|t[’']|vous\s+)(?:casser|p[eé]ter|exploser|d[eé]foncer|fracasser|refaire|ouvrir|arracher|[eé]clater|d[eé]monter|ratatiner)\s+(?:la|le|les|ta|ton|tes)\s+(?:gueule|t[eê]te|m[aâ]choire|dents?|nez|jambes?|bras|tronche|face|cr[aâ]ne|os|rotules?)\b", re.IGNORECASE), "te remettre les idées en place"),
+    # 4. Te buter / te défoncer / te tuer / te crever… (verbes en -er, forme infinitive/présent)
+    (re.compile(r"\b(?:te|t[’']|vous)\s+(?:bien\s+|faire\s+)?(?:buter|d[eé]foncer|frapper|exploser|d[eé]monter|crever|[eé]gorger|saigner|planter|flinguer|poignarder|trancher|massacrer|fracasser|tabasser|pulv[eé]riser|mutiler|[eé]clater|d[eé]figurer)\b", re.IGNORECASE), "te remettre à ta place"),
+    (re.compile(r"\b(?:te|t[’']|vous)\s+tuer\b", re.IGNORECASE), "te remettre à ta place"),
+    (re.compile(r"\b(?:te|t[’']|vous)\s+(?:bute|d[eé]fonce|frappe|explose|d[eé]monte|cr[eè]ve|[eé]gorge|saigne|plante|flingue|tranche|massacre|fracasse|tabasse|[eé]clate)\b", re.IGNORECASE), "te remet à ta place"),
     (re.compile(r"\b(?:te|t[’']|vous)\s*faire\s+la\s+peau\b", re.IGNORECASE), "te donner une bonne leçon"),
     (re.compile(r"\b(?:t'éclater|t’éclater|t’exploser|t'exploser)\b", re.IGNORECASE), "te calmer"),
-    # 4. Slurs / Propos haineux
-    (re.compile(r"\b(fi[l|s]\s+de\s+pute|salope?|p[eé]d[eé]|pd|tarlouze|con+ard|pute)\b", re.IGNORECASE), "pauvre type"),
+    # 5. Slurs vulgaires / homophobes courants → terme méprisant neutre (message conservé)
+    (re.compile(r"\b(fi[ls]s?\s+de\s+pute|salope?|p[eé]d[eé]|pd|tarlouze|tapette|tantouze|gouine|travelo|con+ard|pute)\b", re.IGNORECASE), "pauvre type"),
     (re.compile(r"\bb[aâ]tard\b", re.IGNORECASE), "clown"),
 ]
 
-# Check patterns on folded lowercase text
+# --- CHECK patterns : appliqués sur le texte PLIÉ (minuscules, sans accents) APRÈS
+# les REPLACEMENTS. Si un motif subsiste ici → fallback (réplique entière remplacée). ---
 VIOLENCE_CHECK_PATTERNS = [
     r"balle\s+dans\s+(?:le|la|ton?|tes?|votre|vos)\s+(?:crane|tete|bide|buffet|peau)",
     r"dans\s+les\s+dents",
-    r"\b(?:te|t[’']|vous)\s*(?:buter|tuer|defoncer|frapper|exploser|demonter|crever)",
-    r"\b(?:te|t[’']|vous)\s*(?:bute|tue|defonce|frappe|explose|demonte|creve)",
-    r"\b(?:te|t[’']|vous)\s*faire\s+la\s+peau",
+    _VIOL_ER,
+    _VIOL_IRR,
+    _VIOL_BODY,
+    r"\b(?:te|t['’]|vous)\s*faire\s+la\s+peau",
     r"\b(?:t'eclater|t’eclater|t’exploser|t'exploser)",
+    _SELF_HARM,
 ]
 
 HATE_CHECK_PATTERNS = [
-    r"fils\s+de\s+pute",
-    r"\bsalope?\b",
-    r"\bped[eé]\b",
-    r"\bpd\b",
-    r"\btarlouze\b",
-    r"\bcon+ard\b",
-    r"\bpute\b",
-    r"\bbatard\b",
+    # Vulgaire / homophobe (déjà soft-remplacés, gardés en filet de sécurité)
+    r"fils?\s+de\s+pute", r"\bsalope?\b", r"\bped[e]\b", r"\bpd\b", r"\btarlouze\b",
+    r"\btapette\b", r"\btantouze\b", r"\bgouine\b", r"\btravelo\b", r"\bcon+ard\b",
+    r"\bpute\b", r"\bbatard\b",
+    # Racistes / ethniques / antisémites
+    r"\bnegre?\b", r"\bnegro\b", r"\bnegresse\b", r"\bbougnoul\w*", r"\bbamboula\b",
+    r"\bbicot\b", r"\bchinetoq\w*", r"\bniakou\w*", r"\byoupin\b", r"\bfeuj\b",
+    r"\bsale\s+(?:arabe|noire?|jui[fv]e?|blanche?|renoi|negre|beur|rebeu|chinois\w*|asiat\w*|feuj)\b",
+    r"\bnique\s+ta\s+race\b",
+    # Validistes
+    r"\bmongol\b", r"\bmongolien\w*", r"\btrisomiq\w*", r"\btriso\b",
 ]
 
 def sanitize_twitch_output(text: str, bot_id: str = None) -> str:
