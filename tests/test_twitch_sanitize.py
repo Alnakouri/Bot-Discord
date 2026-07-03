@@ -204,9 +204,10 @@ class TestSanitizeInput(unittest.TestCase):
 
 class TestTwitchTosSafetyFilter(unittest.TestCase):
     def test_violence_threat_sanitized_to_soft(self):
-        # 1. Balle dans le crane / tête
-        self.assertIn("une bonne leçon d'humilité", sanitize_twitch_output("Je vais te mettre une balle dans le crâne, gamin !"))
+        # 1. Balle dans le crane / tête (et pas d'article en double)
+        self.assertEqual(sanitize_twitch_output("Je vais te mettre une balle dans le crâne, gamin !"), "Je vais te mettre une bonne leçon d'humilité, gamin !")
         self.assertIn("une bonne leçon d'humilité", sanitize_twitch_output("Prends une balle dans la tête !"))
+        self.assertNotIn("une une", sanitize_twitch_output("te mettre une balle dans le crâne"))
         
         # 2. Dans les dents
         self.assertIn("en pleine figure", sanitize_twitch_output("Prends ça dans les dents !"))
@@ -248,6 +249,25 @@ class TestTwitchTosSafetyFilter(unittest.TestCase):
     def test_benign_phrase_unchanged(self):
         msg = "Bonjour le chat ! Comment ça va aujourd'hui ?"
         self.assertEqual(sanitize_twitch_output(msg), msg)
+
+
+class TestStripWrappingQuotes(unittest.TestCase):
+    def test_straight_quotes_wrapping_whole_message_removed(self):
+        self.assertEqual(
+            strip_stage_directions('"Quoi, choom ? T\'as besoin d\'un miracle ?"'),
+            "Quoi, choom ? T'as besoin d'un miracle ?"
+        )
+
+    def test_guillemets_wrapping_removed(self):
+        self.assertEqual(strip_stage_directions("«Salut le chat !»"), "Salut le chat !")
+
+    def test_internal_quote_preserved(self):
+        # Une citation interne ne doit PAS être touchée
+        self.assertEqual(strip_stage_directions('Il a dit "salut" en partant.'), 'Il a dit "salut" en partant.')
+
+    def test_two_separate_quotes_not_merged(self):
+        # Deux citations distinctes → on ne dépouille pas
+        self.assertEqual(strip_stage_directions('"un" et "deux"'), '"un" et "deux"')
 
 
 class TestStripStageDirectionsTtsBrackets(unittest.TestCase):

@@ -90,7 +90,35 @@ def strip_stage_directions(text: str) -> str:
     text = re.sub(r"\*([^*]+)\*", r"\1", text)
     # 3.5 Balises vocales entre crochets TTS (ex: [laugh])
     text = re.sub(r"\[(laugh|chuckle|sigh|shout|laughs|giggle|whisper|sob|cough|gasp)\]", "", text, flags=re.I)
-    return re.sub(r"\s{2,}", " ", text).strip()
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    # 4. Guillemets enveloppant TOUT le message (le LLM emballe parfois sa réplique)
+    text = _strip_wrapping_quotes(text)
+    return text
+
+
+# Paires de guillemets pouvant envelopper une réplique entière.
+_WRAPPING_QUOTE_PAIRS = (('"', '"'), ('«', '»'), ('“', '”'), ('‘', '’'))
+
+def _strip_wrapping_quotes(text: str) -> str:
+    """Retire les guillemets qui entourent la RÉPLIQUE ENTIÈRE (ex: «"Quoi, choom ?"» →
+    Quoi, choom ?). Ne touche pas aux citations internes (Il a dit "salut")."""
+    t = text.strip()
+    for _ in range(2):  # jusqu'à 2 couches (ex: «"..."»)
+        if len(t) < 2:
+            break
+        open_q, close_q = t[0], t[-1]
+        pair = next((p for p in _WRAPPING_QUOTE_PAIRS if p[0] == open_q and p[1] == close_q), None)
+        if not pair:
+            break
+        inner = t[1:-1]
+        # Garde-fou anti-découpe : si le guillemet fermant réapparaît dans le
+        # contenu, c'est probablement plusieurs citations distinctes (ex: «a» et «b»)
+        # → ne pas dépouiller. Exception : guillemets droits identiques en exactement
+        # 2 exemplaires ("...") = enveloppe propre.
+        if close_q in inner and not (open_q == close_q and t.count(open_q) == 2):
+            break
+        t = inner.strip()
+    return t
 
 
 # --- TWITCH TOS SAFETY FILTERING ---
@@ -130,8 +158,8 @@ FALLBACK_RESPONSES = {
 }
 
 REPLACEMENTS = [
-    # 1. Balle dans le crane/tête/etc.
-    (re.compile(r"\bballes?\s+dans\s+(?:le|la|ton?|tes?|votre|vos)\s+(?:cr[aâ]ne|t[eê]te|bide|buffet|peau)\b", re.IGNORECASE), "une bonne leçon d'humilité"),
+    # 1. Balle dans le crane/tête/etc. (avale l'article précédent : "une balle" → "une bonne leçon")
+    (re.compile(r"(?:\bune?\s+)?\bballes?\s+dans\s+(?:le|la|ton?|tes?|votre|vos)\s+(?:cr[aâ]ne|t[eê]te|bide|buffet|peau)\b", re.IGNORECASE), "une bonne leçon d'humilité"),
     # 2. Dans les dents
     (re.compile(r"\bdans\s+les\s+dents\b", re.IGNORECASE), "en pleine figure"),
     # 3. Te crever / Te buter / Te défoncer / Te tuer / etc.
