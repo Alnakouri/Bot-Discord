@@ -62,43 +62,69 @@ class ViewerMemoryMixin:
         except Exception as e:
             self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Échec sauvegarde facts JSON: {e}")
 
-    def _generate_templated_greet(self, author: str, count: int) -> str:
+    def _generate_templated_greet(self, author: str, count: int, chan: str = None) -> str:
         # Templates en personnage fournis par le bot (prioritaires, 0 LLM).
+        replies = []
         if self.greeting_templates:
             key = "returning" if count >= 5 else "new"
             replies = self.greeting_templates.get(key) or self.greeting_templates.get("new") or []
-            if replies:
-                try:
-                    return random.choice(replies).format(author=author, count=count)
-                except (KeyError, IndexError, ValueError):
-                    pass  # template malformé → repli générique ci-dessous
 
-        is_sheo = "sheo" in self.bot_id.lower()
-        if is_sheo:
-            if count >= 5:
-                replies = [
-                    f"Tiens, @{author} ! Ta {count}e visite dans mes îles ? Tu y prends goût, mortel !",
-                    f"@{author} ! De retour pour la {count}e fois ? Haskill, range les instruments de torture, c'est un habitué !",
-                    f"Ah, @{author} ! La folie te réussit, c'est ta {count}e fois ici ! Prends un morceau de fromage !"
-                ]
+        if not replies:
+            # Fallbacks intégrés si le bot n'a pas défini ses propres templates
+            is_sheo = "sheo" in self.bot_id.lower()
+            if is_sheo:
+                if count >= 5:
+                    replies = [
+                        "Tiens, @{author} ! Ta {count}e visite dans mes îles ? Tu y prends goût, mortel !",
+                        "@{author} ! De retour pour la {count}e fois ? Haskill, range les instruments de torture, c'est un habitué !",
+                        "Ah, @{author} ! La folie te réussit, c'est ta {count}e fois ici ! Prends un morceau de fromage !"
+                    ]
+                else:
+                    replies = [
+                        "@{author} vient d'entrer ! Bonjour ! Ou bonsoir ! Bref, ne touchez à rien !",
+                        "Un nouveau jouet ! @{author}, bienvenue dans mon asile !",
+                        "@{author} ! Quel esprit audacieux ose troubler mes îles daedriques ?",
+                        "Haskill, amène le Wabbajack, nous avons un nouveau cobaye : @{author} !"
+                    ]
             else:
-                replies = [
-                    f"@{author} vient d'entrer ! Bonjour ! Ou bonsoir ! Bref, ne touchez à rien !",
-                    f"Un nouveau jouet ! @{author}, bienvenue dans mon asile !",
-                    f"@{author} ! Quel esprit audacieux ose troubler mes îles daedriques ?"
-                ]
+                if count >= 5:
+                    replies = [
+                        "Ravi de te revoir, @{author} ! Merci pour ta fidélité ({count}e visite) !",
+                        "Content de te revoir, @{author} ! Bienvenue sur le stream pour ta {count}e visite !",
+                        "Hé @{author} ! Déjà {count} visites ? Tu fais quasiment partie du décor maintenant !",
+                        "De retour, @{author} ? Toujours un plaisir de t'accueillir pour ta {count}e session !"
+                    ]
+                else:
+                    replies = [
+                        "Bienvenue sur le chat, @{author} !",
+                        "Bonjour @{author}, ravi de t'accueillir ici !",
+                        "Salutations @{author} ! Installe-toi bien et profite du spectacle !",
+                        "Ah, salut @{author} ! Bienvenue parmi nous sur le chat !"
+                    ]
+
+        # Anti-répétition par canal Twitch
+        if chan and replies:
+            chan_key = chan.lower()
+            if not hasattr(self, "_last_greet_templates"):
+                self._last_greet_templates = {}
+            
+            last_idx = self._last_greet_templates.get(chan_key)
+            choices = list(range(len(replies)))
+            if last_idx is not None and len(choices) > 1 and last_idx in choices:
+                choices.remove(last_idx)
+            
+            chosen_idx = random.choice(choices)
+            self._last_greet_templates[chan_key] = chosen_idx
+            template = replies[chosen_idx]
+        elif replies:
+            template = random.choice(replies)
         else:
-            if count >= 5:
-                replies = [
-                    f"Ravi de te revoir, @{author} ! Merci pour ta fidélité ({count}e visite) !",
-                    f"Content de te revoir, @{author} ! Bienvenue sur le stream pour ta {count}e visite !"
-                ]
-            else:
-                replies = [
-                    f"Bienvenue sur le chat, @{author} !",
-                    f"Bonjour @{author}, ravi de t'accueillir ici !"
-                ]
-        return random.choice(replies)
+            return f"Bienvenue @{author} !"
+
+        try:
+            return template.format(author=author, count=count)
+        except (KeyError, IndexError, ValueError):
+            return template.replace("{author}", author).replace("{count}", str(count))
 
     async def _handle_usernotice(self, chan: str, tags: dict, msg_text: str, ws):
         msg_id = tags.get("msg-id")

@@ -4,7 +4,7 @@ import random
 import collections
 import asyncio
 from datetime import datetime
-from shared.twitch.sanitize import strip_stage_directions
+from shared.twitch.sanitize import strip_stage_directions, send_chat_safe
 from shared.twitch.llm import ANTI_INJECTION_GUARD
 
 class DispatchMixin:
@@ -54,8 +54,7 @@ class DispatchMixin:
             # Réponse
             reply = await self._generate_response(chan, author, text)
             if reply:
-                await ws.send_str(f"PRIVMSG #{chan.lower()} :{reply}")
-                self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Envoyé sur #{chan} : {reply}")
+                await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
             return
 
         # 4. Message passif
@@ -97,8 +96,7 @@ class DispatchMixin:
                         self.global_msg_timestamps.popleft()
                     if len(self.global_msg_timestamps) < 18:
                         self.global_msg_timestamps.append(now)
-                        await ws.send_str(f"PRIVMSG #{chan.lower()} :{res}")
-                        self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Message passif (faveur) envoyé sur #{chan} : {res}")
+                        await send_chat_safe(ws, chan, res, bot_id=self.bot_id, logger=self.logger)
                         spontaneous_sent = True
             except Exception as e:
                 self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur passive_handler: {e}")
@@ -156,8 +154,7 @@ class DispatchMixin:
                         return True
 
                     self.global_msg_timestamps.append(now)
-                    await ws.send_str(f"PRIVMSG #{chan.lower()} :{res}")
-                    self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Commande !{cmd_name} exécutée par {author} -> {res}")
+                    await send_chat_safe(ws, chan, res, bot_id=self.bot_id, logger=self.logger)
             except Exception as e:
                 self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur lors de l'exécution de la commande !{cmd_name}: {e}")
             return True
@@ -182,10 +179,9 @@ class DispatchMixin:
 
         viewer_data = self.viewers_state.get(author.lower(), {})
         count = viewer_data.get("count", 1)
-        reply = self._generate_templated_greet(author, count)
+        reply = self._generate_templated_greet(author, count, chan=chan)
         
-        await ws.send_str(f"PRIVMSG #{chan.lower()} :{reply}")
-        self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Accueil envoyé pour {author} -> {reply}")
+        await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
         return True
 
     async def _try_interjection(self, chan: str, ws) -> bool:
@@ -207,8 +203,7 @@ class DispatchMixin:
 
         reply = await self._generate_interjection(chan)
         if reply:
-            await ws.send_str(f"PRIVMSG #{chan.lower()} :{reply}")
-            self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Interjection spontanée envoyée sur #{chan} : {reply}")
+            await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
             return True
         return False
 

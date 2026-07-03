@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import time
-from shared.twitch.sanitize import strip_stage_directions
+from shared.twitch.sanitize import strip_stage_directions, send_chat_safe
 from shared.twitch.llm import ANTI_INJECTION_GUARD
 
 class VoiceMixin:
@@ -65,8 +65,7 @@ class VoiceMixin:
         reply = await self._generate_voice_response(text)
         if reply:
             self.global_msg_timestamps.append(now)
-            await self.ws.send_str(f"PRIVMSG #{chan} :{reply}")
-            self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Réponse voix envoyée sur #{chan}: {reply}")
+            await send_chat_safe(self.ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
             self._last_voice_ts = now
 
     async def _generate_voice_response(self, text: str) -> str | None:

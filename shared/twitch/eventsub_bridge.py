@@ -3,6 +3,8 @@ import aiohttp
 import asyncio
 import time
 
+from shared.twitch.sanitize import send_chat_safe
+
 class EventSubMixin:
     async def get_broadcaster_id(self) -> str | None:
         # Si on a le token broadcaster, on résout SON propre user-id (helix/users sans
@@ -56,8 +58,7 @@ class EventSubMixin:
                     self.logger.warning(f"🚨 [TWITCH_CHAT:{self.bot_id}] EventSub callback: rate limit global atteint. Message ignoré.")
                     return False
                 self.global_msg_timestamps.append(now)
-                await self.ws.send_str(f"PRIVMSG #{chan} :{text}")
-                self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Message EventSub envoyé sur #{chan}: {text}")
+                await send_chat_safe(self.ws, chan, text, bot_id=self.bot_id, logger=self.logger)
                 return True
             return False
 

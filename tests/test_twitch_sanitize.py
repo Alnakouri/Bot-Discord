@@ -16,6 +16,7 @@ from shared.twitch.sanitize import (
     strip_meta_narration,
     strip_bare_stage_directions,
     SanitizeMixin,
+    sanitize_twitch_output,
 )
 
 
@@ -199,6 +200,70 @@ class TestSanitizeInput(unittest.TestCase):
         clean, suspicious = self.host._sanitize_input("Salut, ça va bien aujourd'hui ?")
         self.assertFalse(suspicious)
         self.assertEqual(clean, "Salut, ça va bien aujourd'hui ?")
+
+
+class TestTwitchTosSafetyFilter(unittest.TestCase):
+    def test_violence_threat_sanitized_to_soft(self):
+        # 1. Balle dans le crane / tête
+        self.assertIn("une bonne leçon d'humilité", sanitize_twitch_output("Je vais te mettre une balle dans le crâne, gamin !"))
+        self.assertIn("une bonne leçon d'humilité", sanitize_twitch_output("Prends une balle dans la tête !"))
+        
+        # 2. Dans les dents
+        self.assertIn("en pleine figure", sanitize_twitch_output("Prends ça dans les dents !"))
+        
+        # 3. Te crever / te buter / te défoncer / etc.
+        self.assertIn("te remettre à ta place", sanitize_twitch_output("Je vais te buter."))
+        self.assertIn("te remettre à ta place", sanitize_twitch_output("On va te crever."))
+        self.assertIn("te remet à ta place", sanitize_twitch_output("Je te défonce."))
+        self.assertIn("te donner une bonne leçon", sanitize_twitch_output("Je vais te faire la peau !"))
+        self.assertIn("te calmer", sanitize_twitch_output("Je vais t'éclater."))
+
+    def test_hate_speech_sanitized_to_soft(self):
+        # fils de pute
+        self.assertIn("pauvre type", sanitize_twitch_output("T'es un fils de pute !"))
+        # batard
+        self.assertIn("clown", sanitize_twitch_output("Quel sale bâtard !"))
+        # salope
+        self.assertIn("pauvre type", sanitize_twitch_output("Espèce de salope !"))
+
+    def test_fallback_triggered_on_hard_bypass(self):
+        # Si après substitution il reste un motif violent/haineux, on tombe sur un fallback
+        res = sanitize_twitch_output("Je te buterai", bot_id="johnny")
+        
+        from shared.twitch.sanitize import FALLBACK_RESPONSES
+        self.assertTrue(res in FALLBACK_RESPONSES["johnny"])
+
+    def test_benign_insult_passes_unchanged(self):
+        # Garde-fou : les vannes non-violentes doivent passer intactes
+        insultes = [
+            "T'es un gonk à l'ego surdimensionné.",
+            "Espèce de script kiddie ridicule.",
+            "Un ripperdoc qui a oublié de brancher son cerveau.",
+            "Mange du fromage et tais-toi, mortel !"
+        ]
+        for msg in insultes:
+            with self.subTest(msg=msg):
+                self.assertEqual(sanitize_twitch_output(msg), msg)
+
+    def test_benign_phrase_unchanged(self):
+        msg = "Bonjour le chat ! Comment ça va aujourd'hui ?"
+        self.assertEqual(sanitize_twitch_output(msg), msg)
+
+
+class TestStripStageDirectionsTtsBrackets(unittest.TestCase):
+    def test_tts_brackets_stripped(self):
+        self.assertEqual(
+            strip_stage_directions("Bonjour le chat ! [laugh] J'espère que vous allez bien."),
+            "Bonjour le chat ! J'espère que vous allez bien."
+        )
+        self.assertEqual(
+            strip_stage_directions("[chuckle] Haskill, apporte le fromage !"),
+            "Haskill, apporte le fromage !"
+        )
+        self.assertEqual(
+            strip_stage_directions("Ne m'interromps pas ! [shout]"),
+            "Ne m'interromps pas !"
+        )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import time
-from shared.twitch.sanitize import strip_stage_directions
+from shared.twitch.sanitize import strip_stage_directions, send_chat_safe
 from shared.twitch.llm import ANTI_INJECTION_GUARD
 
 class EventsMixin:
@@ -23,8 +23,7 @@ class EventsMixin:
 
         reply = await self._react_to_event(chan, kind, ctx)
         if reply:
-            await ws.send_str(f"PRIVMSG #{chan.lower()} :{reply}")
-            self.logger.info(f"📤 [TWITCH_CHAT:{self.bot_id}] Événement {kind} envoyé sur #{chan} : {reply}")
+            await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
 
     async def _react_to_event(self, chan: str, kind: str, ctx: dict) -> str | None:
         system_prompt = self.personality_prompt
