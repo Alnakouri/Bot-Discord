@@ -402,6 +402,9 @@
                                 <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
                                     <input type="checkbox" id="presence-chat-memory"> Activer la mémoire long terme
                                 </label>
+                                <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" id="presence-chat-game-qa"> Activer réponses questions jeu (IGDB)
+                                </label>
                             </div>
 
                             <button class="btn btn-primary" onclick="savePresenceSettings()" style="padding: 10px 20px;">
@@ -425,6 +428,57 @@
                             </button>
                             <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
                                 ⚠️ Les changements s'appliquent au redémarrage du bot.
+                            </span>
+                        </div>
+
+                        <div class="twitch-card glass" style="padding: 1.5rem; margin-top: 1.5rem;">
+                            <h3 style="color:#fff; margin-bottom: 1rem; font-size:1.1em;">🎮 Chaînes co-host</h3>
+                            <p style="font-size:0.85em; opacity:0.7; margin-bottom:1.2rem;">
+                                Liste des chaînes Twitch où le bot peut répondre passivement (sans mention) aux questions jeu (séparées par des virgules ou des retours à la ligne).
+                            </p>
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <textarea id="presence-cohost-channels" rows="2" placeholder="Ex: streamer1, streamer2" style="width:100%; padding:10px; border-radius:8px; background:#111520; border:1px solid var(--border-glass); color:#fff; font-family:inherit; resize:vertical;"></textarea>
+                            </div>
+                            <button class="btn btn-primary" onclick="saveCohostChannels()" style="padding: 10px 20px;">
+                                <i class="fa-solid fa-floppy-disk"></i> Enregistrer les co-hosts
+                            </button>
+                            <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
+                                ⚠️ Les changements s'appliquent au redémarrage du bot.
+                            </span>
+                        </div>
+
+                        <div class="twitch-card glass" style="padding: 1.5rem; margin-top: 1.5rem;">
+                            <h3 style="color:#fff; margin-bottom: 1.5rem; font-size:1.1em;">🔗 Commandes de liens personnalisées</h3>
+                            <p style="font-size:0.85em; opacity:0.7; margin-bottom:1.2rem;">
+                                Configurez des commandes simples (ex: <code>!discord</code>, <code>!twitter</code>) qui renvoient un message avec une URL. Les alias permettent d'utiliser plusieurs mots-clés (ex: <code>!serveur</code>).
+                            </p>
+                            <div style="overflow-x: auto; margin-bottom: 1.5rem;">
+                                <table class="table" style="width:100%; border-collapse: collapse; text-align: left;">
+                                    <thead>
+                                        <tr style="border-bottom: 1px solid var(--border-glass); opacity: 0.8;">
+                                            <th style="padding: 10px; min-width: 120px;">Commande</th>
+                                            <th style="padding: 10px; min-width: 200px;">URL</th>
+                                            <th style="padding: 10px; min-width: 150px;">Label (optionnel)</th>
+                                            <th style="padding: 10px; min-width: 250px;">Message (optionnel)</th>
+                                            <th style="padding: 10px; min-width: 150px;">Alias (optionnels)</th>
+                                            <th style="padding: 10px; width: 60px; text-align: center;">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="twitch-links-table-body">
+                                        <!-- Rempli dynamiquement -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-secondary" onclick="addLinkRow()" style="padding: 8px 15px;">
+                                    <i class="fa-solid fa-plus"></i> Ajouter un lien
+                                </button>
+                                <button class="btn btn-primary" onclick="saveLinkCommands()" style="padding: 8px 20px;">
+                                    <i class="fa-solid fa-floppy-disk"></i> Enregistrer les liens
+                                </button>
+                            </div>
+                            <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
+                                ⚠️ Placeholder <code>{url}</code> supporté dans le message. Les changements s'appliquent au redémarrage du bot.
                             </span>
                         </div>
                     </div>

@@ -860,6 +860,7 @@ async function loadTwitchPresence() {
         document.getElementById('presence-chat-interjections').checked = chatCfg.interjections !== false;
         document.getElementById('presence-chat-greetings').checked = chatCfg.greetings !== false;
         document.getElementById('presence-chat-memory').checked = chatCfg.viewer_memory !== false;
+        document.getElementById('presence-chat-game-qa').checked = chatCfg.game_qa === true;
 
         // Charger les chaînes de chat
         const channelsRes = await fetch(`${API_BASE}/twitch/channels/${botId}`);
@@ -868,6 +869,24 @@ async function loadTwitchPresence() {
             document.getElementById('presence-chat-channels').value = (channelsData.chat_channels || []).join(', ');
         } else {
             document.getElementById('presence-chat-channels').value = '';
+        }
+
+        // Charger les co-hosts
+        const cohostRes = await fetch(`${API_BASE}/twitch/cohost/${botId}`);
+        if (cohostRes.ok) {
+            const cohostData = await cohostRes.json();
+            document.getElementById('presence-cohost-channels').value = (cohostData.cohost_channels || []).join(', ');
+        } else {
+            document.getElementById('presence-cohost-channels').value = '';
+        }
+
+        // Charger les link commands
+        const linksRes = await fetch(`${API_BASE}/twitch/links/${botId}`);
+        if (linksRes.ok) {
+            const linksData = await linksRes.json();
+            renderLinksTable(linksData.link_commands || []);
+        } else {
+            renderLinksTable([]);
         }
     } catch (e) {
         console.error("Twitch presence config error:", e);
@@ -880,12 +899,13 @@ window.savePresenceSettings = async function() {
     const interjections = document.getElementById('presence-chat-interjections').checked;
     const greetings = document.getElementById('presence-chat-greetings').checked;
     const viewer_memory = document.getElementById('presence-chat-memory').checked;
+    const game_qa = document.getElementById('presence-chat-game-qa').checked;
     
     try {
         const res = await fetch(`${API_BASE}/twitch/chat/${botId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ events, interjections, greetings, viewer_memory })
+            body: JSON.stringify({ events, interjections, greetings, viewer_memory, game_qa })
         });
         if (res.ok) {
             alert("Configuration de présence enregistrée avec succès !");
@@ -914,6 +934,107 @@ window.saveChatChannels = async function() {
             const data = await res.json();
             alert("Chaînes de chat enregistrées avec succès !");
             document.getElementById('presence-chat-channels').value = (data.chat_channels || []).join(', ');
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+window.saveCohostChannels = async function() {
+    const botId = document.getElementById('config-bot-select').value;
+    const rawChannels = document.getElementById('presence-cohost-channels').value;
+    const channels = rawChannels.split(/[,\n]/).map(c => c.trim()).filter(c => c.length > 0);
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/cohost/${botId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cohost_channels: channels })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            alert("Chaînes co-host enregistrées avec succès !");
+            document.getElementById('presence-cohost-channels').value = (data.cohost_channels || []).join(', ');
+        } else {
+            const data = await res.json();
+            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+        }
+    } catch (e) {
+        alert(`Erreur réseau: ${e}`);
+    }
+}
+
+window.renderLinksTable = function(links) {
+    const tbody = document.getElementById('twitch-links-table-body');
+    tbody.innerHTML = '';
+    if (!links || links.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; opacity:0.5; padding: 15px;">Aucune commande de lien configurée.</td></tr>`;
+        return;
+    }
+    links.forEach(link => {
+        addLinkRow(link.cmd, link.url, link.label, link.message, link.aliases);
+    });
+}
+
+window.addLinkRow = function(cmd = '', url = '', label = '', message = '', aliases = []) {
+    const tbody = document.getElementById('twitch-links-table-body');
+    if (tbody.children.length === 1 && tbody.children[0].cells.length === 1) {
+        tbody.innerHTML = '';
+    }
+    
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border-glass)';
+    
+    const aliasesStr = Array.isArray(aliases) ? aliases.join(', ') : aliases;
+    
+    tr.innerHTML = `
+        <td style="padding: 8px;"><input type="text" class="link-cmd-input" placeholder="Ex: discord" value="${cmd}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-url-input" placeholder="Ex: https://..." value="${url}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-label-input" placeholder="Ex: Discord" value="${label}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-message-input" placeholder="Ex: Rejoins-nous : {url}" value="${message}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-aliases-input" placeholder="Ex: serveur, community" value="${aliasesStr}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px; text-align: center;"><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove(); if(document.getElementById('twitch-links-table-body').children.length === 0) { renderLinksTable([]); }" style="padding: 5px 10px;"><i class="fa-solid fa-trash"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+}
+
+window.saveLinkCommands = async function() {
+    const botId = document.getElementById('config-bot-select').value;
+    const tbody = document.getElementById('twitch-links-table-body');
+    const rows = tbody.querySelectorAll('tr');
+    const links = [];
+    
+    for (let row of rows) {
+        if (row.cells.length === 1) continue;
+        
+        const cmd = row.querySelector('.link-cmd-input').value.trim();
+        const url = row.querySelector('.link-url-input').value.trim();
+        const label = row.querySelector('.link-label-input').value.trim();
+        const message = row.querySelector('.link-message-input').value.trim();
+        const aliasesRaw = row.querySelector('.link-aliases-input').value;
+        const aliases = aliasesRaw.split(',').map(a => a.trim()).filter(a => a.length > 0);
+        
+        if (!cmd || !url) {
+            alert("Erreur: Chaque ligne doit avoir au moins une Commande et une URL.");
+            return;
+        }
+        
+        links.push({ cmd, url, label, message, aliases });
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/twitch/links/${botId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ link_commands: links })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            alert("Commandes de liens enregistrées avec succès !");
+            renderLinksTable(data.link_commands);
         } else {
             const data = await res.json();
             alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);

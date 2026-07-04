@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import string
 from pathlib import Path
 from bot_manager import BOT_REGISTRY
 
@@ -59,9 +60,14 @@ class TwitchConfigManager:
                     "events": True,
                     "interjections": True,
                     "greetings": True,
-                    "viewer_memory": True
+                    "viewer_memory": True,
+                    "game_qa": False
                 }
                 updated = True
+            else:
+                if "game_qa" not in config[bot_id]["chat"]:
+                    config[bot_id]["chat"]["game_qa"] = False
+                    updated = True
             if "reward_map" not in config[bot_id]:
                 config[bot_id]["reward_map"] = {}
                 updated = True
@@ -77,6 +83,12 @@ class TwitchConfigManager:
                     "chunk_ms": 160,
                     "min_interval": 45
                 }
+                updated = True
+            if "cohost_channels" not in config[bot_id]:
+                config[bot_id]["cohost_channels"] = []
+                updated = True
+            if "link_commands" not in config[bot_id]:
+                config[bot_id]["link_commands"] = []
                 updated = True
 
         if updated:
@@ -256,7 +268,7 @@ class TwitchConfigManager:
         self._save_raw(config)
         return {"added": added, "skipped": skipped}
 
-    def update_chat_config(self, bot_id: str, events: bool, interjections: bool, greetings: bool, viewer_memory: bool):
+    def update_chat_config(self, bot_id: str, events: bool, interjections: bool, greetings: bool, viewer_memory: bool, game_qa: bool = False):
         if bot_id not in BOT_REGISTRY:
             raise ValueError(f"Bot '{bot_id}' non enregistré.")
         config = self.get_all()
@@ -264,9 +276,143 @@ class TwitchConfigManager:
             "events": events,
             "interjections": interjections,
             "greetings": greetings,
-            "viewer_memory": viewer_memory
+            "viewer_memory": viewer_memory,
+            "game_qa": game_qa
         }
         self._save_raw(config)
+
+    def get_link_commands(self, bot_id: str) -> list:
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        config = self.get_all()
+        return config[bot_id].get("link_commands", [])
+
+    def update_link_commands(self, bot_id: str, items: list) -> list:
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        if not isinstance(items, list):
+            raise ValueError("Les commandes doivent être sous forme de liste.")
+        
+        reserved_commands = {
+            "decret", "decree", "fromage", "cheese", "folie", "faveur", "favor",
+            "classement", "leaderboard", "humeur", "platform", "platforms",
+            "genre", "genres", "studio", "developer", "publisher", "mode",
+            "release", "about", "which_game", "game"
+        }
+        
+        cleaned_items = []
+        seen_cmds = set()
+        
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            cmd = item.get("cmd", "")
+            if not isinstance(cmd, str):
+                continue
+            cmd = cmd.strip().lower().lstrip("!")
+            if not cmd:
+                raise ValueError("La commande 'cmd' ne peut pas être vide.")
+            if " " in cmd:
+                raise ValueError(f"La commande '{cmd}' ne doit pas contenir d'espaces.")
+            if cmd in reserved_commands:
+                raise ValueError(f"La commande '{cmd}' est un nom réservé et ne peut pas être utilisée.")
+                
+            url = item.get("url", "")
+            if not isinstance(url, str) or not url.strip():
+                raise ValueError(f"L'URL pour la commande '{cmd}' ne peut pas être vide.")
+            url = url.strip()
+            
+            # Label
+            label = item.get("label", "")
+            if isinstance(label, str):
+                label = label.strip()
+            else:
+                label = ""
+                
+            # Message
+            msg = item.get("message", "")
+            if isinstance(msg, str):
+                msg = msg.strip()
+            else:
+                msg = ""
+
+            # Le template ne peut utiliser que {url} et {label} (sinon .format() planterait au runtime)
+            if msg:
+                try:
+                    used = {
+                        fn.split(".")[0].split("[")[0].strip()
+                        for _, fn, _, _ in string.Formatter().parse(msg)
+                        if fn is not None
+                    }
+                except (ValueError, IndexError):
+                    raise ValueError(f"Le message de la commande '{cmd}' contient un format invalide.")
+                unknown = used - {"url", "label", ""}
+                if unknown:
+                    raise ValueError(
+                        f"Le message de la commande '{cmd}' ne peut utiliser que {{url}} et {{label}} "
+                        f"(inconnu : {', '.join(sorted(unknown))})."
+                    )
+                
+            # Aliases
+            aliases = item.get("aliases", [])
+            if isinstance(aliases, str):
+                aliases = [a.strip() for a in aliases.replace(",", " ").split() if a.strip()]
+            elif not isinstance(aliases, list):
+                aliases = []
+            
+            cleaned_aliases = []
+            for alias in aliases:
+                if not isinstance(alias, str):
+                    continue
+                alias = alias.strip().lower().lstrip("!")
+                if not alias:
+                    continue
+                if " " in alias:
+                    raise ValueError(f"L'alias '{alias}' ne doit pas contenir d'espaces.")
+                if alias in reserved_commands:
+                    raise ValueError(f"L'alias '{alias}' est un nom réservé et ne peut pas être utilisé.")
+                if alias == cmd:
+                    continue
+                if alias not in cleaned_aliases:
+                    cleaned_aliases.append(alias)
+            
+            if cmd in seen_cmds:
+                continue
+            seen_cmds.add(cmd)
+            
+            cleaned_items.append({
+                "cmd": cmd,
+                "url": url,
+                "label": label,
+                "message": msg,
+                "aliases": cleaned_aliases
+            })
+            
+        config = self.get_all()
+        config[bot_id]["link_commands"] = cleaned_items
+        self._save_raw(config)
+        return cleaned_items
+
+    def update_cohost_channels(self, bot_id: str, channels) -> list[str]:
+        """Liste des chaînes co-host. Accepte liste ou CSV. Normalise chaque entrée via extract_login."""
+        if bot_id not in BOT_REGISTRY:
+            raise ValueError(f"Bot '{bot_id}' non enregistré.")
+        if isinstance(channels, str):
+            channels = channels.split(",")
+        if not isinstance(channels, list):
+            raise ValueError("Les chaînes co-host doivent être une liste ou une chaîne CSV.")
+        cleaned = []
+        for raw in channels:
+            raw = str(raw).strip()
+            if not raw:
+                continue
+            login = self.extract_login(raw)
+            if login not in cleaned:
+                cleaned.append(login)
+        config = self.get_all()
+        config[bot_id]["cohost_channels"] = cleaned
+        self._save_raw(config)
+        return cleaned
 
     def update_reward_map(self, bot_id: str, reward_map: dict):
         if bot_id not in BOT_REGISTRY:

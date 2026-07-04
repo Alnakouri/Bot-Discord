@@ -6,9 +6,22 @@ shared/twitch_chat.py — Connexion permanente et chat Twitch pour les bots.
 import os
 import re
 import json
+import string
 import collections
 from pathlib import Path
 from typing import Callable
+
+
+def _link_message_placeholders(template: str) -> set[str]:
+    """Retourne les noms de champs utilisés dans un template link_command."""
+    names = set()
+    for _, field_name, _, _ in string.Formatter().parse(template):
+        if field_name is None:
+            continue
+        base = field_name.split(".")[0].split("[")[0].strip()
+        if base:
+            names.add(base)
+    return names
 
 # Import satellite components
 from shared.twitch.auth import TwitchAuth
@@ -101,7 +114,9 @@ class TwitchChatBot(
         enable_voice_listen: bool = False,
         voice_min_interval: float = 45.0,
         listen_port: int = 8765,
-        listen_host: str = "127.0.0.1"
+        listen_host: str = "127.0.0.1",
+        enable_game_qa: bool = False,
+        cohost_channels: list[str] | None = None
     ):
         self.bot_id = bot_id
         self.logger = logger
@@ -138,6 +153,8 @@ class TwitchChatBot(
         self.interjection_chance = interjection_chance
         self.interjection_min_interval = interjection_min_interval
         self.enable_greetings = enable_greetings
+        self.enable_game_qa = enable_game_qa
+        self.cohost_channels = [c.lower().strip() for c in (cohost_channels or []) if c.strip()]
         self.commands = commands or {}
         self.command_aliases = command_aliases or {}
         self.passive_handler = passive_handler
@@ -312,6 +329,12 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     if "greetings" in dash_chat:     enable_greetings      = bool(dash_chat["greetings"])
     if "viewer_memory" in dash_chat: enable_viewer_memory  = bool(dash_chat["viewer_memory"])
 
+    enable_game_qa = False
+    if "game_qa" in dash_chat:
+        enable_game_qa = bool(dash_chat["game_qa"])
+
+    cohost_channels = dash.get("cohost_channels") or []
+
     # Configuration listen/voix depuis le dashboard
     dash_listen = dash.get("listen") or {}
     if "enabled" in dash_listen:
@@ -360,6 +383,67 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         resolved_bio = None
         resolved_color = None
 
+    # Espace liens (Feature 1)
+    link_cmds = {}
+    link_aliases = {}
+    reserved_names = {
+        "decret", "decree", "fromage", "cheese", "folie", "faveur", "favor",
+        "classement", "leaderboard", "humeur", "platform", "platforms",
+        "genre", "genres", "studio", "developer", "publisher", "mode",
+        "release", "about", "which_game", "game"
+    }
+    
+    for entry in (dash.get("link_commands") or []):
+        if not isinstance(entry, dict) or not entry.get("cmd") or not entry.get("url"):
+            continue
+        cmd = entry["cmd"].strip().lower().lstrip("!")
+        if not cmd or " " in cmd:
+            continue
+        if cmd in reserved_names:
+            logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command !{cmd} ignorée (nom réservé)")
+            continue
+        if commands and cmd in commands:
+            logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command !{cmd} ignorée (collision)")
+            continue
+            
+        url = entry["url"].strip()
+        label = (entry.get("label") or "").strip()
+        msg_tmpl = (entry.get("message") or "").strip()
+        if not msg_tmpl:
+            msg_tmpl = "{label} : {url}" if label else "{url}"
+
+        # Garde template : uniquement {url}/{label}, sinon .format() planterait à l'exécution
+        try:
+            bad = _link_message_placeholders(msg_tmpl) - {"url", "label"}
+        except (ValueError, IndexError):
+            logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command !{cmd} ignorée (message mal formé)")
+            continue
+        if bad:
+            logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command !{cmd} ignorée (placeholder inconnu : {bad})")
+            continue
+
+        callback = lambda author, args, u=url, l=label, t=msg_tmpl: t.format(url=u, label=l)
+        link_cmds[cmd] = callback
+        
+        aliases = entry.get("aliases") or []
+        if isinstance(aliases, str):
+            aliases = [a.strip() for a in aliases.replace(",", " ").split() if a.strip()]
+        for alias in aliases:
+            alias = alias.strip().lower().lstrip("!")
+            if not alias or " " in alias:
+                continue
+            if alias in reserved_names:
+                logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command alias !{alias} ignorée (nom réservé)")
+                continue
+            if (commands and alias in commands) or (command_aliases and alias in command_aliases):
+                logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command alias !{alias} ignorée (collision)")
+                continue
+            link_aliases[alias] = cmd
+            
+    # Fusionner
+    final_commands = {**link_cmds, **(commands or {})}
+    final_aliases = {**link_aliases, **(command_aliases or {})}
+
     return TwitchChatBot(
         bot_id=bot_id,
         logger=logger,
@@ -382,8 +466,8 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         interjection_chance=interjection_chance,
         interjection_min_interval=interjection_min_interval,
         enable_greetings=enable_greetings,
-        commands=commands,
-        command_aliases=command_aliases,
+        commands=final_commands,
+        command_aliases=final_aliases,
         passive_handler=passive_handler,
         enable_viewer_memory=enable_viewer_memory,
         viewer_memory_max=viewer_memory_max,
@@ -395,5 +479,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         broadcaster_auth=broadcaster_auth,
         enable_voice_listen=enable_voice_listen,
         voice_min_interval=voice_min_interval,
-        listen_host=listen_host
+        listen_host=listen_host,
+        enable_game_qa=enable_game_qa,
+        cohost_channels=cohost_channels
     )

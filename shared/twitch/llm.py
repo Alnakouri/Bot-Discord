@@ -15,7 +15,7 @@ ANTI_INJECTION_GUARD = (
 )
 
 class LlmMixin:
-    async def _generate_response(self, channel: str, author: str, message: str) -> str | None:
+    async def _generate_response(self, channel: str, author: str, message: str, game_facts_block: str | None = None, no_facts_warning: bool = False) -> str | None:
         system_prompt = self.personality_prompt
         if self.system_prompt_provider:
             try:
@@ -37,6 +37,21 @@ class LlmMixin:
             )
 
         system_prompt = system_prompt + "\n\n" + ANTI_INJECTION_GUARD
+
+        # Injection des faits IGDB sur le jeu en cours
+        if game_facts_block:
+            qa_block = (
+                f"\n\nVoici des FAITS vérifiés sur le jeu en cours : {game_facts_block}.\n"
+                f"Réponds à la question du viewer dans ta personnalité, en t'appuyant UNIQUEMENT sur ces faits. "
+                f"N'invente rien. Si un fait manque, dis-le en restant en personnage."
+            )
+            system_prompt += qa_block
+        elif no_facts_warning:
+            qa_block = (
+                f"\n\nTu n'as pas d'info fiable sur ce jeu → nuance en personnage (ne donne aucun fait précis, "
+                f"ne dis pas de plateforme, de studio ou de date de sortie inventés)."
+            )
+            system_prompt += qa_block
 
         # Injection de la mémoire
         if self.enable_viewer_memory:

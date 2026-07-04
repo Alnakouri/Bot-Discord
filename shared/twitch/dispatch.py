@@ -8,6 +8,30 @@ from shared.twitch.sanitize import strip_stage_directions, send_chat_safe
 from shared.twitch.llm import ANTI_INJECTION_GUARD
 
 class DispatchMixin:
+    async def _fetch_game_facts_block(self, chan: str, category: str):
+        """Récupère un bloc de faits IGDB pour le jeu en cours sur `chan`.
+
+        Réutilise des clients Helix/IGDB persistés sur le bot (token OAuth conservé
+        entre les appels). Retourne (facts_block | None, no_facts_warning: bool).
+        Toute erreur réseau → (None, True) : le bot nuance en personnage.
+        """
+        from shared.twitch.game_info import HelixClient, IGDBClient, get_game_facts, format_facts_block
+        if getattr(self, "_helix_client", None) is None:
+            self._helix_client = HelixClient(self.client_id, self.client_secret)
+        if getattr(self, "_igdb_client", None) is None:
+            self._igdb_client = IGDBClient(self.client_id, self.client_secret)
+        try:
+            game_name, _ = await self._helix_client.get_current_game(chan)
+            if not game_name:
+                return None, True
+            facts = await get_game_facts(game_name, self.client_id, self.client_secret, igdb_client=self._igdb_client)
+            if facts:
+                return format_facts_block(facts, category), False
+            return None, True
+        except Exception as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur recuperation faits jeu: {e}")
+            return None, True
+
     async def _handle_privmsg(self, chan: str, author: str, text: str, tags: dict, ws):
         # 1. Traitement des commandes bits si présents
         if "bits" in tags:
@@ -51,8 +75,16 @@ class DispatchMixin:
             # On compte la tentative de génération dans le rate-limit global
             self.global_msg_timestamps.append(time.time())
 
-            # Réponse
-            reply = await self._generate_response(chan, author, text)
+            # Réponse (mention) - Réponse questions jeu
+            facts_block = None
+            no_facts_warning = False
+            if getattr(self, "enable_game_qa", False):
+                from shared.twitch.game_info import detect_game_question
+                category = detect_game_question(text)
+                if category:
+                    facts_block, no_facts_warning = await self._fetch_game_facts_block(chan, category)
+
+            reply = await self._generate_response(chan, author, text, game_facts_block=facts_block, no_facts_warning=no_facts_warning)
             if reply:
                 await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
             return
@@ -100,6 +132,30 @@ class DispatchMixin:
                         spontaneous_sent = True
             except Exception as e:
                 self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur passive_handler: {e}")
+
+        # Option A.2 : Réponse passive co-host aux questions jeu
+        if not spontaneous_sent and getattr(self, "enable_game_qa", False):
+            chan_key = chan.lower().lstrip("#")
+            if chan_key in getattr(self, "cohost_channels", []):
+                from shared.twitch.game_info import detect_game_question
+                category = detect_game_question(text)
+                if category:
+                    now = time.time()
+                    last_cohost_time = getattr(self, "_last_cohost_qa", {}).get(chan_key, 0)
+                    if now - last_cohost_time >= 30.0:
+                        while self.global_msg_timestamps and now - self.global_msg_timestamps[0] > 30.0:
+                            self.global_msg_timestamps.popleft()
+                        if len(self.global_msg_timestamps) < 14:
+                            facts_block, no_facts_warning = await self._fetch_game_facts_block(chan, category)
+
+                            reply = await self._generate_response(chan, author, text, game_facts_block=facts_block, no_facts_warning=no_facts_warning)
+                            if reply:
+                                if not hasattr(self, "_last_cohost_qa"):
+                                    self._last_cohost_qa = {}
+                                self._last_cohost_qa[chan_key] = now
+                                self.global_msg_timestamps.append(now)
+                                await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
+                                spontaneous_sent = True
 
         # Option B : Accueil de session
         if not spontaneous_sent and is_first_session_msg and self.enable_greetings:

@@ -300,6 +300,7 @@ class TwitchChatConfigUpdate(BaseModel):
     interjections: bool
     greetings: bool
     viewer_memory: bool
+    game_qa: bool
 
 class TwitchListenConfigUpdate(BaseModel):
     enabled: bool
@@ -367,9 +368,41 @@ async def get_twitch_chat_config(bot_id: str):
 async def update_twitch_chat_config(bot_id: str, cfg: TwitchChatConfigUpdate):
     try:
         twitch_config_manager.update_chat_config(
-            bot_id, cfg.events, cfg.interjections, cfg.greetings, cfg.viewer_memory
+            bot_id, cfg.events, cfg.interjections, cfg.greetings, cfg.viewer_memory, cfg.game_qa
         )
         return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/twitch/links/{bot_id}")
+async def get_twitch_links(bot_id: str):
+    try:
+        links = twitch_config_manager.get_link_commands(bot_id)
+        return {"link_commands": links}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.put("/api/twitch/links/{bot_id}")
+async def update_twitch_links(bot_id: str, payload: dict = Body(...)):
+    try:
+        cleaned = twitch_config_manager.update_link_commands(bot_id, payload.get("link_commands", []))
+        return {"status": "ok", "link_commands": cleaned}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/twitch/cohost/{bot_id}")
+async def get_twitch_cohost(bot_id: str):
+    try:
+        cfg = twitch_config_manager.get_bot(bot_id)
+        return {"cohost_channels": cfg.get("cohost_channels", [])}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.put("/api/twitch/cohost/{bot_id}")
+async def update_twitch_cohost(bot_id: str, payload: dict = Body(...)):
+    try:
+        cleaned = twitch_config_manager.update_cohost_channels(bot_id, payload.get("cohost_channels", []))
+        return {"status": "ok", "cohost_channels": cleaned}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
