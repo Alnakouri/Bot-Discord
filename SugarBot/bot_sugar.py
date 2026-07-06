@@ -774,7 +774,8 @@ async def on_message(message):
             groq_client=groq_client,
             openrouter_client=openrouter_client,
             bot_label="Sugar Bot",
-            gemini_max_tokens=500,
+            max_tokens=150,
+            gemini_max_tokens=150,
         )
 
         # Cas d'échec multimodal (Image/Audio)
