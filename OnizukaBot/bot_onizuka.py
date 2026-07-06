@@ -373,7 +373,7 @@ async def fric_cmd(ctx):
     save_data(onizuka_data)
     await ctx.send(response)
 
-@bot.command(name="jackpot", aliases=["pachinko"])
+@bot.command(name="jackpot")
 async def jackpot_cmd(ctx):
     """Parle de jackpots"""
     response = random.choice(JACKPOT_RESPONSES)
@@ -688,7 +688,7 @@ async def on_message(message):
     content_lower = user_message.lower()
     keyword_boost = ""
     
-    if any(kw in content_lower for kw in ["fric", "argent", "thune", "yen", "pachinko"]):
+    if any(kw in content_lower for kw in ["fric", "argent", "thune", "yen"]):
         onizuka_data["money_bragged"] = onizuka_data.get("money_bragged", 0) + 1
         save_data(onizuka_data)
     
