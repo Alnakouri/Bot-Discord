@@ -326,16 +326,27 @@ async def before_daily_bio_sugar():
 # STATUT TOURNANT (présence Discord)
 @tasks.loop(minutes=30)
 async def status_loop_sugar():
+    # (type d'activité, texte) — sucré + piquant, verbes variés
     activities = [
-        "le serveur",
-        "les discussions",
+        (discord.ActivityType.watching, "les péteurs se ridiculiser"),
+        (discord.ActivityType.watching, "le caramel dorer"),
+        (discord.ActivityType.watching, "fondre les cœurs"),
+        (discord.ActivityType.watching, "mijoter ses répliques acidulées"),
+        (discord.ActivityType.watching, "les grincheux se changer en pralines"),
+        (discord.ActivityType.watching, "ses bonbons empoisonnés opérer"),
+        (discord.ActivityType.playing, "à la marchande de bonbons"),
+        (discord.ActivityType.playing, "à empoisonner ses caramels"),
+        (discord.ActivityType.playing, "à distribuer sucre et piques"),
+        (discord.ActivityType.playing, "à tremper ses vannes dans le miel"),
+        (discord.ActivityType.playing, "à saupoudrer du sucre partout"),
+        (discord.ActivityType.playing, "à la reine du caramel"),
+        (discord.ActivityType.listening, "vos jérémiades sucrées"),
+        (discord.ActivityType.listening, "craquer le sucre d'orge"),
+        (discord.ActivityType.listening, "fondre la guimauve"),
+        (discord.ActivityType.listening, "le glaçage craqueler"),
     ]
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name=random.choice(activities)
-        )
-    )
+    act_type, name = random.choice(activities)
+    await bot.change_presence(activity=discord.Activity(type=act_type, name=name))
 
 @status_loop_sugar.before_loop
 async def before_status_sugar():
