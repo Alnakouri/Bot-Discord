@@ -176,7 +176,12 @@
         <section id="errors" class="view">
             <div class="errors-layout">
                 <div class="errors-list glass">
-                    <h3>Erreurs Détectées</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">Erreurs Détectées</h3>
+                        <label style="font-size: 0.85rem; opacity: 0.8; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                            <input type="checkbox" id="show-resolved-errors" onchange="loadErrors()"> Voir résolues
+                        </label>
+                    </div>
                     <ul id="error-list-container">
                         <div class="loader">Chargement...</div>
                     </ul>

@@ -461,7 +461,7 @@ window.actionAllBots = async function(action) {
         try {
             const res = await fetch(`${API_BASE}/bots/${botId}/${action}`, { method: 'POST' });
             const data = await res.json();
-            if(data.success || data.error.includes("déjà en cours") || data.error.includes("non en cours")) {
+            if(data.success || (data.error || '').includes("déjà en cours") || (data.error || '').includes("non en cours")) {
                 successCount++;
             }
         } catch(e) {
@@ -568,12 +568,13 @@ async function loadErrors() {
     if(!container) return;
     
     try {
-        const res = await fetch(`${API_BASE}/errors`);
+        const showResolved = document.getElementById('show-resolved-errors')?.checked ?? false;
+        const res = await fetch(`${API_BASE}/errors?resolved=${showResolved}`);
         const errors = await res.json();
         
         container.innerHTML = '';
         if(errors.length === 0) {
-            container.innerHTML = '<li class="placeholder-text">Aucune erreur récente.</li>';
+            container.innerHTML = `<li class="placeholder-text">Aucune erreur ${showResolved ? 'résolue' : 'récente'}.</li>`;
             return;
         }
         
@@ -610,13 +611,38 @@ async function showErrorDetail(id) {
             <div class="diagnostic-box">
                 <h4>🧠 Diagnostic Automatique (Sert de Base GenAI)</h4>
                 <p><strong>Catégorie :</strong> ${data.category}</p>
-                <p><strong>Cause Probable :</strong> ${data.auto_diagnosis}</p>
-                <p><strong>Correction Suggérée :</strong> ${data.suggested_fix}</p>
+                <p>Cause Probable : ${data.auto_diagnosis}</p>
+                <p>Correction Suggérée : ${data.suggested_fix}</p>
             </div>
-            <button class="btn btn-outline" onclick="alert('Résolu!')"><i class="fa-solid fa-check"></i> Marquer comme résolu</button>
+            <button class="btn btn-outline" onclick="resolveError(${id})"><i class="fa-solid fa-check"></i> Marquer comme résolu</button>
         `;
     } catch(e) {
         pane.innerHTML = "Erreur lors de l'analyse.";
+    }
+}
+
+window.resolveError = async function(id) {
+    try {
+        const res = await fetch(`${API_BASE}/errors/${id}/resolve`, {method: 'POST'});
+        const data = await res.json();
+        if (res.ok && data.success) {
+            if (typeof window.toast === 'function') {
+                window.toast("Erreur marquée comme résolue", "success");
+            } else {
+                alert("Erreur marquée comme résolue");
+            }
+            loadErrors();
+            const pane = document.getElementById('error-detail-pane');
+            if (pane) pane.innerHTML = '<li class="placeholder-text" style="list-style: none;">Sélectionnez une erreur pour afficher les détails.</li>';
+        } else {
+            throw new Error(data.detail || "Échec");
+        }
+    } catch(e) {
+        if (typeof window.toast === 'function') {
+            window.toast("Erreur : " + e.message, "error");
+        } else {
+            alert("Erreur : " + e.message);
+        }
     }
 }
 
