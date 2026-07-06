@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 PERSONA = {
-    "name": "Onizuka",
+    "name": "Sugar Bot",
     "is_default_host": False,
     "taunts": [
         "À toi de jouer.",

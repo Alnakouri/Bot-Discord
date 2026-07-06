@@ -1,6 +1,6 @@
 # 🛠️ Guide du Développeur — Écosystème Agentique
 
-Ce document est destiné aux développeurs souhaitant maintenir, déboguer ou étendre l'intelligence et les capacités des bots (`Sheogorath`, `M'aiq`, `Alfred`, `Johnny`, `Onizuka`, `Malena`).
+Ce document est destiné aux développeurs souhaitant maintenir, déboguer ou étendre l'intelligence et les capacités des bots (`Sheogorath`, `M'aiq`, `Alfred`, `Johnny`, `Sugar`, `Malena`).
 
 ---
 

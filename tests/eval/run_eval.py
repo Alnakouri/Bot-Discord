@@ -16,7 +16,7 @@ from tests.eval.gimmick import detect_gimmick
 from tests.eval.judge import evaluate_response
 
 # Liste des bots à évaluer
-BOTS = ["johnny", "maiq", "alfred", "malena", "onizuka", "sheogorath"]
+BOTS = ["johnny", "maiq", "alfred", "malena", "sugar", "sheogorath"]
 
 def get_last_report():
     """Récupère le chemin du rapport d'évaluation le plus récent."""

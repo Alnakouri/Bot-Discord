@@ -35,14 +35,14 @@ meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {c
 # LOGGING STRUCTURÉ
 try:
     from shared.bot_logger import setup_logger
-    logger = setup_logger("onizuka")
+    logger = setup_logger("sugar")
 except ImportError:
-    logger = logging.getLogger("onizuka")
+    logger = logging.getLogger("sugar")
     logging.basicConfig(level=logging.INFO)
 
 # FILE PATHS
 DATA_DIR = os.getenv("DATA_DIR", ".")
-DATA_FILE = os.path.join(DATA_DIR, "onizuka_data.json")
+DATA_FILE = os.path.join(DATA_DIR, "sugar_data.json")
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -66,7 +66,7 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-# Bot Onizuka (ardoise neutre)
+# Bot Sugar Bot (ardoise neutre)
 
 # IMPORT SECURE ENV LOADER
 from pathlib import Path
@@ -97,7 +97,7 @@ try:
     except ImportError:
         GAMES_AVAILABLE = False
 except ImportError as e:
-    logger.warning(f"⚠️ [ONIZUKA] Modules optionnels non disponibles: {e}")
+    logger.warning(f"⚠️ [SUGAR] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
 
 try:
@@ -116,13 +116,13 @@ except ImportError:
 
 
 try:
-    from onizuka_data import (
+    from sugar_data import (
         PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS,
         MONEY_RESPONSES, JACKPOT_RESPONSES, BIKE_RESPONSES,
         GREETINGS, PUNCHLINE_TRIGGERS, EXPLOIT_TRIGGERS
     )
 except ImportError:
-    from OnizukaBot.onizuka_data import (
+    from SugarBot.sugar_data import (
         PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS,
         MONEY_RESPONSES, JACKPOT_RESPONSES, BIKE_RESPONSES,
         GREETINGS, PUNCHLINE_TRIGGERS, EXPLOIT_TRIGGERS
@@ -130,7 +130,7 @@ except ImportError:
 
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-onizuka_data = load_data()
+sugar_stats = load_data()
 
 # API KEYS ROTATION
 GEMINI_API_KEYS = [
@@ -148,13 +148,13 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # MEMORY SETTINGS
 try:
-    from onizuka_memory import FactMemory, DailyMemory
+    from sugar_memory import FactMemory, DailyMemory
 except ImportError:
-    from OnizukaBot.onizuka_memory import FactMemory, DailyMemory
-onizuka_facts_file = os.path.join(DATA_DIR, "onizuka_facts.json")
-onizuka_memory_file = os.path.join(DATA_DIR, "onizuka_memory.json")
-fact_memory = FactMemory(onizuka_facts_file)
-daily_memory = DailyMemory(onizuka_memory_file)
+    from SugarBot.sugar_memory import FactMemory, DailyMemory
+sugar_facts_file = os.path.join(DATA_DIR, "sugar_facts.json")
+sugar_memory_file = os.path.join(DATA_DIR, "sugar_memory.json")
+fact_memory = FactMemory(sugar_facts_file)
+daily_memory = DailyMemory(sugar_memory_file)
 
 async def _daily_llm_call(system_prompt, user_message):
     return await generate_response(
@@ -163,7 +163,7 @@ async def _daily_llm_call(system_prompt, user_message):
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
         groq_client=groq_client, openrouter_client=openrouter_client,
-        bot_label="Onizuka", temperature=0.5, max_tokens=60)
+        bot_label="Sugar Bot", temperature=0.5, max_tokens=60)
 
 conversation_history = {}
 MAX_HISTORY = 30
@@ -208,7 +208,7 @@ if OPENROUTER_API_KEY:
 
 ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
 daily_bio = DiscordDailyBio(
-    bot=bot, bot_id="onizuka", bot_label="Onizuka",
+    bot=bot, bot_id="sugar", bot_label="Sugar Bot",
     personality_prompt=PERSONALITY_PROMPT,
     key_manager=key_manager, mistral_client=mistral_client,
     groq_client=groq_client, openrouter_client=openrouter_client,
@@ -219,7 +219,7 @@ daily_bio = DiscordDailyBio(
 @bot.event
 async def on_ready():
     logger.info("=" * 60)
-    logger.info("Onizuka est en ligne.")
+    logger.info("Sugar Bot est en ligne.")
     logger.info("=" * 60)
     logger.info(f'Connecté en tant que: {bot.user.name} ({bot.user.id})')
     logger.info(f'🏫 Serveurs: {len(bot.guilds)}')
@@ -228,7 +228,7 @@ async def on_ready():
     # Setup Slash Commands
     if DATABASE_AVAILABLE:
         try:
-            setup_slash_commands(bot, "Onizuka")
+            setup_slash_commands(bot, "Sugar Bot")
             await sync_slash_commands(bot)
         except Exception as e:
             logger.error(f"[SLASH] Erreur: {e}")
@@ -237,7 +237,7 @@ async def on_ready():
     if DATABASE_AVAILABLE and GAMES_AVAILABLE:
         try:
             setup_games(bot, logger, PERSONA)
-            logger.info("[GAMES] Mini-jeux initialisés pour Onizuka")
+            logger.info("[GAMES] Mini-jeux initialisés pour Sugar Bot")
         except Exception as e:
             logger.error(f"[GAMES] Erreur d'initialisation des mini-jeux: {e}")
     
@@ -248,32 +248,32 @@ async def on_ready():
     logger.info(f'   ✅ Mistral : {"Oui" if MISTRAL_API_KEY else "Non"}')
     logger.info(f'   ✅ OpenRouter : {"Oui" if OPENROUTER_API_KEY else "Non"}')
     
-    logger.info("📊 STATISTIQUES ONIZUKA:")
-    logger.info(f'   💴 Fric vanté : {onizuka_data.get("money_bragged", 0)}')
-    logger.info(f'   🎰 Jackpots gagnés : {onizuka_data.get("jackpots", 0)}')
-    logger.info(f'   📖 Exploits racontés : {onizuka_data.get("tales_told", 0)}')
+    logger.info("📊 STATISTIQUES SUGAR BOT:")
+    logger.info(f'   💴 Fric vanté : {sugar_stats.get("money_bragged", 0)}')
+    logger.info(f'   🎰 Jackpots gagnés : {sugar_stats.get("jackpots", 0)}')
+    logger.info(f'   📖 Exploits racontés : {sugar_stats.get("tales_told", 0)}')
     
-    logger.info("Onizuka est prêt.")
+    logger.info("Sugar Bot est prêt.")
     logger.info("=" * 60)
     
     # Statut tournant (1er tick immédiat, puis toutes les 30 min)
-    if not status_loop_onizuka.is_running():
-        status_loop_onizuka.start()
+    if not status_loop_sugar.is_running():
+        status_loop_sugar.start()
 
     # Tâches périodiques
     if DATABASE_AVAILABLE:
         daily_birthday_check.start()
-    if daily_bio and not daily_bio_loop_onizuka.is_running():
-        daily_bio_loop_onizuka.start()
+    if daily_bio and not daily_bio_loop_sugar.is_running():
+        daily_bio_loop_sugar.start()
 
         
     global twitch_announcer
     if TWITCH_AVAILABLE and twitch_announcer is None:
         twitch_announcer = setup_twitch_announcer(
-            bot, "onizuka", logger,
+            bot, "sugar", logger,
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="Onizuka")
+            openrouter_client=openrouter_client, bot_label="Sugar Bot")
         if twitch_announcer:
             twitch_poll_loop.start()
 
@@ -281,7 +281,7 @@ async def on_ready():
 async def on_member_join(member):
     """Accueil de classe"""
     if DATABASE_AVAILABLE:
-        await handle_member_join(bot, member, bot_name="Onizuka")
+        await handle_member_join(bot, member, bot_name="Sugar Bot")
         # Message personnalisé
         if member.guild.system_channel:
             await member.guild.system_channel.send(
@@ -292,14 +292,14 @@ async def on_member_join(member):
 async def on_member_remove(member):
     """Au revoir élève"""
     if DATABASE_AVAILABLE:
-        await handle_member_remove(bot, member, bot_name="Onizuka")
+        await handle_member_remove(bot, member, bot_name="Sugar Bot")
 
 # Tâche quotidienne : anniversaires
 @tasks.loop(hours=24)
 async def daily_birthday_check():
     if DATABASE_AVAILABLE:
         for guild in bot.guilds:
-            await check_and_send_birthdays(bot, bot_name="Onizuka")
+            await check_and_send_birthdays(bot, bot_name="Sugar Bot")
 
 @daily_birthday_check.before_loop
 async def before_birthday_check():
@@ -315,17 +315,17 @@ async def before_twitch_poll():
     await bot.wait_until_ready()
 
 @tasks.loop(hours=1)
-async def daily_bio_loop_onizuka():
+async def daily_bio_loop_sugar():
     if daily_bio:
         await daily_bio.ensure_daily_bio()
 
-@daily_bio_loop_onizuka.before_loop
-async def before_daily_bio_onizuka():
+@daily_bio_loop_sugar.before_loop
+async def before_daily_bio_sugar():
     await bot.wait_until_ready()
 
 # STATUT TOURNANT (présence Discord)
 @tasks.loop(minutes=30)
-async def status_loop_onizuka():
+async def status_loop_sugar():
     activities = [
         "le serveur",
         "les discussions",
@@ -337,31 +337,31 @@ async def status_loop_onizuka():
         )
     )
 
-@status_loop_onizuka.before_loop
-async def before_status_onizuka():
+@status_loop_sugar.before_loop
+async def before_status_sugar():
     await bot.wait_until_ready()
 
-# COMMANDES SPÉCIALES ONIZUKA
+# COMMANDES SPÉCIALES SUGAR BOT
 
 
 @bot.command(name="exploit", aliases=["histoire", "legende"])
 async def exploit_cmd(ctx):
-    """Raconte un exploit d'Onizuka"""
+    """Raconte un exploit de Sugar Bot"""
     tale = random.choice(EXPLOITS)
-    onizuka_data["tales_told"] = onizuka_data.get("tales_told", 0) + 1
-    save_data(onizuka_data)
+    sugar_stats["tales_told"] = sugar_stats.get("tales_told", 0) + 1
+    save_data(sugar_stats)
     
     embed = discord.Embed(
-        title="Exploit d'Onizuka",
+        title="Exploit de Sugar Bot",
         description=tale,
         color=discord.Color.gold()
     )
-    embed.set_footer(text=f"Total : {onizuka_data['tales_told']}")
+    embed.set_footer(text=f"Total : {sugar_stats['tales_told']}")
     await ctx.send(embed=embed)
 
 @bot.command(name="chanson", aliases=["frime", "chante"])
 async def chanson_cmd(ctx):
-    """Sort une phrase d'Onizuka"""
+    """Sort une phrase de Sugar Bot"""
     shanty = random.choice(PUNCHLINES)
     await ctx.send(shanty)
 
@@ -369,17 +369,17 @@ async def chanson_cmd(ctx):
 async def fric_cmd(ctx):
     """Parle de sa passion"""
     response = random.choice(MONEY_RESPONSES)
-    onizuka_data["money_bragged"] = onizuka_data.get("money_bragged", 0) + 1
-    save_data(onizuka_data)
+    sugar_stats["money_bragged"] = sugar_stats.get("money_bragged", 0) + 1
+    save_data(sugar_stats)
     await ctx.send(response)
 
 @bot.command(name="jackpot")
 async def jackpot_cmd(ctx):
     """Parle de jackpots"""
     response = random.choice(JACKPOT_RESPONSES)
-    onizuka_data["jackpots"] = onizuka_data.get("jackpots", 0) + 1
-    save_data(onizuka_data)
-    await ctx.send(f"{response}\nJackpots : {onizuka_data['jackpots']}")
+    sugar_stats["jackpots"] = sugar_stats.get("jackpots", 0) + 1
+    save_data(sugar_stats)
+    await ctx.send(f"{response}\nJackpots : {sugar_stats['jackpots']}")
 
 @bot.command(name="moto")
 async def moto_cmd(ctx):
@@ -398,7 +398,7 @@ async def equipage_cmd(ctx):
     leaderboard = get_reputation_leaderboard(10)
     
     embed = discord.Embed(
-        title="Classe d'Onizuka",
+        title="Classe de Sugar Bot",
         description="Les membres les plus actifs de la classe.",
         color=discord.Color.red()
     )
@@ -426,7 +426,7 @@ async def equipage_cmd(ctx):
             inline=False
         )
     
-    embed.set_footer(text="Gagnez du respect en parlant avec Onizuka.")
+    embed.set_footer(text="Gagnez du respect en parlant avec Sugar Bot.")
     await ctx.send(embed=embed)
 
 @bot.command(name="oubliemoi")
@@ -454,8 +454,8 @@ async def oubliemoi(ctx):
 
 # LOGIQUE CONVERSATIONNELLE
 
-# Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, Onizuka
-# ne s'incruste PAS lors d'une intervention ALÉATOIRE (les mentions/noms directs d'Onizuka
+# Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, Sugar Bot
+# ne s'incruste PAS lors d'une intervention ALÉATOIRE (les mentions/noms directs de Sugar Bot
 # restent toujours prioritaires et passent avant cette garde).
 OTHER_BOT_NAMES = [
     "sheo", "sheogorath", "johnny", "silverhand", "samurai",
@@ -471,7 +471,7 @@ async def _other_bot_in_focus(message):
     try:
         async for prev in message.channel.history(limit=4, before=message):
             if prev.author == bot.user:
-                return False  # Onizuka était déjà dans la boucle → ok d'enchaîner
+                return False  # Sugar Bot était déjà dans la boucle → ok d'enchaîner
             if prev.author.bot:
                 return True   # un autre bot vient de parler → c'est SON échange
             if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
@@ -487,8 +487,8 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Onizuka)
-    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["onizuka"]):
+    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Sugar Bot)
+    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["sugar", "sugar bot"]):
         return
         
     # SILENCE STREAM (Canal ignoré)
@@ -511,10 +511,10 @@ async def on_message(message):
     is_reply = message.reference and message.reference.resolved and message.reference.resolved.author == bot.user
     is_dm = isinstance(message.channel, discord.DMChannel)
     
-    # Noms alternatifs pour Onizuka (détection dans le message)
-    ONIZUKA_NAMES = ["onizuka"]
+    # Noms alternatifs pour Sugar Bot (détection dans le message)
+    SUGAR_NAMES = ["sugar", "sugar bot"]
     content_lower = message.content.lower()
-    is_name_mentioned = any(name in content_lower for name in ONIZUKA_NAMES)
+    is_name_mentioned = any(name in content_lower for name in SUGAR_NAMES)
     
     # Les autres bots sont filtrés en amont (silence total entre bots).
     is_bot_talking = False
@@ -534,17 +534,17 @@ async def on_message(message):
         
         # Log si invoqué par nom alternatif
         if is_name_mentioned and not is_mentioned:
-            logger.info(f"[NOM ALTERNATIF] Onizuka invoqué par nom dans le message de {message.author.name}")
+            logger.info(f"[NOM ALTERNATIF] Sugar Bot invoqué par nom dans le message de {message.author.name}")
         
         # Database
         if DATABASE_AVAILABLE and not is_dm:
             get_or_create_user(message.author.id, message.author.name, message.author.display_name)
-            log_interaction(message.author.id, "Onizuka", "mention")
+            log_interaction(message.author.id, "Sugar Bot", "mention")
     
     # A.bis IMAGE PRIORITY
     elif has_image_early and not is_bot_talking:
         should_respond = True
-        logger.info(f"[IMAGE PRIORITY] Onizuka va analyser l'image de {message.author.name}")
+        logger.info(f"[IMAGE PRIORITY] Sugar Bot va analyser l'image de {message.author.name}")
     
     # ══════════════════════════════════════════════════
     # LTM SYSTEM - MEMORY INJECTION (paresseux)
@@ -671,10 +671,10 @@ async def on_message(message):
     # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
     elif not is_bot_talking and not should_respond and random.random() < 0.10:
         if await _other_bot_in_focus(message):
-            logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Onizuka se tait.")
+            logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Sugar Bot se tait.")
         else:
             should_respond = True
-            logger.info(f"[INTERVENTION] Onizuka intervient dans {message.channel.name}")
+            logger.info(f"[INTERVENTION] Sugar Bot intervient dans {message.channel.name}")
     
     if not should_respond:
         return
@@ -689,8 +689,8 @@ async def on_message(message):
     keyword_boost = ""
     
     if any(kw in content_lower for kw in ["fric", "argent", "thune", "yen"]):
-        onizuka_data["money_bragged"] = onizuka_data.get("money_bragged", 0) + 1
-        save_data(onizuka_data)
+        sugar_stats["money_bragged"] = sugar_stats.get("money_bragged", 0) + 1
+        save_data(sugar_stats)
     
     # HISTORIQUE
     channel_id = message.channel.id
@@ -773,7 +773,7 @@ async def on_message(message):
             mistral_client=mistral_client,
             groq_client=groq_client,
             openrouter_client=openrouter_client,
-            bot_label="Onizuka",
+            bot_label="Sugar Bot",
             gemini_max_tokens=500,
         )
 
@@ -823,7 +823,7 @@ async def on_message(message):
     
     # Récompense réputation
     if DATABASE_AVAILABLE and not is_dm and not is_bot_talking:
-        add_reputation(message.author.id, points=2, reason="Conversation avec Onizuka")
+        add_reputation(message.author.id, points=2, reason="Conversation avec Sugar Bot")
     
     # ENVOI
     await message.reply(response_text)

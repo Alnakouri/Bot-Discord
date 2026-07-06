@@ -217,7 +217,7 @@ class TwitchChatBot(
             trigger_terms.append(bot_label.lower())
         
         # Add common short names for bots
-        for short in ["sheo", "maiq", "johnny", "onizuka", "malena", "alfred"]:
+        for short in ["sheo", "maiq", "johnny", "sugar", "malena", "alfred"]:
             if short in bot_id.lower():
                 trigger_terms.append(short)
 

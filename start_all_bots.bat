@@ -4,7 +4,7 @@ color 0A
 
 echo ========================================
 echo    LANCEMENT DE TOUS LES BOTS
-echo    Sheogorath, M'aiq, Alfred, Onizuka, Johnny, Malena
+echo    Sheogorath, M'aiq, Alfred, Sugar Bot, Johnny, Malena
 echo ========================================
 echo.
 
@@ -23,9 +23,9 @@ echo [3/5] Demarrage d'Alfred...
 start /min "Alfred Bot" cmd /k "cd /d "%~dp0Alfred" && python bot_alfred.py"
 timeout /t 3 /nobreak >nul
 
-REM Eikichi Onizuka
-echo [4/5] Demarrage d'Onizuka...
-start /min "Onizuka Bot" cmd /k "cd /d "%~dp0OnizukaBot" && python bot_onizuka.py"
+REM Sugar Bot
+echo [4/6] Demarrage de Sugar Bot...
+start /min "Sugar Bot" cmd /k "cd /d "%~dp0SugarBot" && python bot_sugar.py"
 timeout /t 3 /nobreak >nul
 
 REM Johnny Silverbot

@@ -4,7 +4,7 @@ import re
 import logging
 from datetime import datetime
 
-logger = logging.getLogger("onizuka_memory")
+logger = logging.getLogger("sugar_memory")
 
 STOPWORDS_MEMORY = {
     "le", "la", "les", "un", "une", "des", "ce", "cet", "cette", "ces",

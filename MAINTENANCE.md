@@ -75,7 +75,7 @@ python crypto_utils.py encrypt
 | `MaiqBot/.master_key` | M'aiq uniquement |
 | `Alfred/.master_key` | Alfred uniquement |
 | `JohnnyBot/.master_key` | Johnny uniquement |
-| `OnizukaBot/.master_key` | Onizuka uniquement |
+| `SugarBot/.master_key` | Sugar Bot uniquement |
 | `MalenaBot/.master_key` | Malena uniquement |
 
 ---

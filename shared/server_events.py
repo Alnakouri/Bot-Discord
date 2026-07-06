@@ -58,7 +58,7 @@ WELCOME_MESSAGES = {
         "🌟 Ay {user} ! Bienvenue dans le quartier ma vie ! "
         "Ici c'est Marseille bébé, et moi chui la reine du Vieux-Port ooh !",
     ],
-    "onizuka": [
+    "sugar": [
         "Bonjour {user}, bienvenue sur le serveur.",
         "Bienvenue, {user} ! Heureux de t'accueillir parmi nous."
     ],
@@ -94,7 +94,7 @@ GOODBYE_MESSAGES = {
         "😢 Ay {user} nous quitte ! Peuchère... Allez bonne route ! "
         "Mais oublie pas, ici c'est chez toi hein !",
     ],
-    "onizuka": [
+    "sugar": [
         "Au revoir {user}. Bonne continuation.",
         "{user} a quitté le serveur. Au revoir !"
     ],
@@ -151,7 +151,7 @@ BIRTHDAY_MESSAGES = {
         "J'espère que t'as un gâteau avec des paillettes et du rose dessus ! "
         "Sinon c'est pas un vrai anniversaire ooh ! 💅✨",
     ],
-    "onizuka": [
+    "sugar": [
         "Joyeux anniversaire, {user} ! Passe une excellente journée.",
         "Bon anniversaire {user} !"
     ],
@@ -179,8 +179,8 @@ async def handle_member_join(bot, member: discord.Member, bot_name: str):
     
     if target_channel:
         # Probabilité de message (pour éviter le spam si plusieurs bots)
-        # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Onizuka: 30%
-        probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.3}
+        # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Sugar Bot: 30%
+        probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "sugar": 0.3}
         if random.random() < probs.get(bot_name.lower(), 0.3):
             message = get_welcome_message(bot_name, member)
             await target_channel.send(message)
@@ -239,7 +239,7 @@ async def check_and_send_birthdays(bot, bot_name: str):
         if member:
             # Probabilité pour éviter les doublons entre bots
             # Un seul bot envoie le message
-            probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "onizuka": 0.2}
+            probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "sugar": 0.2}
             if random.random() < probs.get(bot_name.lower(), 0.33):
                 message = get_birthday_message(bot_name, member)
                 await target_channel.send(message)

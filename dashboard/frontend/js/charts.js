@@ -88,7 +88,7 @@ async function loadConversationChart() {
         conversationChart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: ['Sheogorath', "M'aiq", 'Alfred', 'Johnny', 'Onizuka', 'Malena'],
+                labels: ['Sheogorath', "M'aiq", 'Alfred', 'Johnny', 'Sugar Bot', 'Malena'],
                 datasets: [{
                     label: 'Messages handling',
                     data: [150, 80, 45, 20, 10, 5],

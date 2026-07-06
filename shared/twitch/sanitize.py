@@ -142,7 +142,7 @@ FALLBACK_RESPONSES = {
         "Je crains de ne pas pouvoir poursuivre cette conversation sur ce ton, monsieur.",
         "Un peu de tenue, je vous prie."
     ],
-    "onizuka": [
+    "sugar": [
         "Cette conversation commence à devenir stérile.",
         "Garde tes provocations pour quelqu'un d'autre."
     ],

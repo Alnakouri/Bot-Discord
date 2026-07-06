@@ -8,7 +8,7 @@ if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
 """
-Données neutres pour le bot Onizuka (ardoise vierge, sans personnalité).
+Données neutres pour le bot Sugar Bot (ardoise vierge, sans personnalité).
 """
 
 # PROMPT DE PERSONNALITÉ PRINCIPAL

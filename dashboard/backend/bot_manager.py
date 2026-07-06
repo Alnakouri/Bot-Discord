@@ -36,12 +36,12 @@ BOT_REGISTRY = {
         "bat": "start_johnny.bat",
         "color": "#22c55e"
     },
-    "onizuka": {
-        "name": "onizuka",
-        "display": "Onizuka",
-        "dir": "OnizukaBot",
-        "script": "bot_onizuka.py",
-        "bat": "start_onizuka.bat",
+    "sugar": {
+        "name": "sugar",
+        "display": "Sugar Bot",
+        "dir": "SugarBot",
+        "script": "bot_sugar.py",
+        "bat": "start_sugar.bat",
         "color": "#0ea5e9"
     },
     "malena": {

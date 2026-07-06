@@ -1,10 +1,10 @@
 @echo off
-title Onizuka Bot
+title Sugar Bot
 color 0C
 echo ================================
-echo    ONIZUKA
+echo    SUGAR BOT
 echo ================================
 echo.
 echo Lancement du bot...
-python bot_onizuka.py
+python bot_sugar.py
 pause

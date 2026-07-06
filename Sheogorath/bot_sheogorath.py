@@ -45,7 +45,7 @@ last_exchange = {}                 # {channel_id: (user_id, timestamp)}
 CONTINUATION_WINDOW = 90.0         # s — au-delà, l'échange est considéré clos
 CONTINUATION_PROBA = 0.70          # dans la fenêtre, Sheo poursuit ~7 fois sur 10 (grain de folie)
 # Noms des AUTRES bots : si le mortel s'adresse à eux, Sheo ne s'incruste pas via la continuité.
-OTHER_BOT_NAMES = ("m'aiq", "maiq", "onizuka", "eikichi", "alfred", "johnny", "silverhand", "malena", "rigurt")
+OTHER_BOT_NAMES = ("m'aiq", "maiq", "sugar", "sugar bot", "alfred", "johnny", "silverhand", "malena", "rigurt")
 
 try:
     from shared.bot_features import is_feature_enabled

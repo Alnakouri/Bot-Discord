@@ -31,12 +31,12 @@ twitch_test.env
 maiq_data.json
 alfred_memory.json
 johnny_data.json
-onizuka_data.json
+sugar_data.json
 malena_memory.json
-# Onizuka (données runtime : IDs/pseudos Discord + profils générés)
-OnizukaBot/onizuka_data.json
-OnizukaBot/onizuka_facts.json
-OnizukaBot/onizuka_memory.json
+# Sugar Bot (données runtime : IDs/pseudos Discord + profils générés)
+SugarBot/sugar_data.json
+SugarBot/sugar_facts.json
+SugarBot/sugar_memory.json
 # État de jeu runtime et sauvegardes
 data/*.json
 data/*.bak

@@ -10,7 +10,7 @@
 | **M'aiq** | Khajiit menteur (TES) | Énigmes, rumeurs, mensonges |
 | **Alfred** | Majordome de Batman | Vocal TTS (ElevenLabs), cynisme, service, modération |
 | **Johnny Silverbot** | Rockerboy (Cyberpunk 2077) | Anti-corpo, cynisme, provocation, duels |
-| **Onizuka** | (personnalité vidée) | — |
+| **Sugar Bot** | (personnalité vidée) | — |
 | **Malena** | Gitana marseillaise | Tarot, prédictions, style gitane |
 
 ---
@@ -30,7 +30,7 @@ Pour naviguer dans l'écosystème de documentation technique et utilisateur :
   - [Sheogorath/README.md](file:///I:/IA/Bot%20Discord/Sheogorath/README.md)
   - [MaiqBot/README.md](file:///I:/IA/Bot%20Discord/MaiqBot/README.md)
   - [JohnnyBot/README.md](file:///I:/IA/Bot%20Discord/JohnnyBot/README.md)
-  - [OnizukaBot/README.md](file:///I:/IA/Bot%20Discord/OnizukaBot/README.md)
+  - [SugarBot/README.md](file:///I:/IA/Bot%20Discord/SugarBot/README.md)
   - [MalenaBot/README.md](file:///I:/IA/Bot%20Discord/MalenaBot/README.md)
 
 ---

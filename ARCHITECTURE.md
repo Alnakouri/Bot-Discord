@@ -10,7 +10,7 @@
 
 **Chaque bot est un processus autonome et déployable indépendamment.**
 
-- Chaque bot a son propre dossier (`Alfred/`, `Sheogorath/`, `MaiqBot/`, `JohnnyBot/`, `OnizukaBot/`, `MalenaBot/`)
+- Chaque bot a son propre dossier (`Alfred/`, `Sheogorath/`, `MaiqBot/`, `JohnnyBot/`, `SugarBot/`, `MalenaBot/`)
 - Chaque bot a ses propres fichiers : `.env`, `requirements.txt`, `discloud.config`, `bot_*.py`
 - Chaque bot PEUT fonctionner SEUL sans les autres bots
 - Chaque bot PEUT fonctionner SANS le dossier `shared/` (mode dégradé)
@@ -83,10 +83,10 @@ Bot Discord/
 │   ├── johnny_data.py       # Personnalité et données
 │   └── johnny_memory.py     # Mémoire à long terme Johnny
 │
-├── OnizukaBot/              # Bot Onizuka (neutre)
-│   ├── bot_onizuka.py       # Point d'entrée
-│   ├── onizuka_data.py      # Données neutres
-│   └── onizuka_memory.py    # Mémoire à long terme Onizuka
+├── SugarBot/              # Bot Sugar Bot (neutre)
+│   ├── bot_sugar.py       # Point d'entrée
+│   ├── sugar_data.py      # Données neutres
+│   └── sugar_memory.py    # Mémoire à long terme Sugar Bot
 │
 ├── MalenaBot/               # Bot Malena (La Gitana Marseillaise)
 │   ├── bot_malena.py        # Point d'entrée

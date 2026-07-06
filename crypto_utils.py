@@ -43,7 +43,7 @@ except ImportError:
 
 # Configuration
 MASTER_KEY_FILE = ".master_key"
-BOT_DIRS = ["Sheogorath", "MaiqBot", "Alfred", "OnizukaBot", "JohnnyBot", "MalenaBot"]
+BOT_DIRS = ["Sheogorath", "MaiqBot", "Alfred", "SugarBot", "JohnnyBot", "MalenaBot"]
 BASE_DIR = Path(__file__).parent
 
 

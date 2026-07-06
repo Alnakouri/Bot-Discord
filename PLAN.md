@@ -1,183 +1,214 @@
-# PLAN — Twitch : (1) commandes « liens » par bot + (2) le bot répond aux questions sur le jeu en cours
+# PLAN — Renommage technique complet : Onizuka → Sugar Bot
 
-## Contexte
-Deux features Twitch demandées par le user (décisions arrêtées 2026-07-01/02). Tout passe par
-l'infra **`shared/twitch/`** existante (bénéficie aux 6 bots), config pilotée par le **dashboard**
-(`data/twitch_config.json`). Respecter [[bots-independants]] (chaque bot démarre seul, shared/ optionnel)
-et la règle « **0 outil agentique sur Twitch** » (répondre = un message de chat normal, rien d'autre).
-Le silence entre bots reste garanti (cf. [[plan-silence-total-bots]] : `if message.author.bot: return`,
-`TWITCH_PEER_BOTS`). **Aucune modif côté Discord** (bot_*.py Discord, *_data.py, *_llm.py inchangés).
+## Objectif
+Renommer **entièrement** le bot « Onizuka » (déjà vidé de sa personnalité, ardoise neutre,
+commits `0f42fc1` + `0060242`) en **« Sugar Bot »**, y compris **toute l'infrastructure** :
+dossier, fichiers, identifiant technique, service Docker, dashboard, config, données runtime.
+
+### Conventions de nommage (à appliquer PARTOUT, sans exception)
+| Rôle | Ancien | Nouveau |
+|------|--------|---------|
+| Identifiant technique (clé config, bot_id, logger, domaine mémoire) | `onizuka` | `sugar` |
+| Nom affiché (label, bannières, dashboard, Discord) | `Onizuka` | `Sugar Bot` |
+| Dossier du bot | `OnizukaBot/` | `SugarBot/` |
+| Fichier principal | `bot_onizuka.py` | `bot_sugar.py` |
+| Fichier données persona | `onizuka_data.py` | `sugar_data.py` |
+| Fichier mémoire | `onizuka_memory.py` | `sugar_memory.py` |
+| Launcher | `start_onizuka.bat` | `start_sugar.bat` |
+| Service Docker | `onizuka` / `bot-onizuka` | `sugar` / `bot-sugar` |
+| Wing mempalace | `onizukabot` | `sugarbot` |
+
+> **Règle d'or** : `sugar` en minuscules pour tout identifiant/clé/chemin ; `Sugar Bot` pour
+> tout texte destiné à l'affichage humain. Ne PAS réintroduire de personnalité — c'est un
+> pur renommage d'une ardoise neutre.
+
+> **Utiliser `git mv`** pour tous les déplacements/renommages de fichiers (préserve l'historique).
 
 ---
 
-## FEATURE 1 — « Espace liens » par bot (commandes configurables au dashboard)
+## ⚠️ POINTS CRITIQUES (à lire avant de commencer)
 
-**But :** des commandes chat type `!discord` → lien du serveur, `!twitter`, `!yt`… configurables
-**par bot** depuis le dashboard, **sans toucher au code d'un bot**. Réutilise l'infra `!cmd` existante
-(`_handle_command`, dispatch.py:112 : cooldowns 3 s user / 5 s cmd + rate-limit + `send_chat_safe`).
-Une commande lien = renvoie juste une string (0 LLM, 0 réseau).
+1. **Chiffrement — AUCUNE ré-encryption.** La clé est lue depuis le fichier `OnizukaBot/.master_key`
+   (pas dérivée du nom du dossier). Il faut **déplacer `.master_key` ET `.env.encrypted` avec le
+   dossier** (`git mv OnizukaBot SugarBot` les emporte). Le `.env.encrypted` restera déchiffrable
+   tel quel. **Ne PAS lancer `crypto_utils.py generate`** (écraserait la clé → .env illisible).
+2. **Renommage du compte Discord = MANUEL.** Le nom affiché dans le serveur (`bot.user.name`) se
+   change dans le **Discord Developer Portal** (application → nom), pas dans le code. Le code ne
+   pilote que le `bot_label` (logs/prompts) et la bio via `edit_application`. → étape hors-code,
+   à signaler au user.
+3. **Données runtime = déplacées, pas re-créées.** Les mémoires/facts existants sont conservés en
+   renommant les fichiers et les clés de config (voir §5). Ne rien vider.
+4. **Gotcha historique** : par le passé un mélange de secrets `zaji`↔`OnizukaBot` a eu lieu
+   (cf. mémoire). Vérifier après coup que `SugarBot/.env.encrypted` déchiffre bien le BON token.
 
-### 1.A — Schéma config (`data/twitch_config.json`)
-Ajouter par bot une clé `link_commands` (liste, défaut `[]`) :
-```json
-"link_commands": [
-  { "cmd": "discord", "url": "https://discord.gg/xxxx", "label": "Serveur Discord",
-    "message": "Rejoins la communauté : {url}", "aliases": ["serveur"] }
-]
+---
+
+## FICHIER PAR FICHIER
+
+### 1. Renommage des fichiers/dossiers (`git mv`)
 ```
-- `cmd` (obligatoire), `url` (obligatoire). `message` optionnel avec placeholder `{url}` (défaut :
-  `"{label} : {url}"` ou juste `"{url}"`). `label` et `aliases` optionnels.
-- Normaliser `cmd`/`aliases` : minuscules, sans `!` ni espaces.
+git mv OnizukaBot SugarBot
+git mv SugarBot/bot_onizuka.py      SugarBot/bot_sugar.py
+git mv SugarBot/onizuka_data.py     SugarBot/sugar_data.py
+git mv SugarBot/onizuka_memory.py   SugarBot/sugar_memory.py
+git mv SugarBot/start_onizuka.bat   SugarBot/start_sugar.bat
+git mv SugarBot/onizuka_data.json   SugarBot/sugar_data.json      # si suivi par git
+```
+- Fichiers de données non suivis (facts/memory locaux) : renommer aussi sur disque
+  (`onizuka_facts.json`→`sugar_facts.json`, `onizuka_memory.json`→`sugar_memory.json`).
+- `SugarBot/.master_key`, `SugarBot/.env.encrypted`, `SugarBot/mempalace.yaml`,
+  `SugarBot/README.md`, `SugarBot/.env.example`, `SugarBot/games_persona.py` : **suivent le dossier**,
+  on édite leur CONTENU plus bas (pas de renommage de nom).
 
-### 1.B — Enregistrement runtime (partagé, 1 seul point → les 6 bots)
-Dans **`shared/twitch_chat.py`** `setup_twitch_chat`, **après** `dash = _load_dashboard_twitch_config(...)`
-(l.291) et **avant** `return TwitchChatBot(...)` (l.363) :
-1. Lire `dash.get("link_commands") or []`.
-2. Pour chaque entrée valide, construire un callback synchrone `lambda author, args, e=entry: format(...)`
-   qui renvoie le message formaté (attention à la capture de boucle : lier `e=entry`).
-3. Fusionner dans le dict `commands` **sans écraser une commande native du bot** (les built-ins
-   `!decret`, `!fromage`… gagnent) : `commands = {**link_cmds, **(commands or {})}`. De même pour les
-   alias. Logguer les collisions ignorées (`⚠️ [TWITCH_CHAT:{bot}] link_command !{cmd} ignorée (collision)`).
-4. **Garde noms réservés** : refuser d'enregistrer un lien dont le `cmd`/alias percute un nom réservé
-   (liste courte : `decret`, `decree`, `fromage`, `cheese`, `folie`, `faveur`, `favor`, `classement`,
-   `leaderboard`, `humeur`, + noms de jeux Feature 2). Log + skip.
-5. Passer `commands`/`command_aliases` enrichis à `TwitchChatBot(...)`.
-> Ainsi **aucun bot_*.py n'est modifié** : les liens marchent pour les 6 via la config seule.
+### 2. `SugarBot/bot_sugar.py` (ex-`bot_onizuka.py`) — 70 occurrences
+- l.38/40 `setup_logger("onizuka")` / `getLogger("onizuka")` → `"sugar"`.
+- l.45 `DATA_FILE = ... "onizuka_data.json"` → `"sugar_data.json"`.
+- l.151-153 `from onizuka_memory import ...` / `from OnizukaBot.onizuka_memory import ...`
+  → `from sugar_memory import ...` / `from SugarBot.sugar_memory import ...`.
+- l.154-155 `onizuka_facts_file` / `onizuka_memory_file` base names → `sugar_facts.json` /
+  `sugar_memory.json` (renommer aussi les variables `onizuka_*_file`→`sugar_*_file` par cohérence).
+- l.211 `bot_id="onizuka", bot_label="Onizuka"` → `bot_id="sugar", bot_label="Sugar Bot"`.
+- l.166, 231, 276 & tout `bot_label="Onizuka"` / `setup_slash_commands(bot, "Onizuka")` /
+  `"Onizuka"` de label → `"Sugar Bot"`.
+- l.273 `setup_twitch_announcer(bot, "onizuka", ...)` → `"sugar"`.
+- Import persona en tête (`from onizuka_data import ...` / `from OnizukaBot.onizuka_data import ...`,
+  + `PERSONA`, `PERSONALITY_PROMPT`) → `sugar_data` / `SugarBot.sugar_data`.
+- l.491 détection webhook `["onizuka"]` → `["sugar", "sugar bot"]`.
+- l.515 `ONIZUKA_NAMES = ["onizuka"]` → renommer var `SUGAR_NAMES = ["sugar", "sugar bot"]`
+  (et ses usages).
+- Toutes les bannières/logs `on_ready` « Onizuka est en ligne / prêt », « STATISTIQUES ONIZUKA »,
+  `[GAMES] … pour Onizuka` → `Sugar Bot`.
+- `loop`/fonctions suffixées `_onizuka` (`status_loop_onizuka`, `daily_bio_loop_onizuka`, …) →
+  suffixe `_sugar` (renommer déclaration ET appels `.start()`/`.is_running()`).
+- Variable globale `onizuka_data` (le dict de compteurs) → `sugar_data` (attention : ne pas
+  confondre avec le module `sugar_data` ; préférer `sugar_stats` si collision — au choix d'Antigravity,
+  du moment que c'est cohérent et compile).
 
-### 1.C — Dashboard (backend + frontend)
-- **Backend `dashboard/backend/twitch_config.py`** : dans le schéma par bot, garantir la clé
-  `link_commands` (défaut `[]`, comme `chat_channels` l.68). Ajouter
-  `get_link_commands(bot_id)` et `update_link_commands(bot_id, items)` (valide/normalise/dédupe :
-  `cmd` non vide, `url` non vide, filtre noms réservés côté serveur aussi).
-- **Endpoints API** (là où sont exposés `update_chat_channels`/reward_map) : `GET`/`POST` link_commands.
-- **Frontend** (section Twitch du bot, à côté des chaînes / reward_map) : petit tableau éditable
-  (cmd | URL | message optionnel | aliases) + boutons add/remove/save. Modif = prise en compte au
-  **redémarrage du bot** (comme les autres réglages twitch_config), pas de hot-reload requis.
+### 3. `SugarBot/sugar_data.py` (ex-`onizuka_data.py`)
+- Docstring/commentaires « Onizuka » → « Sugar Bot ». Contenu déjà neutre (ne pas ré-ajouter de persona).
+- `PERSONA["name"]` s'il existe ici : `"Sugar Bot"`. (Sinon voir games_persona.py.)
 
-### 1.D — Tests Feature 1
-- `test_link_commands_registered` : une entrée config → commande présente dans le dict + renvoie le
-  message formaté avec l'URL.
-- `test_link_command_collision_skipped` : `cmd="decret"` → NON enregistré (built-in préservé).
-- `test_link_command_alias` : alias résolu vers la bonne commande.
+### 4. `SugarBot/sugar_memory.py` (ex-`onizuka_memory.py`)
+- Commentaires « Onizuka » → « Sugar Bot ». Logique inchangée.
 
----
+### 5. Données runtime dans `data/` (migration — conserver le contenu)
+```
+git mv data/onizuka_memory.json          data/sugar_memory.json          # si suivi
+git mv data/onizuka_facts.json           data/sugar_facts.json
+git mv data/onizuka_memory_archive.jsonl data/sugar_memory_archive.jsonl
+git mv data/discord_bio_onizuka.json     data/discord_bio_sugar.json
+```
+(les fichiers non suivis par git : renommer sur disque.)
+- `data/twitch_config.json` l.107 : clé `"onizuka"` → `"sugar"` (renommer la CLÉ, garder la valeur).
+- `data/bot_features.json` l.14 : clé `"onizuka"` → `"sugar"`.
 
-## FEATURE 2 — Le bot répond aux questions des viewers sur le jeu en cours (faits via IGDB)
+### 6. `crypto_utils.py`
+- l.46 `BOT_DIRS = [... "OnizukaBot" ...]` → `"SugarBot"`.
 
-**But :** quand un viewer demande, sur une chaîne où le bot est présent, des infos sur le jeu streamé
-(plateforme(s), genre, studio/éditeur, solo/multi, date de sortie, « de quoi ça parle »), le bot répond
-**dans sa persona**, en s'appuyant sur des **faits IGDB** (pas d'invention). **PRIX = hors scope** (abandonné).
+### 7. `docker-compose.yml` (bloc l.79-89)
+- `onizuka:` → `sugar:`
+- `container_name: bot-onizuka` → `bot-sugar`
+- `- ./OnizukaBot:/app/bot:ro` → `- ./SugarBot:/app/bot:ro`
+- `- ./OnizukaBot/.master_key:/app/bot/.master_key:ro` → `- ./SugarBot/.master_key:...`
+- `command: python bot_onizuka.py` → `command: python bot_sugar.py`
 
-### 2.A — Source des faits : Helix (jeu courant) → IGDB (faits)
-Nouveau module **`shared/twitch/game_info.py`** (0 dépendance nouvelle : `aiohttp` déjà utilisé) :
-- **Jeu courant** : `game_name`/`game_id` via Helix `GET /helix/streams?user_login={chan}` (patron
-  `TwitchClient.get_streams`, twitch_announcer.py:74). Si la chaîne est offline → fallback
-  `GET /helix/channels?broadcaster_id=...` (game_name dispo hors live ; résoudre l'id via
-  `/helix/users?login=`). Cache `game_name` par chaîne (TTL ~3 min) pour éviter le spam Helix.
-- **Faits** : `IGDBClient(client_id, client_secret)` calqué sur `TwitchClient` — **même app token
-  client_credentials** (IGDB s'authentifie avec l'OAuth Twitch). `POST https://api.igdb.com/v4/games`,
-  headers `Client-ID` + `Authorization: Bearer {token}`, corps apicalypse :
-  `search "{game_name}"; fields name,platforms.name,genres.name,first_release_date,summary,
-   involved_companies.company.name,involved_companies.developer,involved_companies.publisher;
-   limit 5;` → prendre le meilleur match (nom le plus proche, cf. matching ci-dessous).
-- **Matching Helix→IGDB** à soigner (homonymes/éditions) : normaliser (casse/accents/ponctuation),
-  préférer un match exact du nom, sinon le 1er résultat ; si distance trop grande → **pas de faits**.
-- **Cache faits** par `game_name` (clé normalisée), TTL long (heures). ⚠️ **Garde-fou** : si IGDB ne
-  trouve rien / match douteux → renvoyer `None` (pas de faits inventés).
+### 8. Dashboard
+- `dashboard/backend/bot_manager.py` l.39-44 : clé `"onizuka"`→`"sugar"`, `"name": "onizuka"`→`"sugar"`,
+  `"display": "Onizuka"`→`"Sugar Bot"`, `"dir": "OnizukaBot"`→`"SugarBot"`,
+  `"script": "bot_onizuka.py"`→`"bot_sugar.py"`, `"bat": "start_onizuka.bat"`→`"start_sugar.bat"`.
+- `dashboard/frontend/js/app.js` l.521 : `"onizuka": { name: "onizuka", display: "Onizuka", color:"#0ea5e9" }`
+  → `"sugar": { name: "sugar", display: "Sugar Bot", color: "#0ea5e9" }` (garder la couleur).
+- `dashboard/frontend/js/app.js` l.668 : `onizuka: "Onizuka"` → `sugar: "Sugar Bot"`.
+- `dashboard/frontend/js/charts.js` l.91 : label `'Onizuka'` → `'Sugar Bot'` (⚠ garder l'ORDRE des
+  labels aligné sur l'ordre des données ; ne changer que le texte).
+- `dashboard/frontend/index.html` l.152 : `<option value="onizuka">Onizuka</option>`
+  → `<option value="sugar">Sugar Bot</option>`.
 
-### 2.B — Détecteur « question sur le jeu » (large, FR + EN)
-Dans `game_info.py` `detect_game_question(text) -> str|None` (0 LLM, regex insensible casse/accents,
-comme l'anti-injection) : renvoie une **catégorie** (`platform`/`genre`/`studio`/`mode`/`release`/
-`about`/`which_game`) ou `None`.
-- Exiger un **marqueur interrogatif** (`?` ou tournure « c'est quoi / quel / sur quoi / qui a fait /
-  ça sort quand / ça parle de quoi / dispo sur »).
-- Mots-clés par catégorie : plateforme (`pc, ps5, xbox, switch, steam, console, dispo sur`), genre
-  (`genre, type de jeu, fps, rpg, rogue`), studio/éditeur (`studio, développeur, éditeur, qui a fait,
-  developer, publisher`), mode (`solo, multi, coop, multijoueur`), date (`sortie, sort quand, date,
-  release`), pitch (`ça parle de quoi, c'est quoi l'histoire, de quoi ça parle`), quel-jeu
-  (`c'est quoi ce jeu, quel jeu, what game`).
-- **Rester conservateur** : ne pas déclencher sur une phrase random (éviter le sur-déclenchement).
+### 9. Anti-boucle inter-bots (listes de noms — IMPORTANT pour le runtime)
+- `shared/twitch_chat.py` l.220 : `["sheo","maiq","johnny","onizuka","malena","alfred"]`
+  → remplacer `"onizuka"` par `"sugar"`.
+- `Sheogorath/bot_sheogorath.py` l.48 `OTHER_BOT_NAMES` : remplacer `"onizuka", "eikichi"` par
+  `"sugar", "sugar bot"` (retire aussi le résidu `eikichi`).
 
-### 2.C — Arbitrage (anti-spam : jamais les 6, cf. [[plan-silence-total-bots]])
-- **Bot adressé (nommé)** → c'est lui qui répond. Le chemin *mention* de `dispatch.py` (`trigger_re`,
-  l.25) ne se déclenche déjà que pour le bot nommé : si `detect_game_question` matche dans ce chemin,
-  on **injecte les faits IGDB** dans le contexte de génération (voir 2.D).
-- **Non adressé** → **UN seul bot « co-host » désigné par salon** répond (jamais les autres). Désignation
-  **par config, cloisonnée** : ajouter par bot dans `twitch_config.json` une clé `cohost_channels`
-  (liste de chaînes, défaut `[]`). Dans le chemin *passif* de `dispatch.py`, ajouter une option
-  spontanée « réponse jeu » **gâtée par** : `enable_greetings`/toggle dédié ? → utiliser un nouveau
-  flag `game_qa` (2.F) ET `chan in cohost_channels` ET `detect_game_question(text)`. Soumise au
-  rate-limit global + un cooldown dédié (ex. 30 s/chaîne) pour éviter le flood.
-- Ordre dans le passif : garder « au plus une action spontanée » (var `spontaneous_sent`) — la réponse
-  jeu passe **avant** greeting/interjection si elle matche, et pose `spontaneous_sent = True`.
+### 10. Modules partagés keyés par bot-id
+- `shared/server_events.py` : clé `"onizuka"` (WELCOME/GOODBYE/BIRTHDAY) → `"sugar"` (garder textes neutres).
+- `shared/twitch/sanitize.py` : bloc `"onizuka"` → clé `"sugar"`.
+- `Sheogorath/sheo_imposter.py` : entrée `"Onizuka"` → `"Sugar Bot"` (prompt déjà neutre).
 
-### 2.D — Réponse in-persona ancrée sur les faits
-- Construire un **bloc de faits** court (`Plateformes: … | Genre: … | Studio: … | Éditeur: … | Sortie:
-  … | Résumé: …`) à partir des faits IGDB (uniquement les champs pertinents à la catégorie détectée).
-- Injecter ce bloc dans le prompt de génération existant (`_generate_response`) via une **consigne
-  système ponctuelle** : « Voici des FAITS vérifiés sur le jeu en cours : {faits}. Réponds à la question
-  du viewer **dans ta personnalité**, en t'appuyant UNIQUEMENT sur ces faits. N'invente rien. Si un fait
-  manque, dis-le en restant en personnage. » Le pitch « de quoi ça parle » peut s'appuyer sur `summary`
-  (ou rester flavor LLM si `summary` vide).
-- **Si pas de faits** (offline/no match) : injecter « Tu n'as pas d'info fiable sur ce jeu → **nuance
-  en personnage** (ne donne aucun fait précis). » (garde-fou anti-fait-faux).
-- La sortie passe déjà par `send_chat_safe` (filtre ToS + strip didascalies) — rien à ajouter.
+### 11. Launchers `.bat`
+- `Menu_Launcher.bat` l.15 `[4] Lancer Eikichi Onizuka` → `[4] Lancer Sugar Bot` ;
+  l.58-59 & l.83 : « Onizuka » → « Sugar Bot », `cd .../OnizukaBot` → `.../SugarBot`,
+  `python bot_onizuka.py` → `python bot_sugar.py`, titre `"Onizuka Bot"` → `"Sugar Bot"`.
+- `start_all_bots.bat` l.7/26-28 : idem (« Eikichi Onizuka »/« Onizuka » → « Sugar Bot »,
+  dossier + script + titre).
+- `SugarBot/start_sugar.bat` (ex-start_onizuka.bat) : titre + bannières + `python bot_sugar.py`.
 
-### 2.E — Câblage
-- `game_info.py` : `IGDBClient`, `get_current_game(chan)`, `get_game_facts(game_name, category)`,
-  `detect_game_question(text)`, `format_facts_block(facts, category)`. Caches internes (game par chaîne,
-  facts par jeu).
-- `shared/twitch/dispatch.py` : appeler `detect_game_question` dans le chemin mention (injecter faits
-  avant `_generate_response`) et dans le chemin passif (option co-host gâtée). Instancier l'IGDB/Helix
-  client une fois sur le `TwitchChatBot` (réutiliser `self.client_id/secret`).
-- **Ne pas bloquer la boucle** : tous les appels réseau IGDB/Helix en `await` (aiohttp), avec timeout
-  (10 s) et try/except → sur erreur, se comporter comme « pas de faits » (nuance en persona). Ne jamais
-  laisser une exception réseau tuer le WS (cf. [[fix-cascade-bloque-boucle]]).
+### 12. mempalace (mémoire projet MCP)
+- `mempalace.yaml` l.68-72 : `name: onizukabot` + domaines `onizukabot` → `sugarbot`.
+- `SugarBot/mempalace.yaml` l.1 : `wing: onizukabot` → `wing: sugarbot`.
 
-### 2.F — Dashboard Feature 2
-- `twitch_config.json` par bot : `cohost_channels` (défaut `[]`) + toggle `chat.game_qa` (défaut
-  `false` au début, activable par bot). Backend `twitch_config.py` : défauts + getters/setters +
-  endpoints. Frontend : dans la section Twitch, sélecteur des chaînes co-host + toggle « Répond aux
-  questions sur le jeu ». Runtime : lus dans `setup_twitch_chat` (comme les autres toggles l.308-313).
+### 13. Harnais d'éval
+- `tests/eval/persona_loader.py` l.19 : `"onizuka": ("OnizukaBot.onizuka_data", "PERSONALITY_PROMPT", "Onizuka")`
+  → `"sugar": ("SugarBot.sugar_data", "PERSONALITY_PROMPT", "Sugar Bot")`.
+- `tests/eval/run_eval.py` l.19 : `"onizuka"` → `"sugar"` dans la liste `BOTS`.
+- `tests/eval/scenarios.json` : `"onizuka"` → `"sugar"` (clés de scénario).
+- `tests/eval/reports/*.json` : **NE PAS toucher** (rapports historiques figés).
 
-### 2.G — Tests Feature 2
-- `test_detect_game_question` : questions plateforme/genre/studio/mode/date/pitch → bonne catégorie ;
-  phrase non-question / random → `None` (anti-sur-déclenchement).
-- `test_format_facts_block` : faits IGDB → bloc lisible ; champs manquants tolérés.
-- `test_igdb_match` : nom Helix ≈ nom IGDB → bon jeu ; nom absurde → pas de faits.
-- Arbitrage : mock — bot non désigné (`chan ∉ cohost_channels`) ne répond pas à une question non adressée.
+### 14. `SugarBot/README.md` + docs
+- `SugarBot/README.md` : « Onizuka » → « Sugar Bot » partout (12 occ.), noms de fichiers/dossier MAJ.
+- `README.md` (racine) l.13 tableau : `Onizuka` → `Sugar Bot`, chemin `OnizukaBot` → `SugarBot`.
+- `ARCHITECTURE.md` (5), `COMMANDES.md` (4), `DEV_GUIDE.md` (1), `MAINTENANCE.md` (1), `AGENTS.md` (1) :
+  remplacer `Onizuka`/`OnizukaBot`/`bot_onizuka.py`/`onizuka` selon le contexte (affichage vs technique).
+
+### 15. `SugarBot/.env.example`
+- En-tête « ONIZUKA BOT » → « SUGAR BOT » ; placeholders `GEMINI_KEY_ONIZUKA_*` → `..._SUGAR_*`
+  (cosmétique, ce sont des exemples).
 
 ---
 
-## Ce qu'on GARDE / ne casse pas
-- Persona complet partout, filtre ToS de sortie (`send_chat_safe`), anti-injection, rate-limits (18/30 s),
-  cooldowns, silence entre bots (`TWITCH_PEER_BOTS`), strip didascalies, cloisonnement par bot.
-- **Aucune modif Discord.** Aucune modif de la cascade LLM ni des prompts persona (Feature 2 = simple
-  injection ponctuelle de faits dans le contexte de génération existant).
-- « 0 outil agentique sur Twitch » : IGDB/Helix sont des **lookups de faits internes**, pas des outils
-  exposés au LLM ni au viewer.
+## HORS PÉRIMÈTRE (à NE PAS toucher)
 
-## Critères d'acceptation
-1. `!discord` (et liens configurés au dashboard) répondent avec l'URL, **par bot**, **sans modifier
-   aucun bot_*.py** ; une commande lien ne peut pas écraser un built-in (`!decret`…).
-2. Sur une chaîne co-host, « c'est sur quelle plateforme ? / qui a fait ce jeu ? / ça parle de quoi ? »
-   → le bot répond **en persona** avec des faits IGDB **exacts** (plateforme/genre/studio/mode/date/pitch).
-3. Jeu introuvable sur IGDB (ou chaîne offline) → le bot **nuance en personnage**, n'assène **aucun
-   fait faux**.
-4. **Jamais 6 réponses** : bot nommé → lui ; sinon seul le co-host désigné répond ; rate-limité.
-5. Aucune régression : les 6 bots démarrent et chattent ; boucle WS non bloquée par les appels réseau.
-6. `py_compile` OK ; `pytest tests/` vert (+ nouveaux tests Features 1 & 2).
+- **Mémoire des AUTRES bots** mentionnant « onizuka » (ce sont des DONNÉES d'autres bots, cf. la
+  logique « Option 2 » du plan de vidage) : `Alfred/alfred_memory.json`, `data/johnny_facts.json`,
+  `JohnnyBot/johnny_facts.json`, `data/onizuka_facts.json` (⚠ à distinguer : c'est celui d'un
+  autre contexte ? vérifier ; si c'est bien la mémoire de Sugar il migre en §5), et
+  `migrations/002_migration.py` (succès `gto_disciple`). → laisser tel quel sauf demande explicite.
+- `.claude/settings.local.json` (17 occ.) : chemins d'autorisation locaux — cosmétique, non-runtime.
+  Régénéré à l'usage → laisser.
+- `.obsidian/workspace.json` : état de l'éditeur → laisser.
+- `JohnnyBot/johnny_data.py` : liste de passants (contexte narratif d'un autre bot) → laisser.
 
-## Notes pour Antigravity
-- **Nouveaux fichiers** : `shared/twitch/game_info.py`. **Modifs** : `shared/twitch_chat.py`
-  (enregistrement link_commands + lecture toggles game_qa/cohost), `shared/twitch/dispatch.py`
-  (détection + injection faits + option co-host passive), `dashboard/backend/twitch_config.py` (+ front)
-  pour `link_commands`, `cohost_channels`, `chat.game_qa`.
-- **Réutiliser** le patron `TwitchClient` (client_credentials) de `shared/twitch_announcer.py` pour Helix
-  ET IGDB (même token). Ne PAS créer de nouveaux secrets : les creds Twitch app existent déjà par bot.
-- Faire les deux features **incrémentalement** (Feature 1 d'abord, plus simple et 0 réseau ; puis
-  Feature 2). Commits séparés.
-- Rester **conservateur** sur `detect_game_question` (sur-déclencher = spam) et sur le matching IGDB
-  (fait faux = pire que pas de réponse).
-- Après exécution : `pytest` + vérifier qu'un bot démarre, qu'un `!lien` marche, et (test live user)
-  poser une question jeu sur une chaîne co-host.
+---
+
+## VÉRIFICATION (après exécution)
+
+1. **`py_compile`** :
+   `.venv/Scripts/python -m py_compile SugarBot/bot_sugar.py SugarBot/sugar_data.py SugarBot/sugar_memory.py SugarBot/games_persona.py crypto_utils.py shared/server_events.py shared/twitch/sanitize.py Sheogorath/sheo_imposter.py Sheogorath/bot_sheogorath.py shared/twitch_chat.py dashboard/backend/bot_manager.py tests/eval/persona_loader.py tests/eval/run_eval.py`
+2. **Aucun fichier/dossier `onizuka` résiduel** :
+   `find . -iname "*onizuka*" -not -path "*/logs/*" -not -path "*/__pycache__/*" -not -path "*/.git/*"`
+   → attendu : **0** (hors mémoires d'autres bots laissées hors périmètre §HORS-PÉRIMÈTRE).
+3. **Grep identifiant technique résiduel** (hors data d'autres bots, logs, eval reports, settings.local) :
+   `grep -rinE "onizuka|eikichi" SugarBot shared Sheogorath dashboard docker-compose.yml crypto_utils.py *.bat *.md mempalace.yaml tests/eval/*.py tests/eval/scenarios.json`
+   → attendu : **0**.
+4. **Cohérence config** : `data/twitch_config.json` et `data/bot_features.json` contiennent la clé
+   `"sugar"` (plus `"onizuka"`).
+5. **Déchiffrement OK** (le point le plus risqué) :
+   `.venv/Scripts/python crypto_utils.py decrypt` doit régénérer `SugarBot/.env` sans erreur, PUIS
+   `.venv/Scripts/python crypto_utils.py encrypt` pour re-verrouiller. Vérifier que le token déchiffré
+   est bien celui d'Onizuka/Sugar (pas d'un autre bot).
+6. **Import mémoire** :
+   `python -c "import sys; sys.path.insert(0,'SugarBot'); import sugar_data, sugar_memory; print('imports OK')"`
+7. **Dashboard** : au lancement, l'entrée « Sugar Bot » apparaît (id `sugar`), le sélecteur et les
+   graphes n'ont plus « Onizuka ».
+8. **Test live** (skill `verify` ou manuel) : `bot_sugar.py` démarre, `on_ready` affiche « Sugar Bot
+   est en ligne », une mention simple → réponse neutre, `!jackpot`/`!exploit`/`!fric` ne plantent pas,
+   pas de boucle inter-bots.
+
+## COMMIT
+Un seul commit :
+`refactor(sugar): renommage technique complet Onizuka → Sugar Bot`
+(ne pas pousser tant que le test live + déchiffrement ne sont pas validés — usage du projet).
+
+## ÉTAPE MANUELLE (user, hors-code)
+Renommer l'**application Discord** en « Sugar Bot » dans le Developer Portal pour que le nom affiché
+dans le serveur change (le code ne pilote que le label interne et la bio).

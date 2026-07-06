@@ -92,11 +92,11 @@ Rockerboy rebelle, Johnny combat les corporations et le système établi. Il ado
 
 ---
 
-### 🏍️ Onizuka
-Bot Onizuka neutre, personnalité vidée, en attente d'une nouvelle personnalité.
+### 🍬 Sugar Bot
+Bot Sugar Bot neutre, personnalité vidée, en attente d'une nouvelle personnalité.
 - **Commandes (préfixe `!`)** :
-  - `!exploit` : Raconte un exploit d'Onizuka.
-  - `!chanson` : Sort une phrase d'Onizuka.
+  - `!exploit` : Raconte un exploit de Sugar Bot.
+  - `!chanson` : Sort une phrase de Sugar Bot.
   - `!fric` : Parle de sa passion.
   - `!jackpot` : Parle de jackpots.
   - `!moto` : Parle de moto.

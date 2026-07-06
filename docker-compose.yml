@@ -76,17 +76,17 @@ services:
     working_dir: /app/bot
     command: python bot_johnny.py
 
-  onizuka:
+  sugar:
     <<: *bot-common
-    container_name: bot-onizuka
+    container_name: bot-sugar
     volumes:
       - ./shared:/app/shared:ro
       - ./data:/app/data
-      - ./OnizukaBot:/app/bot:ro
+      - ./SugarBot:/app/bot:ro
       - ./logs:/app/bot/logs
-      - ./OnizukaBot/.master_key:/app/bot/.master_key:ro
+      - ./SugarBot/.master_key:/app/bot/.master_key:ro
     working_dir: /app/bot
-    command: python bot_onizuka.py
+    command: python bot_sugar.py
 
   malena:
     <<: *bot-common
