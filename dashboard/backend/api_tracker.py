@@ -6,52 +6,24 @@ class APITracker:
         self.db_path = db_path
         
     def _get_connection(self):
-        """Initialise la DB si nécessaire et active le mode WAL."""
-        if not os.path.exists(os.path.dirname(self.db_path)):
-            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        """Ouvre une connexion read-only sur la base de données api_usage.db."""
+        if not os.path.exists(self.db_path):
+            return None
             
-        conn = sqlite3.connect(self.db_path, timeout=20)
-        conn.row_factory = sqlite3.Row
-        
-        # Initialisation schéma si vide
+        from pathlib import Path
+        uri = Path(self.db_path).absolute().as_uri() + "?mode=ro"
         try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS api_calls (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    api_name TEXT,
-                    endpoint TEXT,
-                    timestamp TEXT DEFAULT (datetime('now')),
-                    success INTEGER,
-                    response_time REAL,
-                    error_message TEXT
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS api_key_status (
-                    api_name TEXT NOT NULL,
-                    key_index INTEGER NOT NULL,
-                    valid INTEGER DEFAULT 1,
-                    cooldown_until TEXT,
-                    total_calls INTEGER DEFAULT 0,
-                    total_errors INTEGER DEFAULT 0,
-                    last_error TEXT,
-                    last_used TEXT,
-                    PRIMARY KEY (api_name, key_index)
-                )
-            """)
-            # Activation WAL
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn = sqlite3.connect(uri, uri=True, timeout=20)
+            conn.row_factory = sqlite3.Row
+            return conn
         except sqlite3.Error as e:
-            print(f"⚠️ [API Tracker] Init Error: {e}")
-            
-        return conn
+            print(f"⚠️ [API Tracker] Connect Error: {e}")
+            return None
 
     def get_usage(self, hours=24):
         conn = self._get_connection()
         if not conn:
-            return {"error": "Base de données non initialisée"}
+            return {"period_hours": hours, "total_calls": 0, "by_api": {}}
             
         try:
             cursor = conn.cursor()

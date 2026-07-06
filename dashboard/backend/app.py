@@ -279,7 +279,9 @@ async def resolve_error(error_id: int):
     bot_name = None
     try:
         import sqlite3
-        conn = sqlite3.connect(error_analyzer.db_path)
+        from pathlib import Path
+        uri = Path(error_analyzer.db_path).absolute().as_uri() + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=20)
         cursor = conn.cursor()
         cursor.execute("SELECT bot_name FROM error_events WHERE id = ?", (error_id,))
         row = cursor.fetchone()

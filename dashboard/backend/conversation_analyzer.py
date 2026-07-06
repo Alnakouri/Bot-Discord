@@ -9,7 +9,9 @@ class ConversationAnalyzer:
     def _get_connection(self):
         if not os.path.exists(self.db_path):
             return None
-        conn = sqlite3.connect(self.db_path)
+        from pathlib import Path
+        uri = Path(self.db_path).absolute().as_uri() + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=20)
         conn.row_factory = sqlite3.Row
         return conn
 

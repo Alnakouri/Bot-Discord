@@ -30,10 +30,15 @@ class ErrorAnalyzer:
     def __init__(self, db_path):
         self.db_path = db_path
         
-    def _get_connection(self):
+    def _get_connection(self, write=False):
         if not os.path.exists(self.db_path):
             return None
-        conn = sqlite3.connect(self.db_path)
+        if write:
+            conn = sqlite3.connect(self.db_path, timeout=20)
+        else:
+            from pathlib import Path
+            uri = Path(self.db_path).absolute().as_uri() + "?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=20)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -114,7 +119,7 @@ class ErrorAnalyzer:
             return 0
 
     def resolve(self, error_id):
-        conn = self._get_connection()
+        conn = self._get_connection(write=True)
         if not conn: return {"success": False, "error": "DB non trouvée"}
         try:
             cursor = conn.cursor()
