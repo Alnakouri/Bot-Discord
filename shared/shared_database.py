@@ -138,6 +138,18 @@ def init_database():
         )
     """)
     
+    # Table des logs d'audit (pour tracer les actions sur le dashboard)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            user TEXT NOT NULL,
+            action TEXT NOT NULL,
+            bot_name TEXT,
+            details TEXT
+        )
+    """)
+    
     # Table des interactions entre bots (NOUVEAU - pour stats des duels)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS bot_interactions (

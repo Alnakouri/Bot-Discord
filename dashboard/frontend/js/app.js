@@ -164,6 +164,7 @@ function initNavigation() {
             if(targetId === 'errors') loadErrors();
             if(targetId === 'api-keys') loadApiKeysStatus();
             if(targetId === 'bot-config') loadBotConfig();
+            if(targetId === 'audit-logs') loadAuditLogs();
         });
     });
 }
@@ -838,6 +839,41 @@ async function loadApiKeysStatus() {
         if (grid) grid.innerHTML = '<span class="log-error">Erreur.</span>';
     }
 }
+
+window.loadAuditLogs = async function() {
+    const body = document.getElementById('audit-logs-body');
+    if (!body) return;
+    
+    body.innerHTML = '<tr><td colspan="5" class="loader">Chargement...</td></tr>';
+    
+    try {
+        const res = await fetch(`${API_BASE}/audit-logs?limit=100`);
+        if (!res.ok) throw new Error("Erreur de chargement");
+        const logs = await res.json();
+        
+        body.innerHTML = '';
+        if (logs.length === 0) {
+            body.innerHTML = '<tr><td colspan="5" class="placeholder-text">Aucun log d\'audit enregistré pour le moment.</td></tr>';
+            return;
+        }
+        
+        logs.forEach(log => {
+            const timeStr = log.timestamp.split('T').join(' ').substring(0, 19);
+            const row = `
+                <tr>
+                    <td style="white-space: nowrap;">${escapeHtml(timeStr)}</td>
+                    <td><span class="badge warning">${escapeHtml(log.user)}</span></td>
+                    <td style="font-weight: 600; color: #a78bfa;">${escapeHtml(log.action)}</td>
+                    <td>${log.bot_name ? `<span class="badge info">${escapeHtml(log.bot_name)}</span>` : '—'}</td>
+                    <td>${escapeHtml(log.details || '—')}</td>
+                </tr>
+            `;
+            body.insertAdjacentHTML('beforeend', row);
+        });
+    } catch(e) {
+        body.innerHTML = '<tr><td colspan="5" class="log-error">Erreur lors de la récupération des logs d\'audit.</td></tr>';
+    }
+};
 
 // --- REPORTS ---
 let lastGeneratedFilename = null;

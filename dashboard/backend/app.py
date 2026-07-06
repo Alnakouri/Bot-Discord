@@ -25,6 +25,7 @@ from error_analyzer import ErrorAnalyzer
 from api_tracker import APITracker
 from conversation_analyzer import ConversationAnalyzer
 from report_generator import ReportGenerator
+from audit_analyzer import AuditAnalyzer
 from twitch_config import TwitchConfigManager
 from features_config import FeaturesConfigManager, DEFAULTS
 from pydantic import BaseModel
@@ -132,6 +133,7 @@ error_analyzer = ErrorAnalyzer(str(BOTS_DB_PATH))
 api_tracker = APITracker(str(API_DB_PATH))
 conversation_analyzer = ConversationAnalyzer(str(BOTS_DB_PATH))
 report_generator = ReportGenerator(str(BOTS_DB_PATH))
+audit_analyzer = AuditAnalyzer(str(BOTS_DB_PATH))
 twitch_config_manager = TwitchConfigManager(DATA_DIR)
 features_config_manager = FeaturesConfigManager(DATA_DIR)
 
@@ -215,15 +217,24 @@ async def list_bots():
 
 @app.post("/api/bots/{bot_name}/start")
 async def start_bot(bot_name: str):
-    return bot_manager.start_bot(bot_name)
+    res = bot_manager.start_bot(bot_name)
+    if res.get("success"):
+        audit_analyzer.log("start_bot", bot_name, "Démarrage du bot via le dashboard")
+    return res
 
 @app.post("/api/bots/{bot_name}/stop")
 async def stop_bot(bot_name: str):
-    return bot_manager.stop_bot(bot_name)
+    res = bot_manager.stop_bot(bot_name)
+    if res.get("success"):
+        audit_analyzer.log("stop_bot", bot_name, "Arrêt du bot via le dashboard")
+    return res
 
 @app.post("/api/bots/{bot_name}/restart")
 async def restart_bot(bot_name: str):
-    return bot_manager.restart_bot(bot_name)
+    res = bot_manager.restart_bot(bot_name)
+    if res.get("success"):
+        audit_analyzer.log("restart_bot", bot_name, "Redémarrage du bot via le dashboard")
+    return res
 
 # --- LOGS ---
 @app.get("/api/logs")
@@ -263,6 +274,20 @@ async def resolve_error(error_id: int):
     res = error_analyzer.resolve(error_id)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Échec de la résolution"))
+    # Essayer de trouver le nom du bot pour le log d'audit
+    bot_name = None
+    try:
+        import sqlite3
+        conn = sqlite3.connect(error_analyzer.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT bot_name FROM error_events WHERE id = ?", (error_id,))
+        row = cursor.fetchone()
+        if row:
+            bot_name = row[0]
+        conn.close()
+    except Exception:
+        pass
+    audit_analyzer.log("resolve_error", bot_name, f"Erreur #{error_id} résolue")
     return res
 
 @app.get("/api/errors")
@@ -294,7 +319,9 @@ async def get_conversation_stats(days: int = 7, bot: str = None):
 # --- REPORTS ---
 @app.post("/api/reports/generate")
 async def generate_report(format: str = "md", scope: str = "all", hours: int = 24):
-    return report_generator.generate(format, scope, hours)
+    res = report_generator.generate(format, scope, hours)
+    audit_analyzer.log("generate_report", details=f"Génération rapport scope={scope}, heures={hours}")
+    return res
 
 @app.get("/api/reports/download/{filename}")
 async def download_report(filename: str):
@@ -304,6 +331,10 @@ async def download_report(filename: str):
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Rapport non trouvé")
     return FileResponse(filepath, media_type="text/markdown", filename=safe_filename)
+
+@app.get("/api/audit-logs")
+async def get_audit_logs(limit: int = 100):
+    return audit_analyzer.get_logs(limit)
 
 # --- TWITCH ENDPOINTS ---
 class TwitchGlobalConfigUpdate(BaseModel):
@@ -341,6 +372,7 @@ async def get_twitch_config():
 async def update_twitch_all(cfg: TwitchEnableAll):
     try:
         twitch_config_manager.set_enabled_all(cfg.enabled, cfg.poll_interval_seconds)
+        audit_analyzer.log("update_twitch_all", details=f"Changement état surveillance globale -> {cfg.enabled}")
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -350,6 +382,7 @@ async def add_twitch_subscription_all(sub: TwitchSubscriptionAdd):
     try:
         result = twitch_config_manager.add_subscription_all(
             sub.twitch_login, sub.discord_channel_id, sub.custom_message)
+        audit_analyzer.log("add_twitch_subscription_all", details=f"Abonnement global Twitch à {sub.twitch_login} (salon #{sub.discord_channel_id})")
         return {"status": "ok", **result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -358,6 +391,7 @@ async def add_twitch_subscription_all(sub: TwitchSubscriptionAdd):
 async def update_twitch_bot_config(bot_id: str, cfg: TwitchGlobalConfigUpdate):
     try:
         twitch_config_manager.set_bot(bot_id, cfg.enabled, cfg.poll_interval_seconds)
+        audit_analyzer.log("update_twitch_bot", bot_id, f"Mise à jour config Twitch -> enabled={cfg.enabled}")
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -368,6 +402,7 @@ async def add_twitch_subscription(bot_id: str, sub: TwitchSubscriptionAdd):
         new_sub = twitch_config_manager.add_subscription(
             bot_id, sub.twitch_login, sub.discord_channel_id, sub.custom_message
         )
+        audit_analyzer.log("add_twitch_subscription", bot_id, f"Abonnement Twitch à {sub.twitch_login}")
         return {"status": "ok", "subscription": new_sub}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -376,6 +411,7 @@ async def add_twitch_subscription(bot_id: str, sub: TwitchSubscriptionAdd):
 async def delete_twitch_subscription(bot_id: str, index: int):
     try:
         twitch_config_manager.remove_subscription(bot_id, index)
+        audit_analyzer.log("delete_twitch_subscription", bot_id, f"Suppression abonnement Twitch index #{index}")
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -394,6 +430,7 @@ async def update_twitch_chat_config(bot_id: str, cfg: TwitchChatConfigUpdate):
         twitch_config_manager.update_chat_config(
             bot_id, cfg.events, cfg.interjections, cfg.greetings, cfg.viewer_memory, cfg.game_qa
         )
+        audit_analyzer.log("update_twitch_chat", bot_id, "Mise à jour config chat Twitch")
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -410,6 +447,7 @@ async def get_twitch_links(bot_id: str):
 async def update_twitch_links(bot_id: str, payload: dict = Body(...)):
     try:
         cleaned = twitch_config_manager.update_link_commands(bot_id, payload.get("link_commands", []))
+        audit_analyzer.log("update_twitch_links", bot_id, "Mise à jour des commandes de liens Twitch")
         return {"status": "ok", "link_commands": cleaned}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -426,6 +464,7 @@ async def get_twitch_cohost(bot_id: str):
 async def update_twitch_cohost(bot_id: str, payload: dict = Body(...)):
     try:
         cleaned = twitch_config_manager.update_cohost_channels(bot_id, payload.get("cohost_channels", []))
+        audit_analyzer.log("update_twitch_cohost", bot_id, "Mise à jour des chaînes co-host Twitch")
         return {"status": "ok", "cohost_channels": cleaned}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -449,6 +488,7 @@ def set_feature_all(body: dict):
         
         for bot_id in BOT_REGISTRY:
             features_config_manager.set_feature(bot_id, feature, value)
+        audit_analyzer.log("update_features_all", details=f"Changement global de feature {feature} -> {value}")
         return {"status": "ok"}
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -457,6 +497,7 @@ def set_feature_all(body: dict):
 def set_feature(bot_id: str, body: dict):
     try:
         features_config_manager.set_feature(bot_id, body["feature"], body["value"])
+        audit_analyzer.log("update_features_bot", bot_id, f"Mise à jour feature {body['feature']} -> {body['value']}")
         return {"status": "ok"}
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -473,6 +514,7 @@ async def get_twitch_rewards(bot_id: str):
 async def update_twitch_rewards(bot_id: str, reward_map: dict = Body(...)):
     try:
         twitch_config_manager.update_reward_map(bot_id, reward_map)
+        audit_analyzer.log("update_twitch_rewards", bot_id, "Mise à jour des récompenses Twitch")
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -491,6 +533,7 @@ async def update_twitch_listen_config(bot_id: str, cfg: TwitchListenConfigUpdate
         twitch_config_manager.update_listen_config(
             bot_id, cfg.enabled, cfg.mode, cfg.device, cfg.chunk_ms, cfg.min_interval
         )
+        audit_analyzer.log("update_twitch_listen", bot_id, f"Mise à jour config écoute micro -> enabled={cfg.enabled}")
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -507,6 +550,7 @@ async def get_twitch_channels(bot_id: str):
 async def update_twitch_channels(bot_id: str, payload: dict = Body(...)):
     try:
         cleaned = twitch_config_manager.update_chat_channels(bot_id, payload.get("chat_channels", []))
+        audit_analyzer.log("update_twitch_channels", bot_id, "Mise à jour des salons Discord de chat Twitch")
         return {"status": "ok", "chat_channels": cleaned}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
