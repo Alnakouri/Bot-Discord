@@ -780,11 +780,38 @@ window.resolveError = async function(id) {
 // --- API KEYS ---
 async function loadApiKeysStatus() {
     const body = document.getElementById('keys-status-body');
+    const grid = document.getElementById('keys-health-grid');
     if(!body) return;
     
     try {
         const res = await fetch(`${API_BASE}/api-usage/keys`);
         const keys = await res.json();
+        
+        if (grid) {
+            grid.innerHTML = '';
+            if (!keys || keys.length === 0) {
+                grid.innerHTML = '<span class="placeholder-text" style="font-size:0.9rem;">Aucune clé configurée.</span>';
+            } else {
+                keys.forEach(k => {
+                    const statusColor = k.status === 'active' ? 'var(--success)' : (k.status === 'cooldown' ? 'var(--warning)' : 'var(--danger)');
+                    const dot = document.createElement('div');
+                    dot.style.width = '14px';
+                    dot.style.height = '14px';
+                    dot.style.borderRadius = '50%';
+                    dot.style.backgroundColor = statusColor;
+                    dot.style.cursor = 'pointer';
+                    if (k.status === 'active') {
+                        dot.style.boxShadow = '0 0 8px var(--success)';
+                    } else if (k.status === 'cooldown') {
+                        dot.style.boxShadow = '0 0 8px var(--warning)';
+                    } else {
+                        dot.style.boxShadow = '0 0 8px var(--danger)';
+                    }
+                    dot.title = `Clé: ${k.api_key_display} | Statut: ${k.status.toUpperCase()} | Appels: ${k.total_calls} | Erreurs: ${k.error_count}`;
+                    grid.appendChild(dot);
+                });
+            }
+        }
         
         body.innerHTML = '';
         if(!keys || keys.length === 0) {
@@ -808,6 +835,7 @@ async function loadApiKeysStatus() {
         });
     } catch(e) {
         body.innerHTML = '<tr><td colspan="6" class="log-error">Erreur de chargement.</td></tr>';
+        if (grid) grid.innerHTML = '<span class="log-error">Erreur.</span>';
     }
 }
 
