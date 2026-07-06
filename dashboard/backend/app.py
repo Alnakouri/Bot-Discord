@@ -125,6 +125,7 @@ def _session_valid(token: str | None) -> bool:
 
 BOTS_DB_PATH = DATA_DIR / "bots_database.db"
 API_DB_PATH = DATA_DIR / "api_usage.db"
+DASHBOARD_DB_PATH = DATA_DIR / "dashboard_audit.db"
 
 # Initialisation des managers
 bot_manager = BotManager(str(ROOT_DIR))
@@ -133,7 +134,7 @@ error_analyzer = ErrorAnalyzer(str(BOTS_DB_PATH))
 api_tracker = APITracker(str(API_DB_PATH))
 conversation_analyzer = ConversationAnalyzer(str(BOTS_DB_PATH))
 report_generator = ReportGenerator(str(BOTS_DB_PATH))
-audit_analyzer = AuditAnalyzer(str(BOTS_DB_PATH))
+audit_analyzer = AuditAnalyzer(str(DASHBOARD_DB_PATH))
 twitch_config_manager = TwitchConfigManager(DATA_DIR)
 features_config_manager = FeaturesConfigManager(DATA_DIR)
 
