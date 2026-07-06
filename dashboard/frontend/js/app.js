@@ -489,6 +489,7 @@ function renderBotsGrid(bots) {
             : `<button class="btn btn-success" onclick="botAction('${bot.id}', 'start')"><i class="fa-solid fa-play"></i> Démarrer</button>`;
         
         const uptimeHtml = isRunning ? `⏱️ Uptime: ${formatUptime(bot.uptime)}` : 'Hors ligne';
+        const statsHtml = isRunning ? `⚡ CPU: ${escapeHtml(bot.cpu)} | 💾 RAM: ${escapeHtml(bot.ram)}` : '';
 
         if (card) {
             const badge = card.querySelector('.badge');
@@ -506,6 +507,25 @@ function renderBotsGrid(bots) {
                 uptime.innerHTML = uptimeHtml;
             }
             
+            const stats = card.querySelector('.bot-stats');
+            if (stats) {
+                if (stats.innerHTML !== statsHtml) {
+                    stats.innerHTML = statsHtml;
+                }
+            } else if (isRunning) {
+                const statsDiv = document.createElement('div');
+                statsDiv.className = 'bot-stats';
+                statsDiv.style.fontSize = '0.85rem';
+                statsDiv.style.opacity = '0.8';
+                statsDiv.style.marginTop = '4px';
+                statsDiv.innerHTML = statsHtml;
+                uptime.after(statsDiv);
+            }
+            
+            if (!isRunning && stats) {
+                stats.remove();
+            }
+            
             const actions = card.querySelector('.bot-actions');
             if (actions && actions.innerHTML !== actionsHtml) {
                 actions.innerHTML = actionsHtml;
@@ -520,6 +540,7 @@ function renderBotsGrid(bots) {
                     <div class="bot-uptime">
                         ${uptimeHtml}
                     </div>
+                    ${isRunning ? `<div class="bot-stats" style="font-size: 0.85rem; opacity: 0.8; margin-top: 4px;">${statsHtml}</div>` : ''}
                     <div class="bot-actions">
                         ${actionsHtml}
                     </div>
