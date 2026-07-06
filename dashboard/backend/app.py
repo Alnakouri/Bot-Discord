@@ -133,7 +133,13 @@ log_collector = LogCollector(str(ROOT_DIR))
 error_analyzer = ErrorAnalyzer(str(BOTS_DB_PATH))
 api_tracker = APITracker(str(API_DB_PATH))
 conversation_analyzer = ConversationAnalyzer(str(BOTS_DB_PATH))
-report_generator = ReportGenerator(str(BOTS_DB_PATH))
+report_generator = ReportGenerator(
+    str(BOTS_DB_PATH),
+    bot_manager=bot_manager,
+    error_analyzer=error_analyzer,
+    api_tracker=api_tracker,
+    conversation_analyzer=conversation_analyzer
+)
 audit_analyzer = AuditAnalyzer(str(DASHBOARD_DB_PATH))
 twitch_config_manager = TwitchConfigManager(DATA_DIR)
 features_config_manager = FeaturesConfigManager(DATA_DIR)
