@@ -517,3 +517,101 @@ header {
     box-shadow: 0 0 10px var(--accent-glow);
 }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* --- SYSTEM TOASTS --- */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.toast {
+    background: rgba(20, 25, 40, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--border-glass);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-premium);
+    pointer-events: auto;
+    font-size: 0.9rem;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast-success {
+    border-left: 4px solid var(--success);
+}
+
+.toast-error {
+    border-left: 4px solid var(--danger);
+}
+
+.toast-info {
+    border-left: 4px solid var(--info);
+}
+
+/* --- CONFIRM DIALOG MODAL --- */
+.confirm-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+}
+
+.confirm-overlay.show {
+    opacity: 1;
+}
+
+.confirm-box {
+    background: rgba(20, 25, 40, 0.85);
+    border: 1px solid var(--border-glass);
+    box-shadow: var(--shadow-premium);
+    border-radius: 12px;
+    padding: 2rem;
+    width: 90%;
+    max-width: 450px;
+    text-align: center;
+    transform: scale(0.9);
+    transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.confirm-overlay.show .confirm-box {
+    transform: scale(1);
+}
+
+.confirm-message {
+    font-size: 1.05rem;
+    margin-bottom: 2rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.confirm-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+}

@@ -5,6 +5,69 @@ function escapeHtml(s) {
         ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+window.toast = function(message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const t = document.createElement('div');
+    t.className = `toast toast-${type} glass`;
+    
+    let icon = 'fa-circle-info';
+    if (type === 'success') icon = 'fa-circle-check';
+    if (type === 'error') icon = 'fa-circle-exclamation';
+    
+    t.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${escapeHtml(message)}</span>`;
+    container.appendChild(t);
+    
+    setTimeout(() => t.classList.add('show'), 10);
+    
+    setTimeout(() => {
+        t.classList.remove('show');
+        setTimeout(() => t.remove(), 300);
+    }, 4000);
+};
+
+window.confirmDialog = function(message) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-overlay';
+        
+        overlay.innerHTML = `
+            <div class="confirm-box">
+                <div class="confirm-message">${escapeHtml(message)}</div>
+                <div class="confirm-actions">
+                    <button class="btn btn-danger" id="confirm-yes">Confirmer</button>
+                    <button class="btn" id="confirm-no">Annuler</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        
+        setTimeout(() => overlay.classList.add('show'), 10);
+        
+        const cleanup = (value) => {
+            overlay.classList.remove('show');
+            setTimeout(() => overlay.remove(), 200);
+            document.removeEventListener('keydown', handleKeydown);
+            resolve(value);
+        };
+        
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') cleanup(false);
+            if (e.key === 'Enter') cleanup(true);
+        };
+        
+        document.addEventListener('keydown', handleKeydown);
+        overlay.querySelector('#confirm-yes').onclick = () => cleanup(true);
+        overlay.querySelector('#confirm-no').onclick = () => cleanup(false);
+    });
+};
+
 // --- AUTHENTIFICATION ---
 // Toute réponse 401 (session absente/expirée) ramène à l'écran de login.
 const _origFetch = window.fetch.bind(window);
@@ -230,14 +293,14 @@ window.setDiscordFeatureAll = async function(featureName, value) {
             body: JSON.stringify({ feature: featureName, value: value })
         });
         if (res.ok) {
-            alert("Action globale appliquée avec succès !");
+            toast("Action globale appliquée avec succès !", 'success');
             await loadBotConfig();
         } else {
             const d = await res.json();
-            alert(`Erreur: ${d.detail || "Sauvegarde impossible"}`);
+            toast(`Erreur: ${d.detail || "Sauvegarde impossible"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 };
 
@@ -440,10 +503,10 @@ window.botAction = async function(botId, action) {
         if(data.success) {
             refreshAllData(); // reload status
         } else {
-            alert(`Erreur: ${data.error}`);
+            toast(`Erreur: ${data.error}`, 'error');
         }
     } catch(e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -479,7 +542,7 @@ window.actionAllBots = async function(action) {
     btn.disabled = false;
     
     refreshAllData();
-    alert(`${successCount}/6 bots ont traité l'ordre de '${action}'.`);
+    toast(`${successCount}/6 bots ont traité l'ordre de '${action}'.`, 'info');
 }
 
 // --- LOGS (WebSocket + REST) ---
@@ -634,7 +697,7 @@ window.resolveError = async function(id) {
             if (typeof window.toast === 'function') {
                 window.toast("Erreur marquée comme résolue", "success");
             } else {
-                alert("Erreur marquée comme résolue");
+                toast("Erreur marquée comme résolue", 'success');
             }
             loadErrors();
             const pane = document.getElementById('error-detail-pane');
@@ -646,7 +709,7 @@ window.resolveError = async function(id) {
         if (typeof window.toast === 'function') {
             window.toast("Erreur : " + e.message, "error");
         } else {
-            alert("Erreur : " + e.message);
+            toast("Erreur : " + e.message, 'error');
         }
     }
 }
@@ -697,9 +760,9 @@ async function generateReport() {
     try {
         const res = await fetch(`${API_BASE}/reports/generate?format=md&scope=${scope}&hours=${hours}`, {method: 'POST'});
         const data = await res.json();
-        alert(`Rapport généré avec succès :\n${data.filename}\nEmplacement: ${data.path}`);
+        toast(`Rapport généré avec succès :\n${data.filename}\nEmplacement: ${data.path}`, 'success');
     } catch(e) {
-        alert("Erreur lors de la génération.");
+        toast("Erreur lors de la génération.", 'error');
     } finally {
         btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Générer le Rapport .MD';
         btn.disabled = false;
@@ -785,7 +848,7 @@ window.saveTwitchBotSettings = async function() {
     const interval = parseInt(document.getElementById('twitch-bot-interval').value);
     
     if (isNaN(interval) || interval < 60) {
-        alert("L'intervalle de polling doit être d'au moins 60 secondes.");
+        toast("L'intervalle de polling doit être d'au moins 60 secondes.", 'error');
         return;
     }
     
@@ -797,14 +860,14 @@ window.saveTwitchBotSettings = async function() {
         });
         
         if (res.ok) {
-            alert("Paramètres enregistrés avec succès !");
+            toast("Paramètres enregistrés avec succès !", 'success');
             await loadTwitchConfig();
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Impossible de sauvegarder la configuration"}`);
+            toast(`Erreur: ${data.detail || "Impossible de sauvegarder la configuration"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -815,7 +878,7 @@ window.addTwitchSubscription = async function() {
     const customMessage = document.getElementById('twitch-add-message').value.trim() || null;
     
     if (!twitchLogin || !channelId) {
-        alert("La chaîne Twitch et l'ID du salon Discord sont requis.");
+        toast("La chaîne Twitch et l'ID du salon Discord sont requis.", 'error');
         return;
     }
     
@@ -834,40 +897,40 @@ window.addTwitchSubscription = async function() {
             document.getElementById('twitch-add-login').value = '';
             document.getElementById('twitch-add-channel').value = '';
             document.getElementById('twitch-add-message').value = '';
-            alert("Abonnement Twitch ajouté avec succès !");
+            toast("Abonnement Twitch ajouté avec succès !", 'success');
             await loadTwitchConfig();
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Impossible d'ajouter l'abonnement"}`);
+            toast(`Erreur: ${data.detail || "Impossible d'ajouter l'abonnement"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
 window.setTwitchEnabledAll = async function(enabled) {
-    if (!confirm(enabled ? "Activer la surveillance Twitch pour TOUS les bots ?"
-                         : "Désactiver la surveillance Twitch pour TOUS les bots ?")) return;
+    if (!await confirmDialog(enabled ? "Activer la surveillance Twitch pour TOUS les bots ?"
+                                     : "Désactiver la surveillance Twitch pour TOUS les bots ?")) return;
     try {
         const res = await fetch(`${API_BASE}/twitch/all`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled })
         });
         if (res.ok) {
-            alert(enabled ? "Surveillance activée pour tous les bots."
-                          : "Surveillance désactivée pour tous les bots.");
+            toast(enabled ? "Surveillance activée pour tous les bots."
+                          : "Surveillance désactivée pour tous les bots.", 'success');
             await loadTwitchConfig();
         } else {
-            const d = await res.json(); alert(`Erreur: ${d.detail || ''}`);
+            const d = await res.json(); toast(`Erreur: ${d.detail || ''}`, 'error');
         }
-    } catch (e) { alert(`Erreur réseau: ${e}`); }
+    } catch (e) { toast(`Erreur réseau: ${e}`, 'error'); }
 }
 
 window.addTwitchSubscriptionAll = async function() {
     const login = document.getElementById('twitch-all-login').value.trim();
     const channel = document.getElementById('twitch-all-channel').value.trim();
     const msg = document.getElementById('twitch-all-message').value.trim() || null;
-    if (!login || !channel) { alert("La chaîne Twitch et le salon Discord sont requis."); return; }
+    if (!login || !channel) { toast("La chaîne Twitch et le salon Discord sont requis.", 'error'); return; }
     try {
         const res = await fetch(`${API_BASE}/twitch/all/subscriptions`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -878,17 +941,17 @@ window.addTwitchSubscriptionAll = async function() {
             document.getElementById('twitch-all-login').value = '';
             document.getElementById('twitch-all-channel').value = '';
             document.getElementById('twitch-all-message').value = '';
-            alert(`Ajouté à ${d.added.length} bot(s).` + (d.skipped.length ? ` Déjà présent sur ${d.skipped.length}.` : ''));
+            toast(`Ajouté à ${d.added.length} bot(s, 'success').` + (d.skipped.length ? ` Déjà présent sur ${d.skipped.length}.` : ''));
             await loadTwitchConfig();
         } else {
-            alert(`Erreur: ${d.detail || "Impossible d'ajouter l'abonnement"}`);
+            toast(`Erreur: ${d.detail || "Impossible d'ajouter l'abonnement"}`, 'error');
         }
-    } catch (e) { alert(`Erreur réseau: ${e}`); }
+    } catch (e) { toast(`Erreur réseau: ${e}`, 'error'); }
 }
 
 window.deleteTwitchSubscription = async function(index) {
     const botId = document.getElementById('config-bot-select').value;
-    if (!confirm("Voulez-vous vraiment supprimer cet abonnement ?")) return;
+    if (!await confirmDialog("Voulez-vous vraiment supprimer cet abonnement ?")) return;
     
     try {
         const res = await fetch(`${API_BASE}/twitch/${botId}/subscriptions/${index}`, {
@@ -899,10 +962,10 @@ window.deleteTwitchSubscription = async function(index) {
             await loadTwitchConfig();
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Impossible de supprimer l'abonnement"}`);
+            toast(`Erreur: ${data.detail || "Impossible de supprimer l'abonnement"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -979,14 +1042,14 @@ window.savePresenceSettings = async function() {
             body: JSON.stringify({ events, interjections, greetings, viewer_memory, game_qa })
         });
         if (res.ok) {
-            alert("Configuration de présence enregistrée avec succès !");
+            toast("Configuration de présence enregistrée avec succès !", 'success');
             await loadTwitchPresence();
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+            toast(`Erreur: ${data.detail || "Sauvegarde impossible"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -1003,14 +1066,14 @@ window.saveChatChannels = async function() {
         });
         if (res.ok) {
             const data = await res.json();
-            alert("Chaînes de chat enregistrées avec succès !");
+            toast("Chaînes de chat enregistrées avec succès !", 'success');
             document.getElementById('presence-chat-channels').value = (data.chat_channels || []).join(', ');
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+            toast(`Erreur: ${data.detail || "Sauvegarde impossible"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -1027,14 +1090,14 @@ window.saveCohostChannels = async function() {
         });
         if (res.ok) {
             const data = await res.json();
-            alert("Chaînes co-host enregistrées avec succès !");
+            toast("Chaînes co-host enregistrées avec succès !", 'success');
             document.getElementById('presence-cohost-channels').value = (data.cohost_channels || []).join(', ');
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+            toast(`Erreur: ${data.detail || "Sauvegarde impossible"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -1089,7 +1152,7 @@ window.saveLinkCommands = async function() {
         const aliases = aliasesRaw.split(',').map(a => a.trim()).filter(a => a.length > 0);
         
         if (!cmd || !url) {
-            alert("Erreur: Chaque ligne doit avoir au moins une Commande et une URL.");
+            toast("Erreur: Chaque ligne doit avoir au moins une Commande et une URL.", 'error');
             return;
         }
         
@@ -1104,14 +1167,14 @@ window.saveLinkCommands = async function() {
         });
         if (res.ok) {
             const data = await res.json();
-            alert("Commandes de liens enregistrées avec succès !");
+            toast("Commandes de liens enregistrées avec succès !", 'success');
             renderLinksTable(data.link_commands);
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+            toast(`Erreur: ${data.detail || "Sauvegarde impossible"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -1166,7 +1229,7 @@ window.addRewardMapping = function() {
     const action = document.getElementById('add-reward-action').value.trim();
     
     if (!title || !action) {
-        alert("Le titre de la récompense et l'action/commande sont requis.");
+        toast("Le titre de la récompense et l'action/commande sont requis.", 'error');
         return;
     }
     
@@ -1191,14 +1254,14 @@ window.saveRewardsMapping = async function() {
             body: JSON.stringify(currentRewardMap)
         });
         if (res.ok) {
-            alert("Mappage des récompenses enregistré avec succès !");
+            toast("Mappage des récompenses enregistré avec succès !", 'success');
             await loadTwitchEvents();
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+            toast(`Erreur: ${data.detail || "Sauvegarde impossible"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
 
@@ -1279,13 +1342,13 @@ window.saveListenSettings = async function() {
             body: JSON.stringify({ enabled, mode, device, chunk_ms, min_interval })
         });
         if (res.ok) {
-            alert("Configuration d'écoute micro enregistrée avec succès !");
+            toast("Configuration d'écoute micro enregistrée avec succès !", 'success');
             await loadTwitchListen();
         } else {
             const data = await res.json();
-            alert(`Erreur: ${data.detail || "Sauvegarde impossible"}`);
+            toast(`Erreur: ${data.detail || "Sauvegarde impossible"}`, 'error');
         }
     } catch (e) {
-        alert(`Erreur réseau: ${e}`);
+        toast(`Erreur réseau: ${e}`, 'error');
     }
 }
