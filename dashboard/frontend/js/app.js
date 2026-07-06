@@ -1125,11 +1125,11 @@ window.addLinkRow = function(cmd = '', url = '', label = '', message = '', alias
     const aliasesStr = Array.isArray(aliases) ? aliases.join(', ') : aliases;
     
     tr.innerHTML = `
-        <td style="padding: 8px;"><input type="text" class="link-cmd-input" placeholder="Ex: discord" value="${escapeHtml(cmd)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-url-input" placeholder="Ex: https://..." value="${escapeHtml(url)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-label-input" placeholder="Ex: Discord" value="${escapeHtml(label)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-message-input" placeholder="Ex: Rejoins-nous : {url}" value="${escapeHtml(message)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-aliases-input" placeholder="Ex: serveur, community" value="${escapeHtml(aliasesStr)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-cmd-input form-input" placeholder="Ex: discord" value="${escapeHtml(cmd)}"></td>
+        <td style="padding: 8px;"><input type="text" class="link-url-input form-input" placeholder="Ex: https://..." value="${escapeHtml(url)}"></td>
+        <td style="padding: 8px;"><input type="text" class="link-label-input form-input" placeholder="Ex: Discord" value="${escapeHtml(label)}"></td>
+        <td style="padding: 8px;"><input type="text" class="link-message-input form-input" placeholder="Ex: Rejoins-nous : {url}" value="${escapeHtml(message)}"></td>
+        <td style="padding: 8px;"><input type="text" class="link-aliases-input form-input" placeholder="Ex: serveur, community" value="${escapeHtml(aliasesStr)}"></td>
         <td style="padding: 8px; text-align: center;"><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove(); if(document.getElementById('twitch-links-table-body').children.length === 0) { renderLinksTable([]); }" style="padding: 5px 10px;"><i class="fa-solid fa-trash"></i></button></td>
     `;
     tbody.appendChild(tr);

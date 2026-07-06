@@ -615,3 +615,104 @@ header {
     justify-content: center;
     gap: 1rem;
 }
+
+/* --- TAB & PLATFORM NAVIGATION CONFIG --- */
+.tabs-platforms .btn-tab {
+    font-size: 1.1em;
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    border-bottom: 3px solid transparent;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.tabs-platforms .btn-tab:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+.tabs-platforms .btn-tab.active {
+    color: #fff;
+    border-bottom: 3px solid var(--accent, #6366f1);
+}
+.twitch-subtabs .btn-subtab {
+    font-size: 0.9em;
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: rgba(255, 255, 255, 0.7);
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.twitch-subtabs .btn-subtab:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+.twitch-subtabs .btn-subtab.active {
+    color: #fff;
+    background: var(--accent, #6366f1);
+    border-color: var(--accent, #6366f1);
+}
+.placeholder-text {
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
+}
+
+/* --- UTILITY CLASSES & FORM CONSOLIDATION --- */
+.form-input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    background: #111520;
+    border: 1px solid var(--border-glass);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.95em;
+    transition: var(--transition);
+}
+.form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.form-textarea {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    background: #111520;
+    border: 1px solid var(--border-glass);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.95em;
+    resize: vertical;
+    transition: var(--transition);
+}
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.card-section {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.hint-text {
+    font-size: 0.85em;
+    opacity: 0.65;
+}
+
+.section-note {
+    font-size: 0.9em;
+    opacity: 0.8;
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
