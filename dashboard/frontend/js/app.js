@@ -1,5 +1,10 @@
 const API_BASE = '/api';
 
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 // --- AUTHENTIFICATION ---
 // Toute réponse 401 (session absente/expirée) ramène à l'écran de login.
 const _origFetch = window.fetch.bind(window);
@@ -545,9 +550,9 @@ function appendLogLine(log) {
     const lineStr = `
         <div class="log-line">
             <span class="log-time">[${time}]</span>
-            <span class="log-bot" style="color: ${botColor}; font-weight: 600;">[${log.bot || 'SYSTEM'}]</span>
-            <span class="${levelClass}">[${log.level}]</span> 
-            ${log.message}
+            <span class="log-bot" style="color: ${botColor}; font-weight: 600;">[${escapeHtml(log.bot || 'SYSTEM')}]</span>
+            <span class="${levelClass}">[${escapeHtml(log.level)}]</span> 
+            ${escapeHtml(log.message)}
         </div>
     `;
     term.insertAdjacentHTML('beforeend', lineStr);
@@ -584,8 +589,8 @@ async function loadErrors() {
             li.className = 'error-item';
             li.innerHTML = `
                 <div style="display:flex; justify-content:space-between;">
-                    <strong>[${err.bot_name}] ${err.error_type}</strong>
-                    <span class="badge ${err.severity === 'CRITICAL' ? 'stopped' : ''}">${err.severity}</span>
+                    <strong>[${escapeHtml(err.bot_name)}] ${escapeHtml(err.error_type)}</strong>
+                    <span class="badge ${err.severity === 'CRITICAL' ? 'stopped' : ''}">${escapeHtml(err.severity)}</span>
                 </div>
                 <div style="font-size:0.85rem; color:#888; margin-top:5px;">${timeStr}</div>
             `;
@@ -606,13 +611,13 @@ async function showErrorDetail(id) {
         
         pane.innerHTML = `
             <h2>Analyse Diagnostique</h2>
-            <div class="badge ${data.severity === 'CRITICAL' ? 'stopped' : ''}">${data.severity}</div>
+            <div class="badge ${data.severity === 'CRITICAL' ? 'stopped' : ''}">${escapeHtml(data.severity)}</div>
             
             <div class="diagnostic-box">
                 <h4>🧠 Diagnostic Automatique (Sert de Base GenAI)</h4>
-                <p><strong>Catégorie :</strong> ${data.category}</p>
-                <p>Cause Probable : ${data.auto_diagnosis}</p>
-                <p>Correction Suggérée : ${data.suggested_fix}</p>
+                <p><strong>Catégorie :</strong> ${escapeHtml(data.category)}</p>
+                <p>Cause Probable : ${escapeHtml(data.auto_diagnosis)}</p>
+                <p>Correction Suggérée : ${escapeHtml(data.suggested_fix)}</p>
             </div>
             <button class="btn btn-outline" onclick="resolveError(${id})"><i class="fa-solid fa-check"></i> Marquer comme résolu</button>
         `;
@@ -665,12 +670,12 @@ async function loadApiKeysStatus() {
             const statusClass = k.status === 'active' ? 'success' : (k.status === 'cooldown' ? 'warning' : 'stopped');
             const row = `
                 <tr>
-                    <td><code class="glass-code">${k.api_key_display}</code></td>
-                    <td><span class="badge ${statusClass}">${k.status.toUpperCase()}</span></td>
+                    <td><code class="glass-code">${escapeHtml(k.api_key_display)}</code></td>
+                    <td><span class="badge ${statusClass}">${escapeHtml(k.status.toUpperCase())}</span></td>
                     <td>${k.error_count}</td>
                     <td>${k.total_calls}</td>
-                    <td>${(k.last_used || '—').split('T')[0]}</td>
-                    <td class="log-error">${k.last_error || '—'}</td>
+                    <td>${escapeHtml((k.last_used || '—').split('T')[0])}</td>
+                    <td class="log-error" title="${escapeHtml(k.last_error || '')}">${escapeHtml(k.last_error || '—')}</td>
                 </tr>
             `;
             body.insertAdjacentHTML('beforeend', row);
@@ -759,10 +764,10 @@ function renderTwitchBotView() {
                 <div class="twitch-sub-card glass" style="padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.01);">
                     <div style="flex-grow: 1; margin-right: 15px;">
                         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                            <span style="font-weight: 600; color: #a78bfa; font-size: 1.05em;"><i class="fa-brands fa-twitch"></i> ${sub.twitch_login}</span>
-                            <span style="font-size: 0.85em; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-family: monospace;">Salon: ${sub.discord_channel_id}</span>
+                            <span style="font-weight: 600; color: #a78bfa; font-size: 1.05em;"><i class="fa-brands fa-twitch"></i> ${escapeHtml(sub.twitch_login)}</span>
+                            <span style="font-size: 0.85em; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-family: monospace;">Salon: ${escapeHtml(sub.discord_channel_id)}</span>
                         </div>
-                        ${sub.custom_message ? `<div style="font-size: 0.85em; opacity: 0.85; border-left: 2px solid var(--accent); padding-left: 8px; margin-top: 4px; font-style: italic;">"${sub.custom_message}"</div>` : `<div style="font-size: 0.8em; opacity: 0.5; font-style: italic;">Message embed standard auto</div>`}
+                        ${sub.custom_message ? `<div style="font-size: 0.85em; opacity: 0.85; border-left: 2px solid var(--accent); padding-left: 8px; margin-top: 4px; font-style: italic;">"${escapeHtml(sub.custom_message)}"</div>` : `<div style="font-size: 0.8em; opacity: 0.5; font-style: italic;">Message embed standard auto</div>`}
                     </div>
                     <button class="btn btn-danger" onclick="deleteTwitchSubscription(${index})" style="padding: 6px 12px; font-size: 0.9em; flex-shrink: 0;">
                         <i class="fa-solid fa-trash"></i> Supprimer
@@ -1057,11 +1062,11 @@ window.addLinkRow = function(cmd = '', url = '', label = '', message = '', alias
     const aliasesStr = Array.isArray(aliases) ? aliases.join(', ') : aliases;
     
     tr.innerHTML = `
-        <td style="padding: 8px;"><input type="text" class="link-cmd-input" placeholder="Ex: discord" value="${cmd}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-url-input" placeholder="Ex: https://..." value="${url}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-label-input" placeholder="Ex: Discord" value="${label}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-message-input" placeholder="Ex: Rejoins-nous : {url}" value="${message}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
-        <td style="padding: 8px;"><input type="text" class="link-aliases-input" placeholder="Ex: serveur, community" value="${aliasesStr}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-cmd-input" placeholder="Ex: discord" value="${escapeHtml(cmd)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-url-input" placeholder="Ex: https://..." value="${escapeHtml(url)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-label-input" placeholder="Ex: Discord" value="${escapeHtml(label)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-message-input" placeholder="Ex: Rejoins-nous : {url}" value="${escapeHtml(message)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
+        <td style="padding: 8px;"><input type="text" class="link-aliases-input" placeholder="Ex: serveur, community" value="${escapeHtml(aliasesStr)}" style="width:100%; padding:6px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;"></td>
         <td style="padding: 8px; text-align: center;"><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove(); if(document.getElementById('twitch-links-table-body').children.length === 0) { renderLinksTable([]); }" style="padding: 5px 10px;"><i class="fa-solid fa-trash"></i></button></td>
     `;
     tbody.appendChild(tr);
@@ -1143,10 +1148,10 @@ function renderRewardsTable() {
         const action = currentRewardMap[title];
         const row = `
             <tr>
-                <td style="color:#a78bfa; font-weight:600;"><i class="fa-solid fa-gift"></i> ${title}</td>
-                <td><code style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:monospace;">!${action}</code></td>
+                <td style="color:#a78bfa; font-weight:600;"><i class="fa-solid fa-gift"></i> ${escapeHtml(title)}</td>
+                <td><code style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:monospace;">!${escapeHtml(action)}</code></td>
                 <td>
-                    <button class="btn btn-danger" onclick="deleteRewardMapping('${title.replace(/'/g, "\\'")}')" style="padding:4px 8px; font-size:0.85em;">
+                    <button class="btn btn-danger" onclick="deleteRewardMapping('${encodeURIComponent(title)}')" style="padding:4px 8px; font-size:0.85em;">
                         <i class="fa-solid fa-trash"></i> Retirer
                     </button>
                 </td>
@@ -1171,7 +1176,8 @@ window.addRewardMapping = function() {
     renderRewardsTable();
 }
 
-window.deleteRewardMapping = function(title) {
+window.deleteRewardMapping = function(encodedTitle) {
+    const title = decodeURIComponent(encodedTitle);
     delete currentRewardMap[title];
     renderRewardsTable();
 }
@@ -1224,7 +1230,7 @@ async function loadTwitchEconomy() {
                 const row = `
                     <tr>
                         <td style="font-weight:700; opacity:0.6;">#${index+1}</td>
-                        <td style="color:#fff; font-weight:600;"><i class="fa-solid fa-user-ninja"></i> ${entry.name}</td>
+                        <td style="color:#fff; font-weight:600;"><i class="fa-solid fa-user-ninja"></i> ${escapeHtml(entry.name)}</td>
                         <td style="color:#60a5fa; font-weight:700;">${entry.points} pts</td>
                     </tr>
                 `;
