@@ -518,7 +518,7 @@ const BOT_REGISTRY_JS = {
     "maiq": { name: "maiq", display: "🐱 M'aiq le Menteur", color: "#f97316" },
     "alfred": { name: "alfred", display: "☕ Alfred Pennyworth", color: "#475569" },
     "johnny": { name: "johnny", display: "🔫 Johnny Silverbot", color: "#22c55e" },
-    "onizuka": { name: "onizuka", display: "🏍️ Eikichi Onizuka", color: "#0ea5e9" },
+    "onizuka": { name: "onizuka", display: "Onizuka", color: "#0ea5e9" },
     "malena": { name: "malena", display: "💃 Malena la Gitana", color: "#f43f5e" }
 };
 
@@ -665,7 +665,7 @@ function renderTwitchBotView() {
         maiq: "🐱 M'aiq le Menteur",
         alfred: "☕ Alfred Pennyworth",
         johnny: "🔫 Johnny Silverbot",
-        onizuka: "🏍️ Eikichi Onizuka",
+        onizuka: "Onizuka",
         malena: "💃 Malena la Gitana"
     };
     document.getElementById('twitch-bot-status-title').textContent = `Configuration Twitch de ${botDisplayNames[botId] || botId}`;

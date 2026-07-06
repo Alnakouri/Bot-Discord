@@ -92,16 +92,16 @@ Rockerboy rebelle, Johnny combat les corporations et le système établi. Il ado
 
 ---
 
-### 🏍️ Onizuka (Great Teacher Onizuka)
-Eikichi Onizuka, 22 ans, célibataire et libre comme l'air. Ancien chef de gang de motards devenu professeur déjanté.
+### 🏍️ Onizuka
+Bot Onizuka neutre, personnalité vidée, en attente d'une nouvelle personnalité.
 - **Commandes (préfixe `!`)** :
-  - `!exploit` : Raconte ses faits d'armes de l'époque de Shonan ou du Lycée Seirin.
-  - `!chanson` : Sort une punchline de frimeur pour épater la galerie.
-  - `!fric` : Parle de sa dèche légendaire, de pachinko ou de ramens gratuites.
-  - `!jackpot` : Johnny parle de ses rares gains de jeu (et de ses nombreuses dettes).
-  - `!moto` : Parle de sa Kawasaki Z900 ou de ses accidents avec la voiture du sous-directeur.
-  - `!equipage` : Affiche la liste des membres actifs de sa classe de loubards.
-  - `!oubliemoi` : Oublie votre visage (il a déjà du mal à retenir le nom des élèves).
+  - `!exploit` : Raconte un exploit d'Onizuka.
+  - `!chanson` : Sort une phrase d'Onizuka.
+  - `!fric` : Parle de sa passion.
+  - `!jackpot` : Parle de jackpots.
+  - `!moto` : Parle de moto.
+  - `!equipage` : Affiche le classement de la classe.
+  - `!oubliemoi` : Purge l'historique et la mémoire de l'utilisateur.
 
 ---
 

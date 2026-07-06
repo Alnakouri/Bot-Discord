@@ -1,9 +1,8 @@
 @echo off
-title Eikichi Onizuka Bot - GTO
+title Onizuka Bot
 color 0C
 echo ================================
-echo    EIKICHI ONIZUKA
-echo    Great Teacher Onizuka
+echo    ONIZUKA
 echo ================================
 echo.
 echo Lancement du bot...

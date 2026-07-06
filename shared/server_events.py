@@ -59,12 +59,8 @@ WELCOME_MESSAGES = {
         "Ici c'est Marseille bébé, et moi chui la reine du Vieux-Port ooh !",
     ],
     "onizuka": [
-        "🏍️ **Oï !** Bienvenue dans la classe, {user} ! Le GRAND Onizuka, 22 ans, "
-        "célibataire et prof d'exception, te souhaite la bienvenue ! Fais pas le malin et tout se passera bien ! 🔥",
-        "✊ Tiens, un nouvel élève ! Bienvenue à Seirin, {user} ! "
-        "Prépare-toi, avec moi on ne s'ennuie jamais. Leçon numéro 1 : vis ta vie à fond ! 😎",
-        "🔥 **Great Teacher Onizuka** est là pour t'accueillir, {user} ! "
-        "Pas de chichis entre nous, ici on apprend sur le terrain. Sois le bienvenu !"
+        "Bonjour {user}, bienvenue sur le serveur.",
+        "Bienvenue, {user} ! Heureux de t'accueillir parmi nous."
     ],
 }
 
@@ -99,10 +95,8 @@ GOODBYE_MESSAGES = {
         "Mais oublie pas, ici c'est chez toi hein !",
     ],
     "onizuka": [
-        "👋 Quoi, {user} se tire déjà ? Reste un peu, on allait faire une virée en bécane ! "
-        "Allez, bonne route et reste cool !",
-        "😢 Peuchère... {user} nous quitte ? J'espère que c'est pas à cause des grimaces d'Uchiyamada. "
-        "Prends soin de toi, morveux !"
+        "Au revoir {user}. Bonne continuation.",
+        "{user} a quitté le serveur. Au revoir !"
     ],
 }
 
@@ -158,10 +152,8 @@ BIRTHDAY_MESSAGES = {
         "Sinon c'est pas un vrai anniversaire ooh ! 💅✨",
     ],
     "onizuka": [
-        "🎂 **JOYEUX ANNIVERSAIRE {user} !** 22 ans ? Ah non, ça c'est mon âge ! "
-        "En tout cas, ce soir c'est ramen et pachinko à mes frais... enfin, si je gagne le jackpot ! 🎰🔥",
-        "🎉 Bon anniv', {user} ! Le GRAND Onizuka te souhaite le meilleur ! "
-        "Ne laisse aucun prof relou gâcher ta journée, et profite à fond ! 🏍️😎"
+        "Joyeux anniversaire, {user} ! Passe une excellente journée.",
+        "Bon anniversaire {user} !"
     ],
 }
 

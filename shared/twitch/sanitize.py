@@ -143,8 +143,8 @@ FALLBACK_RESPONSES = {
         "Un peu de tenue, je vous prie."
     ],
     "onizuka": [
-        "Reste tranquille, gamin, tu parles beaucoup trop pour ton propre bien.",
-        "Allez, va faire tes devoirs au lieu de raconter des bêtises."
+        "Cette conversation commence à devenir stérile.",
+        "Garde tes provocations pour quelqu'un d'autre."
     ],
     "malena": [
         "Tes mots ne m'atteignent pas, cherche une autre cible.",

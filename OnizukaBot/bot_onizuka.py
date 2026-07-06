@@ -66,7 +66,7 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-# EIKICHI ONIZUKA (GTO)
+# Bot Onizuka (ardoise neutre)
 
 # IMPORT SECURE ENV LOADER
 from pathlib import Path
@@ -219,9 +219,9 @@ daily_bio = DiscordDailyBio(
 @bot.event
 async def on_ready():
     logger.info("=" * 60)
-    logger.info("🏍️ EIKICHI ONIZUKA - Great Teacher Onizuka est là !")
+    logger.info("Onizuka est en ligne.")
     logger.info("=" * 60)
-    logger.info(f'🏍️ Connecté en tant que: {bot.user.name} ({bot.user.id})')
+    logger.info(f'Connecté en tant que: {bot.user.name} ({bot.user.id})')
     logger.info(f'🏫 Serveurs: {len(bot.guilds)}')
     logger.info(f'👥 Utilisateurs visibles: {len(bot.users)}')
     
@@ -237,7 +237,7 @@ async def on_ready():
     if DATABASE_AVAILABLE and GAMES_AVAILABLE:
         try:
             setup_games(bot, logger, PERSONA)
-            logger.info("🏍️ [GAMES] Mini-jeux initialisés pour Onizuka")
+            logger.info("[GAMES] Mini-jeux initialisés pour Onizuka")
         except Exception as e:
             logger.error(f"[GAMES] Erreur d'initialisation des mini-jeux: {e}")
     
@@ -253,7 +253,7 @@ async def on_ready():
     logger.info(f'   🎰 Jackpots gagnés : {onizuka_data.get("jackpots", 0)}')
     logger.info(f'   📖 Exploits racontés : {onizuka_data.get("tales_told", 0)}')
     
-    logger.info("🎯 Onizuka est prêt à enseigner !")
+    logger.info("Onizuka est prêt.")
     logger.info("=" * 60)
     
     # Statut tournant (1er tick immédiat, puis toutes les 30 min)
@@ -285,9 +285,7 @@ async def on_member_join(member):
         # Message personnalisé
         if member.guild.system_channel:
             await member.guild.system_channel.send(
-                f"🏍️ **Bienvenue dans la classe, {member.mention} !**\n"
-                f"Eikichi Onizuka, 22 ans, célibataire et prof de génie, te souhaite la bienvenue ! 🔥\n"
-                f"Prépare-toi à faire des étincelles !"
+                f"**Bienvenue, {member.mention} !**"
             )
 
 @bot.event
@@ -329,16 +327,8 @@ async def before_daily_bio_onizuka():
 @tasks.loop(minutes=30)
 async def status_loop_onizuka():
     activities = [
-        "les élèves | 🏍️ Kawasaki Z-II",
-        "la classe 3-4 grandir",
-        "Fuyutsuki-sensei ❤️",
-        "un combat de rue",
-        "Tokyo depuis son toit",
-        "des films d'arts martiaux",
-        "le Onibaku rouler 🏍️",
-        "ses plans foireux marcher",
-        "la jeunesse en détresse",
-        "Uchiyamada péter un câble 😈",
+        "le serveur",
+        "les discussions",
     ]
     await bot.change_presence(
         activity=discord.Activity(
@@ -356,28 +346,28 @@ async def before_status_onizuka():
 
 @bot.command(name="exploit", aliases=["histoire", "legende"])
 async def exploit_cmd(ctx):
-    """Onizuka raconte un de ses exploits de légende"""
+    """Raconte un exploit d'Onizuka"""
     tale = random.choice(EXPLOITS)
     onizuka_data["tales_told"] = onizuka_data.get("tales_told", 0) + 1
     save_data(onizuka_data)
     
     embed = discord.Embed(
-        title="🏍️ L'EXPLOIT DE LEGENDE D'ONIZUKA",
+        title="Exploit d'Onizuka",
         description=tale,
         color=discord.Color.gold()
     )
-    embed.set_footer(text=f"Exploits racontés : {onizuka_data['tales_told']}")
+    embed.set_footer(text=f"Total : {onizuka_data['tales_told']}")
     await ctx.send(embed=embed)
 
 @bot.command(name="chanson", aliases=["frime", "chante"])
 async def chanson_cmd(ctx):
-    """Onizuka sort une punchline / vantardise"""
+    """Sort une phrase d'Onizuka"""
     shanty = random.choice(PUNCHLINES)
     await ctx.send(shanty)
 
 @bot.command(name="fric", aliases=["argent"])
 async def fric_cmd(ctx):
-    """Onizuka parle de sa passion pour le fric, les filles et le ramen"""
+    """Parle de sa passion"""
     response = random.choice(MONEY_RESPONSES)
     onizuka_data["money_bragged"] = onizuka_data.get("money_bragged", 0) + 1
     save_data(onizuka_data)
@@ -385,21 +375,21 @@ async def fric_cmd(ctx):
 
 @bot.command(name="jackpot", aliases=["pachinko"])
 async def jackpot_cmd(ctx):
-    """Onizuka parle de ses jackpots"""
+    """Parle de jackpots"""
     response = random.choice(JACKPOT_RESPONSES)
     onizuka_data["jackpots"] = onizuka_data.get("jackpots", 0) + 1
     save_data(onizuka_data)
-    await ctx.send(f"{response}\n💰 Jackpots décrochés par Onizuka : {onizuka_data['jackpots']}")
+    await ctx.send(f"{response}\nJackpots : {onizuka_data['jackpots']}")
 
 @bot.command(name="moto")
 async def moto_cmd(ctx):
-    """Onizuka vante sa moto (ou la Cresta de Uchiyamada)"""
+    """Parle de moto"""
     response = random.choice(BIKE_RESPONSES)
     await ctx.send(response)
 
 @bot.command(name="equipage", aliases=["crew", "classe"])
 async def equipage_cmd(ctx):
-    """Liste la bande d'élèves d'Onizuka"""
+    """Affiche le classement de la classe"""
     if not DATABASE_AVAILABLE:
         await ctx.send("⚠️ Base de données non disponible !")
         return
@@ -408,8 +398,8 @@ async def equipage_cmd(ctx):
     leaderboard = get_reputation_leaderboard(10)
     
     embed = discord.Embed(
-        title="🏍️ LA BANDE D'ONIZUKA (CLASSE SEIRIN)",
-        description="Les élèves et potes les plus fidèles d'Onizuka !",
+        title="Classe d'Onizuka",
+        description="Les membres les plus actifs de la classe.",
         color=discord.Color.red()
     )
     
@@ -420,15 +410,15 @@ async def equipage_cmd(ctx):
         
         # Déterminer le rang
         if points < 50:
-            rank = "🎒 Cancre"
+            rank = "Niveau 1"
         elif points < 150:
-            rank = "📚 Élève Moyen"
+            rank = "Niveau 2"
         elif points < 300:
-            rank = "🏍️ Motard d'Onibaku"
+            rank = "Niveau 3"
         elif points < 500:
-            rank = "🔥 Délégué de Classe"
+            rank = "Niveau 4"
         else:
-            rank = "👑 Great Student Onizuka"
+            rank = "Niveau 5"
         
         embed.add_field(
             name=f"{i+1}. {name}",
@@ -436,7 +426,7 @@ async def equipage_cmd(ctx):
             inline=False
         )
     
-    embed.set_footer(text="Gagnez du respect en parlant avec Onizuka !")
+    embed.set_footer(text="Gagnez du respect en parlant avec Onizuka.")
     await ctx.send(embed=embed)
 
 @bot.command(name="oubliemoi")
@@ -460,7 +450,7 @@ async def oubliemoi(ctx):
         del fact_memory.facts[uid]
         fact_memory.save_facts()
         
-    await ctx.send("🏍️ C'est bon, gamin, j'ai tout balancé à la poubelle ! On repart de zéro, mais fais pas le malin en classe !")
+    await ctx.send("C'est fait, tes données ont été effacées.")
 
 # LOGIQUE CONVERSATIONNELLE
 
@@ -498,7 +488,7 @@ async def on_message(message):
         return
 
     # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Onizuka)
-    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["onizuka", "eikichi", "gto", "onibaku"]):
+    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["onizuka"]):
         return
         
     # SILENCE STREAM (Canal ignoré)
@@ -522,7 +512,7 @@ async def on_message(message):
     is_dm = isinstance(message.channel, discord.DMChannel)
     
     # Noms alternatifs pour Onizuka (détection dans le message)
-    ONIZUKA_NAMES = ["onizuka", "eikichi", "gto", "onibaku"]
+    ONIZUKA_NAMES = ["onizuka"]
     content_lower = message.content.lower()
     is_name_mentioned = any(name in content_lower for name in ONIZUKA_NAMES)
     
@@ -638,7 +628,7 @@ async def on_message(message):
                         asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
                         return
             else:
-                await message.reply("🏍️ Oï ! Le soleil tape trop fort sur ma visière, je vois que dalle à ton image ! 😎")
+                await message.reply("Désolé, je n'ai pas pu lire l'image.")
                 return
         
         # --- MESSAGE VOCAL ---
@@ -674,7 +664,7 @@ async def on_message(message):
                     asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
                     return
             else:
-                await message.reply("👂 Trop de bruit de moteur ! Parle plus fort dans le micro, je capte rien ! 🏍️")
+                await message.reply("Désolé, je n'ai pas pu lire le vocal.")
                 return
     # ══════════════════════════════════════════════════
     
@@ -699,21 +689,8 @@ async def on_message(message):
     keyword_boost = ""
     
     if any(kw in content_lower for kw in ["fric", "argent", "thune", "yen", "pachinko"]):
-        keyword_boost = "\n\n💴 [DÉTECTION FRIC/MONEY] L'utilisateur parle de thunes ou de pachinko ! Sois TRÈS motivé par l'argent !"
         onizuka_data["money_bragged"] = onizuka_data.get("money_bragged", 0) + 1
         save_data(onizuka_data)
-    
-    if any(kw in content_lower for kw in ["jackpot", "trésor", "tresor", "gloire"]):
-        keyword_boost += "\n\n🎰 [DÉTECTION JACKPOT] Parle de décrocher le gros lot, de la gloire, ou d'exploits !"
-    
-    if any(kw in content_lower for kw in ["moto", "bécane", "kawasaki", "cresta", "voiture"]):
-        keyword_boost += "\n\n🏍️ [DÉTECTION VEHICULE] Vante ta moto de loubard ou plains-toi de la Cresta d'Uchiyamada !"
-    
-    if any(kw in PUNCHLINE_TRIGGERS for kw in content_lower.split()):
-        keyword_boost += "\n\n🎵 [DEMANDE DE CHANSON] Sors une punchline de légende ou une vantardise !"
-    
-    if any(kw in EXPLOIT_TRIGGERS for kw in content_lower.split()):
-        keyword_boost += "\n\n📖 [DEMANDE D'HISTOIRE] Raconte un de tes exploits de prof ou de motard !"
     
     # HISTORIQUE
     channel_id = message.channel.id
@@ -745,7 +722,7 @@ async def on_message(message):
     anti_repeat_prompt = ""
     if recent_responses:
         snippets = [r[:60] + "..." if len(r) > 60 else r for r in recent_responses[-5:]]
-        anti_repeat_prompt = "\n\n[ANTI-RÉPÉTITION] Onizuka a déjà dit récemment :\n"
+        anti_repeat_prompt = "\n\n[ANTI-RÉPÉTITION] Tu as déjà dit récemment :\n"
         for i, snippet in enumerate(snippets, 1):
             anti_repeat_prompt += f"{i}. \"{snippet}\"\n"
         anti_repeat_prompt += "Ne répète PAS ces phrases ! Sois ORIGINAL !"
@@ -770,11 +747,11 @@ async def on_message(message):
     has_audio = routing["has_audio"] and media_data is not None
     
     if has_image and not user_message.strip():
-        user_message = "(Un élève montre une image à Onizuka sans rien dire.)"
+        user_message = "(L'utilisateur montre une image sans rien dire.)"
     if has_image:
-        user_message += "\n[VISION] Regarde l'image et commente-la en tant qu'Onizuka ! Dis ce que t'en penses de manière cash !"
+        user_message += "\n[VISION] Regarde l'image et commente-la."
     if has_audio:
-        user_message += "\n[🎤 VOCAL] L'élève a envoyé un message vocal. Écoute-le et réponds en tant qu'Onizuka avec ton ton de loubard."
+        user_message += "\n[🎤 VOCAL] L'utilisateur a envoyé un message vocal. Écoute-le et réponds."
     
 
     # GÉNÉRATION (Smart Router)
@@ -804,7 +781,7 @@ async def on_message(message):
         if not response_text and (has_image or has_audio):
             media_type = "image" if has_image else "message vocal"
             item_name = "l'image" if has_image else "le message vocal"
-            await message.channel.send(f"🏍️ Oï ! Les circuits surchauffent, Onizuka ne capte pas {item_name} aujourd'hui ! 😎")
+            await message.channel.send(f"Désolé, je n'ai pas pu lire {item_name}.")
             return
         
         # FALLBACK FINAL

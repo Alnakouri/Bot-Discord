@@ -10,7 +10,7 @@
 | **M'aiq** | Khajiit menteur (TES) | Énigmes, rumeurs, mensonges |
 | **Alfred** | Majordome de Batman | Vocal TTS (ElevenLabs), cynisme, service, modération |
 | **Johnny Silverbot** | Rockerboy (Cyberpunk 2077) | Anti-corpo, cynisme, provocation, duels |
-| **Onizuka** | Professeur déjanté (GTO) | Moto, leçons de vie, humour décalé |
+| **Onizuka** | (personnalité vidée) | — |
 | **Malena** | Gitana marseillaise | Tarot, prédictions, style gitane |
 
 ---

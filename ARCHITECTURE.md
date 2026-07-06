@@ -83,9 +83,9 @@ Bot Discord/
 │   ├── johnny_data.py       # Personnalité et données
 │   └── johnny_memory.py     # Mémoire à long terme Johnny
 │
-├── OnizukaBot/              # Bot Eikichi Onizuka (Great Teacher Onizuka)
+├── OnizukaBot/              # Bot Onizuka (neutre)
 │   ├── bot_onizuka.py       # Point d'entrée
-│   ├── onizuka_data.py      # dialogues et expressions d'Onizuka
+│   ├── onizuka_data.py      # Données neutres
 │   └── onizuka_memory.py    # Mémoire à long terme Onizuka
 │
 ├── MalenaBot/               # Bot Malena (La Gitana Marseillaise)

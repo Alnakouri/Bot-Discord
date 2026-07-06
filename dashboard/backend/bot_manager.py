@@ -38,7 +38,7 @@ BOT_REGISTRY = {
     },
     "onizuka": {
         "name": "onizuka",
-        "display": "🏍️ Eikichi Onizuka",
+        "display": "Onizuka",
         "dir": "OnizukaBot",
         "script": "bot_onizuka.py",
         "bat": "start_onizuka.bat",
