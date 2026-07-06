@@ -413,14 +413,6 @@ def get_features(bot_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-@app.put("/api/features/{bot_id}")
-def set_feature(bot_id: str, body: dict):
-    try:
-        features_config_manager.set_feature(bot_id, body["feature"], body["value"])
-        return {"status": "ok"}
-    except (ValueError, KeyError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
 @app.put("/api/features/all")
 def set_feature_all(body: dict):
     try:
@@ -433,6 +425,14 @@ def set_feature_all(body: dict):
         
         for bot_id in BOT_REGISTRY:
             features_config_manager.set_feature(bot_id, feature, value)
+        return {"status": "ok"}
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/features/{bot_id}")
+def set_feature(bot_id: str, body: dict):
+    try:
+        features_config_manager.set_feature(bot_id, body["feature"], body["value"])
         return {"status": "ok"}
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
