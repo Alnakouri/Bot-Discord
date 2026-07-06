@@ -468,30 +468,72 @@ function formatUptime(seconds) {
 function renderBotsGrid(bots) {
     const container = document.getElementById('bots-container');
     if(!container) return;
-    container.innerHTML = '';
     
+    const registryOrder = Object.keys(BOT_REGISTRY_JS);
+    bots.sort((a, b) => {
+        const indexA = registryOrder.indexOf(a.id);
+        const indexB = registryOrder.indexOf(b.id);
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        return a.id.localeCompare(b.id);
+    });
+
     bots.forEach(bot => {
+        const cardId = `bot-card-${bot.id}`;
+        let card = document.getElementById(cardId);
         const isRunning = bot.status === 'running';
-        const badgeClass = isRunning ? 'running' : 'stopped';
-        const cardHtml = `
-            <div class="bot-card glass" style="--color: ${bot.color || '#fff'};">
-                <div class="bot-header">
-                    <span class="bot-name">${bot.display}</span>
-                    <span class="badge ${badgeClass}">${bot.status}</span>
+        const badgeClass = isRunning ? 'badge running' : 'badge stopped';
+        
+        const actionsHtml = isRunning 
+            ? `<button class="btn btn-outline" onclick="botAction('${bot.id}', 'restart')"><i class="fa-solid fa-rotate-right"></i> Redémarrer</button>
+               <button class="btn btn-danger" onclick="botAction('${bot.id}', 'stop')"><i class="fa-solid fa-stop"></i> Arrêter</button>`
+            : `<button class="btn btn-success" onclick="botAction('${bot.id}', 'start')"><i class="fa-solid fa-play"></i> Démarrer</button>`;
+        
+        const uptimeHtml = isRunning ? `⏱️ Uptime: ${formatUptime(bot.uptime)}` : 'Hors ligne';
+
+        if (card) {
+            const badge = card.querySelector('.badge');
+            if (badge) {
+                if (badge.textContent !== bot.status) {
+                    badge.textContent = bot.status;
+                }
+                if (badge.className !== badgeClass) {
+                    badge.className = badgeClass;
+                }
+            }
+            
+            const uptime = card.querySelector('.bot-uptime');
+            if (uptime && uptime.innerHTML !== uptimeHtml) {
+                uptime.innerHTML = uptimeHtml;
+            }
+            
+            const actions = card.querySelector('.bot-actions');
+            if (actions && actions.innerHTML !== actionsHtml) {
+                actions.innerHTML = actionsHtml;
+            }
+        } else {
+            const cardHtml = `
+                <div class="bot-card glass" id="${cardId}" style="--color: ${bot.color || '#fff'};">
+                    <div class="bot-header">
+                        <span class="bot-name">${escapeHtml(bot.display)}</span>
+                        <span class="${badgeClass}">${escapeHtml(bot.status)}</span>
+                    </div>
+                    <div class="bot-uptime">
+                        ${uptimeHtml}
+                    </div>
+                    <div class="bot-actions">
+                        ${actionsHtml}
+                    </div>
                 </div>
-                <div class="bot-uptime">
-                    ${isRunning ? `⏱️ Uptime: ${formatUptime(bot.uptime)}` : 'Hors ligne'}
-                </div>
-                <div class="bot-actions">
-                    ${isRunning 
-                        ? `<button class="btn btn-outline" onclick="botAction('${bot.id}', 'restart')"><i class="fa-solid fa-rotate-right"></i> Redémarrer</button>
-                           <button class="btn btn-danger" onclick="botAction('${bot.id}', 'stop')"><i class="fa-solid fa-stop"></i> Arrêter</button>`
-                        : `<button class="btn btn-success" onclick="botAction('${bot.id}', 'start')"><i class="fa-solid fa-play"></i> Démarrer</button>`
-                    }
-                </div>
-            </div>
-        `;
-        container.insertAdjacentHTML('beforeend', cardHtml);
+            `;
+            container.insertAdjacentHTML('beforeend', cardHtml);
+        }
+    });
+    
+    const currentBotIds = bots.map(b => `bot-card-${b.id}`);
+    Array.from(container.children).forEach(child => {
+        if (!currentBotIds.includes(child.id)) {
+            child.remove();
+        }
     });
 }
 
