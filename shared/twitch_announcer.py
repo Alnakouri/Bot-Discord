@@ -319,8 +319,12 @@ class TwitchAnnouncer:
             f"SYSTEM: {self.personality_prompt}\n"
             "INSTRUCTION: Annonce, DANS TA VOIX et avec TA personnalité, qu'un streamer vient "
             "de lancer un live Twitch. Écris UNE accroche très courte (1 à 2 phrases), "
-            "TOUJOURS positive et enthousiaste, qui met en valeur le streamer et donne envie de "
-            "regarder. N'invente aucun fait. N'écris PAS le lien (il est ajouté séparément). "
+            "TOUJOURS positive et enthousiaste, qui met en valeur le streamer et le jeu et donne "
+            "envie de regarder. Tu peux enjoliver le TON, mais reste HONNÊTE : n'invente AUCUN fait "
+            "sur le jeu (pas de superlatif présenté comme vrai type « le meilleur jeu de l'année », "
+            "pas de qualité, note, histoire ou détail inventés). Appuie-toi UNIQUEMENT sur le titre "
+            "du live et le nom du jeu ci-dessous ; si tu ne connais pas le jeu, reste enthousiaste "
+            "sans affirmer quoi que ce soit de faux. N'écris PAS le lien (il est ajouté séparément). "
             f"Streamer : {streamer}. Titre du live : {title}. Jeu : {game}."
         )
         try:
