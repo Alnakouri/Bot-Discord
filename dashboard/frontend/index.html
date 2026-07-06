@@ -237,32 +237,49 @@
 
         <!-- SECTION: REPORTS -->
         <section id="reports" class="view">
-            <div class="report-generator glass">
-                <h2>Générateur de Rapport de Diagnostic</h2>
-                <p>Générez un rapport détaillé parfait pour être copié-collé dans Gemini, ChatGPT ou Claude.</p>
-                
-                <div class="form-group">
-                    <label>Périmètre d'analyse</label>
-                    <select id="report-scope">
-                        <option value="all">Écosystème complet</option>
-                        <option value="errors">Erreurs uniquement</option>
-                        <option value="api">Clés API uniquement</option>
-                    </select>
+            <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1.5rem; height: calc(100vh - 150px);">
+                <div class="report-generator glass" style="display: flex; flex-direction: column; justify-content: flex-start; padding: 2rem;">
+                    <h2>Générateur de Rapport de Diagnostic</h2>
+                    <p style="margin-bottom: 1.5rem; opacity: 0.8; line-height: 1.5;">Générez un rapport détaillé parfait pour être copié-collé dans Gemini, ChatGPT ou Claude.</p>
+                    
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Périmètre d'analyse</label>
+                        <select id="report-scope" class="form-input">
+                            <option value="all">Écosystème complet</option>
+                            <option value="errors">Erreurs uniquement</option>
+                            <option value="api">Clés API uniquement</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 1.5rem;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Fenêtre de temps</label>
+                        <select id="report-timeframe" class="form-input">
+                            <option value="1">Dernière Heure</option>
+                            <option value="6">Dernières 6 Heures</option>
+                            <option value="24" selected>Dernières 24 Heures</option>
+                            <option value="168">Derniers 7 Jours</option>
+                        </select>
+                    </div>
+                    
+                    <button class="btn btn-primary btn-large" id="btn-generate-report" style="width: 100%; padding: 12px; font-size: 1rem; justify-content: center;">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Générer le Rapport .MD
+                    </button>
                 </div>
                 
-                <div class="form-group">
-                    <label>Fenêtre de temps</label>
-                    <select id="report-timeframe">
-                        <option value="1">Dernière Heure</option>
-                        <option value="6">Dernières 6 Heures</option>
-                        <option value="24" selected>Dernières 24 Heures</option>
-                        <option value="168">Derniers 7 Jours</option>
-                    </select>
+                <div class="report-result glass" id="report-result-panel" style="display: none; flex-direction: column; padding: 2rem; overflow: hidden;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-shrink: 0;">
+                        <h3 style="margin:0;">📝 Aperçu du Rapport</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn" id="btn-copy-report" onclick="copyReportToClipboard()">
+                                <i class="fa-solid fa-copy"></i> Copier
+                            </button>
+                            <button class="btn btn-primary" id="btn-download-report" onclick="downloadGeneratedReport()">
+                                <i class="fa-solid fa-download"></i> Télécharger
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="report-preview-text" class="form-textarea" style="flex-grow: 1; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; background: #0b0d14; border: 1px solid var(--border-glass); padding: 1rem; border-radius: 8px; color: #fff; resize: none; overflow-y: auto;" readonly></textarea>
                 </div>
-                
-                <button class="btn btn-primary btn-large" id="btn-generate-report">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i> Générer le Rapport .MD
-                </button>
             </div>
         </section>
 

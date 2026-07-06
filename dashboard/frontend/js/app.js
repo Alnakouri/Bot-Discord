@@ -840,8 +840,11 @@ async function loadApiKeysStatus() {
 }
 
 // --- REPORTS ---
+let lastGeneratedFilename = null;
+
 async function generateReport() {
     const btn = document.getElementById('btn-generate-report');
+    if (!btn) return;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Génération...';
     btn.disabled = true;
     
@@ -851,7 +854,18 @@ async function generateReport() {
     try {
         const res = await fetch(`${API_BASE}/reports/generate?format=md&scope=${scope}&hours=${hours}`, {method: 'POST'});
         const data = await res.json();
-        toast(`Rapport généré avec succès :\n${data.filename}\nEmplacement: ${data.path}`, 'success');
+        
+        lastGeneratedFilename = data.filename;
+        
+        const previewText = document.getElementById('report-preview-text');
+        const resultPanel = document.getElementById('report-result-panel');
+        
+        if (previewText && resultPanel) {
+            previewText.value = data.content;
+            resultPanel.style.display = 'flex';
+        }
+        
+        toast("Rapport généré avec succès !", 'success');
     } catch(e) {
         toast("Erreur lors de la génération.", 'error');
     } finally {
@@ -859,6 +873,28 @@ async function generateReport() {
         btn.disabled = false;
     }
 }
+
+window.copyReportToClipboard = function() {
+    const previewText = document.getElementById('report-preview-text');
+    if (!previewText || !previewText.value) return;
+    
+    previewText.select();
+    navigator.clipboard.writeText(previewText.value)
+        .then(() => {
+            toast("Copié dans le presse-papier !", 'success');
+        })
+        .catch(() => {
+            toast("Échec de la copie.", 'error');
+        });
+};
+
+window.downloadGeneratedReport = function() {
+    if (!lastGeneratedFilename) {
+        toast("Aucun rapport généré.", 'error');
+        return;
+    }
+    window.location.href = `${API_BASE}/reports/download/${lastGeneratedFilename}`;
+};
 
 // --- TWITCH MANAGEMENT ---
 let twitchConfig = {};

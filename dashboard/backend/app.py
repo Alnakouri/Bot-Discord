@@ -296,6 +296,15 @@ async def get_conversation_stats(days: int = 7, bot: str = None):
 async def generate_report(format: str = "md", scope: str = "all", hours: int = 24):
     return report_generator.generate(format, scope, hours)
 
+@app.get("/api/reports/download/{filename}")
+async def download_report(filename: str):
+    import os
+    safe_filename = os.path.basename(filename)
+    filepath = os.path.join(report_generator.reports_dir, safe_filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Rapport non trouvé")
+    return FileResponse(filepath, media_type="text/markdown", filename=safe_filename)
+
 # --- TWITCH ENDPOINTS ---
 class TwitchGlobalConfigUpdate(BaseModel):
     enabled: bool
