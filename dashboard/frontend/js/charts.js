@@ -1,8 +1,17 @@
 // Gestion des graphiques (Chart.js)
-// Utilisé globalelement via window.refreshCharts appelé depuis app.js
+// Utilisé globalement via window.refreshCharts appelé depuis app.js
 
 Chart.defaults.color = '#adb5bd';
 Chart.defaults.font.family = 'Inter';
+
+const BOT_REGISTRY_JS = {
+    "sheogorath": { name: "sheogorath", display: "🧀 Sheogorath", color: "#d946ef" },
+    "maiq": { name: "maiq", display: "🐱 M'aiq le Menteur", color: "#f97316" },
+    "alfred": { name: "alfred", display: "☕ Alfred Pennyworth", color: "#475569" },
+    "johnny": { name: "johnny", display: "🔫 Johnny Silverbot", color: "#22c55e" },
+    "sugar": { name: "sugar", display: "Sugar Bot", color: "#0ea5e9" },
+    "malena": { name: "malena", display: "💃 Malena la Gitana", color: "#f43f5e" }
+};
 
 let mainActivityChart = null;
 let apiUsageChart = null;
@@ -16,23 +25,36 @@ window.refreshCharts = async function() {
 
 async function loadActivityChart() {
     try {
-        // Mock data fetch - in pure prod this matches API schema
-        // const res = await fetch(`${API_BASE}/conversations?days=1`);
-        // const data = await res.json();
+        const res = await fetch(`/api/conversations/activity?hours=24`);
+        const data = await res.json();
         
         const ctx = document.getElementById('mainActivityChart');
         if(!ctx) return;
         
         if(mainActivityChart) mainActivityChart.destroy();
         
+        let labels = [];
+        let counts = [];
+        
+        if (data && data.buckets) {
+            labels = data.buckets.map(b => {
+                const tIndex = b.hour.indexOf('T');
+                if (tIndex !== -1) {
+                    return b.hour.substring(tIndex + 1, tIndex + 6);
+                }
+                return b.hour;
+            });
+            counts = data.buckets.map(b => b.count);
+        }
+        
         mainActivityChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+                labels: labels,
                 datasets: [
                     {
                         label: "Interactions",
-                        data: [12, 19, 3, 5, 2, 3],
+                        data: counts,
                         borderColor: '#6b4cda',
                         backgroundColor: 'rgba(107, 76, 218, 0.2)',
                         tension: 0.4,
@@ -43,7 +65,14 @@ async function loadActivityChart() {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: false } }
+                plugins: { 
+                    legend: { display: false },
+                    title: {
+                        display: counts.length === 0 || counts.reduce((a, b) => a + b, 0) === 0,
+                        text: "Aucune donnée",
+                        position: "bottom"
+                    }
+                }
             }
         });
     } catch(e) { console.error("Chart err", e); }
@@ -51,18 +80,32 @@ async function loadActivityChart() {
 
 async function loadApiUsageChart() {
     try {
+        const res = await fetch(`/api/api-usage?hours=24`);
+        const data = await res.json();
+        
         const ctx = document.getElementById('apiUsageChart');
         if(!ctx) return;
         
         if(apiUsageChart) apiUsageChart.destroy();
         
+        let labels = [];
+        let counts = [];
+        
+        if (data && data.by_api) {
+            labels = Object.keys(data.by_api);
+            counts = Object.values(data.by_api).map(val => val.calls);
+        }
+        
+        const defaultColors = ['#3a86ff', '#e74c3c', '#f5a623', '#9b59b6'];
+        const colors = labels.map((_, idx) => defaultColors[idx % defaultColors.length]);
+        
         apiUsageChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['Gemini', 'Groq', 'Mistral', 'OpenRouter'],
+                labels: labels,
                 datasets: [{
-                    data: [300, 50, 100, 40],
-                    backgroundColor: ['#3a86ff', '#e74c3c', '#f5a623', '#9b59b6'],
+                    data: counts,
+                    backgroundColor: colors,
                     borderWidth: 0
                 }]
             },
@@ -71,30 +114,61 @@ async function loadApiUsageChart() {
                 maintainAspectRatio: false,
                 cutout: '70%',
                 plugins: {
-                    legend: { position: 'right' }
+                    legend: { position: 'right' },
+                    title: {
+                        display: counts.length === 0 || counts.reduce((a, b) => a + b, 0) === 0,
+                        text: "Aucune donnée",
+                        position: "bottom"
+                    }
                 }
             }
         });
-    } catch(e) {}
+    } catch(e) { console.error("Chart err", e); }
 }
 
 async function loadConversationChart() {
     try {
+        const res = await fetch(`/api/conversations?days=7`);
+        const data = await res.json();
+        
         const ctx = document.getElementById('conversationChart');
         if(!ctx) return;
         
         if(conversationChart) conversationChart.destroy();
         
+        let labels = [];
+        let counts = [];
+        let colors = [];
+        
+        const bots = Object.keys(BOT_REGISTRY_JS);
+        
+        for (const botId of bots) {
+            const botMeta = BOT_REGISTRY_JS[botId];
+            labels.push(botMeta.display);
+            colors.push(botMeta.color);
+            
+            let count = 0;
+            if (data && data.by_bot) {
+                const matchingKey = Object.keys(data.by_bot).find(k => 
+                    k.toLowerCase() === botId.toLowerCase() || 
+                    k.toLowerCase() === botMeta.name.toLowerCase() ||
+                    k.toLowerCase() === botMeta.display.toLowerCase()
+                );
+                if (matchingKey) {
+                    count = data.by_bot[matchingKey].messages;
+                }
+            }
+            counts.push(count);
+        }
+        
         conversationChart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: ['Sheogorath', "M'aiq", 'Alfred', 'Johnny', 'Sugar Bot', 'Malena'],
+                labels: labels,
                 datasets: [{
                     label: 'Messages handling',
-                    data: [150, 80, 45, 20, 10, 5],
-                    backgroundColor: [
-                        '#9b59b6', '#e67e22', '#2c3e50', '#27ae60', '#2980b9', '#e74c3c'
-                    ],
+                    data: counts,
+                    backgroundColor: colors,
                     borderRadius: 4
                 }]
             },
@@ -105,8 +179,15 @@ async function loadConversationChart() {
                     y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
                     x: { grid: { display: false } }
                 },
-                plugins: { legend: { display: false } }
+                plugins: { 
+                    legend: { display: false },
+                    title: {
+                        display: counts.length === 0 || counts.reduce((a, b) => a + b, 0) === 0,
+                        text: "Aucune donnée",
+                        position: "bottom"
+                    }
+                }
             }
         });
-    } catch(e) {}
+    } catch(e) { console.error("Chart err", e); }
 }

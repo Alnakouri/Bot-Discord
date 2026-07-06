@@ -58,3 +58,36 @@ class ConversationAnalyzer:
         except Exception as e:
             if conn: conn.close()
             return {"error": str(e)}
+
+    def get_activity(self, hours=24):
+        conn = self._get_connection()
+        if not conn: return {"error": "DB non trouvée"}
+        
+        try:
+            cursor = conn.cursor()
+            cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+            
+            cursor.execute("""
+                SELECT strftime('%Y-%m-%dT%H:00', timestamp) as hr, COUNT(*)
+                FROM interactions
+                WHERE timestamp > ?
+                GROUP BY hr
+                ORDER BY hr ASC
+            """, (cutoff,))
+            
+            rows = cursor.fetchall()
+            db_data = {r[0]: r[1] for r in rows if r[0]}
+            
+            buckets = []
+            now = datetime.now()
+            for i in range(hours):
+                dt = now - timedelta(hours=hours - 1 - i)
+                hour_str = dt.strftime('%Y-%m-%dT%H:00')
+                count = db_data.get(hour_str, 0)
+                buckets.append({"hour": hour_str, "count": count})
+                
+            conn.close()
+            return {"buckets": buckets}
+        except Exception as e:
+            if conn: conn.close()
+            return {"error": str(e)}

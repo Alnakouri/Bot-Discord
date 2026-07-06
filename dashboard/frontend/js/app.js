@@ -322,10 +322,57 @@ function initClock() {
 // --- DATA FETCHING ---
 async function refreshAllData() {
     await fetchBotsStatus();
+    await updateStatTiles();
     // Les graphes seront rafraîchis via charts.js
     if (typeof window.refreshCharts === 'function') {
         window.refreshCharts();
     }
+}
+
+async function updateStatTiles() {
+    try {
+        const errRes = await fetch('/api/errors/count?hours=24');
+        if (errRes.ok) {
+            const errCount = await errRes.json();
+            const statErrorsEl = document.getElementById('stat-errors');
+            if (statErrorsEl) statErrorsEl.textContent = errCount;
+        }
+    } catch(e) { console.error("Error stat tile fetch error:", e); }
+
+    try {
+        const apiRes = await fetch('/api/api-usage?hours=24');
+        if (apiRes.ok) {
+            const apiData = await apiRes.json();
+            const statApiEl = document.getElementById('stat-api-success');
+            if (statApiEl) {
+                let totalCalls = 0;
+                let totalErrors = 0;
+                if (apiData && apiData.by_api) {
+                    for (const provider of Object.values(apiData.by_api)) {
+                        totalCalls += provider.calls || 0;
+                        totalErrors += provider.errors || 0;
+                    }
+                }
+                if (totalCalls > 0) {
+                    const rate = ((totalCalls - totalErrors) / totalCalls) * 100;
+                    statApiEl.textContent = `${rate.toFixed(1)}%`;
+                } else {
+                    statApiEl.textContent = '—';
+                }
+            }
+        }
+    } catch(e) { console.error("API stat tile fetch error:", e); }
+
+    try {
+        const convRes = await fetch('/api/conversations?days=7');
+        if (convRes.ok) {
+            const convData = await convRes.json();
+            const statUsersEl = document.getElementById('stat-users');
+            if (statUsersEl) {
+                statUsersEl.textContent = convData.unique_users ?? 0;
+            }
+        }
+    } catch(e) { console.error("Users stat tile fetch error:", e); }
 }
 
 async function fetchBotsStatus() {
@@ -513,14 +560,7 @@ function appendLogLine(log) {
     term.scrollTop = term.scrollHeight;
 }
 
-const BOT_REGISTRY_JS = {
-    "sheogorath": { name: "sheogorath", display: "🧀 Sheogorath", color: "#d946ef" },
-    "maiq": { name: "maiq", display: "🐱 M'aiq le Menteur", color: "#f97316" },
-    "alfred": { name: "alfred", display: "☕ Alfred Pennyworth", color: "#475569" },
-    "johnny": { name: "johnny", display: "🔫 Johnny Silverbot", color: "#22c55e" },
-    "sugar": { name: "sugar", display: "Sugar Bot", color: "#0ea5e9" },
-    "malena": { name: "malena", display: "💃 Malena la Gitana", color: "#f43f5e" }
-};
+
 
 // --- ERRORS ---
 async function loadErrors() {

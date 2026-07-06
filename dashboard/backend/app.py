@@ -254,6 +254,17 @@ async def log_stream(websocket: WebSocket, bot: str = None):
             pass
 
 # --- ERRORS ---
+@app.get("/api/errors/count")
+async def get_errors_count(hours: int = 24):
+    return error_analyzer.count_recent(hours)
+
+@app.post("/api/errors/{error_id}/resolve")
+async def resolve_error(error_id: int):
+    res = error_analyzer.resolve(error_id)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Échec de la résolution"))
+    return res
+
 @app.get("/api/errors")
 async def get_errors(bot: str = None, severity: str = None, resolved: bool = None):
     return error_analyzer.get_errors(bot, severity, resolved)
@@ -272,6 +283,10 @@ async def get_api_keys_status():
     return api_tracker.get_keys_status()
 
 # --- CONVERSATIONS ---
+@app.get("/api/conversations/activity")
+async def get_conversation_activity(hours: int = 24):
+    return conversation_analyzer.get_activity(hours)
+
 @app.get("/api/conversations")
 async def get_conversation_stats(days: int = 7, bot: str = None):
     return conversation_analyzer.get_stats(days, bot)
