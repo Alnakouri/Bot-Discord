@@ -714,6 +714,26 @@ async def oubliemoi(ctx):
 
 # LOGIQUE CONVERSATIONNELLE
 
+# Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, on ne s'incruste
+# PAS lors d'une intervention ALÉATOIRE (les mentions/nom direct du bot restent prioritaires).
+OTHER_BOT_NAMES = ["sheo", "sheogorath", "sugar", "sugar bot", "alfred", "pennyworth", "m'aiq", "maiq", "malena", "malèna"]
+
+async def _other_bot_in_focus(message):
+    """True si la conversation est manifestement tournée vers un AUTRE bot."""
+    if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
+        return True
+    try:
+        async for prev in message.channel.history(limit=4, before=message):
+            if prev.author == bot.user:
+                return False   # ce bot était déjà dans la boucle → ok d'enchaîner
+            if prev.author.bot:
+                return True    # un autre bot vient de parler → c'est SON échange
+            if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
+                return True    # un humain vient de nommer un autre bot
+    except Exception:
+        return False
+    return False
+
 @bot.event
 async def on_message(message):
     # Ignorer les messages du bot lui-même
@@ -779,10 +799,13 @@ async def on_message(message):
         should_respond = True
         logger.info(f"[IMAGE PRIORITY] Johnny va analyser l'image de {message.author.name}")
 
-    # C. Intervention aléatoire (10%)
+    # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
     if not should_respond and not is_bot_talking and random.random() < 0.10:
-        should_respond = True
-        logger.info(f"[INTERVENTION] Johnny intervient dans {message.channel.name}")
+        if await _other_bot_in_focus(message):
+            logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Johnny se tait.")
+        else:
+            should_respond = True
+            logger.info(f"[INTERVENTION] Johnny intervient dans {message.channel.name}")
     
     if not should_respond:
         return

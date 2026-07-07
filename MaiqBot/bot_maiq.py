@@ -962,6 +962,26 @@ async def on_reaction_add(reaction, user):
         await reaction.message.add_reaction("😡")
         await reaction.message.channel.send("Horrible créature ! M'aiq déteste les crabes de boue !")
 
+# Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, on ne s'incruste
+# PAS lors d'une intervention ALÉATOIRE (les mentions/nom direct du bot restent prioritaires).
+OTHER_BOT_NAMES = ["sheo", "sheogorath", "johnny", "silverhand", "samurai", "silverbot", "alfred", "pennyworth", "sugar", "sugar bot", "malena", "malèna"]
+
+async def _other_bot_in_focus(message):
+    """True si la conversation est manifestement tournée vers un AUTRE bot."""
+    if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
+        return True
+    try:
+        async for prev in message.channel.history(limit=4, before=message):
+            if prev.author == bot.user:
+                return False   # ce bot était déjà dans la boucle → ok d'enchaîner
+            if prev.author.bot:
+                return True    # un autre bot vient de parler → c'est SON échange
+            if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
+                return True    # un humain vient de nommer un autre bot
+    except Exception:
+        return False
+    return False
+
 @bot.event
 async def on_message(message):
     # 0. SÉCURITÉ : Ne jamais se répondre à soi-même
@@ -1126,8 +1146,11 @@ async def on_message(message):
     # "L'Oreille qui traîne" (Si mot-clé + pas de mention + random 20%)
     if has_keyword and not is_mentioned and not is_reply:
          if random.random() < 0.20:
-            is_eavesdropping = True
-            logger.info(f"[OREILLE] Mot-clé détecté dans : {message.content[:50]}")
+            if await _other_bot_in_focus(message):
+                logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → M'aiq n'écoute pas.")
+            else:
+                is_eavesdropping = True
+                logger.info(f"[OREILLE] Mot-clé détecté dans : {message.content[:50]}")
 
     # "[RUMEURS INTERACTIVES] Défense ou Réaction"
     is_rumor_defense = False

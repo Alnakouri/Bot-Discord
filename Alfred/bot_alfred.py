@@ -1234,6 +1234,26 @@ async def do_cleanup(channel, limit=100, bots_only=False):
             await channel.send(f"🤵 **Alfred** : Une erreur est survenue. ({e}) 😔")
 
 
+# Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, on ne s'incruste
+# PAS lors d'une intervention ALÉATOIRE (les mentions/nom direct du bot restent prioritaires).
+OTHER_BOT_NAMES = ["sheo", "sheogorath", "johnny", "silverhand", "samurai", "silverbot", "sugar", "sugar bot", "m'aiq", "maiq", "malena", "malèna"]
+
+async def _other_bot_in_focus(message):
+    """True si la conversation est manifestement tournée vers un AUTRE bot."""
+    if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
+        return True
+    try:
+        async for prev in message.channel.history(limit=4, before=message):
+            if prev.author == bot.user:
+                return False   # ce bot était déjà dans la boucle → ok d'enchaîner
+            if prev.author.bot:
+                return True    # un autre bot vient de parler → c'est SON échange
+            if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
+                return True    # un humain vient de nommer un autre bot
+    except Exception:
+        return False
+    return False
+
 @bot.event
 async def on_message(message):
     # 0. Anti-Self
@@ -1375,11 +1395,14 @@ async def on_message(message):
         context_prefix = "VISION: Le Maître partage une image. Analysez-la et commentez avec élégance."
         logger.info(f"📷 [IMAGE PRIORITY] Alfred va analyser l'image de {message.author.name}")
 
-    # C. Si Chaos détecté (Proactivité "Ordre")
+    # C. Si Chaos détecté (Proactivité "Ordre") — sauf si l'échange vise un AUTRE bot
     elif (has_chaos_keyword or is_shouting) and random.random() < 0.15:
-        should_respond = True
-        context_prefix = "CONTEXTE: L'utilisateur est vulgaire ou crie. Rappelle-lui les bonnes manières avec un cynisme glacé."
-        print(f"☕ MAINTIEN DE L'ORDRE : Alfred réagit au chaos de {message.author.name}")
+        if await _other_bot_in_focus(message):
+            logger.info("[ANTI-INCRUSTATION] Chaos dans un échange adressé à un autre bot → Alfred s'abstient.")
+        else:
+            should_respond = True
+            context_prefix = "CONTEXTE: L'utilisateur est vulgaire ou crie. Rappelle-lui les bonnes manières avec un cynisme glacé."
+            print(f"☕ MAINTIEN DE L'ORDRE : Alfred réagit au chaos de {message.author.name}")
 
     # C.bis DÉTECTION DE CHANT (SANCTION MUSICALE)
     elif not is_bot_talking:
@@ -1408,42 +1431,45 @@ async def on_message(message):
                      (has_lyrics_format and (has_singing_emoji or has_singing_word))
         
         if is_singing:
-            should_respond = True
-            
-            # Messages de sanction (sélection aléatoire)
-            sanction_messages = [
-                "🤵 *pose son torchon* Monsieur. Ce que vous faites avec votre voix constitue une infraction au bon goût. Cessez immédiatement. 😒",
-                "🤵 Le chant est interdit dans cette demeure. Si Monsieur souhaite s'exprimer vocalement, qu'il le fasse dans la cave. Seul. 🧐",
-                "🤵 Je dois vous informer que le dernier à avoir chanté ici a été retrouvé dans la Batcave. Avec les chauves-souris. Elles n'ont pas apprécié non plus. 🦇",
-                "🤵 Monsieur... *soupir britannique* C'est censé être de la musique ? Le chat du voisin fait mieux. Et il est sourd. 😒",
-                "🤵 Je me permets de vous rappeler l'Article 7 du Règlement du Manoir : 'Tout chant non autorisé sera sanctionné par un thé froid.' ☕",
-                "🤵 Monsieur Wayne m'a personnellement demandé de vous informer que ce... *bruit*... que vous émettez n'est pas toléré dans cette enceinte. 🧤",
-                "🤵 Si c'est un appel à l'aide déguisé en mélodie, je peux contacter les secours. Sinon, veuillez cesser. 🚑",
-                "🤵 La dernière personne qui a chanté au Manoir Wayne a été confondue avec une alarme incendie. Les pompiers n'étaient pas ravis. 🔥",
-            ]
-            
-            await message.channel.send(random.choice(sanction_messages))
-            logger.info(f"🎵 [SANCTION CHANT] Alfred sanctionne {message.author.name} pour avoir chanté !")
-            
-            # 30% de chance de timeout (1-5 min) si Alfred a la permission
-            if random.random() < 0.30:
-                try:
-                    timeout_duration = random.randint(60, 300)  # 1 à 5 minutes
-                    await message.author.timeout(timedelta(seconds=timeout_duration), reason="Chant non autorisé au Manoir Wayne")
-                    timeout_msg = random.choice([
-                        f"🤵 {message.author.mention} a été envoyé(e) réfléchir dans la cave pour **{timeout_duration // 60} minute(s)**. Que cela serve de leçon. 🦇",
-                        f"🤵 {message.author.mention} est en isolation vocale pour **{timeout_duration // 60} minute(s)**. Le silence est d'or, Monsieur. 🧤",
-                        f"🤵 {message.author.mention} a été mis(e) en sourdine pendant **{timeout_duration // 60} minute(s)**. Les oreilles du Manoir vous remercient. ☕",
-                    ])
-                    await message.channel.send(timeout_msg)
-                    logger.info(f"⏱️ [TIMEOUT] {message.author.name} timeout {timeout_duration}s pour chant")
-                except discord.Forbidden:
-                    logger.warning(f"⚠️ [TIMEOUT] Pas de permission pour timeout {message.author.name}")
-                except Exception as e:
-                    logger.error(f"❌ [TIMEOUT] Erreur: {e}")
-            
-            await bot.process_commands(message)
-            return  # On a déjà répondu, pas besoin de passer au LLM
+            if await _other_bot_in_focus(message):
+                logger.info("[ANTI-INCRUSTATION] Chant dans un échange adressé à un autre bot → Alfred s'abstient.")
+            else:
+                should_respond = True
+                
+                # Messages de sanction (sélection aléatoire)
+                sanction_messages = [
+                    "🤵 *pose son torchon* Monsieur. Ce que vous faites avec votre voix constitue une infraction au bon goût. Cessez immédiatement. 😒",
+                    "🤵 Le chant est interdit dans cette demeure. Si Monsieur souhaite s'exprimer vocalement, qu'il le fasse dans la cave. Seul. 🧐",
+                    "🤵 Je dois vous informer que le dernier à avoir chanté ici a été retrouvé dans la Batcave. Avec les chauves-souris. Elles n'ont pas apprécié non plus. 🦇",
+                    "🤵 Monsieur... *soupir britannique* C'est censé être de la musique ? Le chat du voisin fait mieux. Et il est sourd. 😒",
+                    "🤵 Je me permets de vous rappeler l'Article 7 du Règlement du Manoir : 'Tout chant non autorisé sera sanctionné par un thé froid.' ☕",
+                    "🤵 Monsieur Wayne m'a personnellement demandé de vous informer que ce... *bruit*... que vous émettez n'est pas toléré dans cette enceinte. 🧤",
+                    "🤵 Si c'est un appel à l'aide déguisé en mélodie, je peux contacter les secours. Sinon, veuillez cesser. 🚑",
+                    "🤵 La dernière personne qui a chanté au Manoir Wayne a été confondue avec une alarme incendie. Les pompiers n'étaient pas ravis. 🔥",
+                ]
+                
+                await message.channel.send(random.choice(sanction_messages))
+                logger.info(f"🎵 [SANCTION CHANT] Alfred sanctionne {message.author.name} pour avoir chanté !")
+                
+                # 30% de chance de timeout (1-5 min) si Alfred a la permission
+                if random.random() < 0.30:
+                    try:
+                        timeout_duration = random.randint(60, 300)  # 1 à 5 minutes
+                        await message.author.timeout(timedelta(seconds=timeout_duration), reason="Chant non autorisé au Manoir Wayne")
+                        timeout_msg = random.choice([
+                            f"🤵 {message.author.mention} a été envoyé(e) réfléchir dans la cave pour **{timeout_duration // 60} minute(s)**. Que cela serve de leçon. 🦇",
+                            f"🤵 {message.author.mention} est en isolation vocale pour **{timeout_duration // 60} minute(s)**. Le silence est d'or, Monsieur. 🧤",
+                            f"🤵 {message.author.mention} a été mis(e) en sourdine pendant **{timeout_duration // 60} minute(s)**. Les oreilles du Manoir vous remercient. ☕",
+                        ])
+                        await message.channel.send(timeout_msg)
+                        logger.info(f"⏱️ [TIMEOUT] {message.author.name} timeout {timeout_duration}s pour chant")
+                    except discord.Forbidden:
+                        logger.warning(f"⚠️ [TIMEOUT] Pas de permission pour timeout {message.author.name}")
+                    except Exception as e:
+                        logger.error(f"❌ [TIMEOUT] Erreur: {e}")
+                
+                await bot.process_commands(message)
+                return  # On a déjà répondu, pas besoin de passer au LLM
 
     # D. Si mot-clé service (Oreille indiscrète - 30%)
     elif has_service_keyword and random.random() < 0.30:
