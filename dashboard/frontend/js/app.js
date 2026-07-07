@@ -1457,7 +1457,7 @@ async function loadTwitchEconomy() {
                     <tr>
                         <td style="font-weight:700; opacity:0.6;">#${index+1}</td>
                         <td style="color:#fff; font-weight:600;"><i class="fa-solid fa-user-ninja"></i> ${escapeHtml(entry.name)}</td>
-                        <td style="color:#60a5fa; font-weight:700;">${entry.points} pts</td>
+                        <td style="color:#60a5fa; font-weight:700;">${escapeHtml(String(entry.points))} pts</td>
                     </tr>
                 `;
                 bodyEl.insertAdjacentHTML('beforeend', row);

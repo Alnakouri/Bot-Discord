@@ -76,7 +76,12 @@ class BotManager:
                 ["docker", "inspect", "-f", "{{.Name}} {{.State.Status}} {{.State.StartedAt}}"] + container_names,
                 capture_output=True, text=True
             )
-            if result.returncode == 0:
+            # NB : `docker inspect` retourne un code != 0 dès qu'UN conteneur
+            # est absent (bot jamais démarré), mais produit quand même les
+            # lignes des conteneurs trouvés sur stdout. On parse donc stdout
+            # sans gater sur le code retour, sinon un seul bot manquant ferait
+            # afficher « stopped » pour TOUTE la grille.
+            if result.stdout:
                 for line in result.stdout.strip().split("\n"):
                     if not line:
                         continue
@@ -127,9 +132,21 @@ class BotManager:
         return info_map
 
     def _get_docker_status(self, bot_id):
-        """Vérifie si le conteneur Docker du bot est en cours d'exécution."""
-        status_info = self.get_status(bot_id)
-        return status_info and status_info["status"] == "running"
+        """Vérifie si le conteneur Docker du bot tourne (check léger 1 conteneur).
+
+        On n'appelle pas `get_status` (qui scanne les 6 bots + `docker stats`,
+        ~1-2 s) : un simple `docker inspect` sur le seul conteneur ciblé suffit
+        pour les gardes de start/stop/restart.
+        """
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Status}}", f"bot-{bot_id}"],
+                capture_output=True, text=True
+            )
+            return result.stdout.strip() == "running"
+        except Exception as e:
+            print(f"Docker inspect (status léger) error for {bot_id}: {e}")
+            return False
 
     def get_status(self, bot_id):
         bot_info = BOT_REGISTRY.get(bot_id)
