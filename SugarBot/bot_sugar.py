@@ -154,16 +154,18 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # MEMORY SETTINGS
 try:
     from sugar_memory import FactMemory, DailyMemory
-    from sugar_grudge import GrudgeBook
+    from sugar_grudge import GrudgeBook, classify_tone
 except ImportError:
     from SugarBot.sugar_memory import FactMemory, DailyMemory
-    from SugarBot.sugar_grudge import GrudgeBook
+    from SugarBot.sugar_grudge import GrudgeBook, classify_tone
 sugar_facts_file = os.path.join(DATA_DIR, "sugar_facts.json")
 sugar_memory_file = os.path.join(DATA_DIR, "sugar_memory.json")
 fact_memory = FactMemory(sugar_facts_file)
 daily_memory = DailyMemory(sugar_memory_file)
 # Carnet de rancunes : rancune/rédemption par user, implicite (seul le ton la trahit)
-grudge_book = GrudgeBook(os.path.join(DATA_DIR, "sugar_grudge.json"))
+ENABLE_GRUDGE_LLM = os.getenv("ENABLE_GRUDGE_LLM", "1") != "0"
+grudge_book = GrudgeBook(os.path.join(DATA_DIR, "sugar_grudge.json"),
+                         llm_enabled=ENABLE_GRUDGE_LLM)
 
 async def _daily_llm_call(system_prompt, user_message):
     return await generate_response(
@@ -173,6 +175,15 @@ async def _daily_llm_call(system_prompt, user_message):
         key_manager=key_manager, mistral_client=mistral_client,
         groq_client=groq_client, openrouter_client=openrouter_client,
         bot_label="Sugar Bot", temperature=0.5, max_tokens=60)
+
+async def _grudge_llm_call(system_prompt, user_message):
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "grudge_classify"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client, openrouter_client=openrouter_client,
+        bot_label="Sugar Bot", temperature=0.0, max_tokens=6)
 
 conversation_history = {}
 MAX_HISTORY = 30
@@ -605,9 +616,15 @@ async def on_message(message):
 
             # Carnet de rancunes : les événements de ton ne comptent que si le
             # message est ADRESSÉ à Sugar (sinon on lit juste le score courant).
+            _grudge_addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
             grudge_addition = grudge_book.update(
-                user_id, user_message_temp,
-                addressed=bool(is_mentioned or is_reply or is_dm or is_name_mentioned))
+                user_id, user_message_temp, addressed=_grudge_addressed)
+            # Raffinement LLM en tâche de fond (jamais dans le chemin de réponse)
+            if _grudge_addressed and grudge_book.should_refine(
+                    user_id, user_message_temp, classify_tone(user_message_temp)):
+                import asyncio as _asyncio
+                _asyncio.create_task(grudge_book.refine_async(
+                    user_id, user_message_temp, _grudge_llm_call))
 
             fact_context = ""
             if relevant_facts:

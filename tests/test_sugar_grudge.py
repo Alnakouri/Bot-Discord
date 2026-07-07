@@ -152,5 +152,143 @@ class TestGrudgeBook(unittest.TestCase):
         self.assertEqual(self._score("2"), 0)
 
 
+class TestSugarGrudgeLLM(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "grudge_llm.json")
+        self.book = GrudgeBook(self.path, positive_cooldown=0, llm_enabled=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_parse_llm_tone(self):
+        self.assertEqual(GrudgeBook.parse_llm_tone("AGGRO"), "aggro")
+        self.assertEqual(GrudgeBook.parse_llm_tone("aggro."), "aggro")
+        self.assertEqual(GrudgeBook.parse_llm_tone("Réponse : GENTIL"), "neutral")
+        self.assertEqual(GrudgeBook.parse_llm_tone("NEUTRE\n"), "neutral")
+        self.assertEqual(GrudgeBook.parse_llm_tone("charabia"), "neutral")
+        self.assertEqual(GrudgeBook.parse_llm_tone(""), "neutral")
+        self.assertEqual(GrudgeBook.parse_llm_tone(None), "neutral")
+        self.assertEqual(GrudgeBook.parse_llm_tone("GENTIL et beau"), "kind")
+        self.assertEqual(GrudgeBook.parse_llm_tone("EXCUSE"), "apology")
+
+    def test_apply_event(self):
+        # Starts at 0
+        self.book.apply_event("1", "aggro")
+        self.assertEqual(self.book.book["1"]["score"], 2)
+        # Cap max
+        self.book.apply_event("1", "aggro")
+        self.book.apply_event("1", "aggro")
+        self.assertEqual(self.book.book["1"]["score"], 5)
+        # apology removes 2
+        self.book.apply_event("1", "apology")
+        self.assertEqual(self.book.book["1"]["score"], 3)
+        # kind removes 1
+        self.book.apply_event("1", "kind")
+        self.assertEqual(self.book.book["1"]["score"], 2)
+        # neutral does nothing
+        self.book.apply_event("1", "neutral")
+        self.assertEqual(self.book.book["1"]["score"], 2)
+        # apology to 0
+        redeemed = self.book.apply_event("1", "apology")
+        self.assertTrue(redeemed)
+        self.assertEqual(self.book.book["1"]["score"], 0)
+
+    def test_should_refine(self):
+        # False si lexique non-neutral
+        self.assertFalse(self.book.should_refine("1", "t'es nulle", "aggro"))
+        # False si llm_enabled=False
+        book_disabled = GrudgeBook(self.path, llm_enabled=False)
+        self.assertFalse(book_disabled.should_refine("1", "quelque chose", "neutral"))
+
+        # False sur message d'un seul mot
+        self.assertFalse(self.book.should_refine("1", "mot", "neutral"))
+
+        # False à score 0 sans marqueur 2e personne
+        self.assertFalse(self.book.should_refine("1", "bonjour comment ca va", "neutral"))
+        # True à score 0 avec « t'es … » or « tu » or « sugar »
+        self.assertTrue(self.book.should_refine("1", "t'es qui ?", "neutral"))
+        self.assertTrue(self.book.should_refine("1", "tu me boudes ?", "neutral"))
+
+        # True à score > 0 sur message neutre (même sans 2e personne)
+        self.book.book["1"] = {"score": 2, "last_day": str(date.today()), "last_positive_ts": 0.0}
+        self.assertTrue(self.book.should_refine("1", "quelque chose", "neutral"))
+
+        # False sous cooldown 60 s
+        import time
+        self.book.book["1"]["last_llm_ts"] = time.time() - 30
+        self.assertFalse(self.book.should_refine("1", "quelque chose", "neutral"))
+        # True après cooldown
+        self.book.book["1"]["last_llm_ts"] = time.time() - 61
+        self.assertTrue(self.book.should_refine("1", "quelque chose", "neutral"))
+
+    async def test_refine_async(self):
+        # Fake llm_call returning AGGRO
+        async def fake_llm_aggro(system_prompt, user_message):
+            return "AGGRO"
+
+        # Start score at 0
+        self.assertEqual(self.book.book.get("1", {}).get("score", 0), 0)
+        # Call refine_async on a text with marker so should_refine is True
+        await self.book.refine_async("1", "tu es bizarre", fake_llm_aggro)
+        self.assertEqual(self.book.book["1"]["score"], 2)
+
+        # Fake GENTIL à score 1 -> pending_redemption posé
+        self.book.book["1"]["score"] = 1
+        # Clear cooldown so should_refine passes
+        self.book.book["1"]["last_llm_ts"] = 0.0
+        async def fake_llm_gentil(system_prompt, user_message):
+            return "GENTIL"
+        await self.book.refine_async("1", "tu es gentille", fake_llm_gentil)
+        self.assertEqual(self.book.book["1"]["score"], 0)
+        self.assertTrue(self.book.book["1"].get("pending_redemption"))
+
+        # puis update() suivant (message non agressif) -> renvoie la directive de pardon UNE fois puis plus rien
+        d1 = self.book.update("1", "bonjour", addressed=True)
+        self.assertIn("regagner ton pardon", d1)
+        self.assertNotIn("pending_redemption", self.book.book["1"])
+
+        d2 = self.book.update("1", "re-bonjour", addressed=True)
+        self.assertEqual(d2, "") # plus rien
+
+        # Test: update() suivant agressif -> flag consommé silencieusement + score +2
+        self.book.book["1"]["score"] = 1
+        self.book.book["1"]["last_llm_ts"] = 0.0
+        await self.book.refine_async("1", "tu es gentille", fake_llm_gentil)
+        self.assertEqual(self.book.book["1"]["score"], 0)
+        self.assertTrue(self.book.book["1"].get("pending_redemption"))
+        # Current message is aggro
+        d_aggro = self.book.update("1", "t'es nulle", addressed=True)
+        self.assertNotIn("pending_redemption", self.book.book["1"])
+        self.assertEqual(self.book.book["1"]["score"], 2)
+        self.assertIn("MÉFIANTE", d_aggro)
+
+        # fake LLM qui lève une exception -> aucun crash, score inchangé
+        async def fake_llm_error(system_prompt, user_message):
+            raise Exception("API Error")
+        self.book.book["1"]["last_llm_ts"] = 0.0
+        await self.book.refine_async("1", "tu es bizarre", fake_llm_error) # No exception raised
+        self.assertEqual(self.book.book["1"]["score"], 2)
+
+        # fake « NEUTRE » -> aucun save/changement
+        async def fake_llm_neutre(system_prompt, user_message):
+            return "NEUTRE"
+        self.book.book["1"]["last_llm_ts"] = 0.0
+        await self.book.refine_async("1", "tu es bizarre", fake_llm_neutre)
+        self.assertEqual(self.book.book["1"]["score"], 2)
+
+    def test_persistence_of_pending_redemption(self):
+        self.book.book["1"] = {
+            "score": 0,
+            "last_day": str(date.today()),
+            "last_positive_ts": 0.0,
+            "pending_redemption": True
+        }
+        self.book._save()
+
+        reloaded = GrudgeBook(self.path)
+        self.assertTrue(reloaded.book["1"].get("pending_redemption"))
+
+
 if __name__ == "__main__":
     unittest.main()
