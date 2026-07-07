@@ -62,24 +62,6 @@ EXPLOITS = [
     "Mon plus bel exploit ? Transformer un grincheux en péteur tout penaud en une phrase. ✨",
 ]
 
-# ARGENT / LOISIRS
-
-MONEY_RESPONSES = [
-    "L'argent c'est bien, mais la gentillesse ça ne coûte rien et ça rapporte gros. 🍬",
-]
-
-# TRÉSORS / JACKPOTS
-
-JACKPOT_RESPONSES = [
-    "Le vrai jackpot, c'est une communauté de bonne humeur. Les péteurs, dehors. 😏",
-]
-
-# TRANSPORTS / MOTO
-
-BIKE_RESPONSES = [
-    "Moi je roule au sucre et à la bonne ambiance, merci.",
-]
-
 # SALUTATIONS
 
 GREETINGS = [
@@ -88,12 +70,4 @@ GREETINGS = [
     "Salut mon petit sucre, ça roule ?",
     "Hey ! Sois sage, sinon je te traite de péteur. 😏",
 ]
-
-# MOTS-CLÉS DE DÉCLENCHEMENT
-
-GTO_KEYWORDS = []
-
-PUNCHLINE_TRIGGERS = []
-
-EXPLOIT_TRIGGERS = []
 

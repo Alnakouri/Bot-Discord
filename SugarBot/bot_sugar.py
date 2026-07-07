@@ -48,19 +48,11 @@ def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
             data = json.load(f)
-            # Map old keys to new keys if they exist
-            if "rum_count" in data:
-                data["money_bragged"] = data.pop("rum_count")
-            if "beer_count" in data:
-                data["money_bragged"] = data.pop("beer_count")
-            if "treasures_found" in data:
-                data["jackpots"] = data.pop("treasures_found")
-            if "stash_count" in data:
-                data["jackpots"] = data.pop("stash_count")
+            # Migration d'anciennes clés (ère pirate/GTO) vers le compteur d'exploits
             if "legends_told" in data:
                 data["tales_told"] = data.pop("legends_told")
             return data
-    return {"money_bragged": 0, "jackpots": 0, "tales_told": 0}
+    return {"tales_told": 0}
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
@@ -121,17 +113,9 @@ except ImportError:
 
 
 try:
-    from sugar_data import (
-        PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS,
-        MONEY_RESPONSES, JACKPOT_RESPONSES, BIKE_RESPONSES,
-        GREETINGS, PUNCHLINE_TRIGGERS, EXPLOIT_TRIGGERS
-    )
+    from sugar_data import PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS, GREETINGS
 except ImportError:
-    from SugarBot.sugar_data import (
-        PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS,
-        MONEY_RESPONSES, JACKPOT_RESPONSES, BIKE_RESPONSES,
-        GREETINGS, PUNCHLINE_TRIGGERS, EXPLOIT_TRIGGERS
-    )
+    from SugarBot.sugar_data import PERSONALITY_PROMPT, PUNCHLINES, EXPLOITS, GREETINGS
 
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -299,8 +283,6 @@ async def on_ready():
     logger.info(f'   ✅ OpenRouter : {"Oui" if OPENROUTER_API_KEY else "Non"}')
     
     logger.info("📊 STATISTIQUES SUGAR BOT:")
-    logger.info(f'   💴 Fric vanté : {sugar_stats.get("money_bragged", 0)}')
-    logger.info(f'   🎰 Jackpots gagnés : {sugar_stats.get("jackpots", 0)}')
     logger.info(f'   📖 Exploits racontés : {sugar_stats.get("tales_told", 0)}')
     
     logger.info("Sugar Bot est prêt.")
@@ -329,14 +311,9 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
-    """Accueil de classe"""
+    """Accueil des nouveaux arrivants (délégué au module partagé, en voix de Sugar)."""
     if DATABASE_AVAILABLE:
         await handle_member_join(bot, member, bot_name="Sugar Bot")
-        # Message personnalisé
-        if member.guild.system_channel:
-            await member.guild.system_channel.send(
-                f"**Bienvenue, {member.mention} !**"
-            )
 
 @bot.event
 async def on_member_remove(member):
@@ -415,28 +392,6 @@ async def chanson_cmd(ctx):
     """Sort une phrase de Sugar Bot"""
     shanty = random.choice(PUNCHLINES)
     await ctx.send(shanty)
-
-@bot.command(name="fric", aliases=["argent"])
-async def fric_cmd(ctx):
-    """Parle de sa passion"""
-    response = random.choice(MONEY_RESPONSES)
-    sugar_stats["money_bragged"] = sugar_stats.get("money_bragged", 0) + 1
-    save_data(sugar_stats)
-    await ctx.send(response)
-
-@bot.command(name="jackpot")
-async def jackpot_cmd(ctx):
-    """Parle de jackpots"""
-    response = random.choice(JACKPOT_RESPONSES)
-    sugar_stats["jackpots"] = sugar_stats.get("jackpots", 0) + 1
-    save_data(sugar_stats)
-    await ctx.send(f"{response}\nJackpots : {sugar_stats['jackpots']}")
-
-@bot.command(name="moto")
-async def moto_cmd(ctx):
-    """Parle de moto"""
-    response = random.choice(BIKE_RESPONSES)
-    await ctx.send(response)
 
 @bot.command(name="equipage", aliases=["crew", "classe"])
 async def equipage_cmd(ctx):
@@ -538,12 +493,12 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Sugar Bot)
-    if message.webhook_id and any(n in message.author.display_name.lower() for n in ["sugar", "sugar bot"]):
+    # IGNORER SES PROPRES IMPOSTEURS (Webhooks nommés Sugar)
+    if message.webhook_id and "sugar" in message.author.display_name.lower():
         return
         
-    # SILENCE STREAM (Canal ignoré)
-    if is_ignored_channel(message.channel):
+    # SILENCE STREAM (Canal ignoré) — is_ignored_channel provient de shared (optionnel)
+    if DATABASE_AVAILABLE and is_ignored_channel(message.channel):
         return
     
     # Vérification mode maintenance AVANT process_commands
@@ -747,15 +702,9 @@ async def on_message(message):
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
 
     user_msg_content = user_message
-    
-    # Détection mots-clés (fric, jackpot, moto, etc.)
     content_lower = user_message.lower()
     keyword_boost = ""
-    
-    if any(kw in content_lower for kw in ["fric", "argent", "thune", "yen"]):
-        sugar_stats["money_bragged"] = sugar_stats.get("money_bragged", 0) + 1
-        save_data(sugar_stats)
-    
+
     # HISTORIQUE
     channel_id = message.channel.id
     if channel_id not in conversation_history:

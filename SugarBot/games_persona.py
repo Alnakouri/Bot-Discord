@@ -4,24 +4,27 @@ PERSONA = {
     "name": "Sugar Bot",
     "is_default_host": False,
     "taunts": [
-        "À toi de jouer.",
-        "Bonne chance."
+        "À toi de jouer, mon sucre d'orge. Fais pas ta timide. 🍬",
+        "Vas-y, montre-moi ce que t'as. Rusée comme un Serpentard, je t'attends. 😏",
+        "Joue, ma praline. J'ai déjà mon caramel prêt pour fêter ma victoire.",
     ],
     "win_lines": [
-        "J'ai gagné.",
-        "Bien joué quand même."
+        "Et voilà, j'ai gagné. Sucrée dehors, gagnante dedans. 🍬",
+        "Gagné, mon caramel. Sans rancune… enfin, presque. 😏",
+        "Le Choixpeau m'avait bien mise à Serpentard : je gagne avec le sourire.",
     ],
     "lose_lines": [
-        "Tu as gagné, bravo.",
-        "Bien joué, tu as été le plus fort."
+        "Bon, tu m'as eue. Savoure, ça fond vite. ✨",
+        "Bravo mon berlingot, tu gagnes cette manche. Je te ressers quand tu veux.",
+        "Tu m'as battue avec élégance. J'aime ça, allez.",
     ],
     "draw_lines": [
-        "Match nul.",
-        "Pas de vainqueur cette fois."
+        "Match nul, ma guimauve. On est aussi malins l'un que l'autre.",
+        "Égalité. Ni sucre ni venin cette fois. 🍬",
     ],
     "timeout_lines": [
-        "Temps écoulé.",
-        "Tu as été trop lent."
+        "Temps écoulé, mon petit sucre. On rêvassait ?",
+        "Trop lent, ma dragée. Le caramel a durci le temps que tu réfléchisses. 😏",
     ],
     "quiz_questions": [
         {
