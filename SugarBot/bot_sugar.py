@@ -154,12 +154,16 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # MEMORY SETTINGS
 try:
     from sugar_memory import FactMemory, DailyMemory
+    from sugar_grudge import GrudgeBook
 except ImportError:
     from SugarBot.sugar_memory import FactMemory, DailyMemory
+    from SugarBot.sugar_grudge import GrudgeBook
 sugar_facts_file = os.path.join(DATA_DIR, "sugar_facts.json")
 sugar_memory_file = os.path.join(DATA_DIR, "sugar_memory.json")
 fact_memory = FactMemory(sugar_facts_file)
 daily_memory = DailyMemory(sugar_memory_file)
+# Carnet de rancunes : rancune/rédemption par user, implicite (seul le ton la trahit)
+grudge_book = GrudgeBook(os.path.join(DATA_DIR, "sugar_grudge.json"))
 
 async def _daily_llm_call(system_prompt, user_message):
     return await generate_response(
@@ -598,16 +602,23 @@ async def on_message(message):
             daily_summary = daily_memory.get_context_summary(user_id)
             dr = daily_memory.get_daily_read(user_id)
             daily_read_addition = f"\n[CONSIGNE DU JOUR] {dr}" if dr else ""
-            
+
+            # Carnet de rancunes : les événements de ton ne comptent que si le
+            # message est ADRESSÉ à Sugar (sinon on lit juste le score courant).
+            grudge_addition = grudge_book.update(
+                user_id, user_message_temp,
+                addressed=bool(is_mentioned or is_reply or is_dm or is_name_mentioned))
+
             fact_context = ""
             if relevant_facts:
                 fact_context = f"\n[CE QUE TU SAIS SUR CET INTERLOCUTEUR (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
-                
+
             _memory_cache["val"] = (
                 f"\n\n[CONTEXTE DE MÉMOIRE]"
                 f"{fact_context}"
                 f"\n{daily_summary}"
                 f"{daily_read_addition}"
+                f"{grudge_addition}"
                 f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cet élève/interlocuteur dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
             )
         return _memory_cache["val"]
