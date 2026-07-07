@@ -178,6 +178,11 @@ try:
 except ImportError:
     DiscordDailyBio = None
 
+try:
+    from shared.discord_status import DiscordDailyStatus
+except ImportError:
+    DiscordDailyStatus = None
+
 
 
 # GAME LOGIC
@@ -408,6 +413,46 @@ daily_bio = DiscordDailyBio(
     system_prompt_provider=get_current_system_prompt,  # suit l'humeur du jour
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
+
+# Statut Discord auto-piloté par la personnalité (jumeau de la bio).
+# La liste ci-dessous n'est plus qu'un FALLBACK si le LLM est indisponible.
+_STATUS_FALLBACK = [
+    ("playing", "Compter ses dents"),
+    ("playing", "Faire de la corde à sauter avec des intestins"),
+    ("playing", "Regarder le fromage vieillir"),
+    ("playing", "Déchirer la réalité"),
+    ("playing", "Jouer du violon avec un nerf"),
+    ("playing", "Collectionner des narines"),
+    ("playing", "Enterrer des chaises"),
+    ("playing", "Arracher des genoux aux nuages"),
+    ("playing", "Transformer des mortels en fourchettes"),
+    ("playing", "Discuter avec le fromage"),
+    ("playing", "Tricoter avec des cheveux"),
+    ("playing", "Compter jusqu'à l'infini"),
+    ("playing", "Fabriquer du thé dans un crâne"),
+    ("playing", "Organiser ses chaussettes"),
+    ("playing", "Écouter chanter ses intestins"),
+    ("playing", "Admirer le chaos"),
+    ("playing", "Philosopher sur les cuillères"),
+    ("playing", "Jouer avec le Wabbajack"),
+    ("playing", "Insulter Haskill"),
+    ("playing", "Défier Jyggalag aux échecs"),
+    ("playing", "Peindre avec du sang"),
+    ("playing", "Sculpter des papillons"),
+    ("playing", "Méditer sur l'absurdité"),
+    ("playing", "Rire sans raison"),
+    ("playing", "Pleurer de joie"),
+    ("playing", "Danser sur la folie"),
+]
+ENABLE_DAILY_STATUS = os.getenv("ENABLE_DAILY_STATUS", "1") != "0"
+daily_status = DiscordDailyStatus(
+    bot=bot, bot_id="sheogorath", bot_label="Sheogorath",
+    personality_prompt=sheo_data.PERSONALITY_BASE, fallback_activities=_STATUS_FALLBACK,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    system_prompt_provider=get_current_system_prompt,  # suit l'humeur du jour
+    logger=logger, enabled=ENABLE_DAILY_STATUS,
+) if DiscordDailyStatus else None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -908,25 +953,18 @@ async def before_twitch_poll():
 
 @tasks.loop(minutes=30)
 async def status_loop_sheo():
-    activities = [
-        "Compter ses dents", "Faire de la corde à sauter avec des intestins",
-        "Regarder le fromage vieillir", "Déchirer la réalité",
-        "Jouer du violon avec un nerf", "Collectionner des narines",
-        "Enterrer des chaises", "Arracher des genoux aux nuages",
-        "Transformer des mortels en fourchettes", "Discuter avec le fromage",
-        "Tricoter avec des cheveux", "Compter jusqu'à l'infini",
-        "Fabriquer du thé dans un crâne", "Organiser ses chaussettes",
-        "Écouter chanter ses intestins", "Admirer le chaos",
-        "Philosopher sur les cuillères", "Jouer avec le Wabbajack",
-        "Insulter Haskill", "Défier Jyggalag aux échecs",
-        "Peindre avec du sang", "Sculpter des papillons",
-        "Méditer sur l'absurdité", "Rire sans raison",
-        "Pleurer de joie", "Danser sur la folie"
-    ]
     global current_activity_text
-    chosen_activity = random.choice(activities)
-    current_activity_text = chosen_activity
-    await bot.change_presence(activity=discord.Game(name=chosen_activity))
+    activity = None
+    if daily_status:
+        await daily_status.ensure_daily_status()  # régénère au changement de jour, sinon cache
+        activity = daily_status.pick_activity()
+    if activity is None:  # module absent/désactivé : repli sur la liste fallback
+        t, name = random.choice(_STATUS_FALLBACK)
+        activity = discord.Activity(
+            type=getattr(discord.ActivityType, t, discord.ActivityType.playing),
+            name=name)
+    current_activity_text = activity.name  # réutilisé dans les prompts (« ce que tu fais »)
+    await bot.change_presence(activity=activity)
 
 # AUTO-ÉNIGMES CHAOTIQUES (DÉSACTIVÉ - TRANSFÉRÉ À M'AIQ)
 # (Code supprimé pour transfert)

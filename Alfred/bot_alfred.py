@@ -114,6 +114,11 @@ try:
 except ImportError:
     DiscordDailyBio = None
 
+try:
+    from shared.discord_status import DiscordDailyStatus
+except ImportError:
+    DiscordDailyStatus = None
+
 
 # CREDENTIALS
 # ⚠️ REMPLACEZ CECI PAR LE TOKEN DE VOTRE NOUVEAU BOT ALFRED
@@ -318,6 +323,31 @@ daily_bio = DiscordDailyBio(
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
+# Statut Discord auto-piloté par la personnalité (jumeau de la bio).
+# La liste ci-dessous n'est plus qu'un FALLBACK si le LLM est indisponible.
+_STATUS_FALLBACK = [
+    ("playing", "Cirer l'argenterie"),
+    ("playing", "Préparer le thé Earl Grey"),
+    ("playing", "Nettoyer le sang sur le tapis (Encore)"),
+    ("playing", "Recoudre un costume"),
+    ("playing", "Soupirer de manière britannique"),
+    ("playing", "Juger vos choix de vie"),
+    ("playing", "Dépoussiérer le Bat-Computer"),
+    ("playing", "Polir les Batarangs"),
+    ("playing", "Repasser les capes"),
+    ("playing", "Servir le dîner (froid)"),
+    ("playing", "Gérer l'agenda de Monsieur Wayne"),
+    ("playing", "Nourrir les chauves-souris"),
+]
+ENABLE_DAILY_STATUS = os.getenv("ENABLE_DAILY_STATUS", "1") != "0"
+daily_status = DiscordDailyStatus(
+    bot=bot, bot_id="alfred", bot_label="Alfred",
+    personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_STATUS,
+) if DiscordDailyStatus else None
+
 
 # EVENTS
 
@@ -384,16 +414,17 @@ async def before_twitch_poll():
 @tasks.loop(minutes=30)
 async def status_loop_alfred():
     global current_alfred_activity
-    activities = [
-        "Cirer l'argenterie", "Préparer le thé Earl Grey",
-        "Nettoyer le sang sur le tapis (Encore)", "Recoudre un costume",
-        "Soupirer de manière britannique", "Juger vos choix de vie",
-        "Dépoussiérer le Bat-Computer", "Polir les Batarangs",
-        "Repasser les capes", "Servir le dîner (froid)",
-        "Gérer l'agenda de Monsieur Wayne", "Nourrir les chauves-souris"
-    ]
-    current_alfred_activity = random.choice(activities)
-    await bot.change_presence(activity=discord.Game(name=current_alfred_activity))
+    activity = None
+    if daily_status:
+        await daily_status.ensure_daily_status()  # régénère au changement de jour, sinon cache
+        activity = daily_status.pick_activity()
+    if activity is None:  # module absent/désactivé : repli sur la liste fallback
+        t, name = random.choice(_STATUS_FALLBACK)
+        activity = discord.Activity(
+            type=getattr(discord.ActivityType, t, discord.ActivityType.playing),
+            name=name)
+    current_alfred_activity = activity.name  # réutilisé dans les prompts (« ce que tu fais »)
+    await bot.change_presence(activity=activity)
 
 @tasks.loop(hours=12)
 async def birthday_check_alfred():

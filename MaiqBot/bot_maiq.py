@@ -150,6 +150,11 @@ try:
 except ImportError:
     DiscordDailyBio = None
 
+try:
+    from shared.discord_status import DiscordDailyStatus
+except ImportError:
+    DiscordDailyStatus = None
+
 from maiq_data import PERSONALITY_PROMPT
 
 # LTM SYSTEM
@@ -240,6 +245,29 @@ daily_bio = DiscordDailyBio(
     groq_client=groq_client, openrouter_client=openrouter_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
+
+# Statut Discord auto-piloté par la personnalité (jumeau de la bio).
+# La liste ci-dessous n'est plus qu'un FALLBACK si le LLM est indisponible.
+_STATUS_FALLBACK = [
+    ("playing", "Chercher des pinces (Calipers)"),
+    ("playing", "Fuir un dragon invisible"),
+    ("playing", "Manger du sucre lune"),
+    ("playing", "Polir ses mensonges"),
+    ("playing", "Courir très vite vers nulle part"),
+    ("playing", "Nager jusqu'à Yokuda"),
+    ("playing", "Essayer de voler au dessus des nuages"),
+    ("playing", "Compter les grains de sable"),
+    ("playing", "Éviter Sheogorath"),
+    ("playing", "Préparer une rumeur"),
+]
+ENABLE_DAILY_STATUS = os.getenv("ENABLE_DAILY_STATUS", "1") != "0"
+daily_status = DiscordDailyStatus(
+    bot=bot, bot_id="maiq", bot_label="M'aiq le Menteur",
+    personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_STATUS,
+) if DiscordDailyStatus else None
 
 
 # EVENTS
@@ -372,15 +400,17 @@ async def before_twitch_poll():
 @tasks.loop(minutes=30)
 async def status_loop_maiq():
     global current_maiq_activity
-    activities = [
-        "Chercher des pinces (Calipers)", "Fuir un dragon invisible",
-        "Manger du sucre lune", "Polir ses mensonges",
-        "Courir très vite vers nulle part", "Nager jusqu'à Yokuda",
-        "Essayer de voler au dessus des nuages", "Compter les grains de sable",
-        "Éviter Sheogorath", "Préparer une rumeur"
-    ]
-    current_maiq_activity = random.choice(activities)
-    await bot.change_presence(activity=discord.Game(name=current_maiq_activity))
+    activity = None
+    if daily_status:
+        await daily_status.ensure_daily_status()  # régénère au changement de jour, sinon cache
+        activity = daily_status.pick_activity()
+    if activity is None:  # module absent/désactivé : repli sur la liste fallback
+        t, name = random.choice(_STATUS_FALLBACK)
+        activity = discord.Activity(
+            type=getattr(discord.ActivityType, t, discord.ActivityType.playing),
+            name=name)
+    current_maiq_activity = activity.name  # réutilisé dans les prompts (« ce que tu fais »)
+    await bot.change_presence(activity=activity)
 
 @tasks.loop(hours=12)
 async def birthday_check_maiq():

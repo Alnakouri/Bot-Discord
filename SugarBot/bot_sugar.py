@@ -114,6 +114,11 @@ try:
 except ImportError:
     DiscordDailyBio = None
 
+try:
+    from shared.discord_status import DiscordDailyStatus
+except ImportError:
+    DiscordDailyStatus = None
+
 
 try:
     from sugar_data import (
@@ -214,6 +219,36 @@ daily_bio = DiscordDailyBio(
     groq_client=groq_client, openrouter_client=openrouter_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
+
+# Statut Discord auto-piloté par la personnalité (jumeau de la bio).
+# La liste ci-dessous ne sert plus que de FALLBACK si le LLM est indisponible :
+# le statut du jour est régénéré depuis PERSONALITY_PROMPT (cache, 0 LLM le même jour).
+_STATUS_FALLBACK = [
+    ("watching", "les péteurs se ridiculiser"),
+    ("watching", "le caramel dorer"),
+    ("watching", "fondre les cœurs"),
+    ("watching", "mijoter ses répliques acidulées"),
+    ("watching", "les grincheux se changer en pralines"),
+    ("watching", "ses bonbons empoisonnés opérer"),
+    ("playing", "à la marchande de bonbons"),
+    ("playing", "à empoisonner ses caramels"),
+    ("playing", "à distribuer sucre et piques"),
+    ("playing", "à tremper ses vannes dans le miel"),
+    ("playing", "à saupoudrer du sucre partout"),
+    ("playing", "à la reine du caramel"),
+    ("listening", "vos jérémiades sucrées"),
+    ("listening", "craquer le sucre d'orge"),
+    ("listening", "fondre la guimauve"),
+    ("listening", "le glaçage craqueler"),
+]
+ENABLE_DAILY_STATUS = os.getenv("ENABLE_DAILY_STATUS", "1") != "0"
+daily_status = DiscordDailyStatus(
+    bot=bot, bot_id="sugar", bot_label="Sugar Bot",
+    personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_STATUS,
+) if DiscordDailyStatus else None
 
 
 @bot.event
@@ -323,30 +358,20 @@ async def daily_bio_loop_sugar():
 async def before_daily_bio_sugar():
     await bot.wait_until_ready()
 
-# STATUT TOURNANT (présence Discord)
+# STATUT TOURNANT (présence Discord) — auto-piloté par la personnalité (cf. daily_status).
 @tasks.loop(minutes=30)
 async def status_loop_sugar():
-    # (type d'activité, texte) — sucré + piquant, verbes variés
-    activities = [
-        (discord.ActivityType.watching, "les péteurs se ridiculiser"),
-        (discord.ActivityType.watching, "le caramel dorer"),
-        (discord.ActivityType.watching, "fondre les cœurs"),
-        (discord.ActivityType.watching, "mijoter ses répliques acidulées"),
-        (discord.ActivityType.watching, "les grincheux se changer en pralines"),
-        (discord.ActivityType.watching, "ses bonbons empoisonnés opérer"),
-        (discord.ActivityType.playing, "à la marchande de bonbons"),
-        (discord.ActivityType.playing, "à empoisonner ses caramels"),
-        (discord.ActivityType.playing, "à distribuer sucre et piques"),
-        (discord.ActivityType.playing, "à tremper ses vannes dans le miel"),
-        (discord.ActivityType.playing, "à saupoudrer du sucre partout"),
-        (discord.ActivityType.playing, "à la reine du caramel"),
-        (discord.ActivityType.listening, "vos jérémiades sucrées"),
-        (discord.ActivityType.listening, "craquer le sucre d'orge"),
-        (discord.ActivityType.listening, "fondre la guimauve"),
-        (discord.ActivityType.listening, "le glaçage craqueler"),
-    ]
-    act_type, name = random.choice(activities)
-    await bot.change_presence(activity=discord.Activity(type=act_type, name=name))
+    activity = None
+    if daily_status:
+        await daily_status.ensure_daily_status()  # régénère au changement de jour, sinon cache
+        activity = daily_status.pick_activity()
+    if activity is None:  # module absent/désactivé : repli sur la liste fallback
+        act_type, name = random.choice([
+            (getattr(discord.ActivityType, t, discord.ActivityType.playing), n)
+            for t, n in _STATUS_FALLBACK
+        ])
+        activity = discord.Activity(type=act_type, name=name)
+    await bot.change_presence(activity=activity)
 
 @status_loop_sugar.before_loop
 async def before_status_sugar():

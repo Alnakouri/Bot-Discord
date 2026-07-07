@@ -73,6 +73,11 @@ try:
 except ImportError:
     DiscordDailyBio = None
 
+try:
+    from shared.discord_status import DiscordDailyStatus
+except ImportError:
+    DiscordDailyStatus = None
+
 
 
 # Configuration du Logger
@@ -273,6 +278,29 @@ daily_bio = DiscordDailyBio(
     groq_client=groq_client, openrouter_client=openrouter_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
+
+# Statut Discord auto-piloté par la personnalité (jumeau de la bio).
+# La liste ci-dessous n'est plus qu'un FALLBACK si le LLM est indisponible.
+_STATUS_FALLBACK = [
+    ("listening", "le flamenco gronder 💃"),
+    ("listening", "les esprits murmurer"),
+    ("listening", "ton destin chuchoter"),
+    ("listening", "une guitare gitane 🎸"),
+    ("listening", "le vent de l'Andalousie"),
+    ("listening", "les cartes parler 🔮"),
+    ("listening", "la lune se lever"),
+    ("listening", "une vieille complainte rom"),
+    ("listening", "le feu crépiter au campement"),
+    ("listening", "les secrets du voyage"),
+]
+ENABLE_DAILY_STATUS = os.getenv("ENABLE_DAILY_STATUS", "1") != "0"
+daily_status = DiscordDailyStatus(
+    bot=bot, bot_id="malena", bot_label="Malena",
+    personality_prompt=data.PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_STATUS,
+) if DiscordDailyStatus else None
 
 
 @bot.command(name="oubliemoi")
@@ -709,24 +737,16 @@ async def before_daily_bio_malena():
 # STATUT TOURNANT (présence Discord)
 @tasks.loop(minutes=30)
 async def status_loop_malena():
-    activities = [
-        "le flamenco gronder 💃",
-        "les esprits murmurer",
-        "ton destin chuchoter",
-        "une guitare gitane 🎸",
-        "le vent de l'Andalousie",
-        "les cartes parler 🔮",
-        "la lune se lever",
-        "une vieille complainte rom",
-        "le feu crépiter au campement",
-        "les secrets du voyage",
-    ]
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.listening,
-            name=random.choice(activities)
-        )
-    )
+    activity = None
+    if daily_status:
+        await daily_status.ensure_daily_status()  # régénère au changement de jour, sinon cache
+        activity = daily_status.pick_activity()
+    if activity is None:  # module absent/désactivé : repli sur la liste fallback
+        t, name = random.choice(_STATUS_FALLBACK)
+        activity = discord.Activity(
+            type=getattr(discord.ActivityType, t, discord.ActivityType.listening),
+            name=name)
+    await bot.change_presence(activity=activity)
 
 @status_loop_malena.before_loop
 async def before_status_malena():

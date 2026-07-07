@@ -121,6 +121,11 @@ try:
 except ImportError:
     DiscordDailyBio = None
 
+try:
+    from shared.discord_status import DiscordDailyStatus
+except ImportError:
+    DiscordDailyStatus = None
+
 
 # IMPORT PERSONNALITÉ JOHNNY
 from johnny_data import (
@@ -198,6 +203,31 @@ daily_bio = DiscordDailyBio(
     groq_client=groq_client, openrouter_client=openrouter_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
+
+# Statut Discord auto-piloté par la personnalité (jumeau de la bio).
+# La liste ci-dessous n'est plus qu'un FALLBACK si le LLM est indisponible.
+_STATUS_FALLBACK = [
+    ("listening", "Chippin' In | 🎸 Samurai"),
+    ("listening", "Never Fade Away | 🎸 Samurai"),
+    ("listening", "A Like Supreme | 🎸 Samurai"),
+    ("listening", "The Ballad of Buck Ravers | 🎸 Samurai"),
+    ("listening", "Black Dog | 🎸 Samurai"),
+    ("listening", "Archangel | 🎸 Samurai"),
+    ("listening", "Night City cramer 🔥"),
+    ("listening", "les corpos crever"),
+    ("listening", "Arasaka tomber"),
+    ("listening", "un vieux vinyle dans l'AV"),
+    ("listening", "la révolution gronder"),
+    ("listening", "le silence avant l'émeute"),
+]
+ENABLE_DAILY_STATUS = os.getenv("ENABLE_DAILY_STATUS", "1") != "0"
+daily_status = DiscordDailyStatus(
+    bot=bot, bot_id="johnny", bot_label="Johnny Silverhand",
+    personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
+    key_manager=key_manager, mistral_client=mistral_client,
+    groq_client=groq_client, openrouter_client=openrouter_client,
+    logger=logger, enabled=ENABLE_DAILY_STATUS,
+) if DiscordDailyStatus else None
 
 
 # LTM - LONG TERM MEMORY SYSTEM
@@ -556,26 +586,16 @@ async def before_daily_bio_johnny():
 # STATUT TOURNANT (présence Discord)
 @tasks.loop(minutes=30)
 async def status_loop_johnny():
-    activities = [
-        "Chippin' In | 🎸 Samurai",
-        "Never Fade Away | 🎸 Samurai",
-        "A Like Supreme | 🎸 Samurai",
-        "The Ballad of Buck Ravers | 🎸 Samurai",
-        "Black Dog | 🎸 Samurai",
-        "Archangel | 🎸 Samurai",
-        "Night City cramer 🔥",
-        "les corpos crever",
-        "Arasaka tomber",
-        "un vieux vinyle dans l'AV",
-        "la révolution gronder",
-        "le silence avant l'émeute",
-    ]
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.listening,
-            name=random.choice(activities)
-        )
-    )
+    activity = None
+    if daily_status:
+        await daily_status.ensure_daily_status()  # régénère au changement de jour, sinon cache
+        activity = daily_status.pick_activity()
+    if activity is None:  # module absent/désactivé : repli sur la liste fallback
+        t, name = random.choice(_STATUS_FALLBACK)
+        activity = discord.Activity(
+            type=getattr(discord.ActivityType, t, discord.ActivityType.listening),
+            name=name)
+    await bot.change_presence(activity=activity)
 
 @status_loop_johnny.before_loop
 async def before_status_johnny():
