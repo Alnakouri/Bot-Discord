@@ -99,6 +99,37 @@ def _strip_didascalies(text):
     text = _re.sub(r"\*([^*]+)\*", r"\1", text)            # reste = simple emphase
     return _re.sub(r"\s{2,}", " ", text).strip()
 
+# Petits noms sucrés (pour reconnaître un VOCATIF en tête, pas « Mon avis, … »).
+_SWEET_NAMES = (
+    r"sucre|orge|praline|caramel|chamallow|berlingot|guimauve|nougat|nougatine|dragée|dragee|"
+    r"cœur|coeur|fondant|bonbon|sucette|miel|macaron|éclair|eclair|biscuit|gâteau|gateau|"
+    r"calisson|loukoum|réglisse|reglisse|marshmallow|cupcake|sirop|sucré|sucree|sucrée|"
+    r"friandise|douceur|nonette|pralin|meringue|barbe\s+à\s+papa|petit\s+sucre"
+)
+# Vocatif sucré en ouverture : « Oh, mon berlingot, … », « Ma praline, … », « Eh, mon petit cœur fondant — … »
+_LEAD_VOCATIVE = re.compile(
+    r"^\s*(?:oh|eh|ah|hé|he|hey|coucou|alors)?\s*[,!.…\-–—]*\s*"
+    r"(?:mon|ma|mes)\s+"
+    r"(?:(?:petit|petite|gros|grosse|tendre|doux|douce|cher|chère|chere)\s+){0,2}"
+    r"(?:" + _SWEET_NAMES + r")"
+    r"(?:\s+(?:d['’]|de\s+|au\s+|à\s+la\s+)?[\wàâäéèêëïîôöùûüç'’-]+){0,2}"
+    r"\s*[,–—-]+\s*",
+    re.IGNORECASE)
+
+def _strip_lead_vocative(text):
+    """Retire un vocatif sucré en TÊTE (« Oh, mon berlingot, … »), tic récurrent de Sugar.
+    Ne coupe que si un vrai petit nom sucré suit ET qu'il reste une phrase substantielle
+    derrière (sinon la réplique tenait entièrement dans le petit nom → on garde)."""
+    if not text:
+        return text
+    m = _LEAD_VOCATIVE.match(text)
+    if not m:
+        return text
+    rest = text[m.end():].lstrip()
+    if len(rest) < 12:
+        return text
+    return rest[0].upper() + rest[1:]
+
 # Bot Sugar Bot (ardoise neutre)
 
 # IMPORT SECURE ENV LOADER
@@ -141,6 +172,10 @@ except ImportError:
     def setup_twitch_announcer(*a, **k): return None
 
 twitch_announcer = None
+
+# Garde one-shot : on_ready peut refire (reconnexion / RESUME) et le setup des
+# commandes (slash + jeux) n'est PAS idempotent → on ne l'exécute qu'une fois.
+_ready_setup_done = False
 
 try:
     from shared.discord_profile import DiscordDailyBio
@@ -300,16 +335,21 @@ async def on_ready():
     logger.info(f'🏫 Serveurs: {len(bot.guilds)}')
     logger.info(f'👥 Utilisateurs visibles: {len(bot.users)}')
     
+    # Enregistrement des commandes : une seule fois (on_ready peut refire au RESUME)
+    global _ready_setup_done
+    run_command_setup = not _ready_setup_done
+    _ready_setup_done = True
+
     # Setup Slash Commands
-    if DATABASE_AVAILABLE:
+    if run_command_setup and DATABASE_AVAILABLE:
         try:
             setup_slash_commands(bot, "Sugar Bot")
             await sync_slash_commands(bot)
         except Exception as e:
             logger.error(f"[SLASH] Erreur: {e}")
-            
+
     # Setup Mini-Games
-    if DATABASE_AVAILABLE and GAMES_AVAILABLE:
+    if run_command_setup and DATABASE_AVAILABLE and GAMES_AVAILABLE:
         try:
             setup_games(bot, logger, PERSONA)
             logger.info("[GAMES] Mini-jeux initialisés pour Sugar Bot")
@@ -334,7 +374,7 @@ async def on_ready():
         status_loop_sugar.start()
 
     # Tâches périodiques
-    if DATABASE_AVAILABLE:
+    if DATABASE_AVAILABLE and not daily_birthday_check.is_running():
         daily_birthday_check.start()
     if daily_bio and not daily_bio_loop_sugar.is_running():
         daily_bio_loop_sugar.start()
@@ -678,6 +718,7 @@ async def on_message(message):
                         response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
                         response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
                         response = _strip_didascalies(response)
+                        response = _strip_lead_vocative(response)
 
                         await message.reply(response)
                         if message.channel.id not in conversation_history:
@@ -715,6 +756,7 @@ async def on_message(message):
                     response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
                     response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
                     response = _strip_didascalies(response)
+                    response = _strip_lead_vocative(response)
 
                     await message.reply(response)
                     if message.channel.id not in conversation_history:
@@ -781,7 +823,9 @@ async def on_message(message):
         anti_repeat_prompt = "\n\n[ANTI-RÉPÉTITION] Tu as déjà dit récemment :\n"
         for i, snippet in enumerate(snippets, 1):
             anti_repeat_prompt += f"{i}. \"{snippet}\"\n"
-        anti_repeat_prompt += "Ne répète PAS ces phrases ! Sois ORIGINAL !"
+        anti_repeat_prompt += ("Ne réutilise NI ces phrases NI leur OSSATURE : change d'ouverture "
+            "(surtout PAS de vocatif « Oh, mon… » si tu viens de l'employer) et ne finis PAS "
+            "encore par une question. Prends un angle, un rythme et une chute différents.")
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
@@ -861,6 +905,7 @@ async def on_message(message):
         response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
         response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
         response_text = _strip_didascalies(response_text)
+        response_text = _strip_lead_vocative(response_text)
 
     response_text = response_text.strip()
     
