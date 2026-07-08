@@ -14,6 +14,7 @@ from mistralai import Mistral
 from openai import OpenAI
 import aiohttp
 import random
+import re
 import json
 import os
 from shared.response_memory import ResponseMemory
