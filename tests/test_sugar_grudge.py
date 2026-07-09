@@ -26,6 +26,17 @@ class TestClassifyTone(unittest.TestCase):
         self.assertEqual(classify_tone("tu es trop conne"), "aggro")
         self.assertEqual(classify_tone("je te déteste"), "aggro")
 
+    def test_insult_crude(self):
+        # Insultes crues courantes qui manquaient (cf. test live « tete de cul » non détecté)
+        for msg in ["tete de cul", "tête de cul", "enfoiré", "enculé", "bâtard",
+                    "fdp", "ntm", "fils de pute", "trou du cul", "va te faire foutre", "gros con"]:
+            self.assertEqual(classify_tone(msg), "aggro", msg)
+
+    def test_insult_no_false_positive(self):
+        # Ne PAS confondre avec du vocabulaire anodin/sucré
+        for msg in ["ta culotte est jolie", "concours de cuisine", "un gros gâteau au caramel"]:
+            self.assertNotEqual(classify_tone(msg), "aggro", msg)
+
     def test_apology(self):
         self.assertEqual(classify_tone("pardon Sugar"), "apology")
         self.assertEqual(classify_tone("je suis désolé"), "apology")
@@ -105,6 +116,16 @@ class TestGrudgeBook(unittest.TestCase):
         d = self.book.update("1", "pardon Sugar")  # 0 → pardon explicite
         self.assertEqual(self._score(), 0)
         self.assertIn("regagner ton pardon", d)
+
+    def test_crude_insult_drives_redemption_arc(self):
+        # Régression du test live : « tete de cul » DOIT monter la rancune (avant :
+        # classé neutre → l'excuse n'avait rien à pardonner, rédemption jamais déclenchée).
+        d1 = self.book.update("1", "tete de cul")
+        self.assertEqual(self._score(), 2)
+        self.assertIn("MÉFIANTE", d1)
+        d2 = self.book.update("1", "désolé je m'excuse")
+        self.assertEqual(self._score(), 0)
+        self.assertIn("regagner ton pardon", d2)  # rédemption explicite
 
     def test_equilibre_scenario(self):
         # le scénario validé : insulte → excuse → compliment → pardon

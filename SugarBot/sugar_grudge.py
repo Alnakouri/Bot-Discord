@@ -43,11 +43,15 @@ _RE_REFINE_MATCH = re.compile(r"\b(tu|t'|toi|vous|sugar)\b|t es", re.IGNORECASE)
 # Agression : insultes nominales, sommations, ou attaque dirigée « t'es + négatif »
 _RE_INSULT = re.compile(
     r"\b(conn?ard|conn?asse|conne|pute|salope|d[ée]bile|bouffon+e?|minable|"
-    r"abrutie?|cr[ée]tin+e?|idiot+e?|imb[ée]cile|grosse merde|sous[- ]merde)\b",
+    r"abrutie?|cr[ée]tin+e?|idiot+e?|imb[ée]cile|grosse merde|sous[- ]merde|"
+    r"enfoir[ée]e?|encul[ée]e?|b[âa]tarde?|fdp|ntm|fils de (?:pute|chien)|"
+    r"t[êe]te (?:de (?:cul|n[œo]eud|con|gland|pet)|d'?\s?(?:con|gland))|trou du cul|"
+    r"ducon|face de (?:rat|pet|cul)|gros(?:se)? (?:con+e?|merde|nulle?))\b",
     re.IGNORECASE)
 _RE_DISMISS = re.compile(
     r"\b(ta gueule|tg|ferme[- ]la|tais[- ]toi|d[ée]gage|casse[- ]toi|"
-    r"je te d[ée]teste|tu sers [àa] rien|tu pues|ta m[èe]re)\b",
+    r"je te d[ée]teste|tu sers [àa] rien|tu pues|ta m[èe]re|"
+    r"va te faire (?:foutre|voir|mettre)|va (?:crever|mourir)|dtc)\b",
     re.IGNORECASE)
 _RE_DIRECTED = re.compile(
     r"(t'es|t es|tu es|vous [êe]tes)\s+(vraiment\s+|trop\s+|juste\s+|qu'une?\s+)*"
@@ -70,7 +74,8 @@ _RE_KIND = re.compile(
     r"bien jou[ée]|adorable|mignonne|trop forte|t'es (cool|dr[oô]le|top|g[ée]niale|"
     r"ador[ée]e|gentille|forte|marrante)|excellente|gg|"
     r"bg|beau gosse|belle gosse|sympa(?:thique)?|cool|au top|c'est top|"
-    r"trop (?:cool|bien|sympa|g[ée]nial|mignon+e?|forte?)|"
+    r"trop (?:cool|bien|sympa|g[ée]nial|mignon+e?|forte?|belle|beau|jolie?|craquante?)|"
+    r"(?:t'es|t es|tu es|vous [êe]tes) (?:vraiment |si |trop )?(?:belle|beau|jolie?|craquante?|canon|parfaite?|adorable|mignonne?|magnifique|superbe)|"
     r"chaleureux|chaleureuse|kiff\w*|parfaite?|classe|canon|magnifique|superbe|"
     r"chou|choupi\w*|chouette|reine|d[ée]esse|queen)\b",
     re.IGNORECASE)
