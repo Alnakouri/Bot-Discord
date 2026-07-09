@@ -6,6 +6,7 @@ _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
+import asyncio
 import discord
 from discord.ext import commands, tasks
 from google import genai
@@ -219,7 +220,16 @@ except ImportError:
     TWITCH_AVAILABLE = False
     def setup_twitch_announcer(*a, **k): return None
 
+try:
+    from shared.twitch_chat import setup_twitch_chat
+    TWITCH_CHAT_AVAILABLE = True
+except ImportError:
+    TWITCH_CHAT_AVAILABLE = False
+    def setup_twitch_chat(*a, **k): return None
+
 twitch_announcer = None
+twitch_chat = None
+twitch_chat_task = None
 
 # Garde one-shot : on_ready peut refire (reconnexion / RESUME) et le setup des
 # commandes (slash + jeux) n'est PAS idempotent → on ne l'exécute qu'une fois.
@@ -437,6 +447,26 @@ async def on_ready():
             openrouter_client=openrouter_client, bot_label="Sugar Bot")
         if twitch_announcer:
             twitch_poll_loop.start()
+
+    # Présence permanente dans le chat Twitch (persona identique à Discord).
+    # Idempotent (on_ready peut refire au RESUME → garde twitch_chat is None).
+    # « Silence sauf si nommé » : interjections + accueils OFF (cf. PLAN PARTIE A).
+    global twitch_chat, twitch_chat_task
+    if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
+        twitch_chat = setup_twitch_chat(
+            "sugar", logger,
+            personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Sugar Bot",
+            enable_events=True,
+            enable_interjections=False,   # décision « silence sauf si nommé »
+            enable_greetings=False,       # idem
+            enable_viewer_memory=True,
+            enable_eventsub=False,        # pas de token broadcaster Sugar → évite les 403
+            enable_voice_listen=False,
+        )
+        if twitch_chat:
+            twitch_chat_task = asyncio.create_task(twitch_chat.run())
 
 @bot.event
 async def on_member_join(member):
@@ -988,9 +1018,21 @@ async def on_message(message):
 
 # LANCEMENT
 
+async def on_sugar_shutdown():
+    global twitch_chat, twitch_chat_task
+    if twitch_chat:
+        logger.info("[SHUTDOWN] Arrêt du chat Twitch Sugar...")
+        twitch_chat.stop()
+    if twitch_chat_task:
+        twitch_chat_task.cancel()
+        try:
+            await twitch_chat_task
+        except asyncio.CancelledError:
+            pass
+
 if __name__ == "__main__":
     if DISCORD_TOKEN:
-        setup_graceful_shutdown(bot)
+        setup_graceful_shutdown(bot, on_sugar_shutdown)
         bot.run(DISCORD_TOKEN)
     else:
         print("❌ ERREUR : Aucun token Discord trouvé dans le fichier .env !")

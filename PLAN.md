@@ -1,169 +1,148 @@
-# PLAN — Anti-incrustation sur Johnny, Alfred, M'aiq, Malena (0 shared, chaque bot autonome)
+# PLAN — Twitch : « silence sauf si nommé » + Sugar sur le chat Twitch
 
-## Contexte
-Sugar est le seul bot avec une **garde anti-incrustation** : quand un échange est
-manifestement adressé à un AUTRE bot, il ne s'incruste pas lors d'une intervention
-aléatoire/spontanée. Constaté en live : **Johnny s'est incrusté** sur « sugar tu as de
-beaux cheveux » (message nommant Sugar).
+## Contexte & décisions (validées avec l'utilisateur)
+1. **Écoute active (voix/STT)** : DÉJÀ conforme — `shared/twitch/voice.py:47`
+   (`if not self.trigger_re.search(text): return`). Un bot ne réagit au micro que si
+   son nom/surnom/nom complet est prononcé. **NE RIEN CHANGER ICI.**
+2. **Chat texte** : les bots s'incrustent via **interjections spontanées**
+   (`shared/twitch/dispatch.py:164`) et **accueils** de viewers (`:161`). Décision user :
+   **silence sauf si nommé** → couper interjections + accueils sur Twitch. On GARDE :
+   réponse quand nommé (`trigger_re`), commandes `!cmd`, et événements (sub/raid/bits).
+3. **Sugar sur Twitch** : la brancher sur le chat (elle a déjà l'ANNONCEUR de lives,
+   `setup_twitch_announcer` l.431-439 de `bot_sugar.py`, mais PAS la présence chat).
+   Persona = **identique à Discord** (`PERSONALITY_PROMPT`). Conformité ToS héritée
+   automatiquement (tout passe par `send_chat_safe` + `ANTI_INJECTION_GUARD`).
+4. Workflow : **Antigravity exécute ce plan.** Claude a rédigé.
 
-Objectif : porter cette garde sur **Johnny, Alfred, M'aiq, Malena** (Sheo l'a déjà en
-partie, ligne 1972 — hors périmètre).
+## Rappel architecture
+- Le **dashboard fait autorité** : `data/twitch_config.json` écrase les args de code
+  (`shared/twitch_chat.py:325-334`). Donc tout toggle doit être posé AUX DEUX endroits :
+  args de `setup_twitch_chat(...)` ET `twitch_config.json` (sinon le JSON ré-active).
+- Bots avec chat Twitch AUJOURD'HUI : **Sheo** et **Johnny** uniquement. Sugar = 3e.
+- Anti-boucle inter-bots sur Twitch : chaque bot ignore les pseudos des autres via
+  `TWITCH_PEER_BOTS` (env) + arg `peer_bots`. Logins chat connus :
+  `compte_bot_sheo` (Sheo), `johnny_alt_silverhand` (Johnny).
 
-## Règle d'or ARCHITECTURE — chaque bot reste 100 % autonome
-- **AUCUN fichier `shared/` pour cette feature.** On COPIE le code directement dans
-  chaque bot (~18 lignes). Pas d'import inter-bot, pas de dépendance runtime.
-- Chaque bot a sa **propre** constante `OTHER_BOT_NAMES` = les **5 AUTRES** bots
-  (jamais ses propres alias, sinon il se tairait quand on le nomme lui).
-- La garde ne touche QUE les branches d'intervention **non sollicitée** (random /
-  proactive). Les réponses DIRECTES (mention, reply, DM, nom du bot, requête-service
-  explicite) ne sont JAMAIS gardées.
+---
 
-## Snippet de référence (repris de SugarBot/bot_sugar.py, à adapter par bot)
-À placer au niveau module (avant `on_message`), en remplaçant la liste `OTHER_BOT_NAMES`
-par celle du bot concerné (voir tableau) :
+## PARTIE A — Silence spontané sur Twitch (interjections + accueils OFF)
 
+### A.1 — `data/twitch_config.json` (source de vérité, prioritaire)
+Pour **chaque** bloc bot (`sheogorath`, `maiq`, `alfred`, `johnny`, `sugar`, `malena`,
+`onizuka`), dans `"chat"`, passer :
+```json
+"interjections": false,
+"greetings": false,
+```
+(laisser `"events": true`, `"viewer_memory": true`, `"game_qa": false` inchangés).
+
+### A.2 — Args de code (défaut cohérent, au cas où le JSON serait absent)
+- **Sheo** `Sheogorath/bot_sheogorath.py:820-823` : `enable_interjections=True` → `False`,
+  `enable_greetings=True` → `False`.
+- **Johnny** `JohnnyBot/bot_johnny.py:512+` (bloc `setup_twitch_chat`) : idem, mettre
+  `enable_interjections=False`, `enable_greetings=False`.
+
+### A.3 — Ce qu'on NE touche PAS
+- `enable_events` reste `True` (réactions sub/raid/bits = événements, pas de l'incrustation).
+- Réponse quand nommé (`trigger_re`) et commandes `!cmd` : inchangées.
+- `passive_handler` de Sheo (faveur passive) et `game_qa`/`cohost_channels` sont déjà
+  soit spécifiques soit OFF (`game_qa:false`, `cohost_channels:[]`) → rien à faire.
+  (Si un jour on veut ZÉRO sortie passive, revoir `passive_handler` — hors périmètre ici.)
+
+---
+
+## PARTIE B — Sugar sur le chat Twitch (câblage code, en miroir de Sheo)
+
+Tout le code va dans **`SugarBot/bot_sugar.py`**. Modèle de référence :
+`Sheogorath/bot_sheogorath.py` (imports 167-174, globals 173-174, setup 812-838, stop 2537-2544).
+
+### B.1 — Imports (près de l'import `setup_twitch_announcer` existant)
+Mettre le pattern try/except (autonomie, cf. bots indépendants) :
 ```python
-# Noms des AUTRES bots : si l'échange leur est visiblement adressé, on ne s'incruste
-# PAS lors d'une intervention ALÉATOIRE (les mentions/nom direct du bot restent prioritaires).
-OTHER_BOT_NAMES = [ ... voir tableau par bot ... ]
-
-async def _other_bot_in_focus(message):
-    """True si la conversation est manifestement tournée vers un AUTRE bot."""
-    if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
-        return True
-    try:
-        async for prev in message.channel.history(limit=4, before=message):
-            if prev.author == bot.user:
-                return False   # ce bot était déjà dans la boucle → ok d'enchaîner
-            if prev.author.bot:
-                return True    # un autre bot vient de parler → c'est SON échange
-            if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
-                return True    # un humain vient de nommer un autre bot
-    except Exception:
-        return False
-    return False
+try:
+    from shared.twitch_chat import setup_twitch_chat
+    TWITCH_CHAT_AVAILABLE = True
+except ImportError:
+    TWITCH_CHAT_AVAILABLE = False
+    def setup_twitch_chat(*a, **k): return None
 ```
 
-### `OTHER_BOT_NAMES` par bot (exclut ses propres alias)
-| Bot | Liste |
-|-----|-------|
-| **Johnny** | `["sheo","sheogorath","sugar","sugar bot","alfred","pennyworth","m'aiq","maiq","malena","malèna"]` |
-| **Alfred** | `["sheo","sheogorath","johnny","silverhand","samurai","silverbot","sugar","sugar bot","m'aiq","maiq","malena","malèna"]` |
-| **M'aiq** | `["sheo","sheogorath","johnny","silverhand","samurai","silverbot","alfred","pennyworth","sugar","sugar bot","malena","malèna"]` |
-| **Malena** | `["sheo","sheogorath","johnny","silverhand","samurai","silverbot","alfred","pennyworth","m'aiq","maiq","sugar","sugar bot"]` |
-
-## Câblage par bot (points d'insertion EXACTS)
-
-### 1. Johnny — `JohnnyBot/bot_johnny.py` (~ligne 783)
-Remplacer :
+### B.2 — Globals module (près des autres globals Twitch)
 ```python
-    # C. Intervention aléatoire (10%)
-    if not should_respond and not is_bot_talking and random.random() < 0.10:
-        should_respond = True
-        logger.info(f"[INTERVENTION] Johnny intervient dans {message.channel.name}")
-```
-par :
-```python
-    # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
-    if not should_respond and not is_bot_talking and random.random() < 0.10:
-        if await _other_bot_in_focus(message):
-            logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Johnny se tait.")
-        else:
-            should_respond = True
-            logger.info(f"[INTERVENTION] Johnny intervient dans {message.channel.name}")
+twitch_chat = None
+twitch_chat_task = None
 ```
 
-### 2. M'aiq — `MaiqBot/bot_maiq.py` (~lignes 1127-1130)
-Remplacer :
+### B.3 — Dans `on_ready` (`bot_sugar.py`), APRÈS le bloc `twitch_announcer` (après l.439)
+Idempotent (on_ready peut refire au RESUME → garde `twitch_chat is None`) :
 ```python
-    # "L'Oreille qui traîne" (Si mot-clé + pas de mention + random 20%)
-    if has_keyword and not is_mentioned and not is_reply:
-         if random.random() < 0.20:
-            is_eavesdropping = True
-            logger.info(f"[OREILLE] Mot-clé détecté dans : {message.content[:50]}")
+    global twitch_chat, twitch_chat_task
+    if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
+        twitch_chat = setup_twitch_chat(
+            "sugar", logger,
+            personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
+            mistral_client=mistral_client, groq_client=groq_client,
+            openrouter_client=openrouter_client, bot_label="Sugar Bot",
+            enable_events=True,
+            enable_interjections=False,   # décision « silence sauf si nommé »
+            enable_greetings=False,       # idem
+            enable_viewer_memory=True,
+            enable_eventsub=False,        # pas de token broadcaster Sugar → évite les 403 ; réactiver plus tard si besoin
+            enable_voice_listen=False,
+        )
+        if twitch_chat:
+            twitch_chat_task = asyncio.create_task(twitch_chat.run())
 ```
-par :
+- **Persona identique Discord** : on passe `PERSONALITY_PROMPT` (celui de `sugar_data.py`).
+  Les augmentations par-message (carnet de rancunes, mémoire, ton) sont Discord-only —
+  normal, ce sont des systèmes Discord. La VOIX/le CARACTÈRE sont identiques.
+- Pas de `commands=` au début (Sugar n'a pas de commandes Twitch dédiées) → l'infra
+  tourne sans. On pourra en ajouter plus tard.
+
+### B.4 — Arrêt propre (miroir `bot_sheogorath.py:2537-2544`)
+Dans le chemin de shutdown de Sugar (là où `setup_graceful_shutdown(bot)` / `on_disconnect`
+ferme les ressources) :
 ```python
-    # "L'Oreille qui traîne" (Si mot-clé + pas de mention + random 20%)
-    if has_keyword and not is_mentioned and not is_reply:
-         if random.random() < 0.20:
-            if await _other_bot_in_focus(message):
-                logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → M'aiq n'écoute pas.")
-            else:
-                is_eavesdropping = True
-                logger.info(f"[OREILLE] Mot-clé détecté dans : {message.content[:50]}")
+    global twitch_chat, twitch_chat_task
+    if twitch_chat:
+        twitch_chat.stop()
+    if twitch_chat_task:
+        twitch_chat_task.cancel()
+        try:
+            await twitch_chat_task
+        except asyncio.CancelledError:
+            pass
 ```
 
-### 3. Alfred — `Alfred/bot_alfred.py`
-Deux branches proactives à garder. Elles sont dans une chaîne `if/elif` : comme la
-condition `elif` consomme déjà le tirage aléatoire, on garde À L'INTÉRIEUR du corps
-(si focus autre bot → `should_respond` reste False, Alfred se tait).
+### B.5 — Anti-boucle : peer bots (config, PAS de code)
+- Ajouter le **login chat de Sugar** (ex. `sugar_bot_xxx`, cf. B.6) aux `TWITCH_PEER_BOTS`
+  de **Sheo** et **Johnny** (`.env.encrypted` de chaque bot).
+- Ajouter `compte_bot_sheo` ET `johnny_alt_silverhand` aux `TWITCH_PEER_BOTS` de **Sugar**.
 
-**3a. Chaos (~ligne 1379)** — remplacer :
-```python
-    elif (has_chaos_keyword or is_shouting) and random.random() < 0.15:
-        should_respond = True
-        context_prefix = "CONTEXTE: L'utilisateur est vulgaire ou crie. Rappelle-lui les bonnes manières avec un cynisme glacé."
-        print(f"☕ MAINTIEN DE L'ORDRE : Alfred réagit au chaos de {message.author.name}")
-```
-par :
-```python
-    elif (has_chaos_keyword or is_shouting) and random.random() < 0.15:
-        if await _other_bot_in_focus(message):
-            logger.info("[ANTI-INCRUSTATION] Chaos dans un échange adressé à un autre bot → Alfred s'abstient.")
-        else:
-            should_respond = True
-            context_prefix = "CONTEXTE: L'utilisateur est vulgaire ou crie. Rappelle-lui les bonnes manières avec un cynisme glacé."
-            print(f"☕ MAINTIEN DE L'ORDRE : Alfred réagit au chaos de {message.author.name}")
-```
+---
 
-**3b. Chant (~ligne 1385, `elif not is_bot_talking:`)** — cette branche détecte le chant
-puis décide de répondre. Repérer, DANS ce bloc, l'endroit exact où il pose
-`should_respond = True` (sanction musicale) et l'entourer du même garde-fou :
-```python
-        if <condition de chant détecté>:
-            if await _other_bot_in_focus(message):
-                logger.info("[ANTI-INCRUSTATION] Chant dans un échange adressé à un autre bot → Alfred s'abstient.")
-            else:
-                should_respond = True
-                ...  # reste inchangé
-```
-⚠️ Ne garder QUE le déclenchement spontané (chant). Ne pas toucher aux réponses directes.
+## À FAIRE PAR L'UTILISATEUR (externe — Antigravity ne peut pas)
+Sans ces credentials, `setup_twitch_chat` renvoie `None` proprement (bot Discord intact).
+1. **Créer un compte Twitch** pour Sugar (identité de chatteuse, ex. `sugar_bot_xxx`).
+2. **Créer une application Twitch** (dev.twitch.tv/console) → `client_id` + `client_secret`
+   (1 appli par bot, cf. règle projet).
+3. Renseigner dans **`SugarBot/.env`** (sera re-chiffré) :
+   `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_BOT_USERNAME=<login sugar>`.
+4. **Autoriser** : `python twitch_authorize.py --bot sugar` avec le compte de Sugar →
+   génère `TWITCH_OAUTH_TOKEN` + `TWITCH_REFRESH_TOKEN` (comme fait pour Sheo/Johnny).
+5. **`data/twitch_config.json`** bloc `"sugar"` : mettre
+   `"chat_channels": ["chaine_du_dev"]` (actuellement `[]`) + les toggles A.1.
 
-### 4. Malena — `MalenaBot/bot_malena.py` (~lignes 409-415)
-Remplacer :
-```python
-    if not should_respond and message.author.name in data.SPECIAL_INTERACTIONS:
-        user_config = data.SPECIAL_INTERACTIONS[message.author.name]
-        
-        # Tirage au sort basé sur la config
-        if random.random() < user_config["proba"]:
-            logger.info(f"🎲 [SPECIAL INTERACTION] Malena a envie de parler à {message.author.name} ({user_config['proba']*100}%)")
-            should_respond = True
-```
-par :
-```python
-    if not should_respond and message.author.name in data.SPECIAL_INTERACTIONS:
-        user_config = data.SPECIAL_INTERACTIONS[message.author.name]
-        
-        # Tirage au sort basé sur la config
-        if random.random() < user_config["proba"]:
-            if await _other_bot_in_focus(message):
-                logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Malena s'abstient.")
-            else:
-                logger.info(f"🎲 [SPECIAL INTERACTION] Malena a envie de parler à {message.author.name} ({user_config['proba']*100}%)")
-                should_respond = True
-```
+---
 
-## Notes
-- `_other_bot_in_focus` est **async** (lit `channel.history`). Toutes les branches ci-dessus
-  sont déjà dans `on_message` (async) → le `await` est OK.
-- Le helper référence `bot.user` : le `bot` module-level de chaque fichier convient.
-- NE PAS garder les branches DIRECTES (mention/reply/DM/nom du bot, requête-service Alfred,
-  trigger-words Malena) : seules les interventions spontanées sont concernées.
-
-## Vérification attendue
-- `python -m py_compile` sur les 4 fichiers.
-- Chaque bot importable seul (autonomie préservée, 0 nouveau import inter-bot).
-- (Idéal) test live : nommer un bot A, vérifier que B/C/D ne s'incrustent plus dans
-  l'échange ; vérifier que l'intervention aléatoire fonctionne encore hors contexte adressé.
+## VÉRIFICATIONS ATTENDUES
+- `python -m py_compile SugarBot/bot_sugar.py Sheogorath/bot_sheogorath.py JohnnyBot/bot_johnny.py`.
+- `python -m pytest tests/test_twitch_features.py` reste vert.
+- Chaque bot reste importable seul (0 dépendance runtime inter-bot).
+- JSON valide : `python -c "import json;json.load(open('data/twitch_config.json'))"`.
+- Test live (après credentials user) :
+  - Sugar rejoint `#chaine_du_dev`, log `🎯 Déclencheurs configurés : [...'sugar'...]`.
+  - Chat « ce jeu est dur » → **aucun** bot ne répond (silence spontané OK).
+  - Chat « sugar t'es nulle » → Sugar répond, en personnage Discord, sortie filtrée ToS.
+  - Voix « sugar ... » → Sugar réagit ; voix sans nom → silence (déjà en place).
+  - Aucune boucle Sugar↔Sheo↔Johnny (peer bots OK).
