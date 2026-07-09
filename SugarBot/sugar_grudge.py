@@ -93,6 +93,19 @@ _DIRECTIVE_REDEEMED = (
     "(tu la rayes de ton petit carnet vert et argent, ex: « Allez, je te raye du carnet, "
     "mon caramel. Ne me refais pas ça. »), puis redeviens pleinement douce avec elle. "
     "Ne mentionne JAMAIS de score ni de système.")
+# Ton par défaut (AUCUNE rancune, score 0) — pilote la réponse selon le message
+# courant, pour qu'elle n'attaque pas par réflexe un inconnu ou un simple bonjour.
+_DIRECTIVE_KIND = (
+    "\n[TON] Cette personne est gentille avec toi (bonjour, compliment, remerciement) : "
+    "accueille-la avec CHALEUR et un brin de malice, jamais d'attaque. Reçois le compliment "
+    "avec un clin d'œil, sans mièvrerie ni feu d'artifice. On ne sort pas les griffes contre "
+    "quelqu'un d'aimable.")
+_DIRECTIVE_NEUTRAL = (
+    "\n[TON] Message neutre ou anodin, cette personne ne t'a rien fait : sois AVENANTE et "
+    "chaleureuse, taquine tout au plus. Ne l'attaque PAS et ne la reprends pas sur des "
+    "broutilles (minuscules, orthographe, longueur de son pseudo) — ce serait chercher la "
+    "petite bête. Tu ne sors tes griffes QUE si on te cherche vraiment ; sinon, garde ton "
+    "esprit mais range le venin.")
 _DIRECTIVE_BY_SCORE = {
     5: ("\n[CARNET DE RANCUNES] Cette personne t'a SÉRIEUSEMENT manqué de respect : sois GLACIALE "
         "ET expéditive avec elle (répartie fine, sans vulgarité). Tu peux répondre en trois mots secs "
@@ -221,7 +234,14 @@ class GrudgeBook:
 
         if redeemed:
             return _DIRECTIVE_REDEEMED
-        return _DIRECTIVE_BY_SCORE.get(entry["score"], "")
+        directive = _DIRECTIVE_BY_SCORE.get(entry["score"], "")
+        if directive:
+            return directive
+        # Aucune rancune (score 0) : on oriente quand même le TON d'après le message
+        # courant, sinon la persona brute la fait mordre par défaut (même un bonjour).
+        if addressed:
+            return _DIRECTIVE_KIND if tone == "kind" else _DIRECTIVE_NEUTRAL
+        return ""
 
     @staticmethod
     def parse_llm_tone(text):

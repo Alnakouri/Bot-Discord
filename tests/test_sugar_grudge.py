@@ -64,7 +64,8 @@ class TestGrudgeBook(unittest.TestCase):
         return self.book.book[str(uid)]["score"]
 
     def test_starts_clean(self):
-        self.assertEqual(self.book.update("1", "salut !"), "")
+        # Aucune rancune ne fuit (une simple consigne [TON] chaleureuse est permise).
+        self.assertNotIn("CARNET", self.book.update("1", "salut !"))
         self.assertEqual(self._score(), 0)
 
     def test_aggression_adds_two(self):
@@ -99,13 +100,13 @@ class TestGrudgeBook(unittest.TestCase):
         self.assertIn("RADOUCIE", d)
         d = self.book.update("1", "merci pour hier")         # 0 → pardon
         self.assertIn("regagner ton pardon", d)
-        # le message suivant : plus aucune consigne, pleine douceur
-        self.assertEqual(self.book.update("1", "coucou !"), "")
+        # le message suivant : plus aucune rancune, pleine douceur (pas de carnet)
+        self.assertNotIn("CARNET", self.book.update("1", "coucou !"))
 
     def test_kindness_does_nothing_at_zero(self):
         d = self.book.update("1", "merci t'es géniale")
         self.assertEqual(self._score(), 0)
-        self.assertEqual(d, "")  # pas de « pardon » si rien à pardonner
+        self.assertNotIn("CARNET", d)  # pas de « pardon » si rien à pardonner (un [TON] chaleureux est permis)
 
     def test_not_addressed_ignored(self):
         self.book.update("1", "t'es nulle", addressed=False)
@@ -138,7 +139,7 @@ class TestGrudgeBook(unittest.TestCase):
         self.book.book["1"]["last_day"] = str(date.today() - timedelta(days=10))
         d = self.book.update("1", "salut")
         self.assertEqual(self._score(), 0)
-        self.assertEqual(d, "")
+        self.assertNotIn("CARNET", d)  # pardon par le temps = silencieux (aucune mention du carnet)
 
     def test_persistence(self):
         self.book.update("1", "t'es nulle")
@@ -249,7 +250,7 @@ class TestSugarGrudgeLLM(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("pending_redemption", self.book.book["1"])
 
         d2 = self.book.update("1", "re-bonjour", addressed=True)
-        self.assertEqual(d2, "") # plus rien
+        self.assertNotIn("CARNET", d2)  # la directive de pardon ne se répète pas
 
         # Test: update() suivant agressif -> flag consommé silencieusement + score +2
         self.book.book["1"]["score"] = 1
