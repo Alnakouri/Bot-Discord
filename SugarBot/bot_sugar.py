@@ -130,6 +130,54 @@ def _strip_lead_vocative(text):
         return text
     return rest[0].upper() + rest[1:]
 
+# --- Cadence des petits noms sucrés (anti-« un bonbon à chaque message ») ---
+# Le petit nom sucré doit rester une touche OCCASIONNELLE, pas un tic à chaque
+# réplique (« mon nougat / mon caramel / mon berlingot » en boucle). On sait le
+# repérer où qu'il soit — en tête, en début de phrase, en apposition — pour le
+# retirer quand la réplique PRÉCÉDENTE en portait déjà un.
+_SWEET_PHRASE = (
+    r"(?:mon|ma|mes)\s+"
+    r"(?:(?:petit|petite|gros|grosse|tendre|doux|douce|cher|chère|chere)\s+){0,2}"
+    r"(?:" + _SWEET_NAMES + r")"
+    r"(?:\s+(?:d['’]|de\s+|au\s+|à\s+la\s+)?[\wàâäéèêëïîôöùûüç'’-]+){0,2}"
+)
+# Vocatif en début de phrase : « … ? Mon berlingot, tu… »
+_VOCATIVE_SENTENCE = re.compile(
+    r"([.!?…]\s+)"
+    r"(?:oh|eh|ah|hé|he|hey|coucou|alors)?[,\s]*"
+    + _SWEET_PHRASE +
+    r"\s*[,–—-]+\s*"
+    r"([A-Za-zÀ-ÿ])",
+    re.IGNORECASE)
+# Vocatif en apposition : « … politesse, mon caramel — dommage… »
+_VOCATIVE_APPOS = re.compile(
+    r"\s*,\s*" + _SWEET_PHRASE + r"(?=\s*[,–—.!?…-]|\s*$)",
+    re.IGNORECASE)
+
+def _has_sweet_vocative(text):
+    """True si la réplique porte un petit nom sucré (tête, début de phrase ou apposition)."""
+    if not text:
+        return False
+    return bool(_LEAD_VOCATIVE.match(text)
+                or _VOCATIVE_SENTENCE.search(text)
+                or _VOCATIVE_APPOS.search(text))
+
+def _strip_sweet_vocatives(text):
+    """Retire les petits noms sucrés où qu'ils soient, puis renormalise la ponctuation.
+    Appelé quand la réplique précédente en portait déjà un (cadence : pas deux d'affilée)."""
+    if not text:
+        return text
+    text = _strip_lead_vocative(text)
+    text = _VOCATIVE_SENTENCE.sub(lambda m: m.group(1) + m.group(2).upper(), text)
+    text = _VOCATIVE_APPOS.sub(" ", text)
+    text = re.sub(r"\s+([,.])", r"\1", text)         # espace parasite avant virgule/point (typo FR : on garde l'espace avant ? ! ; :)
+    text = re.sub(r"([,;:])\s*\1", r"\1", text)      # ponctuation doublée après coupe
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
+# Cadence : mémorise si la DERNIÈRE réponse envoyée dans un salon portait un vocatif sucré.
+_last_reply_had_vocative = {}
+
 # Bot Sugar Bot (ardoise neutre)
 
 # IMPORT SECURE ENV LOADER
@@ -908,7 +956,14 @@ async def on_message(message):
         response_text = _strip_lead_vocative(response_text)
 
     response_text = response_text.strip()
-    
+
+    # Cadence des petits noms sucrés : pas deux répliques d'affilée qui en portent un
+    # (sinon « mon nougat / mon caramel / mon berlingot » à chaque message). Si la
+    # réponse précédente dans ce salon en avait un, on retire le sucre de celle-ci.
+    if _last_reply_had_vocative.get(channel_id):
+        response_text = _strip_sweet_vocatives(response_text)
+    _last_reply_had_vocative[channel_id] = _has_sweet_vocative(response_text)
+
     # Sauvegarde anti-répétition
     if message.guild:
         response_memory.add(message.guild.id, response_text)
