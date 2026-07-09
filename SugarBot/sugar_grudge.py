@@ -61,11 +61,18 @@ _RE_APOLOGY = re.compile(
     r"my bad|au temps pour moi|autant pour moi|je regrette|sorry)\b",
     re.IGNORECASE)
 
-# Gentillesse : compliment/remerciement adressé à elle (−1)
+# Gentillesse : compliment/remerciement/affection/appréciation envers elle (−1).
+# On accepte large côté « amical » (slang inclus) : au pire elle est chaleureuse là où
+# elle aurait été neutre — erreur bénigne et voulue (choix user : mieux détecter l'amical).
+# Négation gérée : « pas cool / pas sympa / pas top » ne comptent pas comme gentils.
 _RE_KIND = re.compile(
-    r"\b(merci|t'es la meilleure|je t'adore|je t'aime|g[ée]nial+e?|super|bravo|"
+    r"\b(?<!pas )(merci+|t'es la meilleure|je t'adore|je t'aime|g[ée]nial+e?|super|bravo|"
     r"bien jou[ée]|adorable|mignonne|trop forte|t'es (cool|dr[oô]le|top|g[ée]niale|"
-    r"ador[ée]e|gentille|forte|marrante)|excellente|gg)\b",
+    r"ador[ée]e|gentille|forte|marrante)|excellente|gg|"
+    r"bg|beau gosse|belle gosse|sympa(?:thique)?|cool|au top|c'est top|"
+    r"trop (?:cool|bien|sympa|g[ée]nial|mignon+e?|forte?)|"
+    r"chaleureux|chaleureuse|kiff\w*|parfaite?|classe|canon|magnifique|superbe|"
+    r"chou|choupi\w*|chouette|reine|d[ée]esse|queen)\b",
     re.IGNORECASE)
 _RE_HEART = re.compile(r"[❤🩷💖💕💗💓🥰😍♥]")
 

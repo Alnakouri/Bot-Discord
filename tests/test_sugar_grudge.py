@@ -36,6 +36,21 @@ class TestClassifyTone(unittest.TestCase):
         self.assertEqual(classify_tone("t'es la meilleure"), "kind")
         self.assertEqual(classify_tone("je t'adore ❤"), "kind")
 
+    def test_kind_slang(self):
+        # Amical élargi (slang) : doit router vers « kind » (ton chaleureux)
+        for msg in ["quel acceuil sucré bg", "t'es sympa toi", "trop cool merci",
+                    "au top !", "t'es chaleureuse", "magnifique", "canon", "ma reine"]:
+            self.assertEqual(classify_tone(msg), "kind", msg)
+
+    def test_kind_negation_not_kind(self):
+        # « pas cool / pas sympa » ne sont PAS des gentillesses
+        self.assertEqual(classify_tone("c'est pas cool"), "neutral")
+        self.assertEqual(classify_tone("pas sympa du tout"), "neutral")
+
+    def test_aggro_wins_over_kind_slang(self):
+        # une insulte l'emporte sur un « bg » amical
+        self.assertEqual(classify_tone("ta gueule bg"), "aggro")
+
     def test_aggro_wins_over_apology(self):
         # « désolé mais t'es nulle » = agression, pas excuse
         self.assertEqual(classify_tone("désolé mais t'es nulle"), "aggro")
