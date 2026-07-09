@@ -220,6 +220,8 @@ except ImportError:
     TWITCH_AVAILABLE = False
     def setup_twitch_announcer(*a, **k): return None
 
+twitch_announcer = None
+
 try:
     from shared.twitch_chat import setup_twitch_chat
     TWITCH_CHAT_AVAILABLE = True
@@ -227,7 +229,6 @@ except ImportError:
     TWITCH_CHAT_AVAILABLE = False
     def setup_twitch_chat(*a, **k): return None
 
-twitch_announcer = None
 twitch_chat = None
 twitch_chat_task = None
 
