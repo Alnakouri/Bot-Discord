@@ -214,10 +214,12 @@ class GrudgeBook:
         before_decay = entry.get("score", 0)
         self._decay(entry, today_str)
         redeemed = False
+        # Le TON est TOUJOURS classé (il pilote la consigne de ton, y compris en
+        # continuation non ré-adressée). Le SCORE de rancune, lui, ne bouge que si
+        # le message est ADRESSÉ (sinon un message de fond ferait monter la rancune).
+        tone = classify_tone(text)
 
         if addressed:
-            tone = classify_tone(text)
-
             # Traitement du pardon différé (pending_redemption)
             if entry.get("pending_redemption"):
                 if tone != "aggro":
@@ -237,11 +239,14 @@ class GrudgeBook:
         directive = _DIRECTIVE_BY_SCORE.get(entry["score"], "")
         if directive:
             return directive
-        # Aucune rancune (score 0) : on oriente quand même le TON d'après le message
-        # courant, sinon la persona brute la fait mordre par défaut (même un bonjour).
-        if addressed:
-            return _DIRECTIVE_KIND if tone == "kind" else _DIRECTIVE_NEUTRAL
-        return ""
+        # Aucune rancune (score 0) : on oriente le TON d'après le message courant —
+        # même en continuation NON ré-adressée, sinon la persona brute la fait mordre
+        # par défaut (elle se moque d'une faute de frappe sur une simple relance).
+        if tone == "kind":
+            return _DIRECTIVE_KIND
+        if tone == "neutral":
+            return _DIRECTIVE_NEUTRAL
+        return ""  # aggro/excuse sans rancune → persona brute (le mordant est OK sur une hostilité)
 
     @staticmethod
     def parse_llm_tone(text):
