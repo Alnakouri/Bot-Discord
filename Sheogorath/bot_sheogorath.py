@@ -1944,7 +1944,10 @@ async def on_message(message):
     if any(w in msg_lower for w in ["ennui", "triste", "calme", "sérieux", "chaos", "fou"]):
         intervention_chance += 0.05
     
-    is_proactive = (not is_mentioned and not is_reply and not message.author.bot and random.random() < intervention_chance)
+    # Anti-incrustation : on ne s'invite pas dans un échange visiblement adressé à un AUTRE bot.
+    _other_bot_named = any(n in msg_lower for n in OTHER_BOT_NAMES)
+    is_proactive = (not is_mentioned and not is_reply and not message.author.bot
+                    and not _other_bot_named and random.random() < intervention_chance)
 
     if is_proactive:
         logger.info(f"⚡ [PROACTIVITY] Sheogorath s'ennuie et décide d'intervenir ! ({intervention_chance*100:.1f}%)")
@@ -2007,7 +2010,9 @@ async def on_message(message):
     elif has_priority_keyword and is_long_message:
         should_respond = True
         response_mode = "LLM" # Force LLM for context
-    elif has_keyword and random.random() < 0.60:
+    elif has_keyword and not _other_bot_named and random.random() < 0.60:
+        # Mot-clé générique (« bonjour », « fou »…) : on ne s'incruste PAS si le message
+        # nomme un autre bot (« bonjour sugar » vise Sugar, pas Sheo).
         should_respond = True
         response_mode = "LLM" # WAS HYBRID - FORCED TO LLM FOR BETTER CONVERSATION
 
