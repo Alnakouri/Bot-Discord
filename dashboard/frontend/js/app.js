@@ -1158,6 +1158,7 @@ async function loadTwitchPresence() {
         document.getElementById('presence-chat-greetings').checked = chatCfg.greetings !== false;
         document.getElementById('presence-chat-memory').checked = chatCfg.viewer_memory !== false;
         document.getElementById('presence-chat-game-qa').checked = chatCfg.game_qa === true;
+        document.getElementById('presence-chat-eventsub').checked = chatCfg.eventsub === true;
 
         // Charger les chaînes de chat
         const channelsRes = await fetch(`${API_BASE}/twitch/channels/${botId}`);
@@ -1197,12 +1198,13 @@ window.savePresenceSettings = async function() {
     const greetings = document.getElementById('presence-chat-greetings').checked;
     const viewer_memory = document.getElementById('presence-chat-memory').checked;
     const game_qa = document.getElementById('presence-chat-game-qa').checked;
-    
+    const eventsub = document.getElementById('presence-chat-eventsub').checked;
+
     try {
         const res = await fetch(`${API_BASE}/twitch/chat/${botId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ events, interjections, greetings, viewer_memory, game_qa })
+            body: JSON.stringify({ events, interjections, greetings, viewer_memory, game_qa, eventsub })
         });
         if (res.ok) {
             toast("Configuration de présence enregistrée avec succès !", 'success');

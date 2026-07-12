@@ -93,6 +93,7 @@ class TwitchChatBot(
         openrouter_client = None,
         bot_label: str | None = None,
         system_prompt_provider = None,
+        tone_directive_provider = None,
         profile_bio: str | None = None,
         chat_color: str | None = None,
         enable_events: bool = False,
@@ -129,6 +130,10 @@ class TwitchChatBot(
         # Optionnel : callable renvoyant le prompt système "vivant" (ex. humeur courante
         # côté Discord). Permet d'utiliser la MÊME config que le bot principal.
         self.system_prompt_provider = system_prompt_provider
+        # Optionnel : callable (author, message) -> str renvoyant une consigne de TON
+        # à injecter par message (ex. Sugar : chaleureuse si amical, griffes si hostile).
+        # Hook GÉNÉRIQUE — aucune logique spécifique-bot ici.
+        self.tone_directive_provider = tone_directive_provider
         self.key_manager = key_manager
         self.mistral_client = mistral_client
         self.groq_client = groq_client
@@ -272,6 +277,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
                       key_manager=None, mistral_client=None, groq_client=None,
                       openrouter_client=None, bot_label: str | None = None,
                       system_prompt_provider=None,
+                      tone_directive_provider=None,
                       profile_bio: str | None = None,
                       chat_color: str | None = None,
                       enable_events: bool = False,
@@ -328,6 +334,8 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     if "interjections" in dash_chat: enable_interjections  = bool(dash_chat["interjections"])
     if "greetings" in dash_chat:     enable_greetings      = bool(dash_chat["greetings"])
     if "viewer_memory" in dash_chat: enable_viewer_memory  = bool(dash_chat["viewer_memory"])
+
+    if "eventsub" in dash_chat: enable_eventsub      = bool(dash_chat["eventsub"])
 
     enable_game_qa = False
     if "game_qa" in dash_chat:
@@ -459,6 +467,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         openrouter_client=openrouter_client,
         bot_label=bot_label,
         system_prompt_provider=system_prompt_provider,
+        tone_directive_provider=tone_directive_provider,
         profile_bio=resolved_bio,
         chat_color=resolved_color,
         enable_events=enable_events,

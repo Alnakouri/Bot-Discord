@@ -61,12 +61,16 @@ class TwitchConfigManager:
                     "interjections": True,
                     "greetings": True,
                     "viewer_memory": True,
-                    "game_qa": False
+                    "game_qa": False,
+                    "eventsub": False
                 }
                 updated = True
             else:
                 if "game_qa" not in config[bot_id]["chat"]:
                     config[bot_id]["chat"]["game_qa"] = False
+                    updated = True
+                if "eventsub" not in config[bot_id]["chat"]:
+                    config[bot_id]["chat"]["eventsub"] = False
                     updated = True
             if "reward_map" not in config[bot_id]:
                 config[bot_id]["reward_map"] = {}
@@ -268,7 +272,7 @@ class TwitchConfigManager:
         self._save_raw(config)
         return {"added": added, "skipped": skipped}
 
-    def update_chat_config(self, bot_id: str, events: bool, interjections: bool, greetings: bool, viewer_memory: bool, game_qa: bool = False):
+    def update_chat_config(self, bot_id: str, events: bool, interjections: bool, greetings: bool, viewer_memory: bool, game_qa: bool = False, eventsub: bool = False):
         if bot_id not in BOT_REGISTRY:
             raise ValueError(f"Bot '{bot_id}' non enregistré.")
         config = self.get_all()
@@ -277,7 +281,8 @@ class TwitchConfigManager:
             "interjections": interjections,
             "greetings": greetings,
             "viewer_memory": viewer_memory,
-            "game_qa": game_qa
+            "game_qa": game_qa,
+            "eventsub": eventsub
         }
         self._save_raw(config)
 

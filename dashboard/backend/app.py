@@ -365,6 +365,7 @@ class TwitchChatConfigUpdate(BaseModel):
     greetings: bool
     viewer_memory: bool
     game_qa: bool
+    eventsub: bool = False
 
 class TwitchListenConfigUpdate(BaseModel):
     enabled: bool
@@ -437,7 +438,7 @@ async def get_twitch_chat_config(bot_id: str):
 async def update_twitch_chat_config(bot_id: str, cfg: TwitchChatConfigUpdate):
     try:
         twitch_config_manager.update_chat_config(
-            bot_id, cfg.events, cfg.interjections, cfg.greetings, cfg.viewer_memory, cfg.game_qa
+            bot_id, cfg.events, cfg.interjections, cfg.greetings, cfg.viewer_memory, cfg.game_qa, cfg.eventsub
         )
         audit_analyzer.log("update_twitch_chat", bot_id, "Mise à jour config chat Twitch")
         return {"status": "ok"}
