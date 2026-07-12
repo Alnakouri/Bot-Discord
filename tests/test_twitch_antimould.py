@@ -11,7 +11,7 @@ _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
-from shared.twitch.llm import _strip_repeated_opening
+from shared.twitch.llm import _strip_repeated_opening, _build_anti_tic_consigne
 
 
 class TestStripRepeatedOpening(unittest.TestCase):
@@ -49,6 +49,35 @@ class TestStripRepeatedOpening(unittest.TestCase):
         recent = ["Mon jeu préféré ? Zelda."]
         msg = "Mon jeu préféré ? Zelda."
         self.assertEqual(_strip_repeated_opening(msg, recent), msg)
+
+
+class TestBuildAntiTicConsigne(unittest.TestCase):
+    def test_empty_or_none(self):
+        self.assertEqual(_build_anti_tic_consigne(None), "")
+        self.assertEqual(_build_anti_tic_consigne([]), "")
+        self.assertEqual(_build_anti_tic_consigne(["", None, "   "]), "")
+
+    def test_extracts_amorces_and_clotures(self):
+        recent = [
+            "Bonjour mon cher mortel ! J'adore le fromage. 🧀",
+            "Silence, ver de terre ! Haskill, apporte les cuillères. 🥄",
+        ]
+        consigne = _build_anti_tic_consigne(recent)
+        self.assertIn("[ANTI-TICS — VARIE OU MEURS]", consigne)
+        self.assertIn('"bonjour mon cher mortel j\'adore"', consigne)
+        self.assertIn('"silence ver de terre haskill"', consigne)
+        # Clôtures : dernière phrase, emoji retiré
+        self.assertIn('"j\'adore le fromage"', consigne)
+        self.assertIn('"haskill apporte les cuillères"', consigne)
+
+    def test_dedup(self):
+        # Deux répliques dont les 5 premiers mots sont identiques → amorce listée une seule fois.
+        recent = [
+            "Toujours la même rengaine avec toi, franchement.",
+            "Toujours la même rengaine avec vous, décidément.",
+        ]
+        consigne = _build_anti_tic_consigne(recent)
+        self.assertEqual(consigne.count('"toujours la même rengaine avec"'), 1)
 
 
 if __name__ == "__main__":

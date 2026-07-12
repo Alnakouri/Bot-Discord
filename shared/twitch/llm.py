@@ -87,6 +87,64 @@ def _truncate_for_twitch(text: str, limit: int = 480) -> str:
     return (head.rstrip(" ,;:—-") + "…" + trailing).strip()
 
 
+def _build_anti_tic_consigne(recent, n: int = 5) -> str:
+    """Liste les AMORCES (premiers mots) et CLÔTURES (derniers mots de la dernière phrase,
+    emoji de ton retiré) des dernières répliques et les interdit explicitement. Parité avec
+    le helper Discord `sheo_llm.build_anti_tic_consigne`, mais GÉNÉRIQUE (aucune logique
+    spécifique-bot, aucun import de bot) → réutilisable par tous les bots Twitch.
+    Retourne "" si rien d'exploitable (ne casse jamais la génération)."""
+    if not recent:
+        return ""
+
+    amorces, clotures = [], []
+    for resp in list(recent)[-n:]:
+        if not resp or not isinstance(resp, str):
+            continue
+        try:
+            clean = re.sub(r"\s+", " ", resp).strip()
+            if not clean:
+                continue
+            # Amorce : jusqu'à 5 premiers mots normalisés (minuscules, ponctuation de bord retirée)
+            words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in clean.split()]
+            words = [w for w in words if w]
+            if len(words) >= 2:
+                amorce = " ".join(words[:min(5, len(words))])
+                if amorce and amorce not in amorces:
+                    amorces.append(amorce)
+            # Clôture : dernière phrase (emoji de ton retiré), ~5 derniers mots normalisés
+            m = _TRAILING_EMOJI.search(clean)
+            base = clean[:m.start()].rstrip() if m else clean
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?]) +', base) if s.strip()]
+            if sentences:
+                last_words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in sentences[-1].split()]
+                last_words = [w for w in last_words if w]
+                if last_words:
+                    cloture = " ".join(last_words[-min(5, len(last_words)):])
+                    if cloture and cloture not in clotures:
+                        clotures.append(cloture)
+        except Exception:
+            continue
+
+    if not amorces and not clotures:
+        return ""
+
+    consigne = "\n\n[ANTI-TICS — VARIE OU MEURS]"
+    if amorces:
+        consigne += (
+            "\nTu as OUVERT tes dernières répliques par : "
+            + ", ".join(f'"{a}"' for a in amorces)
+            + ". INTERDIT de rouvrir par une de ces amorces ou une variation proche — "
+            "trouve une entrée NEUVE (question sèche, non-sequitur, ordre, constat)."
+        )
+    if clotures:
+        consigne += (
+            "\nTu as CLÔTURÉ par : "
+            + ", ".join(f'"{c}"' for c in clotures)
+            + ". INTERDIT de refinir pareil — change de chute."
+        )
+    return consigne
+
+
 class LlmMixin:
     async def _generate_response(self, channel: str, author: str, message: str, game_facts_block: str | None = None, no_facts_warning: bool = False) -> str | None:
         system_prompt = self.personality_prompt
@@ -148,6 +206,11 @@ class LlmMixin:
                          "N'ouvre PAS sur les mêmes premiers mots que ci-dessus et ne recrache PAS la "
                          "question en écho pour démarrer. Trouve une idée ET une amorce COMPLÈTEMENT DIFFÉRENTES.")
             system_prompt += anti_rep
+
+        # ANTI-TICS (parité Discord) : liste explicite des amorces/clôtures récentes à éviter.
+        anti_tic = _build_anti_tic_consigne(self_recent)
+        if anti_tic:
+            system_prompt += anti_tic
 
         # CONSIGNE DE TON (générique, optionnelle) : un bot peut fournir une consigne
         # par message. Pour Sugar : chaleureuse face à un message amical, griffes face
