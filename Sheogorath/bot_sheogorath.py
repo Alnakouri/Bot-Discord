@@ -2238,8 +2238,8 @@ async def on_message(message):
     
     # Determine length adaptation
     if routing["type"] == RequestType.REPARTEE:
-        max_tokens_val = 120
-        max_sentences_val = 2
+        max_tokens_val = 160   # une riposte qui monte (« Ah... MOT... puis la gifle ») ne doit pas être clippée
+        max_sentences_val = 4  # filet : les « ... » comptaient comme des phrases → la vraie morsure était guillotinée. Le prompt garde la répartie sèche.
     else:
         max_tokens_val = 260   # assez pour une tirade dense qui monte sans clipper
         max_sentences_val = 6  # filet anti-déraillage, PAS outil de mise en forme (la densité vient du prompt)
