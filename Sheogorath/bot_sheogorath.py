@@ -2241,8 +2241,8 @@ async def on_message(message):
         max_tokens_val = 120
         max_sentences_val = 2
     else:
-        max_tokens_val = 200   # était 300
-        max_sentences_val = 4  # était 6
+        max_tokens_val = 260   # assez pour une tirade dense qui monte sans clipper
+        max_sentences_val = 6  # filet anti-déraillage, PAS outil de mise en forme (la densité vient du prompt)
     
     for client_type, model_name in cascade:
         try:
