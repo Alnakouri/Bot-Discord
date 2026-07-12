@@ -1,133 +1,130 @@
-# PLAN — Sheo : rendre la FOLIE (déjanté/imprévisible) motrice (Discord ⇄ Twitch)
+# PLAN — Sheo : longueur = pertinence (anti-meublage) + anti-tics d'ouverture/clôture
 
-## Contexte & décision (validée avec l'utilisateur)
-Retour user (test live 2026-07-12→13) : **« trop peu drôle/déjanté, pas Sheogorath quoi. »**
-Sheo sort de longues tirades d'**aristocrate menaçant guindé**, éloquentes mais sages. Il manque
-la **folie** : l'imprévisible, le surréaliste, le rire, le non-sequitur — l'essence du Prince de
-la Folie (canon ESO/Shivering Isles). La matière première est pourtant là (`COMEBACK_POOL`,
-`COMEDY_EXAMPLES_*` sont riches en fromage/Haskill/transformations) : c'est un problème de
-**réglage du prompt qui BRIDE la folie**, pas de contenu manquant.
+> Antigravity exécute. Claude a rédigé. Cible : `Sheogorath/`. Deux problèmes distincts,
+> deux leviers. Édition `sheo_data.py` = Discord + Twitch (via `system_prompt_provider`).
 
-### Causes racines (prouvées dans `Sheogorath/sheo_data.py`)
-1. **Ligne 665 tue la folie explicitement** : « L'absurde ou tes obsessions (le fromage, les
-   dents) sont le **décor de fond, PAS le sujet principal**. » → pour un Prince de la Folie, cette
-   phrase plafonne exactement ce qu'on veut. À RETOURNER.
-2. **Ligne 662 (MORDANT) subordonne la folie à la morsure** : « ta première phrase doit TOUCHER…
-   AVANT toute digression. Le charme et **la folie ne remplacent jamais la morsure ; ils la
-   servent**. » → fait de Sheo un *roaster* qui ouvre toujours par une pique sèche, la folie
-   reléguée en 2e temps. À RÉÉQUILIBRER (la morsure peut ÊTRE absurde).
-3. **Longueur** : les monologues éloquents (300 tokens / 6 phrases en mode TEXT) diluent la folie ;
-   le déjanté claque quand c'est COURT et surprenant.
-4. **Humeur NEUTRAL trop terne** (`sheo_data.py:686-693`) : « hautain, aristocratique, dangereusement
-   calme… juge le mortel avec mépris » → zéro folie. C'est l'humeur la plus jouée hors mania.
+## Contexte / retour user
 
-### Portée & parité
-- Fichier principal : `Sheogorath/sheo_data.py` (persona + few-shot). +1 ligne dans
-  `Sheogorath/bot_sheogorath.py` (longueur REPARTEE). Discord ET Twitch lisent ces prompts via
-  `system_prompt_provider=get_current_system_prompt` → **une édition couvre les deux**.
-- Workflow : **Antigravity exécute. Claude a rédigé.**
+Test live 2026-07-13. Deux plaintes :
+1. **Sheo meuble** — réponses trop longues pour ce qu'elles disent. La longueur doit dépendre
+   de la PERTINENCE, pas remplir un budget.
+2. **Il réutilise les mêmes DÉBUTS et FINS de phrase** (tics d'ouverture/clôture).
 
----
+Décisions user (2026-07-13) :
+- Longueur par défaut (hors répartie) : **6 → 4 phrases** (300 → 200 tokens). REPARTEE inchangé (2 / 120).
+- Anti-tics : **injection dans le prompt** (0 latence, 0 coût, pas de régénération).
 
-## PARTIE A — Débrider la folie (le cœur)
+## Causes racines (prouvées)
 
-### A.1 — RETOURNER la règle « décor de fond » (`sheo_data.py:665`)
-Remplacer la ligne :
-> `- L'absurde ou tes obsessions (le fromage, les dents) sont le décor de fond, pas le sujet principal.`
-
-par :
-```
-"- L'ABSURDE EST TON MOTEUR, PAS TON décor. Tu es le Prince de la FOLIE : le surréaliste, le "
-"non-sequitur et l'imprévisible peuvent PORTER toute une réplique. Le fromage, les dents, les "
-"papillons, Haskill, le Wabbajack ne sont pas des garnitures de fin de phrase — ils peuvent "
-"ÊTRE le sujet, surgir sans prévenir et détourner la conversation là où PERSONNE ne l'attend.\n"
-```
-
-### A.2 — Nouveau bloc « FOLIE » dans `PERSONALITY_BASE`
-Juste après le bloc « RÔLE & REGISTRE » (après la ligne ~636, avant l'EMOJI DE TON), insérer un
-bloc dédié qui fait de la folie un trait CENTRAL et donne des leviers concrets :
-```
-"\n"
-"🤪 **TA FOLIE — c'est ÇA, être Sheogorath** 🤪\n"
-"- IMPRÉVISIBLE PAR ESSENCE : tu peux VIRER de registre en pleine phrase (rire enfantin → "
-"menace glaciale → tangente sur le fromage), enchaîner deux idées qui n'ont AUCUN rapport, "
-"répondre à côté exprès. Le mortel ne doit JAMAIS deviner où tu vas.\n"
-"- SURRÉALISTE & JOYEUX : images délirantes, logique de rêve, énumérations absurdes. Tes "
-"menaces sont FANTAISISTES et drôles avant d'être cruelles (le transformer en fourchette, en "
-"laitue, en fromage qui moisit ; faire pleuvoir des papillons ; l'inscrire à un concours de cris).\n"
-"- TU PARLES AU DÉCOR : interpelle Haskill, une chaise, le fromage, une voix que toi seul "
-"entends. Casse le quatrième mur si ça t'amuse.\n"
-"- LE RIRE EST PARTOUT : 'Haha !', 'Héhé', une joie qui déraille. Tu t'amuses de TOUT, surtout "
-"du malheur des mortels.\n"
-"- Bref : sois DRÔLE et DÉJANTÉ d'abord. La grandeur et la menace sont réelles, mais servies "
-"par la folie — jamais l'inverse.\n"
-```
-
-### A.3 — Rééquilibrer le MORDANT (`sheo_data.py:662`)
-Remplacer :
-> `- MORDANT OBLIGATOIRE : ta première phrase doit TOUCHER le mortel (pique précise et cinglante) AVANT toute digression. Le charme et la folie ne remplacent jamais la morsure ; ils la servent.`
-
-par (la morsure demeure, mais elle peut ÊTRE folle et n'a plus à ouvrir systématiquement) :
-```
-"- MORSURE ET FOLIE SONT INDISSOCIABLES : tu touches le mortel, mais une vanne ABSURDE est une "
-"gifle (« Tu ferais un fromage médiocre. ») autant qu'une pique sèche. La folie peut OUVRIR la "
-"réplique ; l'important est que ça PIQUE et que ça SURPRENNE, pas l'ordre. Zéro remplissage tiède.\n"
-```
-> On garde la ligne 663 « FACE À UNE ATTAQUE… IMPITOYABLE » (le mordant sur vraie agression reste
-> désiré), mais elle n'est plus le mode par défaut de TOUTE interaction.
+- **Le plafond est décidé À L'AVANCE par un classifieur**, pas par le contenu
+  (`bot_sheogorath.py:2236-2241`) : REPARTEE → 2ph/120t, sinon → **6ph/300t**. Un budget large =
+  le LLM le remplit → meublage. On garde le principe du plafond (filet de sécurité) mais on le
+  **baisse** et on reframe le prompt pour que le défaut soit « le plus court qui fait mouche ».
+- **L'anti-répétition actuel est trop grossier** (`bot_sheogorath.py:2149-2156`) : il liste les
+  5 dernières réponses ENTIÈRES (60 premiers car.) et interdit de les répéter. Il ne cible PAS
+  les **amorces** ni les **clôtures** — donc les tics de début/fin passent au travers.
+- La consigne persona « varie tes ENTRÉES » (`sheo_data.py`) est seulement *espérée*, jamais
+  **vérifiée contre l'historique réel**.
 
 ---
 
-## PARTIE B — Répartie qui claque (au service de la folie)
+## A. Longueur : plafond plus bas + prompt anti-meublage
 
-### B.1 — Raccourcir le banter (`bot_sheogorath.py:2238`)
-`max_sentences_val = 3` → `max_sentences_val = 2` pour le mode REPARTEE (le déjanté claque court).
-Laisser `max_tokens_val = 120` (l.2237) et le mode TEXT inchangé (300/6 pour les récits).
+### A.1 — `bot_sheogorath.py:2240-2241`
+Baisser le bucket « non-répartie » :
+```python
+    else:
+        max_tokens_val = 200   # était 300
+        max_sentences_val = 4  # était 6
+```
+Ne PAS toucher au bucket REPARTEE (2 / 120).
 
-### B.2 — Injecter du COURT et du DÉJANTÉ dans les few-shot
-Les exemples actuels sont presque tous des **tirades de 2-3 phrases éloquentes** → le modèle imite
-ce moule. Ajouter de la variété COURTE et surréaliste :
-- Dans **`COMEBACK_POOL`** (`sheo_data.py:10-30`) : ajouter 3-4 entrées **brèves et déjantées**
-  (1 phrase qui part en vrille), ex. :
+### A.2 — `sheo_data.py`, ligne LONGUEUR (actuellement l.687)
+Reformuler pour que le plafond soit un MAXIMUM d'urgence, jamais une cible. Remplacer :
+> « - LONGUEUR : quand on t'attaque, réplique COURTE et cinglante (1-2 phrases). Quand tu racontes,
+> digresses ou expliques, développe librement. JAMAIS de remplissage. »
+
+par (esprit — Antigravity ajuste la formulation, garde le ton) :
+> « - LONGUEUR = PERTINENCE, JAMAIS remplissage. Tu dis ce que tu as à dire puis tu t'ARRÊTES —
+> dès que la pique a touché ou que l'idée folle a atterri, tu te tais. Le plus court qui fait mouche
+> gagne toujours. Sur attaque : 1-2 phrases sèches. Un récit ou une digression déjantée peut
+> respirer (jusqu'à ~4 phrases MAX), mais chaque phrase doit AJOUTER (une image neuve, un virage) —
+> zéro phrase de transition, zéro reformulation de ce que tu viens de dire, zéro conclusion polie. »
+
+Effet : atteint Discord ET Twitch (un seul fichier).
+
+---
+
+## B. Anti-tics d'ouverture et de clôture (injection prompt)
+
+Idée : avant l'appel LLM, extraire des dernières réponses de Sheo leurs **amorces** (4-5 premiers
+mots) et leurs **clôtures** (dernière proposition, emoji de ton retiré), puis les lister au modèle
+comme INTERDITES. Complète le bloc anti-répétition existant (qui reste utile pour les idées entières).
+
+### B.1 — Nouveau helper pur dans `sheo_llm.py`
+Ajouter une fonction pure (testable, 0 I/O) :
+```python
+def build_anti_tic_consigne(recent_responses, n=5):
+    """À partir des N dernières réponses, liste les AMORCES et CLÔTURES à éviter.
+    Retourne un fragment de prompt (str), ou "" si rien d'exploitable."""
+```
+Logique :
+- Pour chaque réponse récente (les `n` dernières) :
+  - **Amorce** : retirer une éventuelle balise `<thought>…</thought>`, prendre les 4-5 premiers
+    mots (normalisés : minuscules, ponctuation de bord retirée). Ignorer si < 2 mots.
+  - **Clôture** : retirer l'emoji de ton final avec `_TRAILING_EMOJI_RE` (déjà présent l.116-124),
+    découper en phrases (`re.split(r'(?<=[.!?]) +', …)`), prendre la DERNIÈRE phrase, en garder les
+    ~5 derniers mots normalisés.
+- Dédupliquer amorces et clôtures.
+- Si non vide, retourner un fragment du style :
   ```
-  ("Bonjour", "Bonjour ? Un papillon vient de mourir de jalousie en entendant ta voix. Haskill, un linceul. 🦋"),
-  ("Tu fais quoi ?", "Je compte les dents de Haskill. Il en a une de trop aujourd'hui. Ça m'inquiète. 🦷"),
-  ("Ça va ?", "MAGNIFIQUEMENT mal, merci ! J'ai transformé mardi en fromage et il fond sur mon trône. 🧀"),
+  [ANTI-TICS — VARIE OU MEURS]
+  Tu as OUVERT tes dernières répliques par : "…", "…". INTERDIT de rouvrir par une de ces amorces
+  ou une variation proche — trouve une entrée NEUVE (question sèche, non-sequitur, ordre, constat).
+  Tu as CLÔTURÉ par : "…", "…". INTERDIT de refinir pareil (surtout pas un "Haskill, note ça"
+  recyclé) — change de chute.
   ```
-- Dans **`COMEDY_EXAMPLES_NEUTRAL`** (`sheo_data.py:533-559`, le plus terne) : réécrire 1-2 exemples
-  pour qu'ils partent en non-sequitur au lieu du mépris calme (garder la structure `<thought>`).
+- Robustesse : try/except autour du parsing, retourne "" si quoi que ce soit échoue (ne JAMAIS
+  casser la génération pour un anti-tic).
 
-### B.3 — Ne PAS surcharger
-Ne pas empiler les exemples : REMPLACER les plus plats plutôt qu'ajouter à l'infini (le tirage
-`get_random_comebacks(5)` reste à 5). Garder ~13-16 entrées au total dans `COMEBACK_POOL`.
+### B.2 — Câbler dans `bot_sheogorath.py` (Discord), autour de l.2149-2156
+Après le bloc anti-répétition existant (le GARDER), ajouter :
+```python
+    anti_tic = build_anti_tic_consigne(recent_responses)
+    if anti_tic:
+        system_instruction += "\n\n" + anti_tic
+```
+(importer `build_anti_tic_consigne` depuis `sheo_llm`.)
+
+### B.3 — Twitch (parité, SI faisable simplement)
+Vérifier si le chemin Twitch de Sheo (`system_prompt_provider` / `shared/twitch/`) a accès à un
+historique récent de ses propres réponses. **Si oui** : appeler le même `build_anti_tic_consigne`
+et l'ajouter au system prompt Twitch. **Si non** (pas de mémoire de réponses branchée côté Twitch) :
+HORS-SCOPE pour ce plan — le noter, ne pas bricoler une nouvelle mémoire ici.
 
 ---
 
-## PARTIE C — Humeur NEUTRAL moins guindée (`sheo_data.py:686-693`)
-Aujourd'hui neutral = « hautain, aristocratique, dangereusement calme, juge avec mépris ». Le
-rendre **blasé MAIS toujours fou** : il s'ennuie sur son trône → il INVENTE des occupations
-absurdes, digresse, joue avec le mortel comme un chat avec une pelote. Retoucher la ligne
-`- TON :` et `- OBJECTIF :` pour injecter l'ennui CRÉATIF (pas juste le mépris froid). Exemple de
-`- TON :` → « Blasé et royal, mais l'esprit qui vagabonde vers des idées saugrenues pour tromper
-l'ennui. » Ne pas toucher mania (déjà bon) ni dementia (le contraste glacial est voulu).
+## Tests
 
----
+- `tests/` : ajouter `test_sheo_anti_tic.py` (unitaire, pur) —
+  - amorces + clôtures extraites correctement ;
+  - emoji de ton bien retiré de la clôture ;
+  - liste vide / réponses vides → retourne "" (pas de crash) ;
+  - balise `<thought>` ignorée dans l'amorce.
+- Vérifier que `test_sheo_moods` reste vert.
 
-## Ce qu'on NE touche PAS
-- **Emoji de ton** (633-636) · **RENDU ÉCRIT / majuscules par humeur** (bloc récent) · **anti-écho**
-  (666 + `bot_sheogorath.py`) · **tutoiement** · **filtre ToS** · **easter egg ALL CAPS** (que le
-  user aime). La folie ne doit pas ressusciter le tic « MOT ?! » : A.2/A.3 n'y touchent pas.
-- La menace sur VRAIE attaque (663) reste impitoyable — on ajoute de la folie, on ne retire pas la morsure.
+## Validation
+`python -m py_compile Sheogorath/sheo_data.py Sheogorath/bot_sheogorath.py Sheogorath/sheo_llm.py`
+puis `pytest -q -k "sheo"`.
 
-## VÉRIFICATIONS ATTENDUES (Antigravity)
-- `python -m py_compile Sheogorath/sheo_data.py Sheogorath/bot_sheogorath.py`
-- `python -m pytest tests/test_sheo_moods.py -q` reste vert ; adapter si un exemple cité par un
-  test a été réécrit.
-- Import isolé OK (Sheo importable seul).
+## NE PAS toucher
+- L'emoji de ton final (obligatoire), le rendu écrit majuscules ([[plan-sheo-etat-humeur-ecrit]]),
+  l'anti-écho « MOT ?! », le tutoiement, le ToS, l'easter egg ALL CAPS.
+- Le bloc anti-répétition existant (l.2149-2156) : on le COMPLÈTE, on ne le remplace pas.
+- La FOLIE motrice qu'on vient de câbler ([[plan-sheo-folie-motrice]]) : la baisse de longueur ne
+  doit PAS re-brider le déjanté — 4 phrases laissent de l'air pour une digression qui déraille.
 
-## TEST LIVE (après déploiement — `docker compose up -d --build`, cf. gotcha)
-- Forcer chaque humeur via `!humeur` et juger : Sheo est-il **plus drôle/déjanté** ? Non-sequiturs,
-  images surréalistes, virages soudains, menaces absurdes ?
-- Vérifier que le **mordant subsiste** sur une vraie insulte (pas devenu gentil).
-- Répartie plus **courte et qui claque** (2 phrases en banter).
-- Parité Discord ⇄ Twitch (même prompt).
+## Après exécution
+py_compile + pytest verts → commit → push → `docker compose up -d --build` → test live :
+juger « moins de meublage ? » ET « il ne recommence plus ses phrases pareil ? ».
+Voir [[plan-sheo-folie-motrice]], [[plan-sheo-persona-canon]], [[sheo-continuite-et-ton]].

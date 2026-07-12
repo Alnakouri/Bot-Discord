@@ -159,3 +159,93 @@ def postprocess_response(response_text, fact_brain, user_id, original_message, m
     response_text = force_short_response(response_text, max_sentences=max_sentences)
 
     return response_text
+
+
+def build_anti_tic_consigne(recent_responses, n=5):
+    """À partir des N dernières réponses, liste les AMORCES et CLÔTURES à éviter.
+    Retourne un fragment de prompt (str), ou "" si rien d'exploitable."""
+    if not recent_responses:
+        return ""
+
+    morceaux_amorces = []
+    morceaux_clotures = []
+
+    # Prends les n dernières réponses
+    for resp in recent_responses[-n:]:
+        if not resp or not isinstance(resp, str):
+            continue
+        try:
+            # 1. Nettoyer les balises <thought> ou <think> de la réponse
+            clean_resp = resp
+            for pattern in INTERNAL_TAG_PATTERNS:
+                clean_resp = re.sub(pattern, "", clean_resp, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Nettoyer les espaces
+            clean_resp = re.sub(r"\s+", " ", clean_resp).strip()
+            if not clean_resp:
+                continue
+
+            # 2. Amorce (4-5 premiers mots)
+            # Normaliser : minuscules, ponctuation de bord retirée
+            words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in clean_resp.split()]
+            words = [w for w in words if w]
+            if len(words) >= 2:
+                amorce_len = min(5, len(words))
+                amorce_phrase = " ".join(words[:amorce_len])
+                if amorce_phrase:
+                    morceaux_amorces.append(amorce_phrase)
+
+            # 3. Clôture
+            # Retirer l'emoji de ton final avec _TRAILING_EMOJI_RE
+            m = _TRAILING_EMOJI_RE.search(clean_resp)
+            cloture_base = clean_resp
+            if m:
+                cloture_base = clean_resp[:m.start()].rstrip()
+
+            # Découper en phrases
+            sentences = re.split(r'(?<=[.!?]) +', cloture_base)
+            sentences = [s.strip() for s in sentences if s.strip()]
+            if sentences:
+                last_sentence = sentences[-1]
+                # Prendre les ~5 derniers mots de cette dernière phrase
+                last_words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in last_sentence.split()]
+                last_words = [w for w in last_words if w]
+                if last_words:
+                    cloture_len = min(5, len(last_words))
+                    cloture_phrase = " ".join(last_words[-cloture_len:])
+                    if cloture_phrase:
+                        morceaux_clotures.append(cloture_phrase)
+        except Exception as e:
+            logger.warning(f"Erreur lors du parsing anti-tic : {e}")
+            continue
+
+    # Dédupliquer tout en gardant l'ordre
+    unique_amorces = []
+    for a in morceaux_amorces:
+        if a not in unique_amorces:
+            unique_amorces.append(a)
+
+    unique_clotures = []
+    for c in morceaux_clotures:
+        if c not in unique_clotures:
+            unique_clotures.append(c)
+
+    if not unique_amorces and not unique_clotures:
+        return ""
+
+    consigne = "[ANTI-TICS — VARIE OU MEURS]"
+    if unique_amorces:
+        formatted_amorces = ", ".join(f'"{a}"' for a in unique_amorces)
+        consigne += (
+            f'\nTu as OUVERT tes dernières répliques par : {formatted_amorces}. '
+            'INTERDIT de rouvrir par une de ces amorces ou une variation proche — '
+            'trouve une entrée NEUVE (question sèche, non-sequitur, ordre, constat).'
+        )
+    if unique_clotures:
+        formatted_clotures = ", ".join(f'"{c}"' for c in unique_clotures)
+        consigne += (
+            f'\nTu as CLÔTURÉ par : {formatted_clotures}. '
+            'INTERDIT de refinir pareil (surtout pas un "Haskill, note ça" recyclé) — change de chute.'
+        )
+
+    return consigne

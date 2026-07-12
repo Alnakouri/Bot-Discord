@@ -87,7 +87,7 @@ try:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from sheo_llm import postprocess_response
+    from sheo_llm import postprocess_response, build_anti_tic_consigne
     from sheo_mentions import convert_text_mentions_to_discord
     from sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from sheo_imposter import (
@@ -104,7 +104,7 @@ except ImportError:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from Sheogorath.sheo_llm import postprocess_response
+    from Sheogorath.sheo_llm import postprocess_response, build_anti_tic_consigne
     from Sheogorath.sheo_mentions import convert_text_mentions_to_discord
     from Sheogorath.sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from Sheogorath.sheo_imposter import (
@@ -2155,6 +2155,10 @@ async def on_message(message):
             system_instruction += f"{i}. \"{snippet}\"\n"
         system_instruction += "⚠️ INTERDICTION TOTALE de répéter ces phrases ou des variations proches. Trouve une idée COMPLÈTEMENT DIFFÉRENTE !"
     
+    anti_tic = build_anti_tic_consigne(recent_responses)
+    if anti_tic:
+        system_instruction += "\n\n" + anti_tic
+    
     # Instruction for Extraction
     system_instruction += "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur l'utilisateur dans ce message (ex: il aime/déteste qqch, son métier, une peur), ajoute-le à la fin de ta réponse dans un bloc XML invisible : <fact>Le fait appris</fact>. Sinon, ne mets rien."
     system_instruction += _get_meme_addition()
@@ -2237,8 +2241,8 @@ async def on_message(message):
         max_tokens_val = 120
         max_sentences_val = 2
     else:
-        max_tokens_val = 300
-        max_sentences_val = 6
+        max_tokens_val = 200   # était 300
+        max_sentences_val = 4  # était 6
     
     for client_type, model_name in cascade:
         try:
