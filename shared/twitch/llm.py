@@ -44,6 +44,49 @@ def _strip_repeated_opening(reply: str, recent) -> str:
     return reply
 
 
+# Emoji de ton en fin de réplique (signature). On le préserve à travers la troncature Twitch.
+_TRAILING_EMOJI = re.compile(
+    r"\s*("
+    r"(?:[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF"
+    r"\U0000FE00-\U0000FE0F\U0000200D]+)+"
+    r")\s*$"
+)
+
+
+def _truncate_for_twitch(text: str, limit: int = 480) -> str:
+    """Tronque proprement pour la limite Twitch (~500 car.). Au lieu d'une coupe
+    brutale en plein mot (« …Tu voulais de l'attent »), on coupe à la dernière fin de
+    phrase avant `limit`, sinon au dernier mot (avec « … »), et on réattache l'emoji de
+    ton final s'il existe."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+
+    # Isoler l'emoji de ton final pour le recoller après la coupe.
+    trailing = ""
+    m = _TRAILING_EMOJI.search(text)
+    if m:
+        trailing = " " + m.group(1).strip()
+        body = text[:m.start()].rstrip()
+    else:
+        body = text
+
+    budget = limit - len(trailing)
+    if len(body) <= budget:
+        return (body + trailing).strip()
+
+    head = body[:budget]
+    # Coupe préférée à la dernière fin de phrase (si elle n'ampute pas plus de la moitié).
+    cut = max(head.rfind(". "), head.rfind("! "), head.rfind("? "), head.rfind("… "))
+    if cut >= budget * 0.5:
+        return (head[:cut + 1].rstrip() + trailing).strip()
+    # Sinon, dernier mot entier + points de suspension.
+    sp = head.rfind(" ")
+    if sp > 0:
+        head = head[:sp]
+    return (head.rstrip(" ,;:—-") + "…" + trailing).strip()
+
+
 class LlmMixin:
     async def _generate_response(self, channel: str, author: str, message: str, game_facts_block: str | None = None, no_facts_warning: bool = False) -> str | None:
         system_prompt = self.personality_prompt
@@ -184,7 +227,7 @@ class LlmMixin:
                 text = strip_stage_directions(text)
                 # Anti-moule déterministe : coupe l'amorce si elle reprend une ouverture récente.
                 text = _strip_repeated_opening(text, self.recent_self_responses.get(chan_lower))
-                reply = text[:480]
+                reply = _truncate_for_twitch(text, 480)
                 
                 # Mise à jour historique
                 history_deque.append({"role": "user", "parts": [clean]})

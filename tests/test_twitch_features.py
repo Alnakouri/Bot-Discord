@@ -198,3 +198,27 @@ class TestTwitchFeatures(unittest.TestCase):
         )
         self.assertIsNotNone(bot)
         self.assertEqual(bot.tone_directive_provider, provider)
+
+    def test_truncate_for_twitch(self):
+        from shared.twitch.llm import _truncate_for_twitch
+
+        # Court : inchangé
+        short = "Petite réplique nette. 😏"
+        self.assertEqual(_truncate_for_twitch(short, 480), short)
+
+        # Long : coupe à une fin de phrase, sous la limite, emoji de ton conservé
+        long_txt = (
+            "Première phrase qui claque et occupe de la place. " * 12
+        ).strip() + " 🔪"
+        self.assertGreater(len(long_txt), 480)
+        out = _truncate_for_twitch(long_txt, 480)
+        self.assertLessEqual(len(out), 480)
+        self.assertTrue(out.endswith("🔪"))                       # emoji préservé
+        self.assertTrue(out.rstrip(" 🔪").endswith("."))          # coupe nette sur une phrase
+        self.assertNotIn("Première phrase qui claque et occup ", out)  # jamais coupé en plein mot
+
+        # Aucune fin de phrase ni espace : dernier mot + « … » (jamais en plein mot brut)
+        no_boundary = "a" * 600 + " 🧀"
+        out2 = _truncate_for_twitch(no_boundary, 480)
+        self.assertTrue(out2.endswith("🧀"))
+        self.assertIn("…", out2)
