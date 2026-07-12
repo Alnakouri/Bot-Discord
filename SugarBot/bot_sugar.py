@@ -273,10 +273,10 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # MEMORY SETTINGS
 try:
     from sugar_memory import FactMemory, DailyMemory
-    from sugar_grudge import GrudgeBook, classify_tone
+    from sugar_grudge import GrudgeBook, classify_tone, tone_directive
 except ImportError:
     from SugarBot.sugar_memory import FactMemory, DailyMemory
-    from SugarBot.sugar_grudge import GrudgeBook, classify_tone
+    from SugarBot.sugar_grudge import GrudgeBook, classify_tone, tone_directive
 sugar_facts_file = os.path.join(DATA_DIR, "sugar_facts.json")
 sugar_memory_file = os.path.join(DATA_DIR, "sugar_memory.json")
 fact_memory = FactMemory(sugar_facts_file)
@@ -459,6 +459,7 @@ async def on_ready():
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Sugar Bot",
+            tone_directive_provider=lambda author, message: tone_directive(message),
             enable_events=True,
             enable_interjections=False,   # décision « silence sauf si nommé »
             enable_greetings=False,       # idem

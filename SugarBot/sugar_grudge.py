@@ -139,6 +139,21 @@ _DIRECTIVE_BY_SCORE = {
 }
 
 
+def tone_directive(text):
+    """Consigne de ton PURE (sans carnet ni persistance), pour les surfaces sans
+    mémoire de rancune (ex. chat Twitch). Réutilise le MÊME lexique et les MÊMES
+    consignes de ton que le carnet Discord → parité de ton entre plateformes.
+    - kind          → accueil chaleureux (elle ne mord pas quelqu'un d'aimable)
+    - neutral       → avenante, mordant rangé
+    - aggro/apology → '' : persona brute (le mordant est OK face à une hostilité)."""
+    tone = classify_tone(text)
+    if tone == "kind":
+        return _DIRECTIVE_KIND
+    if tone == "neutral":
+        return _DIRECTIVE_NEUTRAL
+    return ""
+
+
 class GrudgeBook:
     """Rancune persistée par utilisateur. Cloisonné par user_id, aucun contenu stocké."""
 

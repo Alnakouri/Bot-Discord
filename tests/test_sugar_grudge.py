@@ -327,5 +327,22 @@ class TestSugarGrudgeLLM(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(reloaded.book["1"].get("pending_redemption"))
 
 
+class TestToneDirective(unittest.TestCase):
+    def test_tone_directive(self):
+        from SugarBot.sugar_grudge import tone_directive
+        
+        # Test kind text
+        kind_dir = tone_directive("bg t es trop cool")
+        self.assertTrue(kind_dir.startswith("\n[TON] Cette personne est gentille"))
+        
+        # Test neutral text
+        neutral_dir = tone_directive("quel temps fait-il ?")
+        self.assertTrue(neutral_dir.startswith("\n[TON] Message neutre"))
+        
+        # Test aggro text (returns empty string)
+        self.assertEqual(tone_directive("ferme la"), "")
+        self.assertEqual(tone_directive("t'es nulle"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

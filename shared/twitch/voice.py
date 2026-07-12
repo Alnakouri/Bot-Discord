@@ -89,6 +89,14 @@ class VoiceMixin:
 
         full_system_prompt = system_prompt + "\n\n" + ANTI_INJECTION_GUARD
 
+        if getattr(self, "tone_directive_provider", None):
+            try:
+                td = self.tone_directive_provider("", text)
+                if td:
+                    full_system_prompt += td
+            except Exception as e:
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] tone_directive_provider a échoué (voix) : {e}")
+
         try:
             from shared.llm_cascade import generate_response
             from shared.smart_router import classify_request

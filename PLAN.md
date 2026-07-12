@@ -1,148 +1,198 @@
-# PLAN — Twitch : « silence sauf si nommé » + Sugar sur le chat Twitch
+# PLAN — Sugar : ton adaptatif sur Twitch + sucre non-obligatoire (Discord ⇄ Twitch)
 
 ## Contexte & décisions (validées avec l'utilisateur)
-1. **Écoute active (voix/STT)** : DÉJÀ conforme — `shared/twitch/voice.py:47`
-   (`if not self.trigger_re.search(text): return`). Un bot ne réagit au micro que si
-   son nom/surnom/nom complet est prononcé. **NE RIEN CHANGER ICI.**
-2. **Chat texte** : les bots s'incrustent via **interjections spontanées**
-   (`shared/twitch/dispatch.py:164`) et **accueils** de viewers (`:161`). Décision user :
-   **silence sauf si nommé** → couper interjections + accueils sur Twitch. On GARDE :
-   réponse quand nommé (`trigger_re`), commandes `!cmd`, et événements (sub/raid/bits).
-3. **Sugar sur Twitch** : la brancher sur le chat (elle a déjà l'ANNONCEUR de lives,
-   `setup_twitch_announcer` l.431-439 de `bot_sugar.py`, mais PAS la présence chat).
-   Persona = **identique à Discord** (`PERSONALITY_PROMPT`). Conformité ToS héritée
-   automatiquement (tout passe par `send_chat_safe` + `ANTI_INJECTION_GUARD`).
-4. Workflow : **Antigravity exécute ce plan.** Claude a rédigé.
+Constat live (chat Twitch, 2026-07-11) : Sugar reste **taquine même quand on est amical**
+(« quel est ton jeu préféré **bg** » → réponse moqueuse) et **place un petit nom sucré à
+CHAQUE réplique** (4/4 : caramel, bonbon, berlingot, nougat), alors que la persona dit déjà
+que le sucre doit être rare. Deux corrections demandées :
 
-## Rappel architecture
-- Le **dashboard fait autorité** : `data/twitch_config.json` écrase les args de code
-  (`shared/twitch_chat.py:325-334`). Donc tout toggle doit être posé AUX DEUX endroits :
-  args de `setup_twitch_chat(...)` ET `twitch_config.json` (sinon le JSON ré-active).
-- Bots avec chat Twitch AUJOURD'HUI : **Sheo** et **Johnny** uniquement. Sugar = 3e.
-- Anti-boucle inter-bots sur Twitch : chaque bot ignore les pseudos des autres via
-  `TWITCH_PEER_BOTS` (env) + arg `peer_bots`. Logins chat connus :
-  `compte_bot_sheo` (Sheo), `johnny_alt_silverhand` (Johnny).
+1. **Ton adaptatif sur Twitch** : porter une **consigne de ton LÉGÈRE** (amical → chaleureuse,
+   hostile → griffes), en réutilisant le lexique de `SugarBot/sugar_grudge.py`. **PAS** le carnet
+   persistant (pas de score/rédemption sur Twitch pour l'instant) — juste la consigne par message,
+   pour une **parité de ton** avec Discord. Cause racine du log : sur Twitch, Sugar tourne sur le
+   `PERSONALITY_PROMPT` brut, sans aucune modulation de ton (les consignes du carnet sont Discord-only).
+2. **Vocabulaire « sucre » NON-obligatoire** (petits noms + métaphores) : seulement quand la
+   répartie s'y prête. C'est un changement de **PERSONNALITÉ** → il vaut **Discord ET Twitch**.
+   Les deux plateformes lisent le **même** `PERSONALITY_PROMPT` (`SugarBot/sugar_data.py`), donc
+   **une seule édition** de ce prompt couvre les deux — c'est la règle « ce qui change la persona
+   sur une plateforme change sur l'autre ».
 
----
+Workflow : **Antigravity exécute ce plan. Claude a rédigé.**
 
-## PARTIE A — Silence spontané sur Twitch (interjections + accueils OFF)
-
-### A.1 — `data/twitch_config.json` (source de vérité, prioritaire)
-Pour **chaque** bloc bot (`sheogorath`, `maiq`, `alfred`, `johnny`, `sugar`, `malena`,
-`onizuka`), dans `"chat"`, passer :
-```json
-"interjections": false,
-"greetings": false,
-```
-(laisser `"events": true`, `"viewer_memory": true`, `"game_qa": false` inchangés).
-
-### A.2 — Args de code (défaut cohérent, au cas où le JSON serait absent)
-- **Sheo** `Sheogorath/bot_sheogorath.py:820-823` : `enable_interjections=True` → `False`,
-  `enable_greetings=True` → `False`.
-- **Johnny** `JohnnyBot/bot_johnny.py:512+` (bloc `setup_twitch_chat`) : idem, mettre
-  `enable_interjections=False`, `enable_greetings=False`.
-
-### A.3 — Ce qu'on NE touche PAS
-- `enable_events` reste `True` (réactions sub/raid/bits = événements, pas de l'incrustation).
-- Réponse quand nommé (`trigger_re`) et commandes `!cmd` : inchangées.
-- `passive_handler` de Sheo (faveur passive) et `game_qa`/`cohost_channels` sont déjà
-  soit spécifiques soit OFF (`game_qa:false`, `cohost_channels:[]`) → rien à faire.
-  (Si un jour on veut ZÉRO sortie passive, revoir `passive_handler` — hors périmètre ici.)
+## Rappel architecture (pour ne rien casser)
+- `shared/twitch/` est **générique** (Sheo, Johnny, Sugar). ⚠️ **NE PAS** y coder de logique
+  spécifique-Sugar. On ajoute un **hook générique** `tone_directive_provider` (même patron que
+  `system_prompt_provider` déjà en place), que **seule Sugar câble**. Les autres bots ne le
+  passent pas → `None` → comportement inchangé.
+- Le point d'injection du prompt de réponse « quand nommé » est
+  `shared/twitch/llm.py:_generate_response` (déjà plein de `system_prompt += …`).
+- Bots indépendants : Sugar importe `sugar_grudge` avec try/except déjà en place
+  (`bot_sugar.py:276-279`). Rien de nouveau côté imports.
 
 ---
 
-## PARTIE B — Sugar sur le chat Twitch (câblage code, en miroir de Sheo)
+## PARTIE A — Ton adaptatif sur le chat Twitch (hook léger générique)
 
-Tout le code va dans **`SugarBot/bot_sugar.py`**. Modèle de référence :
-`Sheogorath/bot_sheogorath.py` (imports 167-174, globals 173-174, setup 812-838, stop 2537-2544).
-
-### B.1 — Imports (près de l'import `setup_twitch_announcer` existant)
-Mettre le pattern try/except (autonomie, cf. bots indépendants) :
+### A.1 — `SugarBot/sugar_grudge.py` : helper de ton PUR (sans persistance)
+Après le dict `_DIRECTIVE_BY_SCORE` (après la ligne 139), ajouter une fonction module-level
+qui réutilise le **même** lexique (`classify_tone`) et les **mêmes** consignes que le carnet,
+mais **sans** toucher au score ni au fichier :
 ```python
-try:
-    from shared.twitch_chat import setup_twitch_chat
-    TWITCH_CHAT_AVAILABLE = True
-except ImportError:
-    TWITCH_CHAT_AVAILABLE = False
-    def setup_twitch_chat(*a, **k): return None
+def tone_directive(text):
+    """Consigne de ton PURE (sans carnet ni persistance), pour les surfaces sans
+    mémoire de rancune (ex. chat Twitch). Réutilise le MÊME lexique et les MÊMES
+    consignes de ton que le carnet Discord → parité de ton entre plateformes.
+    - kind          → accueil chaleureux (elle ne mord pas quelqu'un d'aimable)
+    - neutral       → avenante, mordant rangé
+    - aggro/apology → '' : persona brute (le mordant est OK face à une hostilité)."""
+    tone = classify_tone(text)
+    if tone == "kind":
+        return _DIRECTIVE_KIND
+    if tone == "neutral":
+        return _DIRECTIVE_NEUTRAL
+    return ""
 ```
+> Note : c'est exactement la branche « score 0 » de `GrudgeBook.update` (lignes 257-261),
+> extraite en fonction sans état. Zéro I/O, zéro LLM → sûr dans le chemin de réponse.
 
-### B.2 — Globals module (près des autres globals Twitch)
+### A.2 — `shared/twitch_chat.py` : nouveau hook générique `tone_directive_provider`
+Trois retouches, en miroir EXACT de `system_prompt_provider` :
+1. **Signature `__init__`** (près de la ligne 95, sous `system_prompt_provider = None,`) :
+   ```python
+           tone_directive_provider = None,
+   ```
+2. **Stockage** (près de la ligne 131, sous `self.system_prompt_provider = …`) :
+   ```python
+           # Optionnel : callable (author, message) -> str renvoyant une consigne de TON
+           # à injecter par message (ex. Sugar : chaleureuse si amical, griffes si hostile).
+           # Hook GÉNÉRIQUE — aucune logique spécifique-bot ici.
+           self.tone_directive_provider = tone_directive_provider
+   ```
+3. **Factory `setup_twitch_chat`** (signature près de la ligne 274, sous `system_prompt_provider=None,`) :
+   ```python
+                         tone_directive_provider=None,
+   ```
+   **et** dans la construction `TwitchChatBot(...)` (près de la ligne 461, sous
+   `system_prompt_provider=system_prompt_provider,`) :
+   ```python
+           tone_directive_provider=tone_directive_provider,
+   ```
+
+### A.3 — `shared/twitch/llm.py` : appliquer le hook dans `_generate_response`
+Dans `_generate_response`, **après** le bloc ANTI-RÉPÉTITION (après la ligne 107) et **avant**
+le `try: from shared.llm_cascade import generate_response` (ligne 109), insérer :
 ```python
-twitch_chat = None
-twitch_chat_task = None
+        # CONSIGNE DE TON (générique, optionnelle) : un bot peut fournir une consigne
+        # par message. Pour Sugar : chaleureuse face à un message amical, griffes face
+        # à une attaque. Hook générique — aucune logique spécifique-bot ici.
+        if getattr(self, "tone_directive_provider", None):
+            try:
+                td = self.tone_directive_provider(author, clean)
+                if td:
+                    system_prompt += td
+            except Exception as e:
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] tone_directive_provider a échoué : {e}")
 ```
+> On passe `clean` (message déjà nettoyé de l'anti-injection), pas `message`.
 
-### B.3 — Dans `on_ready` (`bot_sugar.py`), APRÈS le bloc `twitch_announcer` (après l.439)
-Idempotent (on_ready peut refire au RESUME → garde `twitch_chat is None`) :
+### A.4 — `shared/twitch/voice.py` : parité de ton à l'oral (recommandé)
+Quand Sugar est **nommée au micro**, même adaptation. Dans `_generate_voice_response`,
+**après** `full_system_prompt = system_prompt + "\n\n" + ANTI_INJECTION_GUARD` (ligne 90) :
 ```python
-    global twitch_chat, twitch_chat_task
-    if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
-        twitch_chat = setup_twitch_chat(
-            "sugar", logger,
-            personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
-            mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="Sugar Bot",
-            enable_events=True,
-            enable_interjections=False,   # décision « silence sauf si nommé »
-            enable_greetings=False,       # idem
-            enable_viewer_memory=True,
-            enable_eventsub=False,        # pas de token broadcaster Sugar → évite les 403 ; réactiver plus tard si besoin
-            enable_voice_listen=False,
-        )
-        if twitch_chat:
-            twitch_chat_task = asyncio.create_task(twitch_chat.run())
+        if getattr(self, "tone_directive_provider", None):
+            try:
+                td = self.tone_directive_provider("", text)
+                if td:
+                    full_system_prompt += td
+            except Exception as e:
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] tone_directive_provider a échoué (voix) : {e}")
 ```
-- **Persona identique Discord** : on passe `PERSONALITY_PROMPT` (celui de `sugar_data.py`).
-  Les augmentations par-message (carnet de rancunes, mémoire, ton) sont Discord-only —
-  normal, ce sont des systèmes Discord. La VOIX/le CARACTÈRE sont identiques.
-- Pas de `commands=` au début (Sugar n'a pas de commandes Twitch dédiées) → l'infra
-  tourne sans. On pourra en ajouter plus tard.
+> `author=""` : le provider de Sugar ne l'utilise pas (il ne lit que le texte). Sans effet
+> pour Sheo/Johnny (ils ne passent pas le hook). Voice listen de Sugar est OFF aujourd'hui
+> (`bot_sugar.py:467`) → inerte tant que non réactivé, mais prêt.
 
-### B.4 — Arrêt propre (miroir `bot_sheogorath.py:2537-2544`)
-Dans le chemin de shutdown de Sugar (là où `setup_graceful_shutdown(bot)` / `on_disconnect`
-ferme les ressources) :
-```python
-    global twitch_chat, twitch_chat_task
-    if twitch_chat:
-        twitch_chat.stop()
-    if twitch_chat_task:
-        twitch_chat_task.cancel()
-        try:
-            await twitch_chat_task
-        except asyncio.CancelledError:
-            pass
-```
+### A.5 — `SugarBot/bot_sugar.py` : câbler le provider
+1. **Import** (là où `GrudgeBook, classify_tone` sont importés, lignes 276 & 279), ajouter
+   `tone_directive` à **chaque** import du try/except :
+   ```python
+       from sugar_grudge import GrudgeBook, classify_tone, tone_directive
+   ...
+       from SugarBot.sugar_grudge import GrudgeBook, classify_tone, tone_directive
+   ```
+2. **Appel `setup_twitch_chat`** (bloc lignes 457-468) : ajouter le kwarg
+   ```python
+           tone_directive_provider=lambda author, message: tone_directive(message),
+   ```
+   (le `lambda` ignore `author` : le ton ne dépend que du message courant).
 
-### B.5 — Anti-boucle : peer bots (config, PAS de code)
-- Ajouter le **login chat de Sugar** (ex. `sugar_bot_xxx`, cf. B.6) aux `TWITCH_PEER_BOTS`
-  de **Sheo** et **Johnny** (`.env.encrypted` de chaque bot).
-- Ajouter `compte_bot_sheo` ET `johnny_alt_silverhand` aux `TWITCH_PEER_BOTS` de **Sugar**.
+### A.6 — Ce qu'on NE touche PAS
+- Le **carnet persistant** (`sugar_grudge.json`) reste **Discord-only** : pas de score ni de
+  rédemption sur Twitch (décision « léger »). Évolution possible plus tard : instancier un
+  `GrudgeBook("data/sugar_grudge_twitch.json")` clé = login Twitch, et brancher le provider
+  dessus. **Hors périmètre ici.**
+- `enable_interjections`/`enable_greetings` restent `False` (silence sauf si nommé).
 
 ---
 
-## À FAIRE PAR L'UTILISATEUR (externe — Antigravity ne peut pas)
-Sans ces credentials, `setup_twitch_chat` renvoie `None` proprement (bot Discord intact).
-1. **Créer un compte Twitch** pour Sugar (identité de chatteuse, ex. `sugar_bot_xxx`).
-2. **Créer une application Twitch** (dev.twitch.tv/console) → `client_id` + `client_secret`
-   (1 appli par bot, cf. règle projet).
-3. Renseigner dans **`SugarBot/.env`** (sera re-chiffré) :
-   `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_BOT_USERNAME=<login sugar>`.
-4. **Autoriser** : `python twitch_authorize.py --bot sugar` avec le compte de Sugar →
-   génère `TWITCH_OAUTH_TOKEN` + `TWITCH_REFRESH_TOKEN` (comme fait pour Sheo/Johnny).
-5. **`data/twitch_config.json`** bloc `"sugar"` : mettre
-   `"chat_channels": ["chaine_du_dev"]` (actuellement `[]`) + les toggles A.1.
+## PARTIE B — Vocabulaire « sucre » non-obligatoire (PERSONNALITÉ, Discord + Twitch)
+
+Fichier **unique** : `SugarBot/sugar_data.py`, `PERSONALITY_PROMPT`. Les deux plateformes le
+lisent → une seule édition suffit. La persona dit déjà « rare » (lignes 41 & 57) mais le modèle
+l'ignore car le bloc « LANGAGE SUCRÉ » (54-57) survend les petits noms. On **rééquilibre** :
+le défaut devient ZÉRO sucre, le sucre est un assaisonnement rare et plafonné.
+
+### B.1 — Durcir la règle prioritaire (ligne 41)
+Remplacer la puce actuelle :
+> `- Un petit nom sucré, c'est RARE et jamais en tête de phrase par réflexe : la PLUPART de tes répliques n'en ont aucun. S'il en faut un, glisse-le au milieu ou à la fin.`
+
+par (plus contraignant, avec plafond chiffré) :
+```
+- PETIT NOM SUCRÉ = RARE ET FACULTATIF. Par DÉFAUT, tu n'en mets AUCUN. La grande majorité
+  de tes répliques n'ont ni petit nom (« mon caramel », « mon berlingot »…) ni métaphore
+  sucrée — et c'est très bien. Tu n'en glisses un QUE si la vanne s'y prête vraiment ; en cas
+  de doute, tu n'en mets pas. PLAFOND : jamais un petit nom deux répliques de suite, et jamais
+  en tête de phrase par réflexe (au milieu ou à la fin, s'il y en a un).
+```
+
+### B.2 — Recadrer le bloc « LANGAGE SUCRÉ » (lignes 54-57)
+Garder la saveur mais retirer l'incitation à en mettre partout. Réécrire la puce d'intro
+(ligne 54-55) pour qu'elle présente le sucre comme une **option occasionnelle**, pas une marque
+à apposer à chaque fois :
+```
+LANGAGE SUCRÉ — une saveur OCCASIONNELLE, pas une signature à coller partout :
+- Ton nom est Sugar, mais tu ne le prouves PAS en saupoudrant du sucre à chaque phrase. Le sucre
+  est une touche rare : petits noms (mon sucre d'orge, ma praline, mon caramel, mon berlingot,
+  mon nougat…) ET métaphores (fondant, collant comme du caramel, acidulé, glaçage, bonbon…) sont
+  disponibles, mais tu ne les sors QUE quand ça coule de source. Le plus souvent : aucune touche.
+```
+Conserver telle quelle la puce « Même tes piques sont enrobées de sucre… » (ligne 56) et la
+puce « Le sucre doit rester NATUREL… mieux vaut zéro touche que du sucre forcé » (ligne 57) —
+elles vont dans le bon sens et renforcent la consigne.
+
+### B.3 — Ancrer par l'exemple (ligne 47-52, bloc EXEMPLES DE VOIX)
+Les few-shot pilotent fortement le style. Aujourd'hui 1 exemple sur 5 a un petit nom
+(« mon caramel », ligne 49). C'est déjà un bon ratio — **ne pas en ajouter**. Vérifier
+seulement qu'aucune retouche B.1/B.2 n'introduit de nouveau petit nom dans les exemples.
+
+### B.4 — Ce qu'on NE touche PAS
+- La réplique signature « **péteur / péteuse** » (ligne 22) : inchangée, c'est l'insulte-maison,
+  pas du vocabulaire sucre.
+- La touche Serpentard (59-62) : déjà cadrée « saveur de fond, PAS une obligation ».
 
 ---
 
 ## VÉRIFICATIONS ATTENDUES
-- `python -m py_compile SugarBot/bot_sugar.py Sheogorath/bot_sheogorath.py JohnnyBot/bot_johnny.py`.
-- `python -m pytest tests/test_twitch_features.py` reste vert.
-- Chaque bot reste importable seul (0 dépendance runtime inter-bot).
-- JSON valide : `python -c "import json;json.load(open('data/twitch_config.json'))"`.
-- Test live (après credentials user) :
-  - Sugar rejoint `#chaine_du_dev`, log `🎯 Déclencheurs configurés : [...'sugar'...]`.
-  - Chat « ce jeu est dur » → **aucun** bot ne répond (silence spontané OK).
-  - Chat « sugar t'es nulle » → Sugar répond, en personnage Discord, sortie filtrée ToS.
-  - Voix « sugar ... » → Sugar réagit ; voix sans nom → silence (déjà en place).
-  - Aucune boucle Sugar↔Sheo↔Johnny (peer bots OK).
+- `python -m py_compile SugarBot/bot_sugar.py SugarBot/sugar_grudge.py SugarBot/sugar_data.py shared/twitch_chat.py shared/twitch/llm.py shared/twitch/voice.py`
+- `python -m pytest tests/test_twitch_features.py` reste vert (le hook est optionnel → pas de régression).
+- Import isolé OK : `python -c "import sys; sys.path.insert(0,'SugarBot'); import sugar_grudge; print(sugar_grudge.tone_directive('bg t es cool'))"`
+  → doit renvoyer la consigne `_DIRECTIVE_KIND` (non vide) ; `tone_directive('ferme la')` → `''`.
+- Chaque bot Twitch reste importable seul (Sheo/Johnny ne passent pas le hook → `None`, inchangés).
+
+## TEST LIVE (après déploiement)
+- Chat Twitch « **quel est ton jeu préféré bg** » → Sugar répond **chaleureusement**
+  (accueil taquin léger), plus de moquerie sèche.
+- Chat Twitch « **t'es nulle Sugar** » → Sugar sort les griffes (répartie fine, « péteur »),
+  comportement inchangé.
+- Sur plusieurs répliques d'affilée : **la plupart SANS petit nom sucré** ; jamais deux
+  petits noms consécutifs. Idem côté **Discord** (même prompt) → vérifier la parité.
+- Aucune régression Sheo/Johnny (ton et style identiques à avant).

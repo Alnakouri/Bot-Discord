@@ -178,3 +178,23 @@ class TestTwitchFeatures(unittest.TestCase):
 
         # Placeholder inconnu → commande non enregistree
         self.assertNotIn("bad", bot.commands)
+
+    @patch.dict(os.environ, {
+        "TWITCH_CLIENT_ID": "test_client_id",
+        "TWITCH_CLIENT_SECRET": "test_client_secret",
+        "TWITCH_BOT_USERNAME": "test_bot_user",
+        "TWITCH_OAUTH_TOKEN": "test_oauth_token",
+        "TWITCH_CHAT_CHANNELS": "test_channel"
+    })
+    @patch("shared.twitch_chat._load_dashboard_twitch_config")
+    def test_tone_directive_provider(self, mock_load_config):
+        mock_load_config.return_value = {}
+        
+        provider = MagicMock(return_value="[MOCKED TONE DIRECTIVE]")
+        
+        bot = setup_twitch_chat(
+            "johnny", self.mock_logger,
+            tone_directive_provider=provider
+        )
+        self.assertIsNotNone(bot)
+        self.assertEqual(bot.tone_directive_provider, provider)

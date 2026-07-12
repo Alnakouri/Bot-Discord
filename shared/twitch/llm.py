@@ -106,6 +106,17 @@ class LlmMixin:
                          "question en écho pour démarrer. Trouve une idée ET une amorce COMPLÈTEMENT DIFFÉRENTES.")
             system_prompt += anti_rep
 
+        # CONSIGNE DE TON (générique, optionnelle) : un bot peut fournir une consigne
+        # par message. Pour Sugar : chaleureuse face à un message amical, griffes face
+        # à une attaque. Hook générique — aucune logique spécifique-bot ici.
+        if getattr(self, "tone_directive_provider", None):
+            try:
+                td = self.tone_directive_provider(author, clean)
+                if td:
+                    system_prompt += td
+            except Exception as e:
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] tone_directive_provider a échoué : {e}")
+
         try:
             from shared.llm_cascade import generate_response
             from shared.smart_router import classify_request
