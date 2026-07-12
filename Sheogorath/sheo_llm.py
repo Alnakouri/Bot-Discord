@@ -113,12 +113,29 @@ def apply_easter_eggs(response_text, original_message):
     return response_text
 
 
+# Emoji de fin de réponse (Sheo SIGNE ses répliques d'un emoji de ton). Le découpage en
+# phrases le compte comme une « phrase » à part (il suit la ponctuation finale) et le
+# tronquait → parité rompue avec Twitch. On l'isole AVANT la troncature, puis on le recolle.
+_TRAILING_EMOJI_RE = re.compile(
+    r"\s*("
+    r"(?:[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF"
+    r"\U0000FE00-\U0000FE0F\U0000200D]+)+"
+    r")\s*$"
+)
+
+
 def force_short_response(response_text, max_sentences=4):
-    """Limite la réponse à max_sentences phrases."""
+    """Limite la réponse à max_sentences phrases, en PRÉSERVANT l'emoji de ton final."""
+    trailing_emoji = ""
+    m = _TRAILING_EMOJI_RE.search(response_text)
+    if m:
+        trailing_emoji = " " + m.group(1).strip()
+        response_text = response_text[:m.start()].rstrip()
+
     sentences = re.split(r'(?<=[.!?]) +', response_text)
     if len(sentences) > max_sentences:
         response_text = " ".join(sentences[:max_sentences])
-    return response_text
+    return (response_text + trailing_emoji).strip()
 
 
 def postprocess_response(response_text, fact_brain, user_id, original_message, max_sentences=4):
