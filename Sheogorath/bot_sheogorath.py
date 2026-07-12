@@ -2032,7 +2032,6 @@ async def on_message(message):
         # AJOUT : Suffixe selon l'humeur en Hybrid Mode ? (Optionnel, gardons simple pour l'instant)
         await message.channel.send(response_text)
         daily_brain.add_interaction(message.author.id, message.author.name, message.content, response_text)
-        import asyncio
         asyncio.create_task(daily_brain.refresh_daily_read(message.author.id, _daily_llm_call))
         return
 
@@ -2529,7 +2528,6 @@ async def on_message(message):
             
         conversation_history[channel_id].append({"role": "model", "parts": [response_text]})
         daily_brain.add_interaction(message.author.id, message.author.name, message.content, response_text)
-        import asyncio
         asyncio.create_task(daily_brain.refresh_daily_read(message.author.id, _daily_llm_call))
         response_memory.add(message.guild.id, response_text)
 
