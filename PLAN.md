@@ -1,198 +1,142 @@
-# PLAN — Sugar : ton adaptatif sur Twitch + sucre non-obligatoire (Discord ⇄ Twitch)
+# PLAN — Sheo : rendre son ÉTAT et son CHANGEMENT D'HUMEUR visibles à l'écrit (Discord ⇄ Twitch)
 
-## Contexte & décisions (validées avec l'utilisateur)
-Constat live (chat Twitch, 2026-07-11) : Sugar reste **taquine même quand on est amical**
-(« quel est ton jeu préféré **bg** » → réponse moqueuse) et **place un petit nom sucré à
-CHAQUE réplique** (4/4 : caramel, bonbon, berlingot, nougat), alors que la persona dit déjà
-que le sucre doit être rare. Deux corrections demandées :
+## Contexte & décision (validée avec l'utilisateur)
+Aujourd'hui Sheo écrit « à plat » : on ne **perçoit pas** son état émotionnel ni son
+changement d'humeur dans le texte. Demande utilisateur :
+1. **Rendu typographique de l'émotion** : quand Sheo **crie**, il écrit en **MAJUSCULES** ;
+   quand il ne crie pas, il **parle normalement** (casse normale).
+2. Ce rendu doit **suivre l'humeur** (neutral / mania / dementia) → le **changement d'humeur**
+   doit se **voir** à l'écrit, pas seulement dans le ton.
+3. Des **emojis** doivent être présents dans ses réponses (en plus/au service de l'état).
 
-1. **Ton adaptatif sur Twitch** : porter une **consigne de ton LÉGÈRE** (amical → chaleureuse,
-   hostile → griffes), en réutilisant le lexique de `SugarBot/sugar_grudge.py`. **PAS** le carnet
-   persistant (pas de score/rédemption sur Twitch pour l'instant) — juste la consigne par message,
-   pour une **parité de ton** avec Discord. Cause racine du log : sur Twitch, Sugar tourne sur le
-   `PERSONALITY_PROMPT` brut, sans aucune modulation de ton (les consignes du carnet sont Discord-only).
-2. **Vocabulaire « sucre » NON-obligatoire** (petits noms + métaphores) : seulement quand la
-   répartie s'y prête. C'est un changement de **PERSONNALITÉ** → il vaut **Discord ET Twitch**.
-   Les deux plateformes lisent le **même** `PERSONALITY_PROMPT` (`SugarBot/sugar_data.py`), donc
-   **une seule édition** de ce prompt couvre les deux — c'est la règle « ce qui change la persona
-   sur une plateforme change sur l'autre ».
+### Cause racine (prouvée dans le code)
+- La seule consigne « MAJUSCULES pour les cris » est **enterrée dans le bloc « DIRECTIVES
+  VOCALES (TTS) »** (`Sheogorath/sheo_data.py:639`). Le LLM la lit comme une consigne *voix*,
+  pas comme un rendu *écrit* → il ne l'applique quasiment jamais au chat.
+- Les 3 `MOOD_PROMPTS` (`sheo_data.py:670-697`) décrivent TON / ATMOSPHÈRE / STYLE mais **aucune
+  ligne de RENDU ÉCRIT** (casse, cris, chuchotement) → le passage neutral→mania→dementia ne
+  change pas l'aspect visuel du texte.
+- L'**emoji de ton final existe déjà** et fonctionne (`sheo_data.py:633-635`, préservé par
+  `_TRAILING_EMOJI_RE` dans `sheo_llm.py:119-138`, test live 🧀/😏 validé). On ne le refait PAS :
+  on le **varie par humeur** et on autorise **un** emoji expressif de plus en MANIA.
 
-Workflow : **Antigravity exécute ce plan. Claude a rédigé.**
-
-## Rappel architecture (pour ne rien casser)
-- `shared/twitch/` est **générique** (Sheo, Johnny, Sugar). ⚠️ **NE PAS** y coder de logique
-  spécifique-Sugar. On ajoute un **hook générique** `tone_directive_provider` (même patron que
-  `system_prompt_provider` déjà en place), que **seule Sugar câble**. Les autres bots ne le
-  passent pas → `None` → comportement inchangé.
-- Le point d'injection du prompt de réponse « quand nommé » est
-  `shared/twitch/llm.py:_generate_response` (déjà plein de `system_prompt += …`).
-- Bots indépendants : Sugar importe `sugar_grudge` avec try/except déjà en place
-  (`bot_sugar.py:276-279`). Rien de nouveau côté imports.
+### Portée & parité
+- **Un seul fichier** : `Sheogorath/sheo_data.py` (`PERSONALITY_BASE` + les 3 `MOOD_PROMPTS`).
+  **0 code.** Discord ET Twitch lisent ces prompts via `system_prompt_provider=
+  get_current_system_prompt` (`bot_sheogorath.py:413` Discord, `:817` Twitch) → **une seule
+  édition couvre les deux plateformes** (règle « la persona change des deux côtés à la fois »).
+- Workflow : **Antigravity exécute. Claude a rédigé.**
 
 ---
 
-## PARTIE A — Ton adaptatif sur le chat Twitch (hook léger générique)
+## PARTIE A — Rendu écrit de l'état émotionnel (le cœur)
 
-### A.1 — `SugarBot/sugar_grudge.py` : helper de ton PUR (sans persistance)
-Après le dict `_DIRECTIVE_BY_SCORE` (après la ligne 139), ajouter une fonction module-level
-qui réutilise le **même** lexique (`classify_tone`) et les **mêmes** consignes que le carnet,
-mais **sans** toucher au score ni au fichier :
-```python
-def tone_directive(text):
-    """Consigne de ton PURE (sans carnet ni persistance), pour les surfaces sans
-    mémoire de rancune (ex. chat Twitch). Réutilise le MÊME lexique et les MÊMES
-    consignes de ton que le carnet Discord → parité de ton entre plateformes.
-    - kind          → accueil chaleureux (elle ne mord pas quelqu'un d'aimable)
-    - neutral       → avenante, mordant rangé
-    - aggro/apology → '' : persona brute (le mordant est OK face à une hostilité)."""
-    tone = classify_tone(text)
-    if tone == "kind":
-        return _DIRECTIVE_KIND
-    if tone == "neutral":
-        return _DIRECTIVE_NEUTRAL
-    return ""
+### A.1 — `PERSONALITY_BASE` : un bloc dédié « RENDU ÉCRIT » (sortir la consigne du TTS)
+Dans `PERSONALITY_BASE` (`sheo_data.py:623-668`), **après** le bloc « EMOJI DE TON » (après la
+ligne 635) et **avant** le bloc « DIRECTIVES VOCALES », **insérer** un nouveau bloc :
 ```
-> Note : c'est exactement la branche « score 0 » de `GrudgeBook.update` (lignes 257-261),
-> extraite en fonction sans état. Zéro I/O, zéro LLM → sûr dans le chemin de réponse.
-
-### A.2 — `shared/twitch_chat.py` : nouveau hook générique `tone_directive_provider`
-Trois retouches, en miroir EXACT de `system_prompt_provider` :
-1. **Signature `__init__`** (près de la ligne 95, sous `system_prompt_provider = None,`) :
-   ```python
-           tone_directive_provider = None,
-   ```
-2. **Stockage** (près de la ligne 131, sous `self.system_prompt_provider = …`) :
-   ```python
-           # Optionnel : callable (author, message) -> str renvoyant une consigne de TON
-           # à injecter par message (ex. Sugar : chaleureuse si amical, griffes si hostile).
-           # Hook GÉNÉRIQUE — aucune logique spécifique-bot ici.
-           self.tone_directive_provider = tone_directive_provider
-   ```
-3. **Factory `setup_twitch_chat`** (signature près de la ligne 274, sous `system_prompt_provider=None,`) :
-   ```python
-                         tone_directive_provider=None,
-   ```
-   **et** dans la construction `TwitchChatBot(...)` (près de la ligne 461, sous
-   `system_prompt_provider=system_prompt_provider,`) :
-   ```python
-           tone_directive_provider=tone_directive_provider,
-   ```
-
-### A.3 — `shared/twitch/llm.py` : appliquer le hook dans `_generate_response`
-Dans `_generate_response`, **après** le bloc ANTI-RÉPÉTITION (après la ligne 107) et **avant**
-le `try: from shared.llm_cascade import generate_response` (ligne 109), insérer :
-```python
-        # CONSIGNE DE TON (générique, optionnelle) : un bot peut fournir une consigne
-        # par message. Pour Sugar : chaleureuse face à un message amical, griffes face
-        # à une attaque. Hook générique — aucune logique spécifique-bot ici.
-        if getattr(self, "tone_directive_provider", None):
-            try:
-                td = self.tone_directive_provider(author, clean)
-                if td:
-                    system_prompt += td
-            except Exception as e:
-                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] tone_directive_provider a échoué : {e}")
+"\n"
+"✍️ **RENDU ÉCRIT DE TON ÉTAT — ta typographie DOIT trahir ton émotion** ✍️\n"
+"- Tu ne parles pas toujours sur le même ton : ton TEXTE doit le MONTRER. Quand tu CRIES "
+"(pic d'excitation, de colère, de révélation, de jubilation), écris ces mots-là en "
+"MAJUSCULES. Quand tu es posé, écris en casse normale. Quand tu murmures, baisse la voix : "
+"phrases courtes, feutrées, points de suspension.\n"
+"- Le cri est un PROJECTEUR, pas un mur : mets en MAJUSCULES 1 à 3 mots-clés OU une courte "
+"exclamation ('MAGNIFIQUE !', 'SILENCE !', 'HAHA !'), JAMAIS la réplique entière (illisible). "
+"En moyenne la plupart de tes phrases restent en casse normale ; le cri PONCTUE.\n"
+"- ⚠️ Crier n'est PAS répéter le mot du mortel en majuscules suivi de « ?! » (gabarit "
+"INTERDIT, cf. règle anti-tic) : le cri porte sur TES mots forts, ton exclamation à toi, "
+"pas sur l'écho de ce qu'on vient de te dire.\n"
 ```
-> On passe `clean` (message déjà nettoyé de l'anti-injection), pas `message`.
+> Le cap « 1-3 mots » évite le message full-caps (illisible + le filtre anti-spam/caps de
+> certaines chaînes Twitch masquerait la réplique). Le rappel anti-écho protège le fix
+> `f2badb9` / `bot_sheogorath.py:2095-2102` : le cri ne doit pas ressusciter le tic « MOT ?! ».
 
-### A.4 — `shared/twitch/voice.py` : parité de ton à l'oral (recommandé)
-Quand Sugar est **nommée au micro**, même adaptation. Dans `_generate_voice_response`,
-**après** `full_system_prompt = system_prompt + "\n\n" + ANTI_INJECTION_GUARD` (ligne 90) :
-```python
-        if getattr(self, "tone_directive_provider", None):
-            try:
-                td = self.tone_directive_provider("", text)
-                if td:
-                    full_system_prompt += td
-            except Exception as e:
-                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] tone_directive_provider a échoué (voix) : {e}")
-```
-> `author=""` : le provider de Sugar ne l'utilise pas (il ne lit que le texte). Sans effet
-> pour Sheo/Johnny (ils ne passent pas le hook). Voice listen de Sugar est OFF aujourd'hui
-> (`bot_sugar.py:467`) → inerte tant que non réactivé, mais prêt.
+### A.2 — Chaque `MOOD_PROMPT` gagne une ligne « RENDU ÉCRIT » (le changement doit se VOIR)
+On tie le rendu à l'humeur pour que neutral→mania→dementia change l'ASPECT du texte.
 
-### A.5 — `SugarBot/bot_sugar.py` : câbler le provider
-1. **Import** (là où `GrudgeBook, classify_tone` sont importés, lignes 276 & 279), ajouter
-   `tone_directive` à **chaque** import du try/except :
-   ```python
-       from sugar_grudge import GrudgeBook, classify_tone, tone_directive
-   ...
-       from SugarBot.sugar_grudge import GrudgeBook, classify_tone, tone_directive
-   ```
-2. **Appel `setup_twitch_chat`** (bloc lignes 457-468) : ajouter le kwarg
-   ```python
-           tone_directive_provider=lambda author, message: tone_directive(message),
-   ```
-   (le `lambda` ignore `author` : le ton ne dépend que du message courant).
-
-### A.6 — Ce qu'on NE touche PAS
-- Le **carnet persistant** (`sugar_grudge.json`) reste **Discord-only** : pas de score ni de
-  rédemption sur Twitch (décision « léger »). Évolution possible plus tard : instancier un
-  `GrudgeBook("data/sugar_grudge_twitch.json")` clé = login Twitch, et brancher le provider
-  dessus. **Hors périmètre ici.**
-- `enable_interjections`/`enable_greetings` restent `False` (silence sauf si nommé).
+- **`PERSONALITY_NEUTRAL`** (`sheo_data.py:670-677`) — après la ligne `- FORMAT DE RÉPONSE : …`,
+  ajouter :
+  ```
+  "\n- RENDU ÉCRIT : casse NORMALE, calme glacial. Le cri est RARISSIME (tu es au-dessus de "
+  "ça) ; au maximum un seul mot en majuscules si le mépris déborde. Emoji de ton sobre et royal."
+  ```
+- **`PERSONALITY_MANIA`** (`sheo_data.py:679-687`) — après la ligne `- STYLE : …`, ajouter :
+  ```
+  "\n- RENDU ÉCRIT : tu es BRUYANT. Les MAJUSCULES giclent sur tes pics d'euphorie et tes "
+  "exclamations, le débit est explosif et haché (points d'exclamation, tirets d'auto-"
+  "interruption). Tu PEUX glisser UN emoji expressif au fil du texte EN PLUS de l'emoji de ton "
+  "final (🎨🔥😈🎭). Mais garde des mots-clés en majuscules, pas des paragraphes entiers."
+  ```
+- **`PERSONALITY_DEMENTIA`** (`sheo_data.py:689-697`) — après la ligne `- STYLE : …`, ajouter :
+  ```
+  "\n- RENDU ÉCRIT : tu CHUCHOTES. Voix basse, phrases feutrées et coupées de points de "
+  "suspension menaçants. AUCUN cri, AUCUNE majuscule d'excitation : la peur se distille tout "
+  "bas. Emoji de ton froid et tranchant (🔪👁️🕯️)."
+  ```
+> Résultat : mania = texte qui HURLE, dementia = texte qui murmure, neutral = texte posé →
+> le changement d'humeur (mood_changer, ~1×/h, `bot_sheogorath.py:1153`) devient **lisible à
+> l'œil**, pas seulement dans le vocabulaire.
 
 ---
 
-## PARTIE B — Vocabulaire « sucre » non-obligatoire (PERSONNALITÉ, Discord + Twitch)
+## PARTIE B — Emojis dans la réponse (varier par humeur, sans casser l'existant)
 
-Fichier **unique** : `SugarBot/sugar_data.py`, `PERSONALITY_PROMPT`. Les deux plateformes le
-lisent → une seule édition suffit. La persona dit déjà « rare » (lignes 41 & 57) mais le modèle
-l'ignore car le bloc « LANGAGE SUCRÉ » (54-57) survend les petits noms. On **rééquilibre** :
-le défaut devient ZÉRO sucre, le sucre est un assaisonnement rare et plafonné.
+L'**emoji de ton final** (1 emoji, toujours, en signature) reste la base — il fonctionne et est
+préservé par le post-traitement. On l'enrichit sans le dupliquer :
 
-### B.1 — Durcir la règle prioritaire (ligne 41)
-Remplacer la puce actuelle :
-> `- Un petit nom sucré, c'est RARE et jamais en tête de phrase par réflexe : la PLUPART de tes répliques n'en ont aucun. S'il en faut un, glisse-le au milieu ou à la fin.`
+### B.1 — Recadrer la règle « UN SEUL emoji » pour laisser respirer la MANIA
+Dans `PERSONALITY_BASE`, ligne 635, la puce dit aujourd'hui :
+> `* UN SEUL emoji, tout à la FIN. Jamais deux, jamais au milieu de la phrase. …`
 
-par (plus contraignant, avec plafond chiffré) :
+La **remplacer** par une version qui garde la signature finale mais autorise l'exception MANIA :
 ```
-- PETIT NOM SUCRÉ = RARE ET FACULTATIF. Par DÉFAUT, tu n'en mets AUCUN. La grande majorité
-  de tes répliques n'ont ni petit nom (« mon caramel », « mon berlingot »…) ni métaphore
-  sucrée — et c'est très bien. Tu n'en glisses un QUE si la vanne s'y prête vraiment ; en cas
-  de doute, tu n'en mets pas. PLAFOND : jamais un petit nom deux répliques de suite, et jamais
-  en tête de phrase par réflexe (au milieu ou à la fin, s'il y en a un).
+"  * L'emoji de ton FINAL reste OBLIGATOIRE (un, en signature). En humeur MANIA seulement, tu "
+"peux AJOUTER au plus UN emoji expressif au fil du texte ; en NEUTRAL et DEMENTIA, rien d'autre "
+"que l'emoji final. Le verbe reste roi ; l'emoji ne fait que SIGNER le ton.\n"
 ```
+> Sûr côté post-traitement : `_TRAILING_EMOJI_RE` (`sheo_llm.py:119`) n'isole que l'emoji **en
+> fin** ; un emoji au milieu (mania) n'est ni compté comme phrase ni tronqué. Aucune régression.
 
-### B.2 — Recadrer le bloc « LANGAGE SUCRÉ » (lignes 54-57)
-Garder la saveur mais retirer l'incitation à en mettre partout. Réécrire la puce d'intro
-(ligne 54-55) pour qu'elle présente le sucre comme une **option occasionnelle**, pas une marque
-à apposer à chaque fois :
-```
-LANGAGE SUCRÉ — une saveur OCCASIONNELLE, pas une signature à coller partout :
-- Ton nom est Sugar, mais tu ne le prouves PAS en saupoudrant du sucre à chaque phrase. Le sucre
-  est une touche rare : petits noms (mon sucre d'orge, ma praline, mon caramel, mon berlingot,
-  mon nougat…) ET métaphores (fondant, collant comme du caramel, acidulé, glaçage, bonbon…) sont
-  disponibles, mais tu ne les sors QUE quand ça coule de source. Le plus souvent : aucune touche.
-```
-Conserver telle quelle la puce « Même tes piques sont enrobées de sucre… » (ligne 56) et la
-puce « Le sucre doit rester NATUREL… mieux vaut zéro touche que du sucre forcé » (ligne 57) —
-elles vont dans le bon sens et renforcent la consigne.
-
-### B.3 — Ancrer par l'exemple (ligne 47-52, bloc EXEMPLES DE VOIX)
-Les few-shot pilotent fortement le style. Aujourd'hui 1 exemple sur 5 a un petit nom
-(« mon caramel », ligne 49). C'est déjà un bon ratio — **ne pas en ajouter**. Vérifier
-seulement qu'aucune retouche B.1/B.2 n'introduit de nouveau petit nom dans les exemples.
-
-### B.4 — Ce qu'on NE touche PAS
-- La réplique signature « **péteur / péteuse** » (ligne 22) : inchangée, c'est l'insulte-maison,
-  pas du vocabulaire sucre.
-- La touche Serpentard (59-62) : déjà cadrée « saveur de fond, PAS une obligation ».
+### B.2 — Palette d'emoji par humeur (déjà amorcée par les exemples)
+Les `COMEDY_EXAMPLES_*` et les exemples de mood portent déjà 🥱 (neutral), 🎨 (mania), 🔪
+(dementia). Les lignes A.2 ci-dessus **nomment explicitement** la palette par humeur → cohérence
+emoji ⇄ état. **Ne pas ajouter** d'exemples supplémentaires (few-shot déjà denses).
 
 ---
 
-## VÉRIFICATIONS ATTENDUES
-- `python -m py_compile SugarBot/bot_sugar.py SugarBot/sugar_grudge.py SugarBot/sugar_data.py shared/twitch_chat.py shared/twitch/llm.py shared/twitch/voice.py`
-- `python -m pytest tests/test_twitch_features.py` reste vert (le hook est optionnel → pas de régression).
-- Import isolé OK : `python -c "import sys; sys.path.insert(0,'SugarBot'); import sugar_grudge; print(sugar_grudge.tone_directive('bg t es cool'))"`
-  → doit renvoyer la consigne `_DIRECTIVE_KIND` (non vide) ; `tone_directive('ferme la')` → `''`.
-- Chaque bot Twitch reste importable seul (Sheo/Johnny ne passent pas le hook → `None`, inchangés).
+## PARTIE C — Ce qu'on NE touche PAS (garde-fous)
+- **`sheo_llm.py`** : inchangé. L'easter egg « ALL CAPS EXPLOSION » (2 %, ligne 99) reste — il va
+  dans le même sens et n'entre pas en conflit. `postprocess_response` / `force_short_response` /
+  `_TRAILING_EMOJI_RE` gèrent déjà l'emoji final ; l'emoji mid-texte mania est hors de leur portée.
+- **`sheo_voice.py`** : inchangé. ⚠️ VÉRIF LIVE (voir plus bas) : s'assurer que les mots en
+  MAJUSCULES ne soient pas ÉPELÉS lettre par lettre par le TTS. Si c'est le cas → traiter dans un
+  correctif voix séparé (ex. lower() avant synthèse), PAS ici.
+- L'**anti-écho** (`bot_sheogorath.py:2095-2102`, fix f2badb9) et la règle `sheo_data.py:652`
+  restent la seule autorité contre le tic « MOT ?! ». A.1 les rappelle, ne les remplace pas.
+- Le **filtre ToS Twitch** (`send_chat_safe`) : inchangé. Un message en majuscules n'est pas une
+  violation ToS ; le cap « 1-3 mots » suffit à éviter le spam de caps. (NB : le chantier de
+  renfort ToS EN/sexuel/doxxing reste ouvert et distinct — hors de ce plan.)
 
-## TEST LIVE (après déploiement)
-- Chat Twitch « **quel est ton jeu préféré bg** » → Sugar répond **chaleureusement**
-  (accueil taquin léger), plus de moquerie sèche.
-- Chat Twitch « **t'es nulle Sugar** » → Sugar sort les griffes (répartie fine, « péteur »),
-  comportement inchangé.
-- Sur plusieurs répliques d'affilée : **la plupart SANS petit nom sucré** ; jamais deux
-  petits noms consécutifs. Idem côté **Discord** (même prompt) → vérifier la parité.
-- Aucune régression Sheo/Johnny (ton et style identiques à avant).
+---
+
+## VÉRIFICATIONS ATTENDUES (Antigravity)
+- `python -m py_compile Sheogorath/sheo_data.py Sheogorath/bot_sheogorath.py Sheogorath/sheo_llm.py`
+- `python -m pytest tests/test_sheo_moods.py -q` reste vert.
+- **Étendre `tests/test_sheo_moods.py`** : vérifier que
+  - `PERSONALITY_BASE` contient le bloc « RENDU ÉCRIT DE TON ÉTAT » ;
+  - `PERSONALITY_MANIA` mentionne les MAJUSCULES / le rendu bruyant ;
+  - `PERSONALITY_DEMENTIA` mentionne le chuchotement / « aucune majuscule » ;
+  - `PERSONALITY_NEUTRAL` mentionne la casse normale.
+- Import isolé OK (Sheo importable seul).
+
+## TEST LIVE (après déploiement + redémarrage Sheo)
+- Forcer chaque humeur avec la commande admin **`!humeur`** (`bot_sheogorath.py:1868` / `483`) et
+  observer le RENDU :
+  - **mania** → majuscules qui giclent sur les pics, débit explosif, éventuel emoji mid-texte ;
+  - **dementia** → tout en bas, feutré, AUCUNE majuscule, points de suspension ;
+  - **neutral** → posé, casse normale, cris rarissimes.
+- Vérifier que **crier ≠ tic** : Sheo ne rouvre pas sur « MOT ?! » en majuscules.
+- Vérifier la **parité Discord ⇄ Twitch** (même prompt) : même comportement typographique.
+- Vérifier au **micro/TTS** que les mots en MAJUSCULES sont bien LUS (pas épelés). Sinon → ticket
+  correctif voix séparé.

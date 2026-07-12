@@ -72,3 +72,24 @@ def test_strip_prose_stage_directions():
     text3 = "Viens voir <@1234567890> ! C'est le boss."
     cleaned3 = strip_stage_directions(text3)
     assert cleaned3 == "Viens voir <@1234567890> ! C'est le boss."
+
+
+def test_writing_rendering_prompts():
+    # Verify PERSONALITY_BASE contains the RENDU ÉCRIT DE TON ÉTAT block
+    assert "RENDU ÉCRIT DE TON ÉTAT" in sheo_data.PERSONALITY_BASE
+    
+    # Verify NEUTRAL, MANIA, DEMENTIA mood prompts contain their respective instructions
+    neutral = sheo_data.MOOD_PROMPTS["neutral"]
+    mania = sheo_data.MOOD_PROMPTS["mania"]
+    dementia = sheo_data.MOOD_PROMPTS["dementia"]
+    
+    assert "casse NORMALE" in neutral
+    assert "calme glacial" in neutral
+    
+    assert "tu es BRUYANT" in mania
+    assert "MAJUSCULES giclent" in mania
+    
+    assert "tu CHUCHOTES" in dementia
+    assert "AUCUN cri" in dementia
+    assert "AUCUNE majuscule" in dementia
+
