@@ -2235,7 +2235,7 @@ async def on_message(message):
     # Determine length adaptation
     if routing["type"] == RequestType.REPARTEE:
         max_tokens_val = 120
-        max_sentences_val = 3
+        max_sentences_val = 2
     else:
         max_tokens_val = 300
         max_sentences_val = 6
