@@ -18,6 +18,7 @@ Post-processing des réponses LLM pour Sheogorath.
 import re
 import random
 import logging
+import unicodedata
 
 logger = logging.getLogger("sheogorath")
 
@@ -138,6 +139,63 @@ def force_short_response(response_text, max_sentences=4):
     return (response_text + trailing_emoji).strip()
 
 
+# Interjections / mots vides qui ne comptent pas comme "écho" en ouverture.
+_ECHO_STOPWORDS = {
+    "oh", "ah", "eh", "ha", "haha", "hého", "tiens", "alors", "ainsi", "donc",
+    "quelle", "quel", "quels", "quelles", "les", "des", "une", "mon", "mes",
+    "cette", "cet", "ces", "vraiment", "encore",
+}
+
+
+def _norm(s: str) -> str:
+    """Minuscules + accents retirés, pour comparer « tête » à « tete »."""
+    s = unicodedata.normalize("NFD", s.lower())
+    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def _strip_echo_opening(reply, user_message, max_strips=2):
+    """Coupe une ouverture qui HURLE l'insulte du mortel en écho (« Oh, "FACE DE PET" ! »,
+    « NUL ?! ») et garde la vraie vanne derrière. Ne touche PAS :
+    - un écho en casse NORMALE (« Des pâtes ? » = réflexion voulue, canon) ;
+    - une réponse ENTIÈREMENT en majuscules (easter egg ALL CAPS / cri de mania) ;
+    - une ouverture qui apporte du neuf.
+    Ne coupe jamais si le reste devient un moignon."""
+    if not reply or not user_message:
+        return reply
+
+    # Ne jamais toucher un cri intégral (easter egg ALL CAPS).
+    letters = [c for c in reply if c.isalpha()]
+    if letters and all(c.isupper() for c in letters):
+        return reply
+
+    user_words = {w for w in re.findall(r"\w+", _norm(user_message)) if len(w) >= 3}
+    user_words -= _ECHO_STOPWORDS
+    if not user_words:
+        return reply
+
+    current = reply.strip()
+    for _ in range(max_strips):
+        m = re.match(r"\s*(.+?[.!?…]+)\s+(\S.*)", current, re.DOTALL)
+        if not m:
+            break
+        head, rest = m.group(1), m.group(2).strip()
+        # Tête = pure interjection (« Ah... ») ?
+        head_sig = {w for w in re.findall(r"\w+", _norm(head)) if len(w) >= 3} - _ECHO_STOPWORDS
+        is_interjection = not head_sig
+        # Tête = HURLE un mot du mortel (token EN MAJUSCULES ≥ 3 lettres qui échote) ?
+        caps_tokens = re.findall(r"[A-ZÀ-ÖØ-Þ]{3,}", head)
+        is_shouted_echo = bool({_norm(t) for t in caps_tokens} & user_words)
+        if not (is_interjection or is_shouted_echo):
+            break
+        if len(rest) < 15:
+            break
+        current = rest
+
+    if current and current != reply.strip():
+        return current[0].upper() + current[1:]
+    return reply
+
+
 def postprocess_response(response_text, fact_brain, user_id, original_message, max_sentences=4):
     """Pipeline complet de post-processing de la réponse LLM."""
     # 1. Extraction de faits
@@ -151,6 +209,9 @@ def postprocess_response(response_text, fact_brain, user_id, original_message, m
 
     # 2.6 Suppression des didascalies nues sans astérisques ("... ?! hurle UNE CUILLÈRE")
     response_text = strip_bare_stage_directions(response_text)
+
+    # 2.7 Coupe l'ouverture-perroquet qui HURLE l'insulte en écho ("Oh, FACE DE PET !")
+    response_text = _strip_echo_opening(response_text, original_message)
 
     # 3. Easter eggs
     response_text = apply_easter_eggs(response_text, original_message)
