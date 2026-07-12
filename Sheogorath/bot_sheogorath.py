@@ -1149,13 +1149,16 @@ async def decret_cmd(ctx, target: discord.Member = None):
         return
     await publish_daily_rumor_sheo(target_channel=ctx.channel, target_user=target)
 
-@tasks.loop(hours=1)
+@tasks.loop(minutes=5)
 async def mood_changer():
-    """Change l'humeur de Sheogorath toutes les heures"""
+    """Change l'humeur de Sheogorath toutes les 5 minutes (bascule GARANTIE)."""
     global current_mood, current_system_prompt
     moods = ["mania", "dementia", "neutral"]
     old_mood = current_mood
-    current_mood = random.choice(moods)
+    # Bascule garantie : on tire parmi les AUTRES humeurs → l'humeur change vraiment
+    # à chaque tour (sinon random.choice retomberait 1 fois sur 3 sur la même).
+    choices = [m for m in moods if m != current_mood] or moods
+    current_mood = random.choice(choices)
     current_system_prompt = sheo_data.MOOD_PROMPTS[current_mood]
     
     mood_messages = {
