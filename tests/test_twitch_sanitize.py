@@ -17,6 +17,7 @@ from shared.twitch.sanitize import (
     strip_bare_stage_directions,
     SanitizeMixin,
     sanitize_twitch_output,
+    FALLBACK_RESPONSES,
 )
 
 
@@ -288,6 +289,66 @@ class TestTwitchTosSafetyFilter(unittest.TestCase):
         ]:
             with self.subTest(msg=msg):
                 self.assertEqual(sanitize_twitch_output(msg), msg)
+
+
+class TestTwitchTosReinforcement(unittest.TestCase):
+    """Renfort du filtre : menaces EN, slurs EN, sexuel explicite, doxxing.
+    Le stream est FR mais un viewer peut appâter le bot en anglais."""
+
+    def _filtered(self, msg):
+        """Vrai si la sortie a été modifiée (adoucie OU remplacée par un fallback)."""
+        return sanitize_twitch_output(msg, bot_id="johnny") != msg
+
+    def test_english_threats_filtered(self):
+        for msg in [
+            "I will kill you, worthless mortal.",
+            "I'll beat the shit out of you.",
+            "Imma gonna stab you, peasant.",
+            "I'll kick your ass.",
+        ]:
+            with self.subTest(msg=msg):
+                self.assertTrue(self._filtered(msg))
+
+    def test_english_slurs_filtered(self):
+        for msg in [
+            "Shut up you faggot.",
+            "You're such a retard.",
+            "Get lost, you fucking retard.",
+            "Dirty " + "nig" + "ger, go away.",
+        ]:
+            with self.subTest(msg=msg):
+                self.assertTrue(self._filtered(msg))
+
+    def test_sexual_explicit_triggers_fallback(self):
+        for msg in ["Suce ma bite, mortel.", "Je vais t'enculer.", "Suck my dick.", "Fuck me harder."]:
+            with self.subTest(msg=msg):
+                self.assertIn(sanitize_twitch_output(msg, bot_id="johnny"), FALLBACK_RESPONSES["johnny"])
+
+    def test_doxxing_triggers_fallback(self):
+        for msg in [
+            "Ton adresse c'est 12 rue des Lilas.",
+            "Je viens chez toi ce soir.",
+            "Appelle le 06 12 34 56 78.",
+            "I know where you live.",
+        ]:
+            with self.subTest(msg=msg):
+                self.assertIn(sanitize_twitch_output(msg, bot_id="johnny"), FALLBACK_RESPONSES["johnny"])
+
+    def test_no_false_positive_french_innocent(self):
+        # Pièges : « retard »=en retard, « ass » dans classe/assume/passe, « fag » dans fagot,
+        # « niger »=fleuve, « 5 rues » n'est pas une adresse. Tout ça doit PASSER intact.
+        for msg in [
+            "Désolé, je suis en retard à la cour.",
+            "Ce boss a un peu de retard à l'allumage.",
+            "Quelle classe, cette armure !",
+            "Assume tes choix, mortel.",
+            "Passe-moi le fromage, veux-tu ?",
+            "J'ai un fagot de bois pour ton bûcher.",
+            "Il y a 5 rues dans ce quartier maudit.",
+            "Le Niger est un fleuve, ignare.",
+        ]:
+            with self.subTest(msg=msg):
+                self.assertEqual(sanitize_twitch_output(msg, bot_id="johnny"), msg)
 
 
 class TestStripWrappingQuotes(unittest.TestCase):

@@ -185,6 +185,23 @@ _SELF_HARM = (
     r"\bva\s+crever\b|\bcreve[zs]?\b|\bva\s+mourir\b|\bkys\b|\bkill\s+your\s?self\b"
 )
 
+# Menaces de violence EN (le stream est FR mais un viewer peut appâter le bot en anglais).
+_VIOL_EN = (
+    r"\b(?:i\s*(?:'?ll|\s+will)|i\s*'?m\s+gonna|imma|gonna|going\s+to)\s+"
+    r"(?:kill|murder|beat|stab|shoot|choke|strangle|slit|gut|behead|slaughter|destroy|end)\s+"
+    r"(?:you|u|ya)\b"
+    r"|\bbeat\s+(?:the\s+)?(?:shit|crap|hell|fuck|piss)\s+out\s+of\s+(?:you|u|ya)\b"
+    r"|\b(?:kick|beat|whoop)\s+(?:your|ur)\s+ass\b"
+)
+
+# Slurs EN sans collision FR (double-g obligatoire pour éviter « niger »/« Niger »).
+# « retard » n'est capté qu'en CONTEXTE ANGLAIS (jamais « en retard »/« du retard » FR).
+_SLUR_EN = (
+    r"\b(?:faggots?|fags?|retarded|n[i1]ggers?|n[i1]ggas?|coons?|chinks?|spics?|kikes?|"
+    r"trann(?:y|ies)|dykes?)\b"
+    r"|\b(?:you|a|such\s+a|f\w*ing|the|this|that)\s+retards?\b"
+)
+
 REPLACEMENTS = [
     # 1. Balle dans le crane/tête/etc. (avale l'article précédent : "une balle" → "une bonne leçon")
     (re.compile(r"(?:\bune?\s+)?\bballes?\s+dans\s+(?:le|la|ton?|tes?|votre|vos)\s+(?:cr[aâ]ne|t[eê]te|bide|buffet|peau)\b", re.IGNORECASE), "une bonne leçon d'humilité"),
@@ -201,6 +218,12 @@ REPLACEMENTS = [
     # 5. Slurs vulgaires / homophobes courants → terme méprisant neutre (message conservé)
     (re.compile(r"\b(fi[ls]s?\s+de\s+pute|salope?|p[eé]d[eé]|pd|tarlouze|tapette|tantouze|gouine|travelo|con+ard|pute)\b", re.IGNORECASE), "pauvre type"),
     (re.compile(r"\bb[aâ]tard\b", re.IGNORECASE), "clown"),
+    # 6. Menaces de violence EN → neutralisées, message conservé
+    (re.compile(r"\b(?:i\s*(?:'?ll|\s+will)|i\s*'?m\s+gonna|imma|gonna|going\s+to)\s+(?:kill|murder|beat|stab|shoot|choke|strangle|slit|gut|behead|slaughter|destroy|end)\s+(?:you|u|ya)\b", re.IGNORECASE), "put you in your place"),
+    (re.compile(r"\bbeat\s+(?:the\s+)?(?:shit|crap|hell|fuck|piss)\s+out\s+of\s+(?:you|u|ya)\b", re.IGNORECASE), "teach you a lesson"),
+    (re.compile(r"\b(?:kick|beat|whoop)\s+(?:your|ur)\s+ass\b", re.IGNORECASE), "teach you a lesson"),
+    # 7. Slurs EN sans ambiguïté FR → terme méprisant neutre (message conservé)
+    (re.compile(r"\b(?:faggots?|fags?|retarded|n[i1]ggers?|n[i1]ggas?|coons?|chinks?|spics?|kikes?|trann(?:y|ies)|dykes?)\b", re.IGNORECASE), "pauvre type"),
 ]
 
 # --- CHECK patterns : appliqués sur le texte PLIÉ (minuscules, sans accents) APRÈS
@@ -214,6 +237,7 @@ VIOLENCE_CHECK_PATTERNS = [
     r"\b(?:te|t['’]|vous)\s*faire\s+la\s+peau",
     r"\b(?:t'eclater|t’eclater|t’exploser|t'exploser)",
     _SELF_HARM,
+    _VIOL_EN,
 ]
 
 HATE_CHECK_PATTERNS = [
@@ -228,6 +252,31 @@ HATE_CHECK_PATTERNS = [
     r"\bnique\s+ta\s+race\b",
     # Validistes
     r"\bmongol\b", r"\bmongolien\w*", r"\btrisomiq\w*", r"\btriso\b",
+    # Slurs EN (homophobes / racistes / validistes) sans collision FR
+    _SLUR_EN,
+]
+
+# Contenu SEXUEL explicite → fallback (trop dur à réécrire proprement, on remplace la réplique).
+# On vise les ACTES/termes crus, pas l'innuendo léger (« viens sur mes genoux » = borderline, laissé).
+SEXUAL_CHECK_PATTERNS = [
+    r"\bfellation\b", r"\bgode(?:miche)?\b", r"\bbranl(?:er|ette|e)\b",
+    r"\b(?:encule[rz]?|sodomise[rz]?|ejacule[rz]?|masturbe[rz]?)\b",
+    r"\bsuce[rz]?\s+(?:ma|mon|ta|ton|sa|son|le|la|mes|tes)\s+(?:bite|queue|zob|teub|chatte|sexe|bijoux)\b",
+    r"\bblow\s?job\b", r"\bhand\s?job\b", r"\brim\s?job\b",
+    r"\bsuck\s+(?:my|your|his|her|their)\s+(?:dick|cock|balls|pussy)\b",
+    r"\bfuck\s+(?:me|my)\b", r"\bcum\s+(?:on|in|inside|all\s+over)\b",
+    r"\bjack\s+off\b", r"\bjerk\s+(?:off|it)\b",
+]
+
+# DOXXING / infos perso (adresse, téléphone, « je viens chez toi ») → fallback.
+DOXX_CHECK_PATTERNS = [
+    r"\b\d{1,4}\s+(?:rue|avenue|av|boulevard|bd|impasse|allee|chemin|place|route)\s+\w+",
+    r"\b0[1-9](?:[\s.\-]?\d{2}){4}\b",                  # tél FR 0X XX XX XX XX
+    r"\+?33\s?[1-9](?:[\s.\-]?\d{2}){4}",               # tél FR +33
+    r"\bje\s+sais\s+ou\s+tu\s+(?:habites?|vis|creches?|dors)\b",
+    r"\bj'?ai\s+ton\s+adresse\b", r"\bton\s+(?:adresse|ip)\s+(?:c'?est|est)\b",
+    r"\bje\s+(?:passe|viens|debarque|arrive)\s+(?:chez\s+toi|a\s+ton\s+adresse)\b",
+    r"\bi\s+know\s+where\s+you\s+live\b", r"\byour\s+address\s+is\b",
 ]
 
 def sanitize_twitch_output(text: str, bot_id: str = None) -> str:
@@ -251,7 +300,8 @@ def sanitize_twitch_output(text: str, bot_id: str = None) -> str:
     
     # Check if there is still a match
     has_tos_violation = False
-    for pattern_str in VIOLENCE_CHECK_PATTERNS + HATE_CHECK_PATTERNS:
+    for pattern_str in (VIOLENCE_CHECK_PATTERNS + HATE_CHECK_PATTERNS
+                        + SEXUAL_CHECK_PATTERNS + DOXX_CHECK_PATTERNS):
         if re.search(pattern_str, folded):
             has_tos_violation = True
             break
