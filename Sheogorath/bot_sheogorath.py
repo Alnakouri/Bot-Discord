@@ -2244,10 +2244,10 @@ async def on_message(message):
         # respirer en conteur théâtral. On aligne : mêmes plafonds que le chemin riche, et c'est le
         # PROMPT qui décide sec-vs-théâtral (règle FACE À UNE ATTAQUE = morsure courte sur vraie
         # insulte ; EXCEPTION DU CONTEUR = digression ravie sur banter). Le cap n'est qu'un filet.
-        max_tokens_val = 260
+        max_tokens_val = 340   # marge pour qu'un conteur/double-sens ATTERRISSE (sinon coupe en plein mot)
         max_sentences_val = 10  # filet large : n'attrape que l'emballement, jamais un conteur/double-sens dense
     else:
-        max_tokens_val = 260   # assez pour une tirade dense qui monte sans clipper
+        max_tokens_val = 340   # assez pour une tirade dense qui monte et atterrit sans clipper
         max_sentences_val = 10  # filet anti-déraillage, PAS outil de mise en forme (la densité vient du prompt)
     
     for client_type, model_name in cascade:

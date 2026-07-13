@@ -54,12 +54,22 @@ LLM_ARTIFACTS = [
 
 
 def extract_facts(response_text, fact_brain, user_id):
-    """Extrait les faits (<fact>...</fact>) de la réponse et les stocke."""
+    """Extrait les faits (<fact>...</fact>) de la réponse et les stocke.
+
+    Gère aussi une balise <fact> TRONQUÉE (ouvrante sans </fact> fermante, coupée par le plafond
+    de tokens) : dans ce cas le contenu interne du fait FUYAIT en clair dans le message (bug observé
+    en live : « ...L'utilisateur semble particulièrement attaché aux... »). On retire alors tout
+    depuis <fact> jusqu'à la fin. On n'enregistre PAS ce fait tronqué (incomplet = non fiable)."""
     match = re.search(r"<fact>(.*?)</fact>", response_text, re.DOTALL)
     if match:
         new_fact = match.group(1).strip()
-        fact_brain.add_fact(user_id, new_fact)
+        if new_fact:
+            fact_brain.add_fact(user_id, new_fact)
         response_text = response_text.replace(match.group(0), "").strip()
+        return response_text
+    # Balise ouvrante SANS fermante (réponse tronquée) → couper depuis <fact> jusqu'à la fin.
+    if "<fact>" in response_text:
+        response_text = re.sub(r"<fact>.*$", "", response_text, flags=re.DOTALL).strip()
     return response_text
 
 
@@ -207,6 +217,27 @@ def _strip_echo_opening(reply, user_message, max_strips=2):
     return reply
 
 
+def _trim_incomplete_tail(text):
+    """Si le plafond de tokens a coupé la réponse EN PLEIN MOT (elle ne finit ni par une
+    ponctuation de fin, ni par un tiret d'auto-interruption, ni par un emoji de ton), on revient
+    à la dernière fin de phrase propre. Évite les « ...Un from » / « ...bas corpor » disgracieux.
+    Ne touche JAMAIS une réponse déjà propre (préserve « — » d'auto-interruption voulue)."""
+    if not text:
+        return text
+    stripped = text.rstrip()
+    # Isoler un éventuel emoji de ton final : une fin sur emoji est PROPRE.
+    if _TRAILING_EMOJI_RE.search(stripped):
+        return text
+    # Fin déjà propre : ponctuation terminale, guillemet/parenthèse fermante, ou tiret voulu.
+    if re.search(r"[.!?…—»\"')\]]$", stripped):
+        return text
+    # Sinon (coupe en plein mot) : revenir à la dernière ponctuation de fin de phrase.
+    cuts = list(re.finditer(r"[.!?…]", stripped))
+    if cuts:
+        return stripped[:cuts[-1].end()].rstrip()
+    return text  # aucune phrase complète : ne rien casser
+
+
 def postprocess_response(response_text, fact_brain, user_id, original_message, max_sentences=4):
     """Pipeline complet de post-processing de la réponse LLM."""
     # 1. Extraction de faits
@@ -229,6 +260,9 @@ def postprocess_response(response_text, fact_brain, user_id, original_message, m
 
     # 4. Forcer réponse courte
     response_text = force_short_response(response_text, max_sentences=max_sentences)
+
+    # 5. Coupe propre si le plafond de tokens a tronqué en plein mot.
+    response_text = _trim_incomplete_tail(response_text)
 
     return response_text
 

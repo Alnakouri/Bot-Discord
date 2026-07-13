@@ -342,6 +342,9 @@ class LlmMixin:
                                         self.viewer_facts[author_lower].pop(0)
                                     self._save_viewer_facts_debounced()
                     text = re.sub(r"<fact>.*?</fact>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+                    # Balise <fact> ouvrante SANS fermante (réponse tronquée) : couper jusqu'à la fin,
+                    # sinon le fait interne FUIT en clair dans le message (parité Discord extract_facts).
+                    text = re.sub(r"<fact>.*$", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
                     text = re.sub(r"<[a-z_-]+>", "", text, flags=re.IGNORECASE)
                     text = re.sub(r"</[a-z_-]+>", "", text, flags=re.IGNORECASE).strip()
 
