@@ -11,7 +11,11 @@ _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
-from shared.twitch.llm import _strip_repeated_opening, _build_anti_tic_consigne
+from shared.twitch.llm import (
+    _strip_repeated_opening,
+    _build_anti_tic_consigne,
+    _strip_echo_opening,
+)
 
 
 class TestStripRepeatedOpening(unittest.TestCase):
@@ -78,6 +82,40 @@ class TestBuildAntiTicConsigne(unittest.TestCase):
         ]
         consigne = _build_anti_tic_consigne(recent)
         self.assertEqual(consigne.count('"toujours la même rengaine avec"'), 1)
+
+
+class TestStripEchoOpening(unittest.TestCase):
+    """Parité Twitch du garde Discord : tue l'ouverture-perroquet HURLÉE, épargne le reste."""
+
+    def test_shouted_echo_stripped(self):
+        # Sheo ouvre en hurlant l'insulte du viewer → on coupe, on garde la vanne.
+        reply = 'Oh, "FACE DE PET" ! Quelle poésie. Retourne ramper sous ta pierre, cloporte.'
+        out = _strip_echo_opening(reply, "sheo la face de pet")
+        self.assertNotIn("FACE DE PET", out)
+        self.assertIn("cloporte", out)
+
+    def test_pure_interjection_stripped(self):
+        reply = "Ah... Tu crois vraiment m'atteindre avec ça, pauvre mortel ?"
+        out = _strip_echo_opening(reply, "çava tete de cul ?")
+        self.assertTrue(out.startswith("Tu crois"))
+
+    def test_normal_case_echo_preserved(self):
+        # Écho en casse normale = réflexion voulue, canon → intact.
+        reply = "Des pâtes ? Excellent choix pour un mortel sans imagination."
+        self.assertEqual(_strip_echo_opening(reply, "j'ai mangé des pâtes"), reply)
+
+    def test_all_caps_reply_preserved(self):
+        reply = "TAIS-TOI, INSECTE, AVANT QUE JE T'ÉCRASE."
+        self.assertEqual(_strip_echo_opening(reply, "sheo tais toi"), reply)
+
+    def test_no_stub_left(self):
+        # Ne coupe jamais si le reste devient un moignon.
+        reply = "NUL ?! Ha."
+        self.assertEqual(_strip_echo_opening(reply, "tu es nul"), reply)
+
+    def test_empty_inputs(self):
+        self.assertEqual(_strip_echo_opening("", "insulte"), "")
+        self.assertEqual(_strip_echo_opening("Une réponse.", ""), "Une réponse.")
 
 
 if __name__ == "__main__":

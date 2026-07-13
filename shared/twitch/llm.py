@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import re
 import collections
+import unicodedata
 from shared.twitch.sanitize import strip_stage_directions
 
 ANTI_INJECTION_GUARD = (
@@ -41,6 +42,64 @@ def _strip_repeated_opening(reply: str, recent) -> str:
         rest = m.group(2).strip()
         if len(rest) >= 15:
             return rest[0].upper() + rest[1:]
+    return reply
+
+
+# Interjections / mots vides qui ne comptent pas comme « écho » en ouverture.
+_ECHO_STOPWORDS = {
+    "oh", "ah", "eh", "ha", "haha", "hého", "tiens", "alors", "ainsi", "donc",
+    "quelle", "quel", "quels", "quelles", "les", "des", "une", "mon", "mes",
+    "cette", "cet", "ces", "vraiment", "encore",
+}
+
+
+def _norm(s: str) -> str:
+    """Minuscules + accents retirés, pour comparer « tête » à « tete »."""
+    s = unicodedata.normalize("NFD", s.lower())
+    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def _strip_echo_opening(reply: str, user_message: str, max_strips: int = 2) -> str:
+    """Coupe une ouverture qui HURLE l'insulte du viewer en écho (« Oh, "FACE DE PET" ! »,
+    « NUL ?! ») et garde la vraie vanne derrière. Parité avec le garde Discord
+    `sheo_llm._strip_echo_opening`, mais GÉNÉRIQUE (aucun import de bot). Ne touche PAS :
+    - un écho en casse NORMALE (« Des pâtes ? » = réflexion voulue) ;
+    - une réponse ENTIÈREMENT en majuscules (cri intégral) ;
+    - une ouverture qui apporte du neuf.
+    Ne coupe jamais si le reste devient un moignon."""
+    if not reply or not user_message:
+        return reply
+
+    # Ne jamais toucher un cri intégral (réplique tout en majuscules).
+    letters = [c for c in reply if c.isalpha()]
+    if letters and all(c.isupper() for c in letters):
+        return reply
+
+    user_words = {w for w in re.findall(r"\w+", _norm(user_message)) if len(w) >= 3}
+    user_words -= _ECHO_STOPWORDS
+    if not user_words:
+        return reply
+
+    current = reply.strip()
+    for _ in range(max_strips):
+        m = re.match(r"\s*(.+?[.!?…]+)\s+(\S.*)", current, re.DOTALL)
+        if not m:
+            break
+        head, rest = m.group(1), m.group(2).strip()
+        # Tête = pure interjection (« Ah... ») ?
+        head_sig = {w for w in re.findall(r"\w+", _norm(head)) if len(w) >= 3} - _ECHO_STOPWORDS
+        is_interjection = not head_sig
+        # Tête = HURLE un mot du viewer (token EN MAJUSCULES ≥ 3 lettres qui échote) ?
+        caps_tokens = re.findall(r"[A-ZÀ-ÖØ-Þ]{3,}", head)
+        is_shouted_echo = bool({_norm(t) for t in caps_tokens} & user_words)
+        if not (is_interjection or is_shouted_echo):
+            break
+        if len(rest) < 15:
+            break
+        current = rest
+
+    if current and current != reply.strip():
+        return current[0].upper() + current[1:]
     return reply
 
 
@@ -288,6 +347,8 @@ class LlmMixin:
 
                 text = " ".join(text.split())
                 text = strip_stage_directions(text)
+                # Coupe l'ouverture-perroquet qui HURLE l'insulte du viewer en écho (parité Discord).
+                text = _strip_echo_opening(text, clean)
                 # Anti-moule déterministe : coupe l'amorce si elle reprend une ouverture récente.
                 text = _strip_repeated_opening(text, self.recent_self_responses.get(chan_lower))
                 reply = _truncate_for_twitch(text, 480)
