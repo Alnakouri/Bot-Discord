@@ -125,17 +125,28 @@ _TRAILING_EMOJI_RE = re.compile(
 )
 
 
-def force_short_response(response_text, max_sentences=4):
-    """Limite la réponse à max_sentences phrases, en PRÉSERVANT l'emoji de ton final."""
+def force_short_response(response_text, max_sentences=10):
+    """FILET anti-déraillage (pas un outil de mise en forme) : ne tronque QUE si la réponse
+    dépasse largement max_sentences vraies phrases. La longueur est gouvernée par le PROMPT
+    (LONGUEUR = PERTINENCE) et le budget de tokens ; ce filet n'attrape que l'emballement réel.
+    Préserve l'emoji de ton final.
+
+    ⚠️ Les « ... » / « … » ne comptent PAS comme fin de phrase : Sheo en abuse (fragments
+    théâtraux « Non, une pelle. », « ... Attends. ») et les compter gonflait le compteur, ce qui
+    guillotinait la vraie chute (le double-sens, la morsure finale)."""
     trailing_emoji = ""
     m = _TRAILING_EMOJI_RE.search(response_text)
     if m:
         trailing_emoji = " " + m.group(1).strip()
         response_text = response_text[:m.start()].rstrip()
 
-    sentences = re.split(r'(?<=[.!?]) +', response_text)
+    # Protéger les points de suspension avant le découpage en phrases.
+    _ELLIPSIS = "\x00"
+    protected = re.sub(r'\.\.\.+|…', _ELLIPSIS, response_text)
+    sentences = re.split(r'(?<=[.!?]) +', protected)
     if len(sentences) > max_sentences:
-        response_text = " ".join(sentences[:max_sentences])
+        protected = " ".join(sentences[:max_sentences])
+    response_text = protected.replace(_ELLIPSIS, "...")
     return (response_text + trailing_emoji).strip()
 
 

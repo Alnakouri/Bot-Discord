@@ -485,7 +485,7 @@ def tool_set_mood(mood: str):
     global current_mood, current_system_prompt
     mood = mood.lower()
     if mood not in sheo_data.MOOD_PROMPTS:
-        return f"ERREUR : L'humeur '{mood}' n'existe pas. Choisis : neutral, mania, dementia."
+        return f"ERREUR : L'humeur '{mood}' n'existe pas. Choisis : neutral, mania, dementia, bliss."
     
     current_mood = mood
     current_system_prompt = sheo_data.MOOD_PROMPTS[mood]
@@ -549,7 +549,7 @@ SHEO_TOOLS_DEFINITION = [
                 "parameters": {
                     "type": "OBJECT",
                     "properties": {
-                        "mood": {"type": "STRING", "enum": ["neutral", "mania", "dementia"], "description": "L'humeur à adopter"}
+                        "mood": {"type": "STRING", "enum": ["neutral", "mania", "dementia", "bliss"], "description": "L'humeur à adopter"}
                     },
                     "required": ["mood"]
                 }
@@ -607,7 +607,7 @@ OPENAI_TOOLS_DEFINITION = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "mood": {"type": "string", "enum": ["neutral", "mania", "dementia"]}
+                    "mood": {"type": "string", "enum": ["neutral", "mania", "dementia", "bliss"]}
                 },
                 "required": ["mood"]
             }
@@ -1153,7 +1153,7 @@ async def decret_cmd(ctx, target: discord.Member = None):
 async def mood_changer():
     """Change l'humeur de Sheogorath toutes les 5 minutes (bascule GARANTIE)."""
     global current_mood, current_system_prompt
-    moods = ["mania", "dementia", "neutral"]
+    moods = ["mania", "dementia", "neutral", "bliss"]
     old_mood = current_mood
     # Bascule garantie : on tire parmi les AUTRES humeurs → l'humeur change vraiment
     # à chaque tour (sinon random.choice retomberait 1 fois sur 3 sur la même).
@@ -1164,7 +1164,8 @@ async def mood_changer():
     mood_messages = {
         "mania": "🌈 MANIA ! Les couleurs explosent ! La joie règne ! (Prompt: CRÉATIF/JOYEUX)",
         "dementia": "🌑 DÉMENCE... Les ténèbres murmurent... La paranoïa grandit... (Prompt: SOMBRE/CRUEL)",
-        "neutral": "⚖️ Équilibre retrouvé. Entre folie et folie. Toujours la folie. (Prompt: CLASSIQUE)"
+        "neutral": "⚖️ Équilibre retrouvé. Entre folie et folie. Toujours la folie. (Prompt: CLASSIQUE)",
+        "bliss": "🎁 BLISS ! Une euphorie joviale et chaleureuse s'installe... (Prompt: JOVIAL/LUCIDE)"
     }
     
     if old_mood != current_mood:
@@ -2238,11 +2239,16 @@ async def on_message(message):
     
     # Determine length adaptation
     if routing["type"] == RequestType.REPARTEE:
-        max_tokens_val = 160   # une riposte qui monte (« Ah... MOT... puis la gifle ») ne doit pas être clippée
-        max_sentences_val = 4  # filet : les « ... » comptaient comme des phrases → la vraie morsure était guillotinée. Le prompt garde la répartie sèche.
+        # Ancien mode « répartie sèche » (160t/4ph) : APLATISSAIT Sheo quand on l'interpellait
+        # (banter/name-spam → one-liner plat), alors que Twitch — sans ce clamp — le laissait
+        # respirer en conteur théâtral. On aligne : mêmes plafonds que le chemin riche, et c'est le
+        # PROMPT qui décide sec-vs-théâtral (règle FACE À UNE ATTAQUE = morsure courte sur vraie
+        # insulte ; EXCEPTION DU CONTEUR = digression ravie sur banter). Le cap n'est qu'un filet.
+        max_tokens_val = 260
+        max_sentences_val = 10  # filet large : n'attrape que l'emballement, jamais un conteur/double-sens dense
     else:
         max_tokens_val = 260   # assez pour une tirade dense qui monte sans clipper
-        max_sentences_val = 6  # filet anti-déraillage, PAS outil de mise en forme (la densité vient du prompt)
+        max_sentences_val = 10  # filet anti-déraillage, PAS outil de mise en forme (la densité vient du prompt)
     
     for client_type, model_name in cascade:
         try:

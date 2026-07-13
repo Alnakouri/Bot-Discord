@@ -205,6 +205,7 @@ def _get_max_length(mood: str) -> int:
         "mania": 600,      # Mania : tirades rapides, plus de texte
         "dementia": 300,   # Dementia : phrases courtes, glaciales, menaçantes
         "neutral": 450,    # Neutre : équilibré
+        "bliss": 550,      # Bliss : jovial, anecdotes (exception du conteur)
     }.get(mood, 450)
 
 # ═══════════════════════════════════════════════════════════════
@@ -224,6 +225,10 @@ VOICE_MOOD_PARAMS = {
     "neutral": {
         "exaggeration": 0.95,   # Théâtral intense
         "cfg_weight": 0.25,     # Rythme dramatique marqué
+    },
+    "bliss": {
+        "exaggeration": 1.0,    # Très expressif (chaleureux et jovial)
+        "cfg_weight": 0.2,      # Rythme rapide, dynamique mais fluide (anecdotes)
     },
 }
 

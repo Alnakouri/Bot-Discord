@@ -16,6 +16,7 @@ def test_sheo_moods_exist_and_contain_placeholder():
     assert "neutral" in sheo_data.MOOD_PROMPTS
     assert "mania" in sheo_data.MOOD_PROMPTS
     assert "dementia" in sheo_data.MOOD_PROMPTS
+    assert "bliss" in sheo_data.MOOD_PROMPTS
     
     for mood, prompt in sheo_data.MOOD_PROMPTS.items():
         assert "{comebacks_placeholder}" in prompt, f"Mood {mood} prompt is missing the comebacks placeholder"
@@ -24,20 +25,25 @@ def test_sheo_moods_are_distinct():
     neutral = sheo_data.MOOD_PROMPTS["neutral"]
     mania = sheo_data.MOOD_PROMPTS["mania"]
     dementia = sheo_data.MOOD_PROMPTS["dementia"]
+    bliss = sheo_data.MOOD_PROMPTS["bliss"]
     
     assert neutral != mania
     assert neutral != dementia
+    assert neutral != bliss
     assert mania != dementia
+    assert mania != bliss
+    assert dementia != bliss
     
     # Check that they contain distinct comedy examples
     assert "[EXEMPLES DE RÉPARTIE (HUMEUR : NEUTRE)]" in neutral
     assert "[EXEMPLES DE RÉPARTIE (HUMEUR : MANIA)]" in mania
     assert "[EXEMPLES DE RÉPARTIE (HUMEUR : DEMENTIA)]" in dementia
+    assert "[EXEMPLES DE RÉPARTIE (HUMEUR : BLISS)]" in bliss
 
 import sheo_llm
 
 def test_no_tts_brackets_in_fewshot():
-    for name in ["COMEDY_EXAMPLES_NEUTRAL", "COMEDY_EXAMPLES_MANIA", "COMEDY_EXAMPLES_DEMENTIA"]:
+    for name in ["COMEDY_EXAMPLES_NEUTRAL", "COMEDY_EXAMPLES_MANIA", "COMEDY_EXAMPLES_DEMENTIA", "COMEDY_EXAMPLES_BLISS"]:
         val = getattr(sheo_data, name)
         for tag in ["[laugh]", "[chuckle]", "[sigh]", "[shout]"]:
             assert tag not in val.lower(), f"{name} contains forbidden TTS tag {tag}"
@@ -56,7 +62,7 @@ def test_sheo_tutoie():
     for trigger, reply in sheo_data.COMEBACK_POOL:
         assert not re.search(r"\b(vous|votre)\b", reply, re.IGNORECASE), f"COMEBACK_POOL reply contains vous/votre: {reply}"
     
-    for name in ["COMEDY_EXAMPLES_NEUTRAL", "COMEDY_EXAMPLES_MANIA", "COMEDY_EXAMPLES_DEMENTIA"]:
+    for name in ["COMEDY_EXAMPLES_NEUTRAL", "COMEDY_EXAMPLES_MANIA", "COMEDY_EXAMPLES_DEMENTIA", "COMEDY_EXAMPLES_BLISS"]:
         val = getattr(sheo_data, name)
         assert not re.search(r"\b(vous|votre)\b", val, re.IGNORECASE), f"{name} contains vous/votre: {val}"
 
@@ -78,10 +84,11 @@ def test_writing_rendering_prompts():
     # Verify PERSONALITY_BASE contains the RENDU ÉCRIT DE TON ÉTAT block
     assert "RENDU ÉCRIT DE TON ÉTAT" in sheo_data.PERSONALITY_BASE
     
-    # Verify NEUTRAL, MANIA, DEMENTIA mood prompts contain their respective instructions
+    # Verify NEUTRAL, MANIA, DEMENTIA, BLISS mood prompts contain their respective instructions
     neutral = sheo_data.MOOD_PROMPTS["neutral"]
     mania = sheo_data.MOOD_PROMPTS["mania"]
     dementia = sheo_data.MOOD_PROMPTS["dementia"]
+    bliss = sheo_data.MOOD_PROMPTS["bliss"]
     
     assert "casse NORMALE" in neutral
     assert "calme glacial" in neutral
@@ -92,4 +99,22 @@ def test_writing_rendering_prompts():
     assert "tu CHUCHOTES" in dementia
     assert "AUCUN cri" in dementia
     assert "AUCUNE majuscule" in dementia
+
+    assert "FOU JOVIAL & LUCIDE" in bliss
+    assert "casse normale et chaleureuse" in bliss
+
+
+def test_sheo_new_behaviors():
+    # Verify PERSONALITY_BASE is included in PERSONALITY_BLISS
+    assert sheo_data.PERSONALITY_BASE in sheo_data.PERSONALITY_BLISS
+    
+    # Verify transversal blocks Phase A (double-sens) and Phase B (conteur) are in PERSONALITY_BASE
+    assert "CAPRICE À DOUBLE SENS" in sheo_data.PERSONALITY_BASE
+    assert "EXCEPTION DU CONTEUR" in sheo_data.PERSONALITY_BASE
+    
+    # Verify they are therefore in all 4 moods
+    for mood, prompt in sheo_data.MOOD_PROMPTS.items():
+        assert "CAPRICE À DOUBLE SENS" in prompt, f"Mood {mood} prompt is missing Phase A block"
+        assert "EXCEPTION DU CONTEUR" in prompt, f"Mood {mood} prompt is missing Phase B block"
+
 
