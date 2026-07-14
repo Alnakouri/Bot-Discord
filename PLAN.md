@@ -1,118 +1,115 @@
-# PLAN — Dashboard UX pass : garde-fous + feedback honnête + cohérence visuelle
+# PLAN — Sheo : la longueur obéit au message reçu, pas à l'humeur (+ écho cité banni)
 
 > Antigravity exécute. Claude a rédigé (2026-07-14).
-> Cibles : `dashboard/frontend/js/app.js`, `dashboard/frontend/index.html`,
-> `dashboard/frontend/css/dashboard.css`. AUCUN changement backend.
-> Repérer par CONTENU (noms de fonctions, textes cités), pas par numéro de ligne figé.
+> Cibles : `Sheogorath/sheo_data.py`, `Sheogorath/sheo_llm.py`, `shared/twitch/llm.py`,
+> + tests. Repérer par CONTENU (phrases citées), pas par numéro de ligne.
 
-## Contexte
+## Contexte / retour user (test live 2026-07-14, ~23:35)
 
-Audit ergonomie/design 2026-07-14. Le socle est bon (design system cohérent, bot-first,
-toasts, re-render différentiel). Trois problèmes :
-1. **Aucune confirmation sur les actions destructives bots** — alors que `confirmDialog`
-   (Promise, overlay stylé) EXISTE déjà dans `app.js` (~l.34, CSS `confirm-overlay`/`confirm-box`
-   présents) et n'est utilisée QUE pour 2 actions Twitch (bulk enable/disable, suppression
-   d'abonnement). « Arrêter Tous les Bots » = 1 clic sans filet.
-2. **Feedback mensonger après sauvegarde** : les configs Twitch ne s'appliquent qu'au
-   redémarrage du bot (note en `opacity:0.6` sous les boutons), mais le toast de succès dit
-   « enregistré avec succès ! » → l'utilisateur croit que c'est actif.
-3. **Incohérences visuelles** : 3 fonds d'input différents (`#161a24`, `#111520`, `#0b0d14`)
-   pour le même rôle, ~200 styles inline, 2 restes de renommage.
+User à Sheo : « tu parle trop ». Résultat sur les DEUX canaux : tirade de 6+ phrases
+(bocal, papillons, bibliothèque…) ouvrant par l'écho cité « Oh, "tu parles trop" ? ».
+Décision user : **« la longueur de sa réponse doit dépendre de la pertinence : si une
+réponse longue est nécessaire pour bien répondre, soit ; sinon une réponse courte est
+préférable »** — toujours cohérent avec le message reçu ET avec sa personnalité.
 
-## Phase A — Câbler `confirmDialog` sur les actions destructives
+Deux causes :
+1. Le prompt dit déjà LONGUEUR = PERTINENCE, mais l'humeur (bliss/mania + exception du
+   conteur) prend le dessus : le modèle traite une critique comme une invitation à briller.
+   Il manque la règle d'arbitrage : **le message reçu décide de la longueur, l'humeur ne
+   décide que du ton**.
+2. Le garde anti-écho (`_strip_echo_opening`, Discord + Twitch) ne coupe que l'écho HURLÉ
+   (MAJUSCULES). L'écho CITÉ entre guillemets (« "Tu parles trop" ? ») passe — et il est
+   sorti deux fois de suite en ouverture.
 
-Dans `app.js` :
+## Phase A — Règle d'arbitrage longueur dans `PERSONALITY_BASE` (`sheo_data.py`)
 
-1. `actionAllBots(action)` : en tête de fonction, AVANT toute mutation UI :
-   ```js
-   if (action === 'stop' && !await confirmDialog("Arrêter TOUS les bots ? Ils seront déconnectés de Discord et Twitch.")) return;
-   if (action === 'restart' && !await confirmDialog("Redémarrer TOUS les bots ? Coupure brève sur Discord et Twitch.")) return;
-   ```
-   (`start` reste sans confirmation : action non destructive.)
-2. `botAction(botId, action)` : confirmation UNIQUEMENT pour `stop` :
-   ```js
-   if (action === 'stop' && !await confirmDialog(`Arrêter le bot « ${botId} » ?`)) return;
-   ```
-   (`restart` individuel reste direct : opération courante, relance automatique.)
-3. `setDiscordFeatureAll('decret_enabled', false)` — la fonction générique
-   `setDiscordFeatureAll(feature, value)` : si `value === false`, demander
-   `confirmDialog("Désactiver cette fonctionnalité sur TOUS les bots ?")`.
+Dans le bloc « ⚡ RÈGLE D'OR », JUSTE APRÈS la puce « LONGUEUR = PERTINENCE… » existante,
+insérer :
 
-⚠️ `botAction` est appelée depuis du HTML généré (`onclick="botAction(...)"`) : elle doit
-rester sur `window.` et devenir/rester `async` (elle l'est déjà).
+```
+- ⚖️ QUI DÉCIDE DE LA LONGUEUR : le MESSAGE REÇU, jamais ton humeur. L'humeur colore le
+  TON (joyeux, glacial, jovial), pas le VOLUME. Avant de répondre, demande-toi : « que
+  faut-il pour bien répondre à ÇA ? » — et n'écris QUE ça.
+  * Pique courte, critique, ordre sec (« tu parles trop », « t'es nul », « tais-toi ») →
+    riposte COURTE : 1-2 phrases qui mordent, et tu te tais. Répondre à « tu parles trop »
+    par une tirade, c'est donner raison au mortel — humiliation suprême.
+  * Question précise → réponse qui répond, pas plus.
+  * Sujet riche, invitation à raconter, mortel de bonne compagnie → LÀ tu peux déployer
+    (conteur, tirade qui monte), tant que chaque phrase AJOUTE.
+- L'EXCEPTION DU CONTEUR ne s'applique JAMAIS à une critique ou une attaque, même en
+  humeur bliss/mania : bonne humeur ≠ immunité au tac-au-tac sec.
+```
 
-## Phase B — Toast « redémarrage requis » avec action
+Et dans le bloc « EXCEPTION DU CONTEUR » existant, remplacer la fin « Face à une attaque,
+tu restes sec : le conteur ne sort QUE quand tu t'amuses. » par : « Face à une attaque OU
+une critique (même taquine), tu restes sec — 1-2 phrases — quelle que soit ton humeur :
+le conteur ne sort QUE sur invitation, jamais en défense. »
 
-1. Nouvelle helper dans `app.js`, à côté de `window.toast` (même mécanique DOM/classes) :
-   ```js
-   window.toastAction = function(message, actionLabel, onAction, type = 'success') { ... }
-   ```
-   - Même rendu que `toast` + un `<button class="btn btn-primary btn-sm">` à droite.
-   - Durée d'affichage 10 s (au lieu de 4) ; clic sur l'action → callback + fermeture.
-   - Le message passe par `escapeHtml` (comme `toast`) ; le bouton est construit en DOM
-     (`createElement` + `addEventListener`), PAS en innerHTML avec le label interpolé.
-2. Remplacer le toast de succès des saves Twitch qui exigent un redémarrage —
-   `savePresenceSettings`, `saveChatChannels`, `saveCohostChannels`, `saveLinkCommands`,
-   `saveRewardsMapping`, `saveListenSettings` (toutes lisent `config-bot-select`) — par :
-   ```js
-   toastAction("Enregistré — sera appliqué au redémarrage du bot.",
-               "Redémarrer maintenant", () => botAction(botId, 'restart'));
-   ```
-   (le `botId` est déjà une variable locale dans chacune de ces fonctions).
-3. `saveTwitchBotSettings` (annonces) : si le polling des annonces est relu à chaud par
-   l'announcer, garder le toast simple ; sinon même traitement. En cas de doute (ne pas
-   fouiller le backend) : même traitement `toastAction`, c'est sans danger.
-4. Dans `index.html`, raccourcir les 5+ notes répétées
-   « ⚠️ Les changements s'appliquent au redémarrage du bot. » → les GARDER mais en une
-   forme brève « ⚠️ Appliqué au redémarrage du bot. » (l'info principale vit désormais
-   dans le toast).
+## Phase B — 2 few-shot « critique → sec » (ancrage)
 
-## Phase C — Harmoniser les inputs (un seul fond, des classes)
+1. `COMEDY_EXAMPLES_BLISS` : AJOUTER un exemple (c'est en bliss qu'il a dérapé) :
+```
+User: Tu parles trop.
+Sheogorath: <thought>Critique sèche. Même en bliss : riposte courte, pas de tirade.</thought>
+Et toi pas assez — c'est pour ça que je comble. Chut, écoute le maître. 😏
+```
+2. `COMEDY_EXAMPLES_MANIA` : AJOUTER :
+```
+User: Abrège.
+Sheogorath: <thought>Ordre sec. Riposte courte et cinglante, pas de feu d'artifice.</thought>
+Abréger le divin ? Je t'abrégerai TOI, ça ira plus vite. HAHA ! 🔪
+```
 
-1. `dashboard.css` : ajouter un token `--input-bg: #111520;` dans `:root` et étendre les
-   classes existantes :
-   - `.form-input` (existe déjà) : s'assurer qu'elle couvre `background: var(--input-bg)`,
-     bordure `var(--border-glass)`, couleur, padding, radius.
-   - Créer `.form-select` et `.form-textarea` sur le même socle (le `<textarea>` garde
-     `resize: vertical`).
-   - Ajouter un état focus commun : `.form-input:focus, .form-select:focus,
-     .form-textarea:focus { border-color: var(--accent); outline: none; }` (le focus
-     `.form-input:focus` existe déjà — l'étendre aux 3).
-2. `index.html` : remplacer les styles inline des `input/select/textarea` de la section
-   `bot-config` (fonds `#161a24`, `#111520`, `#0b0d14`) par ces classes. NE PAS chercher
-   à éliminer TOUS les styles inline du fichier (hors périmètre) : SEULEMENT les champs
-   de formulaire, qui sont l'incohérence visible.
-3. Le champ mot de passe du login (`#login-password`, fond `#161a24` inline) : passer sur
-   `.form-input` aussi.
+## Phase C — Garde anti-écho : couper aussi l'écho CITÉ (Discord + Twitch)
 
-## Phase D — Restes de renommage (2 fixes)
+Dans `Sheogorath/sheo_llm.py::_strip_echo_opening` ET son jumeau générique
+`shared/twitch/llm.py::_strip_echo_opening` (même logique aux deux endroits, parité) :
 
-1. `index.html`, filtre logs : `<option value="johnny">Johnny Silverbot</option>` →
-   `Johnny Silverhand`.
-2. `dashboard.css` : `--onizuka: #0ea5e9;` → `--sugar: #0ea5e9;` + mettre à jour toute
-   utilisation (`grep -rn "onizuka" dashboard/frontend/` doit finir à 0 ; vérifier aussi
-   `app.js` et `charts.js` au cas où la couleur est référencée côté JS).
+À côté de `is_shouted_echo` (tokens MAJUSCULES qui échotent), ajouter la détection
+`is_quoted_echo` : la tête de phrase contient, ENTRE guillemets (`"…"`, `«…»`, `“…”`,
+`'…'`), un segment dont les mots significatifs (≥3 lettres, hors `_ECHO_STOPWORDS`,
+normalisés via `_norm`) sont TOUS des mots du message du mortel. Alors :
 
-## Phase E (optionnelle, si le reste est vert) — Focus clavier + statut système réel
+```python
+quoted_segments = re.findall(r"[\"«“‘'](.+?)[\"»”’']", head)
+is_quoted_echo = any(
+    (sig := {w for w in re.findall(r"\w+", _norm(seg)) if len(w) >= 3} - _ECHO_STOPWORDS)
+    and sig <= user_words
+    for seg in quoted_segments
+)
+```
 
-1. Focus visible global : `button:focus-visible, li[data-target]:focus-visible {
-   outline: 2px solid var(--accent); outline-offset: 2px; }`.
-2. « Système Normal » (bas de sidebar) : refléter l'état réel déjà connu du front —
-   dans la boucle de refresh (`refreshAllData`/`renderBotsGrid`), si au moins un bot
-   attendu est `stopped` → pastille orange + « X/6 bots actifs » ; si tous up → vert
-   « Système Normal ». Pas de nouvel appel API : réutiliser les données du polling existant.
+et étendre la condition : `if not (is_interjection or is_shouted_echo or is_quoted_echo): break`.
+
+⚠️ Conserver TOUTES les protections existantes : jamais sur un cri intégral ALL CAPS,
+jamais si le reste < 15 caractères, casse re-capitalisée, max_strips inchangé. L'écho en
+casse normale SANS guillemets (« Des pâtes ? ») reste PERMIS (canon) — seul l'écho
+GUILLEMETÉ du message est coupé.
+
+## Phase D — Tests
+
+1. `tests/test_sheo_anti_tic.py` : étendre (les imports existent déjà) :
+   - « "Tu parles trop" ? Mais mon cher pirate… la suite. » + msg « tu parle trop » →
+     l'ouverture citée saute, la suite reste.
+   - « Oh, "tu parles trop" ? Haha ! Toi qui m'invoques… » → idem (interjection + citation).
+   - « Des pâtes ? Sans la moindre meule… » + msg « j'ai mangé des pâtes » → INTACT
+     (écho casse normale sans guillemets = permis).
+   - « "Nul" ? C'est petit. » + msg « t'es nul » → INTACT si la coupe laisse < 15 car.
+2. Miroir Twitch dans `tests/test_twitch_antimould.py` (ou fichier des gardes Twitch
+   existant) : mêmes cas sur `shared/twitch/llm.py::_strip_echo_opening`.
+3. `tests/test_sheo_moods.py` : asserts prompt — « QUI DÉCIDE DE LA LONGUEUR » présent
+   dans `PERSONALITY_BASE` ; « jamais en défense » présent (exception conteur resserrée).
 
 ## Garde-fous
 
-- AUCUN changement backend (`dashboard/backend/`) : chantier 100 % front.
-- Ne pas toucher à la logique de polling/WebSocket logs, ni au re-render différentiel des
-  cartes bots (il est bon).
-- `confirmDialog` existante : ne pas la réécrire, juste l'UTILISER.
-- Tester à la main après (pas de suite front automatisée) : `start_dashboard.bat`, puis
-  vérifier : (1) « Arrêter tous » → modale ; Annuler → rien ne se passe ; (2) sauvegarde
-  d'une config Twitch → toast avec bouton « Redémarrer maintenant » fonctionnel ;
-  (3) les inputs de bot-config ont tous le même fond ; (4) plus aucun « onizuka » ni
-  « Silverbot » dans le front. GOTCHA connu : relancer `start_dashboard.bat` après modif
-  backend — ici front only, un refresh navigateur (Ctrl+F5, cache) suffit.
-- Suite pytest : rien à casser (front pur), mais lancer `python -m pytest tests/ -q` par
-  acquit (210 verts attendus).
+- Ne PAS toucher aux plafonds (`max_tokens` 340, filet 10 phrases, Twitch 120t/480c) :
+  la longueur se joue dans le PROMPT, les filets restent des filets.
+- Ne PAS toucher aux 4 humeurs ni au reste du postprocess.
+- Suite : `python -m pytest tests/ -q` verte (210+ avant chantier).
+
+## Déploiement + test live (après commit)
+
+`docker compose up -d --build --force-recreate sheogorath` (shared/ touché → --build).
+Sondes : « tu parles trop » (Discord ET Twitch, en bliss si possible) → 1-2 phrases, sans
+écho cité en ouverture · « raconte-moi une histoire » → le conteur peut se déployer ·
+« j'ai mangé des pâtes » → la réflexion « Des pâtes ? » reste permise.

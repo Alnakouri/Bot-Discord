@@ -79,3 +79,22 @@ def test_non_echo_opening_untouched():
 def test_empty_inputs():
     assert _strip_echo_opening("", "insulte") == ""
     assert _strip_echo_opening("Une réponse.", "") == "Une réponse."
+
+
+def test_quoted_echo_stripped():
+    reply = '« "Tu parles trop" ? Mais mon cher pirate… la suite de ton voyage approche. »'
+    out = _strip_echo_opening(reply, "tu parle trop")
+    assert "Mais mon cher" in out
+    assert "tu parles trop" not in out.lower()
+
+    reply = 'Oh, "tu parles trop" ? Haha ! Toi qui m\'invoques pour râler.'
+    out = _strip_echo_opening(reply, "tu parles trop")
+    assert "Toi qui m'invoques" in out
+    assert "tu parles trop" not in out.lower()
+
+    reply = "Des pâtes ? Sans la moindre meule…"
+    assert _strip_echo_opening(reply, "j'ai mangé des pâtes") == reply
+
+    reply = '"Nul" ? C\'est petit.'
+    assert _strip_echo_opening(reply, "t'es nul") == reply
+

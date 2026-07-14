@@ -92,7 +92,15 @@ def _strip_echo_opening(reply: str, user_message: str, max_strips: int = 2) -> s
         # Tête = HURLE un mot du viewer (token EN MAJUSCULES ≥ 3 lettres qui échote) ?
         caps_tokens = re.findall(r"[A-ZÀ-ÖØ-Þ]{3,}", head)
         is_shouted_echo = bool({_norm(t) for t in caps_tokens} & user_words)
-        if not (is_interjection or is_shouted_echo):
+        # Tête = contient une citation en écho du mortel ?
+        raw_matches = re.findall(r'"([^"]+?)"|«([^»]+?)»|“([^”]+?)”|‘([^’]+?)’|\'([^\']+?)\'', head)
+        quoted_segments = [seg for tup in raw_matches for seg in tup if seg]
+        is_quoted_echo = any(
+            (sig := {w for w in re.findall(r"\w+", _norm(seg)) if len(w) >= 3} - _ECHO_STOPWORDS)
+            and all(any(w.startswith(uw) or uw.startswith(w) for uw in user_words) for w in sig)
+            for seg in quoted_segments
+        )
+        if not (is_interjection or is_shouted_echo or is_quoted_echo):
             break
         if len(rest) < 15:
             break

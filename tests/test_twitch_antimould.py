@@ -117,6 +117,23 @@ class TestStripEchoOpening(unittest.TestCase):
         self.assertEqual(_strip_echo_opening("", "insulte"), "")
         self.assertEqual(_strip_echo_opening("Une réponse.", ""), "Une réponse.")
 
+    def test_quoted_echo_stripped(self):
+        reply = '« "Tu parles trop" ? Mais mon cher pirate… la suite de ton voyage approche. »'
+        out = _strip_echo_opening(reply, "tu parle trop")
+        self.assertIn("Mais mon cher", out)
+        self.assertNotIn("tu parles trop", out.lower())
+
+        reply = 'Oh, "tu parles trop" ? Haha ! Toi qui m\'invoques pour râler.'
+        out = _strip_echo_opening(reply, "tu parles trop")
+        self.assertIn("Toi qui m'invoques", out)
+        self.assertNotIn("tu parles trop", out.lower())
+
+        reply = "Des pâtes ? Sans la moindre meule…"
+        self.assertEqual(_strip_echo_opening(reply, "j'ai mangé des pâtes"), reply)
+
+        reply = '"Nul" ? C\'est petit.'
+        self.assertEqual(_strip_echo_opening(reply, "t'es nul"), reply)
+
 
 if __name__ == "__main__":
     unittest.main()

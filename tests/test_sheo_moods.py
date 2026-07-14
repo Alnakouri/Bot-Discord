@@ -118,3 +118,8 @@ def test_sheo_new_behaviors():
         assert "EXCEPTION DU CONTEUR" in prompt, f"Mood {mood} prompt is missing Phase B block"
 
 
+def test_sheo_length_rules():
+    assert "QUI DÉCIDE DE LA LONGUEUR" in sheo_data.PERSONALITY_BASE
+    assert "jamais en défense" in sheo_data.PERSONALITY_BASE
+
+
