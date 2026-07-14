@@ -31,6 +31,46 @@ window.toast = function(message, type = 'info') {
     }, 4000);
 };
 
+window.toastAction = function(message, actionLabel, onAction, type = 'success') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const t = document.createElement('div');
+    t.className = `toast toast-${type} glass`;
+    
+    let icon = 'fa-circle-info';
+    if (type === 'success') icon = 'fa-circle-check';
+    if (type === 'error') icon = 'fa-circle-exclamation';
+    
+    const content = document.createElement('span');
+    content.innerHTML = `<i class="fa-solid ${icon}" style="margin-right: 8px;"></i>${escapeHtml(message)}`;
+    t.appendChild(content);
+    
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary btn-sm';
+    btn.textContent = actionLabel;
+    btn.style.marginLeft = 'auto';
+    btn.addEventListener('click', () => {
+        onAction();
+        t.classList.remove('show');
+        setTimeout(() => t.remove(), 300);
+    });
+    t.appendChild(btn);
+    
+    container.appendChild(t);
+    
+    setTimeout(() => t.classList.add('show'), 10);
+    
+    setTimeout(() => {
+        t.classList.remove('show');
+        setTimeout(() => t.remove(), 300);
+    }, 10000);
+};
+
 window.confirmDialog = function(message) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -287,6 +327,7 @@ window.updateDiscordFeature = async function(botId, featureName, value) {
 };
 
 window.setDiscordFeatureAll = async function(featureName, value) {
+    if (value === false && !await confirmDialog("Désactiver cette fonctionnalité sur TOUS les bots ?")) return;
     try {
         const res = await fetch(`${API_BASE}/features/all`, {
             method: "PUT",
@@ -453,6 +494,19 @@ async function fetchBotsStatus() {
         
         const activeCount = bots.filter(b => b.status === 'running').length;
         document.getElementById('stat-active-bots').textContent = `${activeCount} / ${bots.length}`;
+        
+        const indicatorEl = document.getElementById('system-status-indicator');
+        const textEl = document.getElementById('system-status-text');
+        if (indicatorEl && textEl) {
+            const hasStoppedBot = bots.some(b => b.status !== 'running');
+            if (hasStoppedBot) {
+                indicatorEl.className = 'status-indicator warning';
+                textEl.textContent = `${activeCount}/${bots.length} bots actifs`;
+            } else {
+                indicatorEl.className = 'status-indicator online';
+                textEl.textContent = 'Système Normal';
+            }
+        }
     } catch(e) {
         console.error("Bots fetch error:", e);
     }
@@ -561,6 +615,7 @@ function renderBotsGrid(bots) {
 
 // --- BOT ACTIONS ---
 window.botAction = async function(botId, action) {
+    if (action === 'stop' && !await confirmDialog(`Arrêter le bot « ${botId} » ?`)) return;
     try {
         const res = await fetch(`${API_BASE}/bots/${botId}/${action}`, { method: 'POST' });
         const data = await res.json();
@@ -575,6 +630,8 @@ window.botAction = async function(botId, action) {
 }
 
 window.actionAllBots = async function(action) {
+    if (action === 'stop' && !await confirmDialog("Arrêter TOUS les bots ? Ils seront déconnectés de Discord et Twitch.")) return;
+    if (action === 'restart' && !await confirmDialog("Redémarrer TOUS les bots ? Coupure brève sur Discord et Twitch.")) return;
     const bots = Object.keys(BOT_REGISTRY_JS);
     let successCount = 0;
     
@@ -961,7 +1018,7 @@ function renderTwitchBotView() {
         sheogorath: "🧀 Sheogorath",
         maiq: "🐱 M'aiq le Menteur",
         alfred: "☕ Alfred Pennyworth",
-        johnny: "🔫 Johnny Silverbot",
+        johnny: "🔫 Johnny Silverhand",
         sugar: "Sugar Bot",
         malena: "💃 Malena la Gitana"
     };
@@ -1023,7 +1080,8 @@ window.saveTwitchBotSettings = async function() {
         });
         
         if (res.ok) {
-            toast("Paramètres enregistrés avec succès !", 'success');
+            toastAction("Enregistré — sera appliqué au redémarrage du bot.",
+                        "Redémarrer maintenant", () => botAction(botId, 'restart'));
             await loadTwitchConfig();
         } else {
             const data = await res.json();
@@ -1207,7 +1265,8 @@ window.savePresenceSettings = async function() {
             body: JSON.stringify({ events, interjections, greetings, viewer_memory, game_qa, eventsub })
         });
         if (res.ok) {
-            toast("Configuration de présence enregistrée avec succès !", 'success');
+            toastAction("Enregistré — sera appliqué au redémarrage du bot.",
+                        "Redémarrer maintenant", () => botAction(botId, 'restart'));
             await loadTwitchPresence();
         } else {
             const data = await res.json();
@@ -1231,7 +1290,8 @@ window.saveChatChannels = async function() {
         });
         if (res.ok) {
             const data = await res.json();
-            toast("Chaînes de chat enregistrées avec succès !", 'success');
+            toastAction("Enregistré — sera appliqué au redémarrage du bot.",
+                        "Redémarrer maintenant", () => botAction(botId, 'restart'));
             document.getElementById('presence-chat-channels').value = (data.chat_channels || []).join(', ');
         } else {
             const data = await res.json();
@@ -1255,7 +1315,8 @@ window.saveCohostChannels = async function() {
         });
         if (res.ok) {
             const data = await res.json();
-            toast("Chaînes co-host enregistrées avec succès !", 'success');
+            toastAction("Enregistré — sera appliqué au redémarrage du bot.",
+                        "Redémarrer maintenant", () => botAction(botId, 'restart'));
             document.getElementById('presence-cohost-channels').value = (data.cohost_channels || []).join(', ');
         } else {
             const data = await res.json();
@@ -1332,7 +1393,8 @@ window.saveLinkCommands = async function() {
         });
         if (res.ok) {
             const data = await res.json();
-            toast("Commandes de liens enregistrées avec succès !", 'success');
+            toastAction("Enregistré — sera appliqué au redémarrage du bot.",
+                        "Redémarrer maintenant", () => botAction(botId, 'restart'));
             renderLinksTable(data.link_commands);
         } else {
             const data = await res.json();
@@ -1419,7 +1481,8 @@ window.saveRewardsMapping = async function() {
             body: JSON.stringify(currentRewardMap)
         });
         if (res.ok) {
-            toast("Mappage des récompenses enregistré avec succès !", 'success');
+            toastAction("Enregistré — sera appliqué au redémarrage du bot.",
+                        "Redémarrer maintenant", () => botAction(botId, 'restart'));
             await loadTwitchEvents();
         } else {
             const data = await res.json();
@@ -1507,7 +1570,8 @@ window.saveListenSettings = async function() {
             body: JSON.stringify({ enabled, mode, device, chunk_ms, min_interval })
         });
         if (res.ok) {
-            toast("Configuration d'écoute micro enregistrée avec succès !", 'success');
+            toastAction("Enregistré — sera appliqué au redémarrage du bot.",
+                        "Redémarrer maintenant", () => botAction(botId, 'restart'));
             await loadTwitchListen();
         } else {
             const data = await res.json();

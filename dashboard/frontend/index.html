@@ -30,7 +30,7 @@
             </h2>
             <p style="margin:0;opacity:.7;font-size:.9em;">Dashboard de contrôle des bots</p>
             <input type="password" id="login-password" placeholder="Mot de passe" autocomplete="current-password"
-                   style="padding:12px;border-radius:8px;border:1px solid #334;background:#161a24;color:#fff;">
+                   class="form-input">
             <button type="submit" class="btn btn-primary"><i class="fa-solid fa-right-to-bracket"></i> Se connecter</button>
             <div id="login-error" style="color:#ff6b6b;font-size:.85em;min-height:1em;"></div>
         </form>
@@ -58,8 +58,8 @@
         </ul>
         
         <div class="system-status">
-            <div class="status-indicator online"></div>
-            <span>Système Normal</span>
+            <div id="system-status-indicator" class="status-indicator online"></div>
+            <span id="system-status-text">Système Normal</span>
         </div>
 
         <button id="btn-logout" class="btn btn-outline" style="margin-top:12px;width:100%;" onclick="logout()">
@@ -149,7 +149,7 @@
                         <option value="sheogorath">Sheogorath</option>
                         <option value="maiq">M'aiq</option>
                         <option value="alfred">Alfred</option>
-                        <option value="johnny">Johnny Silverbot</option>
+                        <option value="johnny">Johnny Silverhand</option>
                         <option value="sugar">Sugar Bot</option>
                         <option value="malena">Malena</option>
                     </select>
@@ -298,7 +298,7 @@
                 <div class="glass" style="padding: 1.5rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; border-color: rgba(255,255,255,0.05);">
                     <div class="form-group" style="margin: 0; min-width: 250px;">
                         <label for="config-bot-select" style="display:block; margin-bottom: 8px; font-weight:500;">🤖 Sélectionner un Bot</label>
-                        <select id="config-bot-select" onchange="onConfigBotSelect()" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-glass); background: #161a24; color: #fff; cursor: pointer; font-size: 1em;">
+                        <select id="config-bot-select" onchange="onConfigBotSelect()" class="form-select" style="cursor: pointer; font-size: 1em;">
                             <!-- Options injectées dynamiquement en JS -->
                         </select>
                     </div>
@@ -390,7 +390,7 @@
                                 <i class="fa-solid fa-floppy-disk"></i> Enregistrer la configuration
                             </button>
                             <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
-                                ⚠️ Les changements s'appliquent au redémarrage du bot.
+                                ⚠️ Appliqué au redémarrage du bot.
                             </span>
                         </div>
 
@@ -400,13 +400,13 @@
                                 Liste des chaînes Twitch où le bot doit se connecter pour chatter (séparées par des virgules ou des retours à la ligne). Si vide, le bot utilise les chaînes de l'environnement (TWITCH_CHAT_CHANNELS).
                             </p>
                             <div class="form-group" style="margin-bottom: 1.5rem;">
-                                <textarea id="presence-chat-channels" rows="3" placeholder="Ex: streamer1, streamer2" style="width:100%; padding:10px; border-radius:8px; background:#111520; border:1px solid var(--border-glass); color:#fff; font-family:inherit; resize:vertical;"></textarea>
+                                <textarea id="presence-chat-channels" rows="3" placeholder="Ex: streamer1, streamer2" class="form-textarea"></textarea>
                             </div>
                             <button class="btn btn-primary" onclick="saveChatChannels()" style="padding: 10px 20px;">
                                 <i class="fa-solid fa-floppy-disk"></i> Enregistrer les chaînes
                             </button>
                             <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
-                                ⚠️ Les changements s'appliquent au redémarrage du bot.
+                                ⚠️ Appliqué au redémarrage du bot.
                             </span>
                         </div>
 
@@ -416,13 +416,13 @@
                                 Liste des chaînes Twitch où le bot peut répondre passivement (sans mention) aux questions jeu (séparées par des virgules ou des retours à la ligne).
                             </p>
                             <div class="form-group" style="margin-bottom: 1.5rem;">
-                                <textarea id="presence-cohost-channels" rows="2" placeholder="Ex: streamer1, streamer2" style="width:100%; padding:10px; border-radius:8px; background:#111520; border:1px solid var(--border-glass); color:#fff; font-family:inherit; resize:vertical;"></textarea>
+                                <textarea id="presence-cohost-channels" rows="2" placeholder="Ex: streamer1, streamer2" class="form-textarea"></textarea>
                             </div>
                             <button class="btn btn-primary" onclick="saveCohostChannels()" style="padding: 10px 20px;">
                                 <i class="fa-solid fa-floppy-disk"></i> Enregistrer les co-hosts
                             </button>
                             <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
-                                ⚠️ Les changements s'appliquent au redémarrage du bot.
+                                ⚠️ Appliqué au redémarrage du bot.
                             </span>
                         </div>
 
@@ -457,7 +457,7 @@
                                 </button>
                             </div>
                             <span style="display:block; font-size:0.85em; opacity:0.6; margin-top:8px;">
-                                ⚠️ Placeholder <code>{url}</code> supporté dans le message. Les changements s'appliquent au redémarrage du bot.
+                                ⚠️ Placeholder <code>{url}</code> supporté dans le message. Appliqué au redémarrage du bot.
                             </span>
                         </div>
                     </div>
@@ -492,11 +492,11 @@
                             <div class="glass" style="padding: 1rem; border-color: rgba(255,255,255,0.05); display: flex; gap: 12px; align-items: flex-end;">
                                 <div class="form-group" style="flex:1;">
                                     <label style="font-size:0.85em; display:block; margin-bottom:6px;">Titre de la récompense</label>
-                                    <input type="text" id="add-reward-title" placeholder="Ex: Décret de la Folie" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                    <input type="text" id="add-reward-title" placeholder="Ex: Décret de la Folie" class="form-input">
                                 </div>
                                 <div class="form-group" style="flex:1;">
                                     <label style="font-size:0.85em; display:block; margin-bottom:6px;">Action / Commande</label>
-                                    <input type="text" id="add-reward-action" placeholder="Ex: decret" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                    <input type="text" id="add-reward-action" placeholder="Ex: decret" class="form-input">
                                 </div>
                                 <button class="btn btn-primary" onclick="addRewardMapping()" style="padding: 9px 16px;"><i class="fa-solid fa-plus"></i> Ajouter</button>
                             </div>
@@ -554,7 +554,7 @@
                             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.2rem; margin-bottom:1.5rem;">
                                 <div class="form-group">
                                     <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Mode ASR</label>
-                                    <select id="listen-mode" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                    <select id="listen-mode" class="form-select">
                                         <option value="A">NIM (Docker localhost)</option>
                                         <option value="B">NeMo (Python WSL2)</option>
                                         <option value="C">Whisper (Local CPU/GPU)</option>
@@ -562,14 +562,14 @@
                                 </div>
                                 <div class="form-group">
                                     <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Calcul ASR</label>
-                                    <select id="listen-device" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                    <select id="listen-device" class="form-select">
                                         <option value="cpu">CPU</option>
                                         <option value="cuda">GPU (CUDA)</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
                                     <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Taille du Chunk (ms)</label>
-                                    <select id="listen-chunk" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                    <select id="listen-chunk" class="form-select">
                                         <option value="80">80 ms</option>
                                         <option value="160">160 ms</option>
                                         <option value="560">560 ms</option>
@@ -581,7 +581,7 @@
                             <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; margin-bottom:1.5rem;">
                                 <div class="form-group">
                                     <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Intervalle min entre réponses (s)</label>
-                                    <input type="number" id="listen-min-interval" min="10" value="45" style="width:100%; padding:8px; border-radius:6px; background:#111520; border:1px solid var(--border-glass); color:#fff;">
+                                    <input type="number" id="listen-min-interval" min="10" value="45" class="form-input">
                                 </div>
                             </div>
 
@@ -612,15 +612,15 @@
                               <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end;">
                                 <div class="form-group">
                                   <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Chaîne Twitch (Nom ou URL)</label>
-                                  <input type="text" id="twitch-all-login" placeholder="Ex: ninja" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
+                                  <input type="text" id="twitch-all-login" placeholder="Ex: ninja" class="form-input">
                                 </div>
                                 <div class="form-group">
                                   <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Salon Discord (ID ou lien)</label>
-                                  <input type="text" id="twitch-all-channel" placeholder="ID ou lien Discord" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
+                                  <input type="text" id="twitch-all-channel" placeholder="ID ou lien Discord" class="form-input">
                                 </div>
                                 <div class="form-group">
                                   <label style="display:block; margin-bottom:6px; font-weight:500; font-size:0.85em;">Message (optionnel)</label>
-                                  <input type="text" id="twitch-all-message" placeholder="Vide = message IA auto" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-glass); background:#111520; color:#fff;">
+                                  <input type="text" id="twitch-all-message" placeholder="Vide = message IA auto" class="form-input">
                                 </div>
                                 <button class="btn btn-primary" onclick="addTwitchSubscriptionAll()" style="padding:11px 16px; white-space:nowrap;"><i class="fa-solid fa-plus-circle"></i> Ajouter à tous</button>
                               </div>
@@ -639,7 +639,7 @@
                                     </label>
                                     <div style="display: flex; align-items: center; gap: 8px;">
                                         <label for="twitch-bot-interval" style="font-size:0.9em; font-weight:500;">Polling (sec) :</label>
-                                        <input type="number" id="twitch-bot-interval" min="60" value="90" style="width: 80px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-glass); background: #111520; color: #fff;">
+                                        <input type="number" id="twitch-bot-interval" min="60" value="90" class="form-input" style="width: 80px;">
                                     </div>
                                     <button class="btn btn-primary" onclick="saveTwitchBotSettings()" style="padding: 10px 20px;">
                                         <i class="fa-solid fa-floppy-disk"></i> Enregistrer
@@ -664,12 +664,12 @@
                                     
                                     <div class="form-group" style="margin-bottom: 1.2rem;">
                                         <label for="twitch-add-login" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Chaîne Twitch (Nom ou URL)</label>
-                                        <input type="text" id="twitch-add-login" placeholder="Ex: ninja ou https://twitch.tv/ninja" style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff;">
+                                        <input type="text" id="twitch-add-login" placeholder="Ex: ninja ou https://twitch.tv/ninja" class="form-input">
                                     </div>
 
                                     <div class="form-group" style="margin-bottom: 1.2rem;">
                                         <label for="twitch-add-channel" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Salon Discord (ID ou lien)</label>
-                                        <input type="text" id="twitch-add-channel" placeholder="Ex: 112233445566778899 ou https://discord.com/channels/.../..." style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff;">
+                                        <input type="text" id="twitch-add-channel" placeholder="Ex: 112233445566778899 ou https://discord.com/channels/.../..." class="form-input">
                                         <span style="font-size:0.75em; opacity:0.6; display:block; margin-top:6px; line-height: 1.3;">
                                             Collez l'<b>ID du salon</b> (Mode Développeur > clic droit sur le salon > <i>Copier l'identifiant</i>) <b>ou</b> directement le lien Discord du salon : l'ID est extrait automatiquement.
                                         </span>
@@ -677,7 +677,7 @@
 
                                     <div class="form-group" style="margin-bottom: 1.5rem;">
                                         <label for="twitch-add-message" style="display:block; margin-bottom: 6px; font-weight:500; font-size: 0.9em;">Message personnalisé (optionnel)</label>
-                                        <textarea id="twitch-add-message" rows="3" placeholder="Ex: Hey ! {streamer} est en live ! Viens voir : {url}" style="width:100%; padding:10px; border-radius:8px; border: 1px solid var(--border-glass); background:#111520; color:#fff; font-family: inherit; resize: vertical; line-height: 1.4;"></textarea>
+                                        <textarea id="twitch-add-message" rows="3" placeholder="Ex: Hey ! {streamer} est en live ! Viens voir : {url}" class="form-textarea" style="line-height: 1.4;"></textarea>
                                         <span style="font-size:0.75em; opacity:0.6; display:block; margin-top:6px; line-height: 1.3;">
                                             Variables injectées : <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{streamer}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{title}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{game}</code>, <code style="background: rgba(255,255,255,0.1); padding: 1px 3px; border-radius: 3px;">{url}</code>
                                         </span>

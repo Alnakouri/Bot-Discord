@@ -8,7 +8,7 @@ const BOT_REGISTRY_JS = {
     "sheogorath": { name: "sheogorath", display: "🧀 Sheogorath", color: "#d946ef" },
     "maiq": { name: "maiq", display: "🐱 M'aiq le Menteur", color: "#f97316" },
     "alfred": { name: "alfred", display: "☕ Alfred Pennyworth", color: "#475569" },
-    "johnny": { name: "johnny", display: "🔫 Johnny Silverbot", color: "#22c55e" },
+    "johnny": { name: "johnny", display: "🔫 Johnny Silverhand", color: "#22c55e" },
     "sugar": { name: "sugar", display: "Sugar Bot", color: "#0ea5e9" },
     "malena": { name: "malena", display: "💃 Malena la Gitana", color: "#f43f5e" }
 };
