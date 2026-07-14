@@ -277,12 +277,12 @@ def get_smart_string_response(text, guild_id):
     
     # Détection de questions sur le savoir/faits
     elif any(w in text for w in ["sais tu", "savais tu", "fait", "anecdote", "culture", "apprends", "connaissance"]):
-        pool = sheo_data.SHEO_BRAIN["cheese_facts"]
+        pool = random.choice([sheo_data.SHEO_BRAIN["cheese_facts"], sheo_data.SHEO_BRAIN["madness"], sheo_data.SHEO_BRAIN["philosophy"]])
 
     # Par défaut : mélange aléatoire
     else:
-        # 10% de chance de sortir une anecdote fromagée random
-        if random.random() < 0.1:
+        # 5% de chance de sortir une anecdote fromagée random (le fromage est un condiment)
+        if random.random() < 0.05:
             pool = sheo_data.SHEO_BRAIN["cheese_facts"]
         else:
             pool = random.choice([sheo_data.SHEO_BRAIN["madness"], sheo_data.SHEO_BRAIN["insult"], sheo_data.SHEO_BRAIN["philosophy"]])
