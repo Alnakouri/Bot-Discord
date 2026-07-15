@@ -291,6 +291,17 @@ def postprocess_response(response_text, fact_brain, user_id, original_message, m
     return response_text
 
 
+def merge_recent_responses(*sources, limit=8):
+    """Fusionne des listes de réponses récentes (None-safe), dédoublonne en gardant l'ordre."""
+    seen, out = set(), []
+    for src in sources:
+        for r in (src or []):
+            if r and r not in seen:
+                seen.add(r)
+                out.append(r)
+    return out[-limit:]
+
+
 def build_anti_tic_consigne(recent_responses, n=5):
     """À partir des N dernières réponses, liste les AMORCES et CLÔTURES à éviter.
     Retourne un fragment de prompt (str), ou "" si rien d'exploitable."""

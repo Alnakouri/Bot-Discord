@@ -292,8 +292,18 @@ class LlmMixin:
         # sur ce salon et on lui interdit de les ressortir / les paraphraser.
         chan_lower = channel.lower()
         self_recent = self.recent_self_responses.get(chan_lower)
-        if self_recent:
-            snippets = [r[:80] + "…" if len(r) > 80 else r for r in list(self_recent)[-5:]]
+        # PONT INTER-CANAUX (optionnel) : un bot peut fournir ses dernières réponses
+        # émises AILLEURS (ex. Discord) pour que l'anti-répétition couvre les 2 canaux.
+        extra_recent = []
+        if getattr(self, "extra_recent_provider", None):
+            try:
+                extra_recent = list(self.extra_recent_provider() or [])
+            except Exception as e:
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] extra_recent_provider a échoué : {e}")
+        merged_recent = (list(self_recent) if self_recent else []) + extra_recent
+
+        if merged_recent:
+            snippets = [r[:80] + "…" if len(r) > 80 else r for r in list(merged_recent)[-8:]]
             anti_rep = "\n\n[ANTI-RÉPÉTITION ABSOLUE] Tu as déjà dit récemment :\n"
             for i, snip in enumerate(snippets, 1):
                 anti_rep += f"{i}. \"{snip}\"\n"
@@ -303,7 +313,7 @@ class LlmMixin:
             system_prompt += anti_rep
 
         # ANTI-TICS (parité Discord) : liste explicite des amorces/clôtures récentes à éviter.
-        anti_tic = _build_anti_tic_consigne(self_recent)
+        anti_tic = _build_anti_tic_consigne(merged_recent)
         if anti_tic:
             system_prompt += anti_tic
 

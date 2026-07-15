@@ -87,7 +87,7 @@ try:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget
+    from sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget, merge_recent_responses
     from sheo_mentions import convert_text_mentions_to_discord
     from sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from sheo_imposter import (
@@ -104,7 +104,7 @@ except ImportError:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from Sheogorath.sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget
+    from Sheogorath.sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget, merge_recent_responses
     from Sheogorath.sheo_mentions import convert_text_mentions_to_discord
     from Sheogorath.sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from Sheogorath.sheo_imposter import (
@@ -835,6 +835,7 @@ async def on_ready():
             enable_voice_listen=False
         )
         if twitch_chat:
+            twitch_chat.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]
             twitch_chat_task = asyncio.create_task(twitch_chat.run())
 
     daily_backup_check.start()  # Backup automatique
@@ -1680,6 +1681,19 @@ async def oubliemoi(ctx):
         
     await ctx.send("🧀 Oublié ! Effacé ! Vaporisé ! Pouf ! Tu n'es plus qu'une page blanche dans mon livre de folie ! 🧀")
 
+def _twitch_recent_responses():
+    """Helper local qui lit les réponses récentes du bot sur Twitch s'il est actif."""
+    global twitch_chat
+    if not twitch_chat:
+        return []
+    try:
+        resps = []
+        for chan_resps in twitch_chat.recent_self_responses.values():
+            resps.extend(list(chan_resps))
+        return resps
+    except Exception:
+        return []
+
 @bot.event
 async def on_message(message):
     # 0. Anti-Self
@@ -2148,7 +2162,10 @@ async def on_message(message):
         system_instruction += faveur_context
     
     # ANTI-REPETITION INJECTION (NEW!)
-    recent_responses = response_memory.get_recent(message.guild.id)
+    recent_responses = merge_recent_responses(
+        response_memory.get_recent(message.guild.id),
+        _twitch_recent_responses(),
+    )
     if recent_responses:
         recent_snippets = [r[:60] + "..." if len(r) > 60 else r for r in recent_responses[-5:]]
         system_instruction += f"\n\n[ANTI-RÉPÉTITION ABSOLUE] Tu as déjà dit récemment :\n"
