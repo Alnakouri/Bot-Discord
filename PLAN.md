@@ -1,146 +1,99 @@
-# PLAN — Anti-doublon Discord↔Twitch (Sheo pilote) + anti-teaser + sondes live automatisées
+# PLAN — pytest ne pollue plus les logs du dashboard + pont anti-doublon v2
 
-> Antigravity exécute. Claude a rédigé (2026-07-15).
-> Cibles : `shared/twitch/llm.py`, `Sheogorath/bot_sheogorath.py`, `Sheogorath/sheo_data.py`,
-> `tools/sonde_twitch.py` (nouveau), + tests. Repérer par CONTENU, pas par numéro de ligne.
+> Antigravity exécute. Claude a rédigé (2026-07-15, tard).
+> Cibles : `shared/bot_logger.py`, `tests/conftest.py` (nouveau), `shared/twitch/llm.py`,
+> `Sheogorath/bot_sheogorath.py`, + tests. Repérer par CONTENU, pas par numéro de ligne.
 
-## Contexte / constat (test live 2026-07-15 ~20:42)
+## Contexte / constats (2026-07-15 soir)
 
-À la même insulte, Sheo a sorti quasi la MÊME punchline sur les deux canaux :
-- Discord : « Quelle poésie ! Quelle élégance ! … des sonnets pour les latrines de Dementia »
-- Twitch : « Quelle poésie ! Quelle élégance ! … des sonnets pour les égouts »
+1. **Fausses alertes dashboard** : chaque run pytest sur l'hôte importe les modules des
+   bots → `setup_logger` écrit « === SHEOGORATH STARTED === » + les warnings ATTENDUS des
+   tests (ex. `test_corrupted_file_recovers_to_empty` → « Erreur chargement store
+   décrets ») dans les MÊMES fichiers `logs/*.log` + `logs/*_structured.jsonl` que les
+   conteneurs. Le dashboard les affiche comme des événements du bot live, en heure LOCALE
+   entrelacée avec l'UTC du conteneur. Ça a coûté une soirée de diagnostic.
+2. **Pont anti-doublon partiel** (validation 22:35) : même insulte sur les 2 canaux →
+   punchlines différentes ✅ mais même riff d'ouverture (« Oh, … ÉVALUATION ») ❌.
+   La réponse Discord ÉTAIT dans la liste interdite du prompt Twitch → Mistral a désobéi
+   à « variations proches ». Et le filet déterministe `_strip_repeated_opening` ne lit que
+   `recent_self_responses` (pas la liste fusionnée).
 
-Cause : chaque canal a son anti-répétition (Discord `response_memory` par guild,
-Twitch `recent_self_responses` par salon) mais ils ne se VOIENT pas. Même persona + même
-input + même humeur → Mistral converge. Les deux tournent dans le MÊME process Python.
+## Phase A — Logs silencieux sous pytest
 
-Second constat : le filet de phrases peut guillotiner une histoire NON invitée en laissant
-une promesse en l'air (« Très bien. Une histoire, donc. 🧀 » — puis rien).
-
-## Phase A — Pont anti-doublon inter-canaux (générique + câblage Sheo)
-
-### A1. Hook générique côté Twitch (`shared/twitch/llm.py`)
-
-Dans la méthode qui construit le prompt (celle qui contient `[ANTI-RÉPÉTITION ABSOLUE]`
-et lit `self.recent_self_responses.get(chan_lower)`) :
-
-1. Juste après avoir obtenu `self_recent`, fusionner un apport externe optionnel :
+1. `shared/bot_logger.py`, dans `setup_logger`, juste après la création du logger et le
+   garde `if logger.handlers:` :
 ```python
-# PONT INTER-CANAUX (optionnel) : un bot peut fournir ses dernières réponses
-# émises AILLEURS (ex. Discord) pour que l'anti-répétition couvre les 2 canaux.
-extra_recent = []
-if getattr(self, "extra_recent_provider", None):
-    try:
-        extra_recent = list(self.extra_recent_provider() or [])
-    except Exception as e:
-        self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] extra_recent_provider a échoué : {e}")
-merged_recent = (list(self_recent) if self_recent else []) + extra_recent
+    # Sous pytest (ou sur demande), on ne garde QUE la console : les handlers
+    # fichier/JSONL écriraient dans les logs/ partagés que le dashboard affiche
+    # comme des événements des bots LIVE (fausses alertes, heure locale vs UTC).
+    console_only = bool(
+        os.getenv("BOTS_LOG_CONSOLE_ONLY") or os.getenv("PYTEST_CURRENT_TEST")
+    )
 ```
-2. Utiliser `merged_recent` (au lieu de `self_recent`) pour : le bloc
-   `[ANTI-RÉPÉTITION ABSOLUE]` (snippets `[-5:]` → passer à `[-8:]` puisque 2 canaux)
-   ET l'appel `_build_anti_tic_consigne(...)`.
-3. ⚠️ GÉNÉRIQUE : même patron que `tone_directive_provider` (hook optionnel, try/except,
-   aucune logique spécifique-bot dans shared/). Ne PAS toucher `_strip_repeated_opening`
-   ni l'écriture de `recent_self_responses` (l'apport externe est en lecture seule).
-
-### A2. Câblage Sheo (`Sheogorath/bot_sheogorath.py`)
-
-1. Helper pur (dans `sheo_llm.py`, à côté de `build_anti_tic_consigne`) :
+   Puis conditionner l'ajout du `RotatingFileHandler` ET du `JSONLHandler` à
+   `if not console_only:`. Le handler console et la ligne « STARTED » restent (filet
+   `docker logs` inchangé).
+2. `tests/conftest.py` (NOUVEAU, à la racine de `tests/`) :
 ```python
-def merge_recent_responses(*sources, limit=8):
-    """Fusionne des listes de réponses récentes (None-safe), dédoublonne en gardant l'ordre."""
-    seen, out = set(), []
-    for src in sources:
-        for r in (src or []):
-            if r and r not in seen:
-                seen.add(r)
-                out.append(r)
-    return out[-limit:]
+# -*- coding: utf-8 -*-
+"""Garde globale : les tests ne doivent JAMAIS écrire dans logs/* (le dashboard
+les afficherait comme des événements des bots live). Posé AVANT tout import de
+module bot par les tests — conftest est chargé en premier par pytest."""
+import os
+
+os.environ.setdefault("BOTS_LOG_CONSOLE_ONLY", "1")
 ```
-2. Sens Discord→Twitch : là où le client de chat Twitch est créé/configuré (près du
-   câblage de `tone_directive_provider` s'il existe pour Sheo, sinon près de
-   `setup_twitch_chat`), poser :
-   `client.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]`
-   (accès en lecture au store Discord existant ; pas de nouvel état).
-3. Sens Twitch→Discord : dans la construction du prompt Discord, remplacer
-   `recent_responses = response_memory.get_recent(message.guild.id)` par une fusion :
-```python
-recent_responses = merge_recent_responses(
-    response_memory.get_recent(message.guild.id),
-    _twitch_recent_responses(),   # helper local : lit recent_self_responses du client twitch s'il existe
-)
+   (`PYTEST_CURRENT_TEST` n'existe pas encore au moment des imports de collection,
+   d'où la ceinture ET les bretelles.)
+3. ⚠️ Ne PAS toucher aux appels `setup_logger(...)` des bots ni au format des lignes.
+
+## Phase B — Pont anti-doublon v2 (déterministe + consigne)
+
+1. `shared/twitch/llm.py` : au post-traitement, là où
+   `text = _strip_repeated_opening(text, self.recent_self_responses.get(chan_lower))`,
+   passer la MÊME liste fusionnée que celle du prompt. `merged_recent` est calculée plus
+   haut dans la même méthode → la réutiliser (la faire descendre jusqu'au post-traitement ;
+   si les deux points sont dans des portées différentes, recalculer la fusion sur place
+   avec le même code provider + try/except).
+2. Renforcer la consigne des DEUX blocs `[ANTI-RÉPÉTITION ABSOLUE]` (celui de
+   `shared/twitch/llm.py` ET celui de `Sheogorath/bot_sheogorath.py`) en ajoutant à la
+   fin de l'interdiction :
 ```
-   `_twitch_recent_responses()` : retourne `[]` si le client Twitch n'est pas démarré
-   (try/except AttributeError + garde None) — le bot doit rester déployable SEUL,
-   Twitch coupé ne casse rien.
-4. Les blocs existants `[ANTI-RÉPÉTITION ABSOLUE]` + `build_anti_tic_consigne` côté
-   Discord consomment la liste fusionnée sans autre modification.
-
-## Phase B — Anti-teaser (`Sheogorath/sheo_data.py`)
-
-Dans le bloc « ⚖️ QUI DÉCIDE DE LA LONGUEUR », ajouter UNE puce :
+Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images,
+métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs.
 ```
-  * N'ANNONCE JAMAIS une histoire, une suite ou une chute que tu ne donnes pas DANS ce
-    message. Pas de « Très bien. Une histoire, donc. » suivi de rien : si tu n'as pas la
-    place de la raconter, ne la promets pas.
-```
+3. `_strip_repeated_opening` lui-même : NE PAS élargir sa clé (4 premiers mots) — c'est
+   voulu qu'il ne coupe que les vrais moules ; le riff conceptuel est du ressort de la
+   consigne (2).
 
-## Phase C — Sondes live automatisées (`tools/sonde_twitch.py`, nouveau)
+## Phase C — Tests
 
-But : remplacer les tests live manuels de fin de chapitre par un script relançable.
-
-1. **Lecture** : connexion IRC anonyme Twitch (`nick justinfan<rand>`, pas d'auth,
-   lecture seule) sur le salon tiré de `data/twitch_config.json` →
-   `<bot>/chat_channels[0]`.
-2. **Envoi** : compte du STREAMER (les comptes bots sont mutuellement ignorés via
-   TWITCH_PEER_BOTS → inutilisables comme sondeurs). Réutiliser le flux d'auth device
-   existant du projet pour créer `data/twitch_chat_auth_probe.json` (une seule
-   autorisation manuelle du user, puis refresh automatique comme les bots).
-   Si le token probe est absent → message clair « lance d'abord --auth » et sortie 1.
-3. **Sondes par défaut** (CLI `--bot sheogorath`, options `--probe` répétable) :
-   | envoi | assertions déterministes |
-   |---|---|
-   | `<trigger> es-tu fou ?` | réponse < 60 s, ≤ 4 phrases |
-   | `<trigger> t'es nul` | ≤ 4 phrases |
-   | `<trigger> raconte-moi une histoire` | réponse arrive, ≤ 10 phrases |
-   | `<trigger> n'importe quoi` | ≤ 4 phrases, ne se TERMINE PAS par une annonce vide (regex `(histoire|suite|conte)[,.]?\s*(donc)?\s*[.!?…]*\s*\W*$` sur la dernière phrase → WARN, pas FAIL) |
-   Assertions communes : se termine par ponctuation finale ou emoji (pas de coupe en
-   plein mot) ; l'ouverture ne cite pas la sonde entre guillemets (garde anti-écho).
-4. Comptage de phrases : IMPORTER la logique existante (le split `\s+` après `[.!?]`,
-   les « ... » neutres) depuis `shared/twitch/llm.py` — ne PAS réécrire une variante
-   (leçon du bug e1c7e50).
-5. Sortie : tableau `sonde → OK/FAIL/WARN + la réponse reçue`, code retour ≠ 0 si un FAIL.
-   Espacement 15 s entre sondes (anti rate-limit + laisser le bot répondre).
-6. Le script vit dans `tools/` (PAS dans `tests/` : `testpaths` pytest ne doit pas le
-   collecter ; il exige le réseau + un bot déployé).
-
-## Phase D — Tests (unitaires, sans réseau)
-
-1. `merge_recent_responses` : None-safe, dédoublonne, garde l'ordre, respecte `limit`.
-2. Hook `extra_recent_provider` : provider mocké → les snippets Twitch incluent les
-   réponses « Discord » ; provider qui lève → warning + comportement inchangé ;
-   pas de provider → strictement identique à avant (non-régression).
-3. Côté Discord : la fusion passe bien au bloc anti-répétition (test sur le helper).
-4. Parsing des sondes : les assertions de C3 sur des réponses canned (courte OK,
-   longue FAIL, coupe en plein mot FAIL, teaser → WARN).
-5. Suite complète verte (219+).
+1. `setup_logger` avec `BOTS_LOG_CONSOLE_ONLY=1` (monkeypatch env + logger name unique) :
+   aucun fichier créé dans un `tmp_path` passé comme `log_dir` ; sans la variable (et sans
+   `PYTEST_CURRENT_TEST` — la retirer du env dans le test) : les fichiers apparaissent.
+   ⚠️ `logging.getLogger` est un singleton par nom → utiliser des noms de bot uniques
+   (`f"testbot_{uuid4().hex[:6]}"`) pour ne pas hériter des handlers d'un autre test.
+2. Twitch : `_strip_repeated_opening` reçoit la liste fusionnée — test : une réponse
+   Twitch dont l'ouverture reprend une réplique « Discord » du provider est bien coupée.
+3. Asserts consigne : « mot-clé saillant » présent dans les 2 blocs anti-répétition
+   (prompt Twitch construit via mock + fragment Discord).
+4. Suite complète verte (226+) — et vérifier qu'après le run, `logs/` ne contient AUCUNE
+   ligne nouvelle du jour (c'est le but de la phase A : en faire l'assert d'un test
+   d'intégration si simple, sinon vérification manuelle au déploiement).
 
 ## Garde-fous
 
-- `shared/twitch/llm.py` reste 100 % générique (hook optionnel, défaut = comportement actuel).
-- Bots indépendants : tout accès croisé Discord↔Twitch est défensif (try/except +
-  fallback `[]`) — chaque moitié marche sans l'autre.
-- Ne PAS toucher : filet `sentence_budget`/`_force_sentence_cap`, humeurs, few-shot,
-  max_tokens, garde anti-écho.
-- Le pont est en RAM, même process — AUCUNE persistance ni fichier nouveau (sauf le
-  token probe, qui suit le format d'auth existant).
-- Rollout Johnny/Sugar du pont : PAS dans ce chapitre (Sheo pilote ; le hook générique
-  rend le rollout trivial ensuite).
+- La ligne « === X STARTED === » reste loggée (console) — ne casse pas `docker logs`.
+- `shared/bot_logger.py` est partagé par les 6 bots : la garde doit être NO-OP en prod
+  (aucune des 2 variables n'existe dans les conteneurs).
+- Phase B : ne rien changer d'autre au pipeline (filet de phrases, cap, anti-écho intacts).
+- Le pont reste Sheo pilote — pas de rollout Johnny/Sugar dans ce chapitre.
 
 ## Déploiement + validation (après commit)
 
-`docker compose up -d --build --force-recreate sheogorath` (shared/ touché → --build).
-Puis : auth one-shot `python tools/sonde_twitch.py --auth`, et
-`python tools/sonde_twitch.py --bot sheogorath` → tout vert.
-Validation du pont : envoyer la MÊME insulte sur Discord puis sur Twitch à < 2 min
-d'écart → les deux réponses ne doivent PAS partager leur punchline/amorce.
+`docker compose up -d --build --force-recreate sheogorath`.
+Validation A : lancer `python -m pytest` sur l'hôte → le dashboard ne doit plus afficher
+de « STARTED »/« Erreur décrets » fantômes (et `logs/sheogorath_structured.jsonl` ne doit
+plus grossir pendant le run).
+Validation B : même insulte Discord puis Twitch à < 2 min → ni punchline ni mot-clé
+saillant partagés. Puis `python tools/sonde_twitch.py --bot sheogorath` → 4/4 vertes.

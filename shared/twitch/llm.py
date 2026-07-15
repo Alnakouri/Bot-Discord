@@ -309,7 +309,9 @@ class LlmMixin:
                 anti_rep += f"{i}. \"{snip}\"\n"
             anti_rep += ("⚠️ INTERDICTION TOTALE de répéter ces phrases ou des variations proches. "
                          "N'ouvre PAS sur les mêmes premiers mots que ci-dessus et ne recrache PAS la "
-                         "question en écho pour démarrer. Trouve une idée ET une amorce COMPLÈTEMENT DIFFÉRENTES.")
+                         "question en écho pour démarrer. Trouve une idée ET une amorce COMPLÈTEMENT DIFFÉRENTES. "
+                         "Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images, "
+                         "métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs.")
             system_prompt += anti_rep
 
         # ANTI-TICS (parité Discord) : liste explicite des amorces/clôtures récentes à éviter.
@@ -399,7 +401,7 @@ class LlmMixin:
                 # Coupe l'ouverture-perroquet qui HURLE l'insulte du viewer en écho (parité Discord).
                 text = _strip_echo_opening(text, clean)
                 # Anti-moule déterministe : coupe l'amorce si elle reprend une ouverture récente.
-                text = _strip_repeated_opening(text, self.recent_self_responses.get(chan_lower))
+                text = _strip_repeated_opening(text, merged_recent)
                 text = _force_sentence_cap(text, sentence_budget(clean))
                 reply = _truncate_for_twitch(text, 480)
                 

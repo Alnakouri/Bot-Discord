@@ -45,13 +45,6 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
     Returns:
         Logger configuré
     """
-    # Créer le dossier logs si nécessaire
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
-    # Nom du fichier avec date
-    log_filename = os.path.join(log_dir, f"{bot_name}_{datetime.now().strftime('%Y-%m-%d')}.log")
-    
     # Configuration du logger
     logger = logging.getLogger(bot_name)
     logger.setLevel(logging.INFO)
@@ -59,6 +52,13 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
     # Éviter les doublons si déjà configuré
     if logger.handlers:
         return logger
+    
+    # Sous pytest (ou sur demande), on ne garde QUE la console : les handlers
+    # fichier/JSONL écriraient dans les logs/ partagés que le dashboard affiche
+    # comme des événements des bots LIVE (fausses alertes, heure locale vs UTC).
+    console_only = bool(
+        os.getenv("BOTS_LOG_CONSOLE_ONLY") or os.getenv("PYTEST_CURRENT_TEST")
+    )
     
     # Format
     formatter = logging.Formatter(
@@ -73,30 +73,38 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # Handler fichier (rotation : 5 MB max, 3 backups).
-    # IMPORTANT : ne JAMAIS faire planter le bot si le fichier de log n'est pas
-    # ouvrable (ex. bind-mount Docker Desktop Windows où les fichiers existants
-    # apparaissent root:644 et l'utilisateur non-root ne peut pas les rouvrir).
-    # On dégrade proprement : console seule au lieu de crasher au démarrage.
-    try:
-        file_handler = RotatingFileHandler(
-            log_filename, encoding='utf-8',
-            maxBytes=5 * 1024 * 1024,  # 5 MB
-            backupCount=3
-        )
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-    except OSError as e:
-        logger.warning(
-            f"⚠️ [LOGGER] Fichier de log '{log_filename}' non ouvrable "
-            f"({e}). Journalisation fichier désactivée, console seule."
-        )
+    if not console_only:
+        # Créer le dossier logs si nécessaire
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        # Nom du fichier avec date
+        log_filename = os.path.join(log_dir, f"{bot_name}_{datetime.now().strftime('%Y-%m-%d')}.log")
 
-    # Handler JSON Lines pour le dashboard (l'emit est déjà tolérant aux erreurs)
-    jsonl_handler = JSONLHandler(log_dir, bot_name)
-    jsonl_handler.setLevel(logging.INFO)
-    logger.addHandler(jsonl_handler)
+        # Handler fichier (rotation : 5 MB max, 3 backups).
+        # IMPORTANT : ne JAMAIS faire planter le bot si le fichier de log n'est pas
+        # ouvrable (ex. bind-mount Docker Desktop Windows où les fichiers existants
+        # apparaissent root:644 et l'utilisateur non-root ne peut pas les rouvrir).
+        # On dégrade proprement : console seule au lieu de crasher au démarrage.
+        try:
+            file_handler = RotatingFileHandler(
+                log_filename, encoding='utf-8',
+                maxBytes=5 * 1024 * 1024,  # 5 MB
+                backupCount=3
+            )
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except OSError as e:
+            logger.warning(
+                f"⚠️ [LOGGER] Fichier de log '{log_filename}' non ouvrable "
+                f"({e}). Journalisation fichier désactivée, console seule."
+            )
+
+        # Handler JSON Lines pour le dashboard (l'emit est déjà tolérant aux erreurs)
+        jsonl_handler = JSONLHandler(log_dir, bot_name)
+        jsonl_handler.setLevel(logging.INFO)
+        logger.addHandler(jsonl_handler)
     
     logger.info(f"=== {bot_name.upper()} STARTED ===")
     

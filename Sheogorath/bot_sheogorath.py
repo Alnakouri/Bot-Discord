@@ -2171,7 +2171,7 @@ async def on_message(message):
         system_instruction += f"\n\n[ANTI-RÉPÉTITION ABSOLUE] Tu as déjà dit récemment :\n"
         for i, snippet in enumerate(recent_snippets, 1):
             system_instruction += f"{i}. \"{snippet}\"\n"
-        system_instruction += "⚠️ INTERDICTION TOTALE de répéter ces phrases ou des variations proches. Trouve une idée COMPLÈTEMENT DIFFÉRENTE !"
+        system_instruction += "⚠️ INTERDICTION TOTALE de répéter ces phrases ou des variations proches. Trouve une idée COMPLÈTEMENT DIFFÉRENTE ! Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images, métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs."
     
     anti_tic = build_anti_tic_consigne(recent_responses)
     if anti_tic:

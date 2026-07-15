@@ -56,7 +56,6 @@ def test_count_sentences():
 
 
 def test_extra_recent_provider_integration():
-    # pytest-asyncio n'est pas installé → on pilote la coroutine avec asyncio.run.
     import asyncio
     from shared.twitch.llm import LlmMixin
     
@@ -82,7 +81,6 @@ def test_extra_recent_provider_integration():
     bot = DummyBot()
     bot.extra_recent_provider = lambda: ["discord_1", "discord_2"]
 
-    # Mock classify_request and generate_response to prevent real network calls
     with patch("shared.smart_router.classify_request") as mock_classify, \
          patch("shared.llm_cascade.generate_response", new_callable=AsyncMock) as mock_gen:
         
@@ -91,10 +89,79 @@ def test_extra_recent_provider_integration():
 
         asyncio.run(bot._generate_response("general", "author", "message"))
 
-        # Verify that the generated system prompt contains elements from both twitch and discord
         called_args = mock_gen.call_args[1]
         system_prompt = called_args["system_prompt"]
         
-        # Should include both Twitch ("twitch_2") and Discord ("discord_2") responses in anti-repetition block
         assert "twitch_2" in system_prompt
         assert "discord_2" in system_prompt
+
+
+def test_setup_logger_console_only(tmp_path):
+    import os
+    from uuid import uuid4
+    from shared.bot_logger import setup_logger
+    
+    bot_name_console = f"testbot_{uuid4().hex[:6]}"
+    bot_name_file = f"testbot_{uuid4().hex[:6]}"
+    
+    log_dir = str(tmp_path / "logs_console")
+    
+    with patch.dict(os.environ, {"BOTS_LOG_CONSOLE_ONLY": "1"}):
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}):
+            logger1 = setup_logger(bot_name_console, log_dir=log_dir)
+            assert not os.path.exists(log_dir)
+            
+    log_dir_file = str(tmp_path / "logs_file")
+    with patch.dict(os.environ, {"BOTS_LOG_CONSOLE_ONLY": ""}):
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}):
+            logger2 = setup_logger(bot_name_file, log_dir=log_dir_file)
+            assert os.path.exists(log_dir_file)
+            files = os.listdir(log_dir_file)
+            assert len(files) > 0
+
+
+def test_twitch_strip_repeated_opening_merged_recent():
+    from shared.twitch.llm import _strip_repeated_opening
+    
+    merged_recent = ["Mon jeu préféré ? Zelda, toujours et pour la vie."]
+    reply = "Mon jeu préféré ? Skyrim, évidemment mon sucre."
+    
+    stripped = _strip_repeated_opening(reply, merged_recent)
+    assert stripped != reply
+    assert stripped == "Skyrim, évidemment mon sucre."
+
+
+def test_asserts_consigne_mot_cle_saillant():
+    import asyncio
+    from shared.twitch.llm import LlmMixin
+    
+    class DummyBot(LlmMixin):
+        def __init__(self):
+            self.bot_id = "test_bot"
+            self.personality_prompt = "Personality"
+            self.system_prompt_provider = None
+            self.recent_self_responses = {"general": ["twitch_1"]}
+            self.logger = MagicMock()
+            self.enable_viewer_memory = False
+            self.key_manager = MagicMock()
+            self.mistral_client = MagicMock()
+            self.groq_client = MagicMock()
+            self.openrouter_client = MagicMock()
+            self.bot_label = "test"
+            self.histories = {}
+            self.channel_recent = {}
+            
+        def _sanitize_input(self, msg):
+            return msg, False
+
+    bot = DummyBot()
+    with patch("shared.smart_router.classify_request") as mock_classify, \
+         patch("shared.llm_cascade.generate_response", new_callable=AsyncMock) as mock_gen:
+        
+        mock_classify.return_value = MagicMock()
+        mock_gen.return_value = "Réponse."
+        asyncio.run(bot._generate_response("general", "author", "message"))
+        
+        system_prompt = mock_gen.call_args[1]["system_prompt"]
+        assert "Ne réutilise AUCUN mot-clé saillant" in system_prompt
+
