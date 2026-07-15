@@ -190,7 +190,7 @@ def prepare_text_for_tts(text: str, mood: str = "neutral") -> str:
     
     max_len = _get_max_length(mood)
     if len(text) > max_len:
-        sentences = re.split(r'(?<=[.!?]) +', text[:max_len])
+        sentences = re.split(r'(?<=[.!?])\s+', text[:max_len])
         text = ' '.join(sentences[:-1]) if len(sentences) > 1 else sentences[0]
     
     return text

@@ -165,7 +165,11 @@ def force_short_response(response_text, max_sentences=10):
     # Protéger les points de suspension avant le découpage en phrases.
     _ELLIPSIS = "\x00"
     protected = re.sub(r'\.\.\.+|…', _ELLIPSIS, response_text)
-    sentences = re.split(r'(?<=[.!?]) +', protected)
+    # \s+ (pas ' +') : une frontière de phrase = ponctuation + N'IMPORTE QUEL blanc.
+    # Mistral sépare souvent ses phrases par un SAUT DE LIGNE sur Discord ; avec ' +' (espace
+    # seul) ces phrases n'étaient pas comptées → le filet ne se déclenchait jamais et Sheo
+    # débordait (bug live 2026-07-15). Twitch (mono-ligne IRC) échappait au défaut.
+    sentences = re.split(r'(?<=[.!?])\s+', protected)
     if len(sentences) > max_sentences:
         protected = " ".join(sentences[:max_sentences])
     response_text = protected.replace(_ELLIPSIS, "...")
@@ -328,8 +332,8 @@ def build_anti_tic_consigne(recent_responses, n=5):
             if m:
                 cloture_base = clean_resp[:m.start()].rstrip()
 
-            # Découper en phrases
-            sentences = re.split(r'(?<=[.!?]) +', cloture_base)
+            # Découper en phrases (\s+ : saut de ligne compte aussi comme frontière)
+            sentences = re.split(r'(?<=[.!?])\s+', cloture_base)
             sentences = [s.strip() for s in sentences if s.strip()]
             if sentences:
                 last_sentence = sentences[-1]

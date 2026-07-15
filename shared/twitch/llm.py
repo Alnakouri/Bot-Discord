@@ -140,7 +140,9 @@ def _force_sentence_cap(response_text: str, max_sentences: int = 10) -> str:
 
     _ELLIPSIS = "\x00"
     protected = re.sub(r'\.\.\.+|…', _ELLIPSIS, response_text)
-    sentences = re.split(r'(?<=[.!?]) +', protected)
+    # \s+ (pas ' +') : une frontière de phrase = ponctuation + N'IMPORTE QUEL blanc
+    # (un LLM peut séparer ses phrases par un saut de ligne — parité avec sheo_llm).
+    sentences = re.split(r'(?<=[.!?])\s+', protected)
     if len(sentences) > max_sentences:
         protected = " ".join(sentences[:max_sentences])
     response_text = protected.replace(_ELLIPSIS, "...")
@@ -207,7 +209,7 @@ def _build_anti_tic_consigne(recent, n: int = 5) -> str:
             # Clôture : dernière phrase (emoji de ton retiré), ~5 derniers mots normalisés
             m = _TRAILING_EMOJI.search(clean)
             base = clean[:m.start()].rstrip() if m else clean
-            sentences = [s.strip() for s in re.split(r'(?<=[.!?]) +', base) if s.strip()]
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', base) if s.strip()]
             if sentences:
                 last_words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in sentences[-1].split()]
                 last_words = [w for w in last_words if w]

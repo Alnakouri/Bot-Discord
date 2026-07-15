@@ -113,3 +113,14 @@ def test_sentence_budget():
     assert sentence_budget("continue") == 10
     assert sentence_budget("RACONTE") == 10
 
+
+def test_force_short_response_cuts_newline_separated():
+    # RÉGRESSION (bug live 2026-07-15) : Mistral sépare ses phrases par des SAUTS DE LIGNE
+    # sur Discord. Le filet doit compter ces phrases (frontière = ponctuation + \s, pas ' ')
+    # et couper à 4, sinon Sheo débordait sur Discord alors que Twitch (mono-ligne) tenait.
+    from sheo_llm import force_short_response
+    txt = "Une.\nDeux.\nTrois.\nQuatre.\nCinq.\nSix. 🧀"
+    out = force_short_response(txt, max_sentences=4)
+    assert "Cinq" not in out and "Six" not in out
+    assert out.endswith("🧀")
+

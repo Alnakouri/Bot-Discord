@@ -157,6 +157,15 @@ class TestTwitchSentenceBudgetAndCap(unittest.TestCase):
         expected = "Une phrase... avec suspension. Deux. Trois. Quatre. 🧀"
         self.assertEqual(_force_sentence_cap(response, 4), expected)
 
+    def test_force_sentence_cap_newline_separated(self):
+        # RÉGRESSION (parité avec sheo_llm) : phrases séparées par des SAUTS DE LIGNE
+        # doivent aussi être comptées (frontière = ponctuation + \s, pas ' ').
+        response = "Une.\nDeux.\nTrois.\nQuatre.\nCinq.\nSix. 🧀"
+        out = _force_sentence_cap(response, 4)
+        self.assertNotIn("Cinq", out)
+        self.assertNotIn("Six", out)
+        self.assertTrue(out.endswith("🧀"))
+
 
 if __name__ == "__main__":
     unittest.main()
