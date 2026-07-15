@@ -135,6 +135,18 @@ _TRAILING_EMOJI_RE = re.compile(
 )
 
 
+INVITATION_PATTERN = re.compile(
+    r"\b(raconte|racontes?-moi|explique|développe|developpe|continue|détaille|detaille|"
+    r"histoire|conte|poème|poeme|chante|décris|decris)\b", re.IGNORECASE)
+
+
+def sentence_budget(user_message, short_cap=4, long_cap=10):
+    """Filet déterministe : 4 phrases par défaut, 10 si le mortel invite à développer."""
+    if user_message and INVITATION_PATTERN.search(user_message):
+        return long_cap
+    return short_cap
+
+
 def force_short_response(response_text, max_sentences=10):
     """FILET anti-déraillage (pas un outil de mise en forme) : ne tronque QUE si la réponse
     dépasse largement max_sentences vraies phrases. La longueur est gouvernée par le PROMPT

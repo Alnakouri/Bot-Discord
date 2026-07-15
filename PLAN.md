@@ -1,115 +1,99 @@
-# PLAN — Sheo : la longueur obéit au message reçu, pas à l'humeur (+ écho cité banni)
+# PLAN — Sheo : court PAR DÉFAUT, garanti par un filet déterministe (Discord + Twitch)
 
-> Antigravity exécute. Claude a rédigé (2026-07-14).
-> Cibles : `Sheogorath/sheo_data.py`, `Sheogorath/sheo_llm.py`, `shared/twitch/llm.py`,
-> + tests. Repérer par CONTENU (phrases citées), pas par numéro de ligne.
+> Antigravity exécute. Claude a rédigé (2026-07-15).
+> Cibles : `Sheogorath/sheo_data.py`, `Sheogorath/sheo_llm.py`, `Sheogorath/bot_sheogorath.py`,
+> `shared/twitch/llm.py`, + tests. Repérer par CONTENU, pas par numéro de ligne.
 
-## Contexte / retour user (test live 2026-07-14, ~23:35)
+## Contexte / décision user (tests live 2026-07-15 ~00:16)
 
-User à Sheo : « tu parle trop ». Résultat sur les DEUX canaux : tirade de 6+ phrases
-(bocal, papillons, bibliothèque…) ouvrant par l'écho cité « Oh, "tu parles trop" ? ».
-Décision user : **« la longueur de sa réponse doit dépendre de la pertinence : si une
-réponse longue est nécessaire pour bien répondre, soit ; sinon une réponse courte est
-préférable »** — toujours cohérent avec le message reçu ET avec sa personnalité.
+Après e84488b+40be201 (arbitrage « le message décide » + ping d'un mot), test « sheo est-tu
+fou ? » : réponses de 5-8 phrases sur les DEUX canaux. Verdict user : **« trop long sur
+twitch et discord c trop »** — même une vraie question mérite une réponse courte par défaut.
+Constat technique : 2 itérations de prompt n'ont pas suffi (Mistral déborde) → il faut un
+**filet déterministe** en plus du prompt.
 
-Deux causes :
-1. Le prompt dit déjà LONGUEUR = PERTINENCE, mais l'humeur (bliss/mania + exception du
-   conteur) prend le dessus : le modèle traite une critique comme une invitation à briller.
-   Il manque la règle d'arbitrage : **le message reçu décide de la longueur, l'humeur ne
-   décide que du ton**.
-2. Le garde anti-écho (`_strip_echo_opening`, Discord + Twitch) ne coupe que l'écho HURLÉ
-   (MAJUSCULES). L'écho CITÉ entre guillemets (« "Tu parles trop" ? ») passe — et il est
-   sorti deux fois de suite en ouverture.
+Principe : COURT PAR DÉFAUT (≤ 4 phrases), le déploiement long n'est permis QUE sur
+invitation EXPLICITE du mortel à raconter/développer.
 
-## Phase A — Règle d'arbitrage longueur dans `PERSONALITY_BASE` (`sheo_data.py`)
+## Phase A — Prompt durci (`sheo_data.py`, bloc « ⚖️ QUI DÉCIDE DE LA LONGUEUR »)
 
-Dans le bloc « ⚡ RÈGLE D'OR », JUSTE APRÈS la puce « LONGUEUR = PERTINENCE… » existante,
-insérer :
+REMPLACER les 3 puces internes existantes (« Pique courte… », « Question précise… »,
+« PING D'UN MOT… », « Sujet riche… ») par :
 
 ```
-- ⚖️ QUI DÉCIDE DE LA LONGUEUR : le MESSAGE REÇU, jamais ton humeur. L'humeur colore le
-  TON (joyeux, glacial, jovial), pas le VOLUME. Avant de répondre, demande-toi : « que
-  faut-il pour bien répondre à ÇA ? » — et n'écris QUE ça.
-  * Pique courte, critique, ordre sec (« tu parles trop », « t'es nul », « tais-toi ») →
-    riposte COURTE : 1-2 phrases qui mordent, et tu te tais. Répondre à « tu parles trop »
-    par une tirade, c'est donner raison au mortel — humiliation suprême.
-  * Question précise → réponse qui répond, pas plus.
-  * Sujet riche, invitation à raconter, mortel de bonne compagnie → LÀ tu peux déployer
-    (conteur, tirade qui monte), tant que chaque phrase AJOUTE.
-- L'EXCEPTION DU CONTEUR ne s'applique JAMAIS à une critique ou une attaque, même en
-  humeur bliss/mania : bonne humeur ≠ immunité au tac-au-tac sec.
+  * PAR DÉFAUT : 1 à 3 phrases, 4 MAXIMUM. Piques, questions (même profondes : « es-tu
+    fou ? »), pings, compliments : tout se répond COURT. Une réponse courte et dense est
+    plus folle qu'une tirade — le couperet surprend, le tapis de mots endort.
+  * Tu ne dépasses 4 phrases QUE si le mortel t'y INVITE EXPLICITEMENT (« raconte »,
+    « explique », « développe », « continue », « une histoire »...). Là, le conteur peut
+    serpenter — tant que chaque phrase AJOUTE.
 ```
 
-Et dans le bloc « EXCEPTION DU CONTEUR » existant, remplacer la fin « Face à une attaque,
-tu restes sec : le conteur ne sort QUE quand tu t'amuses. » par : « Face à une attaque OU
-une critique (même taquine), tu restes sec — 1-2 phrases — quelle que soit ton humeur :
-le conteur ne sort QUE sur invitation, jamais en défense. »
+GARDER la puce « L'EXCEPTION DU CONTEUR ne s'applique JAMAIS à une critique… » telle quelle.
+Dans la puce « LONGUEUR = PERTINENCE… » plus haut, remplacer « Mais une tirade qui MONTE
+(…) peut se déployer pleinement » par « Mais une tirade ne se déploie QUE sur invitation
+explicite du mortel » (cohérence : plus deux règles qui se contredisent).
 
-## Phase B — 2 few-shot « critique → sec » (ancrage)
+## Phase B — Filet déterministe Discord (`sheo_llm.py` + `bot_sheogorath.py`)
 
-1. `COMEDY_EXAMPLES_BLISS` : AJOUTER un exemple (c'est en bliss qu'il a dérapé) :
-```
-User: Tu parles trop.
-Sheogorath: <thought>Critique sèche. Même en bliss : riposte courte, pas de tirade.</thought>
-Et toi pas assez — c'est pour ça que je comble. Chut, écoute le maître. 😏
-```
-2. `COMEDY_EXAMPLES_MANIA` : AJOUTER :
-```
-User: Abrège.
-Sheogorath: <thought>Ordre sec. Riposte courte et cinglante, pas de feu d'artifice.</thought>
-Abréger le divin ? Je t'abrégerai TOI, ça ira plus vite. HAHA ! 🔪
-```
-
-## Phase C — Garde anti-écho : couper aussi l'écho CITÉ (Discord + Twitch)
-
-Dans `Sheogorath/sheo_llm.py::_strip_echo_opening` ET son jumeau générique
-`shared/twitch/llm.py::_strip_echo_opening` (même logique aux deux endroits, parité) :
-
-À côté de `is_shouted_echo` (tokens MAJUSCULES qui échotent), ajouter la détection
-`is_quoted_echo` : la tête de phrase contient, ENTRE guillemets (`"…"`, `«…»`, `“…”`,
-`'…'`), un segment dont les mots significatifs (≥3 lettres, hors `_ECHO_STOPWORDS`,
-normalisés via `_norm`) sont TOUS des mots du message du mortel. Alors :
-
+1. `sheo_llm.py` : nouveau helper pur, à côté de `force_short_response` :
 ```python
-quoted_segments = re.findall(r"[\"«“‘'](.+?)[\"»”’']", head)
-is_quoted_echo = any(
-    (sig := {w for w in re.findall(r"\w+", _norm(seg)) if len(w) >= 3} - _ECHO_STOPWORDS)
-    and sig <= user_words
-    for seg in quoted_segments
-)
+INVITATION_PATTERN = re.compile(
+    r"\b(raconte|racontes?-moi|explique|développe|developpe|continue|détaille|detaille|"
+    r"histoire|conte|poème|poeme|chante|décris|decris)\b", re.IGNORECASE)
+
+def sentence_budget(user_message, short_cap=4, long_cap=10):
+    """Filet déterministe : 4 phrases par défaut, 10 si le mortel invite à développer."""
+    if user_message and INVITATION_PATTERN.search(user_message):
+        return long_cap
+    return short_cap
 ```
+2. `bot_sheogorath.py` : là où `max_sentences_val = 10` est posé (les 2 branches REPARTEE
+   et défaut, vers l.2248/2251), remplacer par
+   `max_sentences_val = sentence_budget(user_message)` (importer `sentence_budget` à côté
+   de `postprocess_response`). NE PAS toucher `max_tokens_val = 340` (l'espace pour les
+   longues reste, c'est le filet qui décide).
+3. Rappel comportement de `force_short_response` : coupe à la frontière de phrase, les
+   « ... » ne comptent pas comme fins de phrase, l'emoji final est préservé — ne rien y
+   changer, seul le budget passé varie.
 
-et étendre la condition : `if not (is_interjection or is_shouted_echo or is_quoted_echo): break`.
+## Phase C — Filet déterministe Twitch (`shared/twitch/llm.py`, générique)
 
-⚠️ Conserver TOUTES les protections existantes : jamais sur un cri intégral ALL CAPS,
-jamais si le reste < 15 caractères, casse re-capitalisée, max_strips inchangé. L'écho en
-casse normale SANS guillemets (« Des pâtes ? ») reste PERMIS (canon) — seul l'écho
-GUILLEMETÉ du message est coupé.
+1. Répliquer le helper `sentence_budget` + `INVITATION_PATTERN` (même logique, module
+   autonome — pas d'import du bot, comme les autres gardes de parité).
+2. Ajouter une coupe par phrases AVANT `_truncate_for_twitch(text, 480)` :
+   `text = _force_sentence_cap(text, sentence_budget(clean))` où `_force_sentence_cap`
+   reproduit la logique de `sheo_llm.force_short_response` (frontières de phrases, « ... »
+   neutres, emoji final préservé). Défaut 4 phrases / 10 sur invitation → sur Twitch la
+   limite 480 car. reste le plafond ultime.
+3. ⚠️ GÉNÉRIQUE : ce filet s'applique à TOUS les bots du chat Twitch (Johnny, Sugar…).
+   C'est VOULU (cohérent avec « longueur=pertinence » de Johnny), mais le seuil doit
+   rester le même pour tous — pas de logique spécifique Sheo dans shared/.
 
 ## Phase D — Tests
 
-1. `tests/test_sheo_anti_tic.py` : étendre (les imports existent déjà) :
-   - « "Tu parles trop" ? Mais mon cher pirate… la suite. » + msg « tu parle trop » →
-     l'ouverture citée saute, la suite reste.
-   - « Oh, "tu parles trop" ? Haha ! Toi qui m'invoques… » → idem (interjection + citation).
-   - « Des pâtes ? Sans la moindre meule… » + msg « j'ai mangé des pâtes » → INTACT
-     (écho casse normale sans guillemets = permis).
-   - « "Nul" ? C'est petit. » + msg « t'es nul » → INTACT si la coupe laisse < 15 car.
-2. Miroir Twitch dans `tests/test_twitch_antimould.py` (ou fichier des gardes Twitch
-   existant) : mêmes cas sur `shared/twitch/llm.py::_strip_echo_opening`.
-3. `tests/test_sheo_moods.py` : asserts prompt — « QUI DÉCIDE DE LA LONGUEUR » présent
-   dans `PERSONALITY_BASE` ; « jamais en défense » présent (exception conteur resserrée).
+1. `tests/test_sheo_moods.py` : asserts prompt — « 4 MAXIMUM » présent ; « INVITE
+   EXPLICITEMENT » présent.
+2. Nouveau bloc dans `tests/test_sheo_anti_tic.py` (ou fichier dédié) pour `sentence_budget` :
+   - « t'es nul » → 4 ; « es-tu fou ? » → 4 ; « oui » → 4 ;
+   - « raconte-moi une histoire » → 10 ; « explique-moi la Marche Grise » → 10 ;
+   - « continue » → 10 ; casse mélangée (« RACONTE ») → 10.
+3. Miroir Twitch : `_force_sentence_cap` coupe à 4 une réponse de 8 phrases ; préserve
+   l'emoji final ; laisse passer 10 phrases sur « raconte » ; les « ... » ne comptent pas.
+4. Suite complète verte (213+).
 
 ## Garde-fous
 
-- Ne PAS toucher aux plafonds (`max_tokens` 340, filet 10 phrases, Twitch 120t/480c) :
-  la longueur se joue dans le PROMPT, les filets restent des filets.
-- Ne PAS toucher aux 4 humeurs ni au reste du postprocess.
-- Suite : `python -m pytest tests/ -q` verte (210+ avant chantier).
+- Ne PAS toucher : humeurs, anti-écho (e84488b), few-shot, max_tokens (340 Discord /
+  120 Twitch), `_truncate_for_twitch`.
+- Le filet coupe la QUANTITÉ, le prompt reste responsable de la QUALITÉ : ne pas retirer
+  les règles de densité existantes.
+- `sentence_budget` doit être PUR (aucun état, aucun I/O) — testable sans mock.
 
-## Déploiement + test live (après commit)
+## Déploiement + re-test (après commit)
 
-`docker compose up -d --build --force-recreate sheogorath` (shared/ touché → --build).
-Sondes : « tu parles trop » (Discord ET Twitch, en bliss si possible) → 1-2 phrases, sans
-écho cité en ouverture · « raconte-moi une histoire » → le conteur peut se déployer ·
-« j'ai mangé des pâtes » → la réflexion « Des pâtes ? » reste permise.
+`docker compose up -d --build --force-recreate sheogorath johnny sugar`
+(shared/ touché → --build ; Johnny et Sugar héritent du filet Twitch générique).
+Sondes : « es-tu fou ? » → ≤ 4 phrases (les 2 canaux) · « t'es nul » → 1-2 sèches ·
+« raconte-moi une histoire » → longue autorisée · vérifier que la coupe ne laisse pas de
+phrase orpheline ni ne mange l'emoji final.

@@ -15,6 +15,8 @@ from shared.twitch.llm import (
     _strip_repeated_opening,
     _build_anti_tic_consigne,
     _strip_echo_opening,
+    sentence_budget,
+    _force_sentence_cap,
 )
 
 
@@ -133,6 +135,27 @@ class TestStripEchoOpening(unittest.TestCase):
 
         reply = '"Nul" ? C\'est petit.'
         self.assertEqual(_strip_echo_opening(reply, "t'es nul"), reply)
+
+
+class TestTwitchSentenceBudgetAndCap(unittest.TestCase):
+    def test_sentence_budget(self):
+        self.assertEqual(sentence_budget("t'es nul"), 4)
+        self.assertEqual(sentence_budget("es-tu fou ?"), 4)
+        self.assertEqual(sentence_budget("oui"), 4)
+        self.assertEqual(sentence_budget("raconte-moi une histoire"), 10)
+        self.assertEqual(sentence_budget("RACONTE"), 10)
+
+    def test_force_sentence_cap_cuts_to_4(self):
+        # Coupe à 4 une réponse de 8 phrases et préserve l'emoji final.
+        response = "Une. Deux. Trois. Quatre. Cinq. Six. Sept. Huit. 🧀"
+        expected = "Une. Deux. Trois. Quatre. 🧀"
+        self.assertEqual(_force_sentence_cap(response, 4), expected)
+
+    def test_force_sentence_cap_with_ellipsis(self):
+        # Les "..." ne comptent pas comme fin de phrase
+        response = "Une phrase... avec suspension. Deux. Trois. Quatre. Cinq. 🧀"
+        expected = "Une phrase... avec suspension. Deux. Trois. Quatre. 🧀"
+        self.assertEqual(_force_sentence_cap(response, 4), expected)
 
 
 if __name__ == "__main__":

@@ -98,3 +98,18 @@ def test_quoted_echo_stripped():
     reply = '"Nul" ? C\'est petit.'
     assert _strip_echo_opening(reply, "t'es nul") == reply
 
+
+from sheo_llm import sentence_budget
+
+def test_sentence_budget():
+    # Par défaut (limite à 4 phrases)
+    assert sentence_budget("t'es nul") == 4
+    assert sentence_budget("es-tu fou ?") == 4
+    assert sentence_budget("oui") == 4
+    
+    # Avec invitation (limite à 10 phrases)
+    assert sentence_budget("raconte-moi une histoire") == 10
+    assert sentence_budget("explique-moi la Marche Grise") == 10
+    assert sentence_budget("continue") == 10
+    assert sentence_budget("RACONTE") == 10
+

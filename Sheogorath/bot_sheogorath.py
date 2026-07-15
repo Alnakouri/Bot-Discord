@@ -87,7 +87,7 @@ try:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from sheo_llm import postprocess_response, build_anti_tic_consigne
+    from sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget
     from sheo_mentions import convert_text_mentions_to_discord
     from sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from sheo_imposter import (
@@ -104,7 +104,7 @@ except ImportError:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from Sheogorath.sheo_llm import postprocess_response, build_anti_tic_consigne
+    from Sheogorath.sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget
     from Sheogorath.sheo_mentions import convert_text_mentions_to_discord
     from Sheogorath.sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from Sheogorath.sheo_imposter import (
@@ -2245,10 +2245,10 @@ async def on_message(message):
         # PROMPT qui décide sec-vs-théâtral (règle FACE À UNE ATTAQUE = morsure courte sur vraie
         # insulte ; EXCEPTION DU CONTEUR = digression ravie sur banter). Le cap n'est qu'un filet.
         max_tokens_val = 340   # marge pour qu'un conteur/double-sens ATTERRISSE (sinon coupe en plein mot)
-        max_sentences_val = 10  # filet large : n'attrape que l'emballement, jamais un conteur/double-sens dense
+        max_sentences_val = sentence_budget(user_message)  # filet déterministe
     else:
         max_tokens_val = 340   # assez pour une tirade dense qui monte et atterrit sans clipper
-        max_sentences_val = 10  # filet anti-déraillage, PAS outil de mise en forme (la densité vient du prompt)
+        max_sentences_val = sentence_budget(user_message)  # filet déterministe
     
     for client_type, model_name in cascade:
         try:

@@ -119,6 +119,32 @@ _TRAILING_EMOJI = re.compile(
     r")\s*$"
 )
 
+INVITATION_PATTERN = re.compile(
+    r"\b(raconte|racontes?-moi|explique|développe|developpe|continue|détaille|detaille|"
+    r"histoire|conte|poème|poeme|chante|décris|decris)\b", re.IGNORECASE)
+
+def sentence_budget(user_message: str, short_cap: int = 4, long_cap: int = 10) -> int:
+    """Filet déterministe : 4 phrases par défaut, 10 si le mortel invite à développer."""
+    if user_message and INVITATION_PATTERN.search(user_message):
+        return long_cap
+    return short_cap
+
+def _force_sentence_cap(response_text: str, max_sentences: int = 10) -> str:
+    """FILET anti-déraillage Twitch : tronque si la réponse dépasse max_sentences phrases.
+    Préserve l'emoji de ton final. Les '...' ou '…' ne comptent pas comme fin de phrase."""
+    trailing_emoji = ""
+    m = _TRAILING_EMOJI.search(response_text)
+    if m:
+        trailing_emoji = " " + m.group(1).strip()
+        response_text = response_text[:m.start()].rstrip()
+
+    _ELLIPSIS = "\x00"
+    protected = re.sub(r'\.\.\.+|…', _ELLIPSIS, response_text)
+    sentences = re.split(r'(?<=[.!?]) +', protected)
+    if len(sentences) > max_sentences:
+        protected = " ".join(sentences[:max_sentences])
+    response_text = protected.replace(_ELLIPSIS, "...")
+    return (response_text + trailing_emoji).strip()
 
 def _truncate_for_twitch(text: str, limit: int = 480) -> str:
     """Tronque proprement pour la limite Twitch (~500 car.). Au lieu d'une coupe
@@ -362,6 +388,7 @@ class LlmMixin:
                 text = _strip_echo_opening(text, clean)
                 # Anti-moule déterministe : coupe l'amorce si elle reprend une ouverture récente.
                 text = _strip_repeated_opening(text, self.recent_self_responses.get(chan_lower))
+                text = _force_sentence_cap(text, sentence_budget(clean))
                 reply = _truncate_for_twitch(text, 480)
                 
                 # Mise à jour historique

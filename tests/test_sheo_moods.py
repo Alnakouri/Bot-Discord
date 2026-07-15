@@ -121,5 +121,7 @@ def test_sheo_new_behaviors():
 def test_sheo_length_rules():
     assert "QUI DÉCIDE DE LA LONGUEUR" in sheo_data.PERSONALITY_BASE
     assert "jamais en défense" in sheo_data.PERSONALITY_BASE
+    assert "4 MAXIMUM" in sheo_data.PERSONALITY_BASE
+    assert "INVITE EXPLICITEMENT" in sheo_data.PERSONALITY_BASE
 
 
