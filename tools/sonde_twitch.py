@@ -12,6 +12,15 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+# Console Windows en cp1252 : forcer l'UTF-8 pour que les emojis des messages
+# ne fassent pas crasher le script (UnicodeEncodeError).
+for _stream in (sys.stdout, sys.stderr):
+    if getattr(_stream, "encoding", "").lower() not in ("utf-8", "utf8"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 # Add root directory to sys.path
 _parent_dir = str(Path(__file__).parent.parent)
 if _parent_dir not in sys.path:
