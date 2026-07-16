@@ -15,3 +15,14 @@ class ResponseMemory:
 
     def get_recent(self, guild_id):
         return self.memory.get(guild_id, [])
+
+
+def merge_recent_responses(*sources, limit=8):
+    """Fusionne des listes de réponses récentes (None-safe), dédoublonne en gardant l'ordre."""
+    seen, out = set(), []
+    for src in sources:
+        for r in (src or []):
+            if r and r not in seen:
+                seen.add(r)
+                out.append(r)
+    return out[-limit:]

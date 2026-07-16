@@ -18,7 +18,7 @@ import random
 import re
 import json
 import os
-from shared.response_memory import ResponseMemory
+from shared.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
 from shared.smart_router import classify_request, RequestType, download_media
@@ -231,6 +231,20 @@ except ImportError:
 
 twitch_chat = None
 twitch_chat_task = None
+
+def _twitch_recent_responses():
+    """Helper local qui lit les réponses récentes du bot sur Twitch s'il est actif.
+    Pont anti-doublon Discord↔Twitch (même câblage que le pilote Sheo)."""
+    global twitch_chat
+    if not twitch_chat:
+        return []
+    try:
+        resps = []
+        for chan_resps in twitch_chat.recent_self_responses.values():
+            resps.extend(list(chan_resps))
+        return resps
+    except Exception:
+        return []
 
 # Garde one-shot : on_ready peut refire (reconnexion / RESUME) et le setup des
 # commandes (slash + jeux) n'est PAS idempotent → on ne l'exécute qu'une fois.
@@ -468,6 +482,7 @@ async def on_ready():
             enable_voice_listen=False,
         )
         if twitch_chat:
+            twitch_chat.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]
             twitch_chat_task = asyncio.create_task(twitch_chat.run())
 
 @bot.event
@@ -895,8 +910,11 @@ async def on_message(message):
             continue
         transcript += f"{hist_msg.author.name}: {hist_msg.content}\n"
     
-    # ANTI-RÉPÉTITION
-    recent_responses = response_memory.get_recent(message.guild.id if message.guild else 0)
+    # ANTI-RÉPÉTITION (fusion Discord + Twitch : pont anti-doublon inter-canaux)
+    recent_responses = merge_recent_responses(
+        response_memory.get_recent(message.guild.id if message.guild else 0),
+        _twitch_recent_responses(),
+    )
     anti_repeat_prompt = ""
     if recent_responses:
         snippets = [r[:60] + "..." if len(r) > 60 else r for r in recent_responses[-5:]]
@@ -905,7 +923,9 @@ async def on_message(message):
             anti_repeat_prompt += f"{i}. \"{snippet}\"\n"
         anti_repeat_prompt += ("Ne réutilise NI ces phrases NI leur OSSATURE : change d'ouverture "
             "(surtout PAS de vocatif « Oh, mon… » si tu viens de l'employer) et ne finis PAS "
-            "encore par une question. Prends un angle, un rythme et une chute différents.")
+            "encore par une question. Prends un angle, un rythme et une chute différents. "
+            "Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images, "
+            "métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs.")
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
