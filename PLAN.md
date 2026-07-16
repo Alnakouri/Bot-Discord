@@ -1,105 +1,70 @@
-# PLAN — Rollout du pont anti-doublon Discord↔Twitch : Johnny + Sugar
+# PLAN — Sugar : accord péteur/péteuse + streameuse préférée ma_streameuse
 
 > Antigravity exécute. Claude a rédigé (2026-07-16).
-> Cibles : `shared/response_memory.py`, `JohnnyBot/bot_johnny.py`, `SugarBot/bot_sugar.py`, + tests.
-> Repérer par CONTENU, pas par numéro de ligne. **Ne PAS toucher à Sheogorath ni à `shared/twitch/llm.py`** :
-> le pilote Sheo est déployé et validé (c651489), on réplique son câblage à l'identique.
+> Cible UNIQUE : `SugarBot/sugar_data.py` (PERSONALITY_PROMPT = Discord ET Twitch d'un coup), + tests.
+> Repérer par CONTENU, pas par numéro de ligne. Ne toucher à AUCUN autre bloc du prompt
+> (brièveté, variété, sucre, Serpentard, sécurité : INTACTS).
 
 ## Contexte
 
-Le pont anti-doublon (même vanne servie sur Discord ET Twitch) tourne sur Sheo :
-1. **Twitch lit Discord** : `twitch_chat.extra_recent_provider = lambda: ...` posé au setup —
-   le hook générique de `shared/twitch/llm.py` fusionne déjà cette liste dans le prompt
-   Twitch ET dans le filet `_strip_repeated_opening` (v2, c651489). Johnny/Sugar l'ont
-   GRATUITEMENT dès que le provider est posé.
-2. **Discord lit Twitch** : helper local `_twitch_recent_responses()` + fusion
-   `merge_recent_responses(...)` dans le bloc anti-répétition du prompt Discord, avec la
-   consigne « mots-clés saillants ».
+Deux ajouts de persona demandés par le user :
+1. L'insulte signature doit être ACCORDÉE : « péteuse » pour les femmes, « péteur » pour les
+   hommes. Aujourd'hui la règle dit « sinon choisis au hasard » → en live, Sugar a sorti
+   « la péteuse » face à un homme (LeDev). Le hasard dégage.
+2. Sugar a une streameuse préférée : **ma_streameuse** (Twitch `https://www.twitch.tv/ma_streameuse`,
+   Discord `@ma_streameuse`).
 
-Référence exacte du câblage pilote : `Sheogorath/bot_sheogorath.py` (chercher
-`extra_recent_provider`, `_twitch_recent_responses`, `merge_recent_responses`) et
-`Sheogorath/sheo_llm.py` (chercher `def merge_recent_responses`).
+## Phase A — Accord péteur/péteuse (édition de 2 lignes existantes)
 
-## Phase A — Helper partagé
-
-1. Copier `merge_recent_responses` (VERBATIM depuis `Sheogorath/sheo_llm.py`, ~10 lignes,
-   None-safe, dédoublonne en gardant l'ordre, `limit=8`) dans `shared/response_memory.py`,
-   sous la classe `ResponseMemory`. Les deux bots importent DÉJÀ ce module sans fallback
-   (`from shared.response_memory import ResponseMemory`) → ajouter la fonction à l'import.
-2. NE PAS toucher à la copie de `sheo_llm.py` (Sheo reste autonome, convention
-   « bots indépendants » ; une migration Sheo→shared est hors chapitre).
-
-## Phase B — Johnny (`JohnnyBot/bot_johnny.py`)
-
-1. **Helper module-level** (poser près de `twitch_chat = None`, ou juste avant
-   `on_message`) — copie du helper Sheo :
-```python
-def _twitch_recent_responses():
-    """Helper local qui lit les réponses récentes du bot sur Twitch s'il est actif."""
-    global twitch_chat
-    if not twitch_chat:
-        return []
-    try:
-        resps = []
-        for chan_resps in twitch_chat.recent_self_responses.values():
-            resps.extend(list(chan_resps))
-        return resps
-    except Exception:
-        return []
+1. Dans PERSONALITY_PROMPT, bloc TON CARACTÈRE, chercher la ligne
+   `Ta réplique signature : quand quelqu'un est agressif ou insultant` et REMPLACER la
+   parenthèse `(ou « péteuse » au féminin, accorde au genre si tu le devines, sinon choisis au hasard)` par :
 ```
-2. **Bloc `# ANTI-RÉPÉTITION`** (chercher `[ANTI-RÉPÉTITION] Johnny a déjà dit récemment`) :
-   remplacer la source :
-```python
-    recent_responses = merge_recent_responses(
-        response_memory.get_recent(message.guild.id if message.guild else 0),
-        _twitch_recent_responses(),
-    )
+(« péteuse » pour une femme, « péteur » pour un homme — TOUJOURS accordé au genre de ta cible. Devine-le avec les indices disponibles : pseudo, faits mémorisés, façon de parler, contexte. Si tu n'as AUCUN indice, utilise « péteur », jamais au hasard.)
 ```
-   et renforcer la consigne finale (garder « Ne répète PAS ces phrases ! Sois ORIGINAL ! »
-   et AJOUTER) :
+   Garder tel quel le reste de la ligne (« C'est ton petit chouchou d'insulte… »).
+2. Bloc RÈGLE D'OR, ligne `tu le traites de péteur/péteuse` : remplacer la fin par
+   `tu le traites de péteur (ou péteuse si c'est une femme — accord obligatoire).`
+
+## Phase B — Streameuse préférée ma_streameuse (nouveau bloc)
+
+Insérer un bloc dans PERSONALITY_PROMPT, entre le bloc `TOUCHE SERPENTARD …` et la ligne
+`SÉCURITÉ : …` (même philosophie anti-saturation que Serpentard/sucre) :
+
 ```
- Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images,
-métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs.
-```
-3. **Provider Twitch** : dans le `if twitch_chat:` qui suit `setup_twitch_chat("johnny", ...)`,
-   AVANT le `create_task` :
-```python
-            twitch_chat.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]
+TA STREAMEUSE PRÉFÉRÉE — ma_streameuse (une saveur de fond, PAS une obligation) :
+- Ta streameuse préférée est ma_streameuse (sa chaîne : https://www.twitch.tv/ma_streameuse ; sur Discord c'est ma_streameuse). Tu l'adores : elle est ta référence, ton petit péché mignon d'admiration sincère.
+- Tu n'en parles QUE si l'échange s'y prête vraiment : on parle de streams, de Twitch, on te demande tes goûts, qui tu recommandes, qui regarder. La PLUPART de tes réponses n'ont AUCUNE mention d'elle, et c'est parfait — ne la case JAMAIS de force.
+- Quand tu la recommandes, une seule mention, naturelle, avec ton mordant habituel (« la seule qui mérite mon sucre », etc.). Sur Twitch tu peux donner le lien de sa chaîne si on te le demande.
+- Si ma_streameuse elle-même te parle (pseudo Discord ou Twitch « ma_streameuse ») : tu es ta version la plus douce — chaleureuse, fan assumée, zéro pique. Elle est la SEULE personne que tu ne traites JAMAIS de péteuse, même si elle te taquine.
+- IMPORTANT : n'écris JAMAIS son nom avec un @ devant sur Discord (pas de ping/notification). Toujours « ma_streameuse » en clair.
 ```
 
-## Phase C — Sugar (`SugarBot/bot_sugar.py`)
+## Phase C — Tests
 
-Mêmes 3 édits :
-1. Helper `_twitch_recent_responses()` module-level (Sugar a déjà `global twitch_chat`).
-2. Bloc anti-répétition (chercher `[ANTI-RÉPÉTITION] Tu as déjà dit récemment`) : même
-   fusion `merge_recent_responses(...)` ; la consigne Sugar parle déjà d'OSSATURE →
-   AJOUTER à la fin la même phrase « mot-clé saillant » que Johnny.
-3. Provider posé dans le `if twitch_chat:` après `setup_twitch_chat("sugar", ...)`.
-
-## Phase D — Tests
-
-1. `shared/response_memory.py::merge_recent_responses` : reprendre les cas de
-   `tests/test_twitch_double_repetition.py` (None-safe, dédoublonnage+ordre, limit).
-2. Câblage Johnny/Sugar : `bot_johnny.py`/`bot_sugar.py` sont trop lourds à importer →
-   asserts SUR LE SOURCE (pattern existant, cf. `tests/test_johnny_persona.py`) : présence
-   de `extra_recent_provider`, `_twitch_recent_responses`, `merge_recent_responses(` et
-   « mot-clé saillant » dans chacun des 2 fichiers.
-3. Suite complète verte (229+). Grâce à c651489, le run ne doit RIEN écrire dans `logs/`.
+Dans `tests/test_sugar_persona.py` (pattern existant : asserts sur le SOURCE / les constantes
+importées de `sugar_data.py`), ajouter :
+1. L'accord : PERSONALITY_PROMPT contient `« péteur », jamais au hasard` (ou le fragment exact
+   choisi) et ne contient PLUS `choisis au hasard`.
+2. La streameuse : PERSONALITY_PROMPT contient `ma_streameuse`, `twitch.tv/ma_streameuse` et la
+   consigne anti-ping (fragment `JAMAIS son nom avec un @`).
+3. Suite complète verte (235+), toujours 0 écriture dans `logs/`.
 
 ## Garde-fous
 
-- Sheogorath, `shared/twitch/llm.py`, filet de phrases, caps : INTACTS.
-- Le provider est une lambda posée sur l'objet → no-op si `setup_twitch_chat` retourne None
-  (Twitch coupé) ; le helper Discord est try/except → no-op si Twitch down.
-- `shared/response_memory.py` reste sans dépendance (fonction pure).
+- `sugar_data.py` uniquement : PUNCHLINES/EXPLOITS/GREETINGS existants inchangés
+  (leurs « péteur » génériques sont corrects).
+- Le bloc ma_streameuse est du prompt pur : AUCUN code, aucune détection programmée, aucun
+  nouveau fichier.
+- Anti-saturation non négociable (mentions rares) — même leçon que fromage-condiment chez Sheo.
 
 ## Déploiement + validation (après commit)
 
-`docker compose up -d --build --force-recreate johnny sugar`
-(⚠️ les 6 conteneurs sont DOWN depuis la nuit du 2026-07-15→16 — les relancer tous si voulu :
-`docker compose up -d`.)
-- Sondes : `python tools/sonde_twitch.py --bot johnny` puis `--bot sugar` → 4/4 vertes.
-- Validation live : même pique envoyée Discord puis Twitch à < 2 min, pour chaque bot →
-  ni punchline ni mot-clé saillant partagés.
-- Reste aussi du chapitre précédent : **validation B Sheo** (même insulte 2 canaux) —
-  toujours à faire manuellement.
+`docker compose up -d --build --force-recreate sugar`
+- Sonde : `python tools/sonde_twitch.py --auth --bot sugar` (⚠️ token de sonde = 1 fichier
+  partagé, actuellement sous l'appli Sugar donc peut-être encore valide — tenter `--bot sugar`
+  direct d'abord) puis 4/4 vertes.
+- Validation live :
+  - Insulte envoyée par le user (homme) → « péteur », jamais « péteuse ».
+  - « sugar, tu recommandes quelle streameuse ? » → ma_streameuse, sans @, une seule mention.
+  - 3-4 messages banals d'affilée → ZÉRO mention de ma_streameuse (anti-saturation).
