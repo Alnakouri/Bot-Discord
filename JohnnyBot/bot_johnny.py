@@ -20,7 +20,7 @@ import base64
 from shared.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
+from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 from shared.llm_cascade import generate_response
 
@@ -833,6 +833,12 @@ async def on_message(message):
     if not should_respond:
         return
     
+    # L'image d'un message cité n'est récupérée que si on s'adresse à Johnny
+    # (pas via l'intervention aléatoire) ; sinon attachments du message courant.
+    atts = (await resolve_media_attachments(message)
+            if (is_mentioned or is_reply or is_dm or is_name_mentioned)
+            else message.attachments)
+
     # PREPARATION DU MESSAGE
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
     
@@ -922,7 +928,7 @@ async def on_message(message):
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
-    routing = classify_request(user_message, message.attachments, addressed=_addressed)
+    routing = classify_request(user_message, atts, addressed=_addressed)
 
     # Johnny est un perso de pure répartie → Grok en priorité pour tout texte.
     # On garde le routage image/audio/raisonnement intact ; seul le TEXT simple

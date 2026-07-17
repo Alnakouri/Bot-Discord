@@ -1,94 +1,123 @@
-# PLAN — Plus de réaction spontanée aux images : seulement si on s'adresse au bot
+# PLAN — Vision Gemini fiable : image du message cité + décrets Sheo via Gemini
 
-> Antigravity exécute. Claude a rédigé (2026-07-17).
-> Cible : les 6 `bot_*.py`. AUCUN changement dans `shared/`. Repérer par CONTENU, pas par numéro de ligne.
+> Antigravity exécute. Claude a rédigé (2026-07-18).
+> Repérer par CONTENU, pas par numéro de ligne.
 
-## Contexte / décision user
+## Contexte / décisions user (2026-07-18)
 
-Aujourd'hui, quand quelqu'un poste une image/photo, les bots peuvent la commenter
-spontanément (branches « IMAGE PRIORITY » à 100 %, tirages aléatoires 30–60 %…).
-Décision user (2026-07-17) : **un bot ne réagit à une image QUE si on s'adresse à lui**
-— mention @, réponse (reply) à un de ses messages, nom cité dans le message, ou DM.
-La capacité vision elle-même ne bouge pas : quand le bot est sollicité avec une image,
-il l'analyse comme avant.
+Suite au verrou « réaction aux images seulement si adressé » (bd5baf5) :
+1. Quand on interpelle un bot en RÉPONDANT (reply) à un message qui contient une image
+   (« @Sheo t'en penses quoi ? » sous une photo), le bot doit VOIR cette image — aujourd'hui
+   il ne regarde que `message.attachments` du message courant et répond à l'aveugle.
+2. Vérifier que TOUS les chemins vision passent bien par la clé Gemini du bot en premier
+   (repli Moondream/Ollama ensuite) — audit, corriger seulement si un chemin ne le fait pas.
+3. Décrets en image de Sheo : le TEXTE du décret doit être généré par **Gemini (clé du
+   bot) en premier**, OpenRouter/Dolphin passe en secours (ordre actuel inversé).
 
-## Règle unique (à appliquer partout)
+## A — Helper partagé : image du message cité
 
-`addressed = is_mentioned or is_reply or is_dm or is_name_mentioned` (selon les
-variables déjà présentes dans chaque bot ; pas de DM chez certains → ignorer ce terme).
+Dans `shared/smart_router.py`, ajouter :
 
-1. **Supprimer** toute branche qui met `should_respond = True` (ou équivalent) à cause
-   de la seule présence d'une image, sans `addressed`.
-2. **Empêcher** les déclencheurs spontanés restants (intervention aléatoire, mots-clés,
-   oreille qui traîne, chaos) de se déclencher sur un message qui CONTIENT une image :
-   ajouter `not has_image_early` (ou la variable image locale) à leur condition.
-   Motif : si la branche aléatoire se déclenche sur un message avec image, le routage
-   vision analyserait l'image quand même → réaction spontanée par la bande.
+```python
+async def resolve_media_attachments(message):
+    """Renvoie les attachments à router : ceux du message courant s'il y en a,
+    sinon ceux du message CITÉ (reply) — permet « @bot t'en penses quoi ? » sous une image.
+    Jamais d'exception : en cas d'échec, renvoie message.attachments tel quel."""
+```
 
-## Par bot
+Comportement :
+- `message.attachments` non vide → le renvoyer tel quel (comportement actuel).
+- Sinon, si `message.reference` existe : prendre `message.reference.resolved` ;
+  si `None` ou non-Message (`DeletedReferencedMessage`), tenter
+  `await message.channel.fetch_message(message.reference.message_id)` sous `try/except`
+  (tout échec → renvoyer `message.attachments`).
+- Si le message cité a des attachments → les renvoyer (y compris si son auteur est un
+  bot : citer l'image d'un décret de Sheo et lui demander dessus doit marcher).
+- Sinon → `message.attachments`.
 
-### JohnnyBot/bot_johnny.py
-- Supprimer la branche `# A.bis IMAGE PRIORITY` (`elif has_image_early and not is_bot_talking: should_respond = True` + log `[IMAGE PRIORITY]`).
-- Branche `# C. Intervention aléatoire (10%)` : ajouter `not has_image_early` à la condition.
+Test unitaire (`tests/test_smart_router.py` ou nouveau fichier, style unittest existant,
+fakes simples sans discord.py) : message avec attachments → inchangé ; message sans
+attachments + ref résolue avec image → attachments de la ref ; ref à fetch (resolved
+None) → fetch_message appelé ; fetch qui lève → retombe sur `[]` sans exception.
 
-### SugarBot/bot_sugar.py
-- Supprimer la branche `# A.bis IMAGE PRIORITY` (même motif que Johnny, log `[IMAGE PRIORITY] Sugar Bot`).
-- Branche intervention aléatoire 10 % (`elif not is_bot_talking and not should_respond and random.random() < 0.10`) : ajouter `not has_image_early`.
+## B — Câblage dans les 6 bots
 
-### Alfred/bot_alfred.py
-- Supprimer la branche `elif has_image_early and not is_bot_talking:` (context_prefix « VISION: Le Maître partage une image… », log `[IMAGE PRIORITY]`).
-- Branche `# C. Si Chaos détecté` (`(has_chaos_keyword or is_shouting) and random.random() < 0.15`) : ajouter `not has_image_early`.
+Principe : partout où le CHEMIN DE RÉPONSE construit son routage/vision à partir de
+`message.attachments`, utiliser `atts = await resolve_media_attachments(message)` à la
+place. NE PAS toucher aux gardes anti-spontané de bd5baf5 (`has_image_early`,
+`has_attachment_image`, `has_image` de la décision) : ils portent sur le message
+COURANT et c'est voulu — un reply-avec-mention est déjà `addressed`, il entre par là.
 
-### MaiqBot/bot_maiq.py
-- Bloc `# DECISION FINAL` : supprimer entièrement `is_image_trigger` (le cas
-  `image + mention/reply/nom` est déjà couvert par `is_mentioned or is_reply or
-  is_name_mentioned` dans `should_respond` ; le cas `elif random.random() < 0.30`
-  est exactement ce qu'on retire). Retirer `is_image_trigger` de la ligne `should_respond = ...`.
-- Branche « L'Oreille qui traîne » (`has_keyword and not is_mentioned and not is_reply`, 20 %) :
-  ajouter `not has_attachment_image`.
+Par bot (tous importent déjà `shared.smart_router` sans fallback) :
 
-### Sheogorath/bot_sheogorath.py
-- Supprimer le bloc `nosy_chance` (assigné à 0.30 si `message.attachments`, jamais lu — code mort) et son commentaire « ou si c'est un média (nosy) ».
-- DECISION MATRIX : supprimer les DEUX branches image :
-  - `elif has_image and not message.author.bot and (has_name or has_priority_keyword or has_keyword):` (le cas `has_name` est déjà couvert par la branche `elif has_name:` au-dessus) ;
-  - `elif has_image and ... random.random() < 0.60:` (« Random Image detected »).
-- Branches mots-clés spontanées (`elif has_priority_keyword ...` ×2 et `elif has_keyword and not _other_bot_named ...`) : ajouter `not has_image` à chacune.
-- Ne PAS toucher à `is_proactive` ni `is_continuation` (pas liés aux images) — sauf si
-  trivial d'ajouter `not has_image` à `is_continuation` aussi : le faire (une image
-  postée dans la foulée d'un échange n'est pas une invitation à la commenter).
+- **SugarBot/bot_sugar.py** : bloc « TRAITEMENT MULTIMODAL » (gated `should_respond`) :
+  calculer `atts` juste avant, remplacer `message.attachments` dans le `if` et dans
+  `classify_request(...)`. Idem au second appel `classify_request(user_message, message.attachments, addressed=_addressed)` plus bas.
+- **MaiqBot/bot_maiq.py** : bloc « TRAITEMENT MULTIMODAL » (gated `_addressed_early`) :
+  idem (le `if message.attachments and not message.author.bot and _addressed_early:`
+  devient `if atts and ...`). Idem à l'appel `classify_request(..., addressed=_addressed)`
+  du chemin principal.
+- **MalenaBot/bot_malena.py** : dans le bloc `if should_respond:` : le
+  `if message.attachments:` du traitement multimodal et les deux `classify_request(...)`
+  passent sur `atts`.
+- **JohnnyBot/bot_johnny.py** : l'appel `classify_request(user_message, message.attachments, addressed=_addressed)` passe sur `atts`.
+- **Sheogorath/bot_sheogorath.py** : l'appel `classify_request(user_message, message.attachments, addressed=_addressed)` passe sur `atts` (le download `download_media(routing[...])` suit tout seul).
+- **Alfred/bot_alfred.py** : bloc « F. VISION » (gated `should_respond`) : itérer sur
+  `atts` au lieu de `message.attachments` (garder la limite 10 MB et le double-check
+  content-length tels quels).
 
-### MalenaBot/bot_malena.py
-- RIEN à faire : elle ne répond déjà que si `is_mentioned or is_reply or is_name_mentioned or has_trigger_word` (+ `SPECIAL_INTERACTIONS`). Vérifier seulement qu'aucune branche image spontanée ne m'a échappé ; sinon ne pas toucher.
+## C — Audit vision = clé Gemini d'abord (vérif, ne corriger que si faux)
+
+Confirmer que chaque chemin vision essaie `key_manager.get_key("gemini")` AVANT tout
+repli Moondream/`process_image_ollama` :
+- cascade partagée `shared/llm_cascade.py` (IMAGE → gemini-2.5-flash → flash-lite → ollama) ;
+- cascade inline de Sheo (même ordre) ;
+- blocs précoces Sugar/M'aiq/Malena (`process_image(..., api_key=get_key("gemini"))`) ;
+- chemin vision d'Alfred (Gemini d'abord, `process_image_ollama` en secours).
+Attendu : déjà conforme partout → aucun changement. Si un chemin ne tente pas Gemini
+d'abord, l'aligner sur l'ordre de `get_model_cascade(IMAGE)`.
+
+## D — Décrets Sheo : Gemini en premier
+
+Dans `Sheogorath/bot_sheogorath.py`, fonction `publish_daily_rumor_sheo` :
+inverser l'ordre des deux tentatives de génération du texte du décret :
+1. **Gemini d'abord** : bloc actuel « Fallback Gemini » (`key_manager.get_key("gemini")`
+   → `gemini-2.5-flash`) devient la première tentative. ⚠️ L'appel est un SDK sync dans
+   un contexte async : l'envelopper `await asyncio.to_thread(...)` (gotcha connu : les
+   appels sync non-threadés bloquent la boucle et tuent le WS EventSub).
+2. **OpenRouter/Dolphin en secours** : le bloc actuel « Try Grok (via OpenRouter) first »
+   passe derrière (`if not full_response:`). Même remarque `asyncio.to_thread` pour
+   `openrouter_client.chat.completions.create` s'il ne l'est pas déjà.
+3. Le repli statique `_fallback_decrees` reste en dernier, inchangé.
+Adapter les logs (`[RUMEUR SHEO] Gemini failed` / `OpenRouter failed`) à ce nouvel ordre.
+NE PAS toucher à `cmd_decret` (commande Twitch, cascade TEXT déjà partagée).
 
 ## Garde-fous
 
-- Le chemin « bot sollicité + image » (mention/reply/nom/DM) doit continuer d'analyser
-  l'image exactement comme avant (routage `classify_request` → vision Gemini).
-- Ne rien changer aux réactions emoji automatiques éventuelles (`add_reaction`) : le
-  user parle des RÉPONSES texte spontanées. (Sheo a un bloc reactions en amont — intact.)
-- Convention bots indépendants : tout reste inline dans chaque bot, pas de helper `shared/`.
+- Zéro changement de comportement pour un message avec ses propres attachments.
+- Les gardes anti-réaction-spontanée de bd5baf5 restent intacts.
+- `shared/smart_router.py` reste importable sans discord.py (le helper ne touche que
+  des attributs duck-typés du message — pas d'import discord).
 
 ## Vérification
 
-1. `python -m pytest` → tout vert (242 actuellement, aucun test ne couvre ces branches
-   mais rien ne doit casser).
+1. `python -m pytest` → tout vert (242 + les nouveaux tests du helper).
 2. Déploiement : `docker compose up -d --build --force-recreate`.
 3. Live :
-   - poster une image SANS mentionner personne → aucun bot ne répond (répéter 3-4 fois
-     pour écarter les anciens tirages aléatoires) ;
-   - poster une image en mentionnant un bot (`@Sheogorath t'en penses quoi ?`) → il
-     analyse et commente comme avant ;
-   - poster une image avec le nom d'un bot dans le texte (« sugar regarde ça ») → il répond.
+   - poster une photo, puis RÉPONDRE dessus avec « @Sheo t'en penses quoi ? » → il décrit
+     réellement l'image (log `[ROUTER] 🖼️ Image → Gemini Vision` + `✅ [GEMINI ...]`) ;
+   - pareil avec Sugar par nom (« sugar regarde ça » en reply d'une image) ;
+   - `!decret @user` (admin) → log Gemini en premier pour le texte du décret ;
+   - poster une image sans rien → toujours aucun bot (non-régression bd5baf5).
 
-## Complément (vérif Claude 2026-07-17, appliqué par Claude)
+## Complément (vérif Claude 2026-07-18, appliqué par Claude)
 
-L'audit initial avait raté 4 chemins spontanés supplémentaires, corrigés à la vérif :
-- **Sugar** : bloc « TRAITEMENT MULTIMODAL » précoce (avant le check `should_respond`)
-  qui répondait à TOUTE image → gated sur `should_respond`.
-- **M'aiq** : même bloc précoce (avant même le calcul des triggers) → gated sur
-  `_addressed_early` (mention/reply/nom, calculé inline).
-- **Alfred** : bloc « F. VISION » qui forçait `should_respond = True # React to images!`
-  sur toute image → bloc gated sur `should_respond`, ligne forcée supprimée.
-- **Sheo** : `is_proactive` (2 % aléatoire) pouvait tirer sur un message avec image →
-  ajout de `not has_image`.
-Sheo/Johnny n'ont pas de bloc multimodal précoce (routage vision après la décision) — RAS.
+- **Sugar (bug critique)** : le `else: atts = []` inséré au milieu de la branche
+  « A. Message direct » avait orphané le log [NOM ALTERNATIF] et l'écriture DB (exécutés
+  dans le mauvais cas). Corps de branche restauré, `atts` calculé après la branche.
+- **Johnny/Sheo/Alfred** : `resolve_media_attachments` n'est appelé que si le bot est
+  réellement interpellé (mention/reply/nom/DM) — pas via intervention aléatoire, chaos
+  ou proactivité, sinon un reply-à-une-image pouvait être analysé spontanément par la
+  bande ; chemins non-adressés → `message.attachments` (comportement d'origine).
+- **Helper** : pas de `fetch_message` HTTP quand la ref est déjà résolue sans pièce
+  jointe (cas courant : reply au bot) — les attachments du cache font foi. Test ajouté.

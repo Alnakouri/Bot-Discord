@@ -38,7 +38,7 @@ from shared.response_memory import ResponseMemory
 import json
 import logging
 from datetime import datetime, timedelta
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
+from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from shared.media_handler import process_image_ollama
 
 try:
@@ -1293,6 +1293,8 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    atts = []
+
     # 1. ANALYSE
     text_lower = message.content.lower()
     is_mentioned = bot.user.mentioned_in(message)
@@ -1500,8 +1502,14 @@ async def on_message(message):
     has_image = False
     # Uniquement si Alfred est déjà sollicité (mention/reply/nom/chaos) — pas de
     # commentaire spontané des images postées.
-    if message.attachments and should_respond:
-        for attachment in message.attachments:
+    # L'image d'un message cité n'est récupérée que si on s'adresse à Alfred
+    # (pas via la branche chaos) ; sinon attachments du message courant.
+    if should_respond:
+        atts = (await resolve_media_attachments(message)
+                if (is_mentioned or is_reply or is_name_mentioned)
+                else message.attachments)
+    if atts and should_respond:
+        for attachment in atts:
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 # Vérification de la taille avant téléchargement
                 if attachment.size and attachment.size > MAX_IMAGE_SIZE:
@@ -1565,7 +1573,7 @@ async def on_message(message):
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_name_mentioned)
-    routing = classify_request(user_message, message.attachments, addressed=_addressed)
+    routing = classify_request(user_message, atts, addressed=_addressed)
     
     # Téléchargements Médias AVANCÉS
     mime_type = "image/jpeg"

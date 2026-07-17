@@ -23,7 +23,7 @@ import base64
 from shared.response_memory import ResponseMemory
 import logging
 from pathlib import Path
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
+from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 
 try:
@@ -1067,10 +1067,25 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     
     full_response = None
     
-    # Try Grok (via OpenRouter) first
-    if openrouter_client:
+    # Try Gemini first (asyncio.to_thread to prevent blocking the Event Loop)
+    api_key = key_manager.get_key("gemini")
+    if api_key:
         try:
-            chat = openrouter_client.chat.completions.create(
+            client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
+            resp = await asyncio.to_thread(
+                client.models.generate_content,
+                model='gemini-2.5-flash',
+                contents=rumor_prompt
+            )
+            full_response = resp.text
+        except Exception as e:
+            logger.warning(f"⚠️ [RUMEUR SHEO] Gemini failed: {e}")
+    
+    # Fallback OpenRouter/Dolphin
+    if not full_response and openrouter_client:
+        try:
+            chat = await asyncio.to_thread(
+                openrouter_client.chat.completions.create,
                 model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                 messages=[{"role": "user", "content": rumor_prompt}],
                 temperature=1.0,
@@ -1079,17 +1094,6 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
             full_response = chat.choices[0].message.content
         except Exception as e:
             logger.warning(f"⚠️ [RUMEUR SHEO] Grok (OpenRouter) failed: {e}")
-    
-    # Fallback Gemini
-    if not full_response:
-        api_key = key_manager.get_key("gemini")
-        if api_key:
-            try:
-                client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                resp = client.models.generate_content(model='gemini-2.5-flash', contents=rumor_prompt)
-                full_response = resp.text
-            except Exception as e:
-                logger.warning(f"⚠️ [RUMEUR SHEO] Gemini failed: {e}")
     
     if not full_response:
         # Repli (les 2 IA ont échoué) : décrets variés DANS la voix de Sheogorath,
@@ -2040,6 +2044,12 @@ async def on_message(message):
     if not should_respond:
         return
 
+    # L'image d'un message cité n'est récupérée que si on s'adresse à Sheo
+    # (pas via proactivité/mots-clés) ; sinon attachments du message courant.
+    atts = (await resolve_media_attachments(message)
+            if (is_mentioned or is_reply or has_name)
+            else message.attachments)
+
     # Mémorise l'interlocuteur courant → permet de poursuivre le fil au prochain message
     # sans exiger une nouvelle mention (continuité conversationnelle).
     last_exchange[message.channel.id] = (message.author.id, time.time())
@@ -2225,7 +2235,7 @@ async def on_message(message):
     # Si oui et que c'est du banter court, le routeur vise la cascade REPARTEE (Grok) pour
     # une répartie plus mordante. Sinon, comportement inchangé (cascade TEXT/REASONING).
     _addressed = bool(is_mentioned or is_reply or has_name or is_continuation)
-    routing = classify_request(user_message, message.attachments, addressed=_addressed)
+    routing = classify_request(user_message, atts, addressed=_addressed)
     
     # Télécharger le média si nécessaire (image ou audio)
     media_data = None

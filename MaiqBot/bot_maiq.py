@@ -23,7 +23,7 @@ from shared.response_memory import ResponseMemory
 import logging
 from datetime import datetime
 import base64
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
+from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 try:
     from shared.games import setup_games
@@ -1001,6 +1001,8 @@ async def on_message(message):
     if message.author.id == bot.user.id:
         return
         
+    atts = []
+        
     # SILENCE STREAM (Canal ignoré)
     if is_ignored_channel(message.channel):
         return
@@ -1025,8 +1027,10 @@ async def on_message(message):
         or (message.reference and message.reference.resolved and message.reference.resolved.author == bot.user)
         or any(name in message.content.lower() for name in ["maiq", "m'aiq", "le menteur"])
     )
-    if message.attachments and not message.author.bot and _addressed_early:
-        routing = classify_request(message.content, message.attachments)
+    if not message.author.bot and _addressed_early:
+        atts = await resolve_media_attachments(message)
+    if atts and not message.author.bot and _addressed_early:
+        routing = classify_request(message.content, atts)
         
         # --- IMAGE ---
         if routing["has_image"] and routing["image_attachment"]:
@@ -1315,7 +1319,7 @@ async def on_message(message):
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_name_mentioned)
-    routing = classify_request(user_message, message.attachments, addressed=_addressed)
+    routing = classify_request(user_message, atts, addressed=_addressed)
     
     media_data = None
     mime_type = "image/jpeg"

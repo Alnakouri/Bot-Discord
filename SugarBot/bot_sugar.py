@@ -21,7 +21,7 @@ import os
 from shared.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
-from shared.smart_router import classify_request, RequestType, download_media
+from shared.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
 from shared.media_handler import process_image, process_voice_message
 
 try:
@@ -725,15 +725,19 @@ async def on_message(message):
     # A. Message direct (mention, reply, DM, ou nom alternatif)
     if is_mentioned or is_reply or is_dm or (is_name_mentioned and not is_bot_talking):
         should_respond = True
-        
+
         # Log si invoqué par nom alternatif
         if is_name_mentioned and not is_mentioned:
             logger.info(f"[NOM ALTERNATIF] Sugar Bot invoqué par nom dans le message de {message.author.name}")
-        
+
         # Database
         if DATABASE_AVAILABLE and not is_dm:
             get_or_create_user(message.author.id, message.author.name, message.author.display_name)
             log_interaction(message.author.id, "Sugar Bot", "mention")
+
+    # L'image d'un message cité n'est récupérée que si on s'adresse à Sugar ;
+    # sinon on garde les attachments du message courant (comportement d'origine).
+    atts = await resolve_media_attachments(message) if should_respond else message.attachments
     
     
     # ══════════════════════════════════════════════════
@@ -795,8 +799,8 @@ async def on_message(message):
     # Uniquement si on s'adresse à Sugar (mention/reply/DM/nom) — pas de
     # commentaire spontané des images postées.
     # ══════════════════════════════════════════════════
-    if message.attachments and should_respond:
-        routing = classify_request(message.content, message.attachments)
+    if atts and should_respond:
+        routing = classify_request(message.content, atts)
         
         # --- IMAGE ---
         if routing["has_image"] and routing["image_attachment"]:
@@ -939,7 +943,7 @@ async def on_message(message):
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
-    routing = classify_request(user_message, message.attachments, addressed=_addressed)
+    routing = classify_request(user_message, atts, addressed=_addressed)
     
     # Téléchargement Média
     media_data = None

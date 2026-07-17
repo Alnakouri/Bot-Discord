@@ -323,3 +323,28 @@ async def download_media(attachment):
     except Exception as e:
         logger.error(f"❌ [ROUTER] Erreur téléchargement: {e}")
         return None, None
+
+
+async def resolve_media_attachments(message):
+    """Renvoie les attachments à router : ceux du message courant s'il y en a,
+    sinon ceux du message CITÉ (reply) — permet « @bot t'en penses quoi ? » sous une image.
+    Jamais d'exception : en cas d'échec, renvoie message.attachments tel quel."""
+    try:
+        if message.attachments:
+            return message.attachments
+        
+        ref = message.reference
+        if ref and ref.message_id:
+            resolved = ref.resolved
+            if resolved is not None and hasattr(resolved, "attachments"):
+                # Déjà résolu (cache gateway) : ses attachments font foi,
+                # pas de fetch HTTP même s'ils sont vides.
+                if resolved.attachments:
+                    return resolved.attachments
+            elif hasattr(message.channel, "fetch_message"):
+                msg = await message.channel.fetch_message(ref.message_id)
+                if msg and msg.attachments:
+                    return msg.attachments
+    except Exception:
+        pass
+    return getattr(message, "attachments", [])

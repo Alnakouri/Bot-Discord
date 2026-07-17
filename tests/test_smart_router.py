@@ -13,7 +13,7 @@ if _parent_dir not in sys.path:
 
 from shared.smart_router import (
     classify_request, get_model_cascade, RequestType,
-    _needs_reasoning, _needs_humor,
+    _needs_reasoning, _needs_humor, resolve_media_attachments,
 )
 
 
@@ -127,6 +127,95 @@ class TestModelCascade(unittest.TestCase):
 
     def test_unknown_type_falls_back_to_text_cascade(self):
         self.assertEqual(get_model_cascade("inconnu"), get_model_cascade(RequestType.TEXT))
+
+
+class TestResolveMediaAttachments(unittest.IsolatedAsyncioTestCase):
+    async def test_message_with_attachments(self):
+        class FakeMessage:
+            attachments = ["att1"]
+            reference = None
+        
+        msg = FakeMessage()
+        res = await resolve_media_attachments(msg)
+        self.assertEqual(res, ["att1"])
+
+    async def test_message_without_attachments_but_resolved_ref_has_attachments(self):
+        class FakeRef:
+            message_id = 123
+            class FakeResolved:
+                attachments = ["att2"]
+            resolved = FakeResolved()
+        
+        class FakeMessage:
+            attachments = []
+            reference = FakeRef()
+            
+        msg = FakeMessage()
+        res = await resolve_media_attachments(msg)
+        self.assertEqual(res, ["att2"])
+
+    async def test_message_ref_fetch_success(self):
+        class FakeRef:
+            message_id = 123
+            resolved = None
+
+        class FakeFetchedMessage:
+            attachments = ["att3"]
+
+        class FakeChannel:
+            async def fetch_message(self, message_id):
+                if message_id == 123:
+                    return FakeFetchedMessage()
+                return None
+
+        class FakeMessage:
+            attachments = []
+            reference = FakeRef()
+            channel = FakeChannel()
+
+        msg = FakeMessage()
+        res = await resolve_media_attachments(msg)
+        self.assertEqual(res, ["att3"])
+
+    async def test_message_ref_fetch_failure(self):
+        class FakeRef:
+            message_id = 123
+            resolved = None
+
+        class FakeChannel:
+            async def fetch_message(self, message_id):
+                raise RuntimeError("fetch failed")
+
+        class FakeMessage:
+            attachments = ["att_fallback"]
+            reference = FakeRef()
+            channel = FakeChannel()
+
+        msg = FakeMessage()
+        res = await resolve_media_attachments(msg)
+        self.assertEqual(res, ["att_fallback"])
+
+    async def test_resolved_ref_without_attachments_skips_fetch(self):
+        # Ref déjà résolue (cache gateway) sans pièce jointe : ses attachments
+        # font foi → aucun fetch HTTP (cas courant : reply au bot lui-même).
+        class FakeRef:
+            message_id = 123
+            class FakeResolved:
+                attachments = []
+            resolved = FakeResolved()
+
+        class FakeChannel:
+            async def fetch_message(self, message_id):
+                raise AssertionError("fetch_message ne doit pas être appelé")
+
+        class FakeMessage:
+            attachments = []
+            reference = FakeRef()
+            channel = FakeChannel()
+
+        msg = FakeMessage()
+        res = await resolve_media_attachments(msg)
+        self.assertEqual(res, [])
 
 
 if __name__ == "__main__":

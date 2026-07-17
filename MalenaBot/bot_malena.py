@@ -19,7 +19,7 @@ import random
 from openai import OpenAI
 from datetime import datetime
 import base64
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade
+from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 from google.genai import types
 from shared.safe_client import get_client as get_safe_genai_client
@@ -440,6 +440,7 @@ async def on_message(message):
 
     # Si on doit répondre (Humain uniquement — les bots sont filtrés en amont)
     if should_respond:
+        atts = await resolve_media_attachments(message)
         async with message.channel.typing():
             try:
                 # Construction du prompt
@@ -484,8 +485,8 @@ async def on_message(message):
                 # ══════════════════════════════════════════════════
                 # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
                 # ══════════════════════════════════════════════════
-                if message.attachments:
-                    routing = classify_request(message.content, message.attachments)
+                if atts:
+                    routing = classify_request(message.content, atts)
                     
                     # --- IMAGE ---
                     if routing["has_image"] and routing["image_attachment"]:
@@ -538,7 +539,7 @@ async def on_message(message):
 
                 # SMART ROUTER (Media & Intention)
                 _addressed = bool(is_mentioned or is_reply or is_name_mentioned or has_trigger_word)
-                routing = classify_request(user_msg, message.attachments, addressed=_addressed)
+                routing = classify_request(user_msg, atts, addressed=_addressed)
                 
                 media_data = None
                 mime_type = "image/jpeg"
