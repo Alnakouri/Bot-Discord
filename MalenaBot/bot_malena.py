@@ -766,9 +766,22 @@ async def status_loop_malena():
         activity = daily_status.pick_activity()
     if activity is None:  # module absent/désactivé : repli sur la liste fallback
         t, name = random.choice(_STATUS_FALLBACK)
-        activity = discord.Activity(
-            type=getattr(discord.ActivityType, t, discord.ActivityType.listening),
-            name=name)
+        alias = {
+            "watch": "watching", "watching": "watching", "regarde": "watching",
+            "play": "playing", "playing": "playing", "joue": "playing",
+            "listen": "listening", "listening": "listening", "écoute": "listening",
+            "ecoute": "listening",
+        }
+        mapped_t = alias.get(str(t).strip().lower())
+        if mapped_t == "watching":
+            txt = f"Regarde {name}"
+        elif mapped_t == "playing":
+            txt = f"Joue {name}"
+        elif mapped_t == "listening":
+            txt = f"Écoute {name}"
+        else:
+            txt = name
+        activity = discord.CustomActivity(name=txt[:60])
     await bot.change_presence(activity=activity)
 
 @status_loop_malena.before_loop

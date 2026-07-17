@@ -12,7 +12,32 @@ from datetime import datetime
 DATA_DIR = os.getenv("DATA_DIR", ".")
 MAX_STATUS_LEN = 60          # un nom d'activité Discord reste court et lisible
 DEFAULT_COUNT = 12           # nombre de statuts générés par jour
-_TYPES = {"watching", "playing", "listening"}
+
+
+def _legacy_to_text(type_str, text):
+    """Convertit un type et texte d'activité hérités (watching/playing/listening)
+    en une phrase autonome (Regarde {texte}, Joue {texte}, Écoute {texte}) tronquée."""
+    alias = {
+        "watch": "watching", "watching": "watching", "regarde": "watching",
+        "play": "playing", "playing": "playing", "joue": "playing",
+        "listen": "listening", "listening": "listening", "écoute": "listening",
+        "ecoute": "listening",
+    }
+    t = alias.get(str(type_str).strip().lower())
+    txt = str(text).strip().strip('"\'' )
+    if not t or not txt:
+        return ""
+    if t == "watching":
+        res = f"Regarde {txt}"
+    elif t == "playing":
+        res = f"Joue {txt}"
+    elif t == "listening":
+        res = f"Écoute {txt}"
+    else:
+        return ""
+    # Nettoyer les espaces multiples
+    res = re.sub(r"\s{2,}", " ", res).strip()
+    return res[:MAX_STATUS_LEN]
 
 
 class DiscordDailyStatus:
@@ -25,11 +50,18 @@ class DiscordDailyStatus:
         self.bot_id = bot_id
         self.bot_label = bot_label
         self.personality_prompt = personality_prompt
-        # liste de tuples (type_str, texte) — filet de sécurité si le LLM échoue
-        self.fallback_activities = [
-            (str(t).lower(), str(n)) for t, n in (fallback_activities or [])
-            if str(t).lower() in _TYPES and str(n).strip()
-        ]
+        
+        # conversion des fallbacks en phrases autonomes
+        seen = set()
+        self.fallback_activities = []
+        for t, n in (fallback_activities or []):
+            txt = _legacy_to_text(t, n)
+            if txt:
+                k = txt.lower()
+                if k not in seen:
+                    seen.add(k)
+                    self.fallback_activities.append(txt)
+
         self.key_manager = key_manager
         self.mistral_client = mistral_client
         self.groq_client = groq_client
@@ -38,10 +70,10 @@ class DiscordDailyStatus:
         self.logger = logger or logging.getLogger(bot_id)
         self.enabled = enabled
         self.count = count
-        self._items = list(self.fallback_activities)  # statuts en vigueur
+        self._items = list(self.fallback_activities)  # statuts en vigueur (liste de str)
         self._loaded_day = None  # garde anti-régénération intra-process
 
-    # --- persistance: data/discord_status_{bot_id}.json ({date, items}) ---
+    # --- persistance: data/discord_status_{bot_id}.json ({date, texts}) ---
     def _path(self):
         return os.path.join(DATA_DIR, f"discord_status_{self.bot_id}.json")
 
@@ -67,10 +99,11 @@ class DiscordDailyStatus:
 
     @staticmethod
     def _parse_items(text):
-        """Extrait une liste [(type, texte)] d'une réponse LLM (JSON tolérant).
+        """Extrait une liste de chaînes (statuts personnalisés) d'une réponse LLM (JSON tolérant).
 
-        Attend un tableau d'objets {"type": "watching|playing|listening", "text": "…"}.
-        Robuste aux ```fences```, au texte autour et aux types en français/majuscules."""
+        Gère soit un tableau de chaînes, soit un tableau d'objets (ancien format).
+        Robuste aux ```fences```, au texte autour et aux types en français/majuscules.
+        """
         if not text:
             return []
         raw = text.strip()
@@ -84,31 +117,35 @@ class DiscordDailyStatus:
             return []
         if not isinstance(data, list):
             return []
-        alias = {
-            "watch": "watching", "watching": "watching", "regarde": "watching",
-            "play": "playing", "playing": "playing", "joue": "playing",
-            "listen": "listening", "listening": "listening", "écoute": "listening",
-            "ecoute": "listening",
-        }
+
         out, seen = [], set()
         for it in data:
-            if not isinstance(it, dict):
-                continue
-            t = alias.get(str(it.get("type", "")).strip().lower())
-            txt = str(it.get("text", "")).strip().strip('"\'' )
-            txt = re.sub(r"\s{2,}", " ", txt)
-            if not t or not txt:
-                continue
-            txt = txt[:MAX_STATUS_LEN].rstrip()
-            key = (t, txt.lower())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append((t, txt))
+            if isinstance(it, str):
+                txt = it.strip().strip('"\'' )
+                txt = re.sub(r"\s{2,}", " ", txt).strip()
+                if not txt:
+                    continue
+                txt = txt[:MAX_STATUS_LEN].rstrip()
+                key = txt.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(txt)
+            elif isinstance(it, dict):
+                t = it.get("type", "")
+                val = it.get("text", "")
+                txt = _legacy_to_text(t, val)
+                if not txt:
+                    continue
+                key = txt.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(txt)
         return out
 
     async def _generate_daily_status(self):
-        """1 seul appel cascade/jour. Renvoie une liste [(type, texte)] en personnage,
+        """1 seul appel cascade/jour. Renvoie une liste de str en personnage,
         sinon [] (le bot gardera alors sa liste fallback)."""
         if not (self.enabled and self.key_manager):
             return []
@@ -123,16 +160,12 @@ class DiscordDailyStatus:
             return []
         persona = self.bot_label or self.bot_id
         prompt = (
-            f"Tu es {persona}. Génère {self.count} idées de STATUT Discord (l'activité "
-            f"affichée sous ton nom), fidèles à ta personnalité et à ton univers. "
-            f"Chaque statut a un type parmi \"watching\" (affiché « Regarde … »), "
-            f"\"playing\" (« Joue … ») ou \"listening\" (« Écoute … ») et un texte COURT "
-            f"(≤ 8 mots) grammaticalement cohérent avec ce verbe. Varie les types et les idées, "
-            f"en personnage, sans guillemets ni didascalies.\n"
-            f"Réponds UNIQUEMENT par un tableau JSON, ex: "
-            f'[{{"type":"watching","text":"le caramel dorer"}},'
-            f'{{"type":"playing","text":"à la marchande de bonbons"}},'
-            f'{{"type":"listening","text":"craquer le sucre d\'orge"}}]'
+            f"Tu es {persona}. Génère {self.count} propositions de STATUTS personnalisés "
+            f"Discord, courts (≤ 8 mots) et autonomes (lisibles seuls, sans verbe imposé/sous-entendu), "
+            f"fidèles à ta personnalité et à ton univers. "
+            f"Écris-les directement en personnage, sans guillemets ni didascalies. Un emoji de ton optionnel en fin.\n"
+            f"Réponds UNIQUEMENT par un tableau JSON de chaînes, ex: "
+            f'["Je fais fondre le caramel 🍬", "Recrutement de bonbons rebelles", "Le sucre d\'orge craque encore"]'
         )
         try:
             from shared.llm_cascade import generate_response
@@ -167,21 +200,43 @@ class DiscordDailyStatus:
             if self._loaded_day == today and self._items:
                 return
             state = self._load_state()
-            if state and state.get("date") == today and state.get("items"):
-                items = self._parse_items(json.dumps(
-                    [{"type": t, "text": n} for t, n in state["items"]]))
-                if items:
-                    self._items = items
+            if state and state.get("date") == today:
+                if "texts" in state and isinstance(state["texts"], list):
+                    self._items = [t[:MAX_STATUS_LEN] for t in state["texts"] if isinstance(t, str) and t.strip()]
                     self._loaded_day = today
                     self.logger.info(
-                        f"💾 [DISCORD_STATUS:{self.bot_id}] {len(items)} statuts du jour (cache, 0 LLM)")
+                        f"💾 [DISCORD_STATUS:{self.bot_id}] {len(self._items)} statuts du jour (cache, 0 LLM)")
                     return
+                elif "items" in state and isinstance(state["items"], list):
+                    converted = []
+                    for item in state["items"]:
+                        if isinstance(item, list) and len(item) == 2:
+                            t, n = item[0], item[1]
+                        elif isinstance(item, dict):
+                            t, n = item.get("type"), item.get("text")
+                        else:
+                            continue
+                        txt = _legacy_to_text(t, n)
+                        if txt:
+                            converted.append(txt)
+                    seen = set()
+                    deduped = []
+                    for txt in converted:
+                        k = txt.lower()
+                        if k not in seen:
+                            seen.add(k)
+                            deduped.append(txt)
+                    if deduped:
+                        self._items = deduped
+                        self._loaded_day = today
+                        self.logger.info(
+                            f"💾 [DISCORD_STATUS:{self.bot_id}] {len(deduped)} statuts du jour (cache migré, 0 LLM)")
+                        return
             items = await self._generate_daily_status()
             if items:
                 self._items = items
                 self._loaded_day = today
-                self._save_state({"date": today,
-                                  "items": [[t, n] for t, n in items]})
+                self._save_state({"date": today, "texts": items})
                 self.logger.info(
                     f"🧠 [DISCORD_STATUS:{self.bot_id}] {len(items)} nouveaux statuts générés")
             else:
@@ -192,7 +247,7 @@ class DiscordDailyStatus:
                 f"❌ [DISCORD_STATUS:{self.bot_id}] ensure_daily_status: {e}", exc_info=True)
 
     def pick_activity(self):
-        """Renvoie un discord.Activity tiré au hasard des statuts en vigueur
+        """Renvoie un discord.CustomActivity tiré au hasard des statuts en vigueur
         (générés du jour, ou fallback). None si vraiment aucun statut."""
         items = self._items or self.fallback_activities
         if not items:
@@ -201,6 +256,5 @@ class DiscordDailyStatus:
             import discord
         except Exception:
             return None
-        t, name = random.choice(items)
-        act_type = getattr(discord.ActivityType, t, discord.ActivityType.playing)
-        return discord.Activity(type=act_type, name=name)
+        texte = random.choice(items)
+        return discord.CustomActivity(name=texte)
