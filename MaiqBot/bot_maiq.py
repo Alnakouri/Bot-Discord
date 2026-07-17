@@ -1017,8 +1017,15 @@ async def on_message(message):
 
     # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
+    # Uniquement si on s'adresse à M'aiq (mention/reply/nom) — pas de
+    # commentaire spontané des images postées.
     # ══════════════════════════════════════════════════
-    if message.attachments and not message.author.bot:
+    _addressed_early = (
+        bot.user.mentioned_in(message)
+        or (message.reference and message.reference.resolved and message.reference.resolved.author == bot.user)
+        or any(name in message.content.lower() for name in ["maiq", "m'aiq", "le menteur"])
+    )
+    if message.attachments and not message.author.bot and _addressed_early:
         routing = classify_request(message.content, message.attachments)
         
         # --- IMAGE ---
@@ -1157,7 +1164,7 @@ async def on_message(message):
     has_attachment_image = any(a.content_type and a.content_type.startswith('image/') for a in message.attachments) if message.attachments else False
     
     # "L'Oreille qui traîne" (Si mot-clé + pas de mention + random 20%)
-    if has_keyword and not is_mentioned and not is_reply:
+    if has_keyword and not is_mentioned and not is_reply and not has_attachment_image:
          if random.random() < 0.20:
             if await _other_bot_in_focus(message):
                 logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → M'aiq n'écoute pas.")
@@ -1177,18 +1184,7 @@ async def on_message(message):
                  del recent_rumor_targets[message.author.id]
 
     # DECISION FINAL
-    # Si image + mention/reply → TOUJOURS répondre (users only, not bots)
-    # Si image seule → 30% de chance de commenter (users only)
-    is_image_trigger = False
-    if has_attachment_image and not message.author.bot:
-        if is_mentioned or is_reply or is_name_mentioned:
-            is_image_trigger = True
-            logger.info("[IMAGE + MENTION] M'aiq va commenter l'image")
-        elif random.random() < 0.30:
-            is_image_trigger = True
-            logger.info("[IMAGE RANDOM] M'aiq décide de commenter l'image")
-    
-    should_respond = is_mentioned or is_reply or is_name_mentioned or is_eavesdropping or is_image_trigger or is_rumor_defense
+    should_respond = is_mentioned or is_reply or is_name_mentioned or is_eavesdropping or is_rumor_defense
 
     if not should_respond:
         return

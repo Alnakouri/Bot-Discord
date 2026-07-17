@@ -1402,14 +1402,9 @@ async def on_message(message):
 
         should_respond = True
         context_prefix = f"{user_context} (Il vous parle directement)."
-    
-    elif has_image_early and not is_bot_talking:
-        should_respond = True
-        context_prefix = "VISION: Le Maître partage une image. Analysez-la et commentez avec élégance."
-        logger.info(f"📷 [IMAGE PRIORITY] Alfred va analyser l'image de {message.author.name}")
 
     # C. Si Chaos détecté (Proactivité "Ordre") — sauf si l'échange vise un AUTRE bot
-    elif (has_chaos_keyword or is_shouting) and random.random() < 0.15:
+    elif not has_image_early and (has_chaos_keyword or is_shouting) and random.random() < 0.15:
         if await _other_bot_in_focus(message):
             logger.info("[ANTI-INCRUSTATION] Chaos dans un échange adressé à un autre bot → Alfred s'abstient.")
         else:
@@ -1503,7 +1498,9 @@ async def on_message(message):
     
     image_data = None
     has_image = False
-    if message.attachments:
+    # Uniquement si Alfred est déjà sollicité (mention/reply/nom/chaos) — pas de
+    # commentaire spontané des images postées.
+    if message.attachments and should_respond:
         for attachment in message.attachments:
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 # Vérification de la taille avant téléchargement
@@ -1520,7 +1517,6 @@ async def on_message(message):
                                  logger.warning(f"[SÉCURITÉ] Image content-length trop grand: {content_length / 1024 / 1024:.1f} MB")
                                  continue
                              image_data = await resp.read()
-                             should_respond = True # React to images!
                              context_prefix = "VISION: Le Maître vous montre une image. Analysez-la précisément et commentez avec élégance et sarcasme."
                              logger.info(f"[VISION] Alfred analyse une image de {message.author.name}")
                              break

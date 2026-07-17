@@ -822,13 +822,8 @@ async def on_message(message):
             get_or_create_user(message.author.id, message.author.name, message.author.display_name)
             log_interaction(message.author.id, "Johnny", "mention")
     
-    # A.bis IMAGE PRIORITY
-    elif has_image_early and not is_bot_talking:
-        should_respond = True
-        logger.info(f"[IMAGE PRIORITY] Johnny va analyser l'image de {message.author.name}")
-
     # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
-    if not should_respond and not is_bot_talking and random.random() < 0.10:
+    if not should_respond and not is_bot_talking and not has_image_early and random.random() < 0.10:
         if await _other_bot_in_focus(message):
             logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Johnny se tait.")
         else:

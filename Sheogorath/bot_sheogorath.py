@@ -1757,12 +1757,6 @@ async def on_message(message):
     is_name_mentioned = any(name in msg_lower for name in ["sheogorath", "sheo", "prince de la folie", "jyggalag"])
     
     # DECISION FINALE DE RÉPONSE
-    # On répond si : mentionné, répondu, nom cité, ou si c'est un média (nosy)
-    nosy_chance = 0.0
-    if message.attachments:
-        # Si c'est un média, Sheo est curieux (30% de chance de commenter sans être cité)
-        nosy_chance = 0.30
-    
     # (should_respond will be re-evaluated in the decision matrix below)
     
     # ---------------------------------------------------------
@@ -1978,7 +1972,8 @@ async def on_message(message):
     # Anti-incrustation : on ne s'invite pas dans un échange visiblement adressé à un AUTRE bot.
     _other_bot_named = any(n in msg_lower for n in OTHER_BOT_NAMES)
     is_proactive = (not is_mentioned and not is_reply and not message.author.bot
-                    and not _other_bot_named and random.random() < intervention_chance)
+                    and not _other_bot_named and not has_image
+                    and random.random() < intervention_chance)
 
     if is_proactive:
         logger.info(f"⚡ [PROACTIVITY] Sheogorath s'ennuie et décide d'intervenir ! ({intervention_chance*100:.1f}%)")
@@ -2004,6 +1999,7 @@ async def on_message(message):
         and _prev[0] == message.author.id
         and (time.time() - _prev[1]) <= CONTINUATION_WINDOW
         and not any(n in msg_lower for n in OTHER_BOT_NAMES)
+        and not has_image
         and random.random() < CONTINUATION_PROBA
     )
 
@@ -2024,24 +2020,18 @@ async def on_message(message):
         should_respond = True
         response_mode = "LLM"
         logger.info(f"💬 [TRIGGER] Continuité de conversation (échange récent, sans re-mention)")
-    elif has_image and not message.author.bot and (has_name or has_priority_keyword or has_keyword):
-        should_respond = True
-        logger.info(f"📷 [TRIGGER] Image + Name/Keyword detected -> 100% Response")
-    elif has_image and not message.author.bot and random.random() < 0.60: # 60% chance to react to random images (users only)
-        should_respond = True
-        logger.info(f"📷 [TRIGGER] Random Image detected")
     elif is_proactive:
         should_respond = True
         logger.info(f"🤖 [TRIGGER] Proactivity")
-    elif has_priority_keyword and not is_long_message:
+    elif has_priority_keyword and not is_long_message and not has_image:
         # Court message + Keyword fort -> On passe TOUT en LLM pour éviter les réponses hors-sol
         # L'IA est assez intelligente pour gérer les demandes de fromage
         should_respond = True
         response_mode = "LLM"
-    elif has_priority_keyword and is_long_message:
+    elif has_priority_keyword and is_long_message and not has_image:
         should_respond = True
         response_mode = "LLM" # Force LLM for context
-    elif has_keyword and not _other_bot_named and random.random() < 0.60:
+    elif has_keyword and not _other_bot_named and not has_image and random.random() < 0.60:
         # Mot-clé générique (« bonjour », « fou »…) : on ne s'incruste PAS si le message
         # nomme un autre bot (« bonjour sugar » vise Sugar, pas Sheo).
         should_respond = True

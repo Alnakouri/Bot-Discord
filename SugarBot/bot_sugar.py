@@ -735,10 +735,6 @@ async def on_message(message):
             get_or_create_user(message.author.id, message.author.name, message.author.display_name)
             log_interaction(message.author.id, "Sugar Bot", "mention")
     
-    # A.bis IMAGE PRIORITY
-    elif has_image_early and not is_bot_talking:
-        should_respond = True
-        logger.info(f"[IMAGE PRIORITY] Sugar Bot va analyser l'image de {message.author.name}")
     
     # ══════════════════════════════════════════════════
     # LTM SYSTEM - MEMORY INJECTION (paresseux)
@@ -796,8 +792,10 @@ async def on_message(message):
 
     # ══════════════════════════════════════════════════
     # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
+    # Uniquement si on s'adresse à Sugar (mention/reply/DM/nom) — pas de
+    # commentaire spontané des images postées.
     # ══════════════════════════════════════════════════
-    if message.attachments:
+    if message.attachments and should_respond:
         routing = classify_request(message.content, message.attachments)
         
         # --- IMAGE ---
@@ -880,7 +878,7 @@ async def on_message(message):
     # ══════════════════════════════════════════════════
     
     # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
-    elif not is_bot_talking and not should_respond and random.random() < 0.10:
+    elif not is_bot_talking and not should_respond and not has_image_early and random.random() < 0.10:
         if await _other_bot_in_focus(message):
             logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Sugar Bot se tait.")
         else:

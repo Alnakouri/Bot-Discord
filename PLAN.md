@@ -1,102 +1,94 @@
-# PLAN — Statuts Discord lisibles : passage au statut personnalisé (CustomActivity)
+# PLAN — Plus de réaction spontanée aux images : seulement si on s'adresse au bot
 
 > Antigravity exécute. Claude a rédigé (2026-07-17).
-> Cible principale : `shared/discord_status.py` + `tests/test_discord_status.py`.
-> Optionnel (étape C) : le repli inline des 6 bots. Repérer par CONTENU, pas par numéro de ligne.
+> Cible : les 6 `bot_*.py`. AUCUN changement dans `shared/`. Repérer par CONTENU, pas par numéro de ligne.
 
-## Contexte / problème
+## Contexte / décision user
 
-Les statuts affichés sous les noms des bots dans la liste des membres Discord ont l'air
-cassés : « avec le feu », « au jeu du péteur », « les rêves des innocents »…
+Aujourd'hui, quand quelqu'un poste une image/photo, les bots peuvent la commenter
+spontanément (branches « IMAGE PRIORITY » à 100 %, tirages aléatoires 30–60 %…).
+Décision user (2026-07-17) : **un bot ne réagit à une image QUE si on s'adresse à lui**
+— mention @, réponse (reply) à un de ses messages, nom cité dans le message, ou DM.
+La capacité vision elle-même ne bouge pas : quand le bot est sollicité avec une image,
+il l'analyse comme avant.
 
-Cause : `shared/discord_status.py` génère des textes conçus pour SUIVRE le verbe du type
-d'activité (`playing` → « Joue avec le feu », `listening` → « Écoute les rêves des
-innocents »). Or la liste des membres n'affiche QUE le texte, sans le verbe — le verbe
-n'apparaît que dans la carte de profil. Résultat : des bouts de phrase orphelins.
+## Règle unique (à appliquer partout)
 
-Décision user (2026-07-17) : passer au **statut personnalisé** (`discord.CustomActivity`),
-affiché TEL QUEL partout, sans verbe imposé. Les statuts deviennent des phrases courtes
-autonomes, toujours générées 1×/jour par la persona. discord.py >= 2.4 supporte le statut
-personnalisé pour les bots (on est en >= 2.7.1 partout) : `discord.CustomActivity(name="…")`.
+`addressed = is_mentioned or is_reply or is_dm or is_name_mentioned` (selon les
+variables déjà présentes dans chaque bot ; pas de DM chez certains → ignorer ce terme).
 
-## A — `shared/discord_status.py`
+1. **Supprimer** toute branche qui met `should_respond = True` (ou équivalent) à cause
+   de la seule présence d'une image, sans `addressed`.
+2. **Empêcher** les déclencheurs spontanés restants (intervention aléatoire, mots-clés,
+   oreille qui traîne, chaos) de se déclencher sur un message qui CONTIENT une image :
+   ajouter `not has_image_early` (ou la variable image locale) à leur condition.
+   Motif : si la branche aléatoire se déclenche sur un message avec image, le routage
+   vision analyserait l'image quand même → réaction spontanée par la bande.
 
-Le contrat public ne bouge pas : mêmes noms (`DiscordDailyStatus`, `ensure_daily_status`,
-`pick_activity`), mêmes paramètres du constructeur. Les 6 bots n'ont RIEN à changer.
+## Par bot
 
-1. **Représentation interne : des chaînes, plus des tuples.**
-   `self._items` devient une liste de `str` (phrases autonomes ≤ `MAX_STATUS_LEN`).
+### JohnnyBot/bot_johnny.py
+- Supprimer la branche `# A.bis IMAGE PRIORITY` (`elif has_image_early and not is_bot_talking: should_respond = True` + log `[IMAGE PRIORITY]`).
+- Branche `# C. Intervention aléatoire (10%)` : ajouter `not has_image_early` à la condition.
 
-2. **Conversion des fallbacks (constructeur).** `fallback_activities` reste reçu au format
-   historique `[(type, texte)]` (les 6 bots fournissent ça). Les convertir en phrases
-   autonomes via un préfixe verbal déterministe :
-   - `watching` → `Regarde {texte}` ; `playing` → `Joue {texte}` ; `listening` → `Écoute {texte}`.
-   - Ex. `("playing", "avec le feu")` → `Joue avec le feu` ;
-     `("listening", "Night City cramer 🔥")` → `Écoute Night City cramer 🔥`.
-   - Helper module pur, ex. `_legacy_to_text(type_str, text) -> str` (réutilisé au point 5).
-   - Tronquer à `MAX_STATUS_LEN` après préfixage.
+### SugarBot/bot_sugar.py
+- Supprimer la branche `# A.bis IMAGE PRIORITY` (même motif que Johnny, log `[IMAGE PRIORITY] Sugar Bot`).
+- Branche intervention aléatoire 10 % (`elif not is_bot_talking and not should_respond and random.random() < 0.10`) : ajouter `not has_image_early`.
 
-3. **Prompt LLM (dans `_generate_daily_status`).** Demander `count` STATUTS PERSONNALISÉS :
-   phrases COURTES (≤ 8 mots), AUTONOMES (lisibles seules, sans verbe sous-entendu),
-   en personnage, sans guillemets ni didascalies, emoji de ton optionnel en fin.
-   Réponse = UNIQUEMENT un tableau JSON de chaînes, ex. :
-   `["Je fais fondre le caramel 🍬", "Recrutement de bonbons rebelles", "Le sucre d'orge craque encore"]`
+### Alfred/bot_alfred.py
+- Supprimer la branche `elif has_image_early and not is_bot_talking:` (context_prefix « VISION: Le Maître partage une image… », log `[IMAGE PRIORITY]`).
+- Branche `# C. Si Chaos détecté` (`(has_chaos_keyword or is_shouting) and random.random() < 0.15`) : ajouter `not has_image_early`.
 
-4. **`_parse_items` : accepter les deux formats.** Toujours statique, toujours tolérante
-   (fences ```…```, texte autour, dédoublonnage insensible à la casse, troncature
-   `MAX_STATUS_LEN`, entrées vides ignorées). Renvoie désormais une liste de `str` :
-   - élément `str` → pris tel quel (strip, guillemets retirés, espaces compactés) ;
-   - élément `dict {"type","text"}` (ancien format, le LLM peut retomber dessus) →
-     converti via `_legacy_to_text` (alias FR/EN des types conservés ; type inconnu → jeté).
+### MaiqBot/bot_maiq.py
+- Bloc `# DECISION FINAL` : supprimer entièrement `is_image_trigger` (le cas
+  `image + mention/reply/nom` est déjà couvert par `is_mentioned or is_reply or
+  is_name_mentioned` dans `should_respond` ; le cas `elif random.random() < 0.30`
+  est exactement ce qu'on retire). Retirer `is_image_trigger` de la ligne `should_respond = ...`.
+- Branche « L'Oreille qui traîne » (`has_keyword and not is_mentioned and not is_reply`, 20 %) :
+  ajouter `not has_attachment_image`.
 
-5. **Persistance : nouveau champ, rétro-compat un jour.** Nouveau format
-   `{"date": "...", "texts": ["…", …]}`. Au chargement (`ensure_daily_status`) :
-   - `texts` présent → utiliser tel quel ;
-   - sinon ancien champ `items` (paires) du MÊME jour → convertir via `_legacy_to_text`
-     et continuer (0 appel LLM) ; la prochaine sauvegarde écrit le nouveau format.
-   La sauvegarde n'écrit plus que `texts`.
+### Sheogorath/bot_sheogorath.py
+- Supprimer le bloc `nosy_chance` (assigné à 0.30 si `message.attachments`, jamais lu — code mort) et son commentaire « ou si c'est un média (nosy) ».
+- DECISION MATRIX : supprimer les DEUX branches image :
+  - `elif has_image and not message.author.bot and (has_name or has_priority_keyword or has_keyword):` (le cas `has_name` est déjà couvert par la branche `elif has_name:` au-dessus) ;
+  - `elif has_image and ... random.random() < 0.60:` (« Random Image detected »).
+- Branches mots-clés spontanées (`elif has_priority_keyword ...` ×2 et `elif has_keyword and not _other_bot_named ...`) : ajouter `not has_image` à chacune.
+- Ne PAS toucher à `is_proactive` ni `is_continuation` (pas liés aux images) — sauf si
+  trivial d'ajouter `not has_image` à `is_continuation` aussi : le faire (une image
+  postée dans la foulée d'un échange n'est pas une invitation à la commenter).
 
-6. **`pick_activity`.** Tire une chaîne au hasard et renvoie
-   `discord.CustomActivity(name=texte)` (import local `discord` conservé, `None` si
-   import impossible ou aucune chaîne). Le nom de méthode ne change pas : les
-   `bot.change_presence(activity=…)` des 6 bots marchent tel quel.
-
-## B — Tests (`tests/test_discord_status.py`)
-
-Réécrire pour le nouveau contrat (garder le style unittest existant, module importable
-sans discord.py sauf mention) :
-- tableau JSON de chaînes simple → liste de `str` ;
-- fences + texte autour → OK ;
-- dédoublonnage insensible à la casse ; chaîne vide/espaces jetée ; troncature à
-  `MAX_STATUS_LEN` ; garbage/None/non-liste → `[]` ;
-- ancien format objets `{"type":"playing","text":"avec le feu"}` → `"Joue avec le feu"`
-  (idem watching/listening + alias FR « Regarde »/« ÉCOUTE ») ; type inconnu jeté ;
-- `_legacy_to_text` direct : les 3 types + troncature après préfixe ;
-- constructeur : `fallback_activities=[("playing","avec le feu")]` → `_items == ["Joue avec le feu"]` ;
-- si discord.py est dispo dans l'env de test : `pick_activity()` renvoie un
-  `discord.CustomActivity` dont `.name` est dans la liste (sinon skipTest).
-
-## C — Optionnel : repli inline des 6 bots
-
-Chaque bot a un repli local si `shared/` est absent (convention bots indépendants), ex.
-`JohnnyBot/bot_johnny.py` boucle `status_loop_johnny` : `discord.Activity(type=…, name=…)`
-depuis `_STATUS_FALLBACK`. Pour l'aligner : préfixer le verbe comme en A.2 et renvoyer
-`discord.CustomActivity(name=…)`. Faible enjeu (chemin dégradé) — à faire seulement si
-rapide, sur les 6 (`Alfred`, `JohnnyBot`, `MaiqBot`, `MalenaBot`, `Sheogorath`, `SugarBot`).
+### MalenaBot/bot_malena.py
+- RIEN à faire : elle ne répond déjà que si `is_mentioned or is_reply or is_name_mentioned or has_trigger_word` (+ `SPECIAL_INTERACTIONS`). Vérifier seulement qu'aucune branche image spontanée ne m'a échappé ; sinon ne pas toucher.
 
 ## Garde-fous
 
-- NE PAS toucher aux personas ni aux autres modules `shared/`.
-- `shared/discord_status.py` doit rester importable sans discord.py (import local dans
-  `pick_activity` uniquement).
-- Ne pas supprimer les `data/discord_status_*.json` existants : la rétro-compat A.5 les
-  convertit au vol.
+- Le chemin « bot sollicité + image » (mention/reply/nom/DM) doit continuer d'analyser
+  l'image exactement comme avant (routage `classify_request` → vision Gemini).
+- Ne rien changer aux réactions emoji automatiques éventuelles (`add_reaction`) : le
+  user parle des RÉPONSES texte spontanées. (Sheo a un bloc reactions en amont — intact.)
+- Convention bots indépendants : tout reste inline dans chaque bot, pas de helper `shared/`.
 
 ## Vérification
 
-1. `python -m pytest` → tout vert (237 avant, + les nouveaux).
-2. Déploiement : `docker compose up -d --build --force-recreate` (shared/ est COPIÉ dans
-   les images → --build obligatoire).
-3. Live : attendre une rotation (boucle 30 min, ou restart d'un bot) puis vérifier dans la
-   liste des membres que chaque bot affiche une phrase complète autonome (plus de
-   fragments type « avec le feu »).
+1. `python -m pytest` → tout vert (242 actuellement, aucun test ne couvre ces branches
+   mais rien ne doit casser).
+2. Déploiement : `docker compose up -d --build --force-recreate`.
+3. Live :
+   - poster une image SANS mentionner personne → aucun bot ne répond (répéter 3-4 fois
+     pour écarter les anciens tirages aléatoires) ;
+   - poster une image en mentionnant un bot (`@Sheogorath t'en penses quoi ?`) → il
+     analyse et commente comme avant ;
+   - poster une image avec le nom d'un bot dans le texte (« sugar regarde ça ») → il répond.
+
+## Complément (vérif Claude 2026-07-17, appliqué par Claude)
+
+L'audit initial avait raté 4 chemins spontanés supplémentaires, corrigés à la vérif :
+- **Sugar** : bloc « TRAITEMENT MULTIMODAL » précoce (avant le check `should_respond`)
+  qui répondait à TOUTE image → gated sur `should_respond`.
+- **M'aiq** : même bloc précoce (avant même le calcul des triggers) → gated sur
+  `_addressed_early` (mention/reply/nom, calculé inline).
+- **Alfred** : bloc « F. VISION » qui forçait `should_respond = True # React to images!`
+  sur toute image → bloc gated sur `should_respond`, ligne forcée supprimée.
+- **Sheo** : `is_proactive` (2 % aléatoire) pouvait tirer sur un message avec image →
+  ajout de `not has_image`.
+Sheo/Johnny n'ont pas de bloc multimodal précoce (routage vision après la décision) — RAS.
