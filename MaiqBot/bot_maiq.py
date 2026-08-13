@@ -55,14 +55,20 @@ DATA_DIR = os.getenv("DATA_DIR", ".")
 DATA_FILE = os.path.join(DATA_DIR, "maiq_data.json")
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"⚠️ Lecture {DATA_FILE} impossible ({e}) — valeurs par défaut.")
     return {"calipers": 0, "fatigue": {"count": 0, "last_msg": 0}}
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f)
+    except OSError as e:
+        logger.warning(f"⚠️ Sauvegarde {DATA_FILE} impossible ({e}) — état non persisté.")
 
 
 # ZONE DE CONFIGURATION : M'AIQ LE MENTEUR
@@ -107,6 +113,11 @@ except ImportError:
     def setup_twitch_announcer(*a, **k): return None
 
 twitch_announcer = None
+
+try:
+    from shared.ensure_writable import ensure_data_writable
+except ImportError:
+    def ensure_data_writable(*args, **kwargs): pass
 
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -277,6 +288,8 @@ async def on_ready():
     logger.info('--------------------------------------------------')
     logger.info('🐱 M\'aiq le Menteur est prêt (Production Mode).')
     logger.info('--------------------------------------------------')
+    
+    ensure_data_writable("maiq", DATA_DIR, logger)
     
     # HEALTH CHECK
     logger.info('📊 [HEALTH CHECK] APIs disponibles :')

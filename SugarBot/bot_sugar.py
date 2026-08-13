@@ -47,18 +47,24 @@ DATA_DIR = os.getenv("DATA_DIR", ".")
 DATA_FILE = os.path.join(DATA_DIR, "sugar_data.json")
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            # Migration d'anciennes clés (ère pirate/GTO) vers le compteur d'exploits
-            if "legends_told" in data:
-                data["tales_told"] = data.pop("legends_told")
-            return data
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+                # Migration d'anciennes clés (ère pirate/GTO) vers le compteur d'exploits
+                if "legends_told" in data:
+                    data["tales_told"] = data.pop("legends_told")
+                return data
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"⚠️ Lecture {DATA_FILE} impossible ({e}) — valeurs par défaut.")
     return {"tales_told": 0}
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f)
+    except OSError as e:
+        logger.warning(f"⚠️ Sauvegarde {DATA_FILE} impossible ({e}) — état non persisté.")
 
 # ── STRIP DIDASCALIES (inline, 0 dépendance partagée) ─────────────────────────
 # La persona de Sugar interdit les didascalies (actions narrées), mais le LLM en
@@ -221,6 +227,11 @@ except ImportError:
     def setup_twitch_announcer(*a, **k): return None
 
 twitch_announcer = None
+
+try:
+    from shared.ensure_writable import ensure_data_writable
+except ImportError:
+    def ensure_data_writable(*args, **kwargs): pass
 
 try:
     from shared.twitch_chat import setup_twitch_chat
@@ -405,6 +416,8 @@ async def on_ready():
     logger.info("Sugar Bot est en ligne.")
     logger.info("=" * 60)
     logger.info(f'Connecté en tant que: {bot.user.name} ({bot.user.id})')
+    
+    ensure_data_writable("sugar", DATA_DIR, logger)
     logger.info(f'🏫 Serveurs: {len(bot.guilds)}')
     logger.info(f'👥 Utilisateurs visibles: {len(bot.users)}')
     

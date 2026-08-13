@@ -47,14 +47,20 @@ DATA_DIR = os.getenv("DATA_DIR", ".")
 DATA_FILE = os.path.join(DATA_DIR, "johnny_data.json")
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"⚠️ Lecture {DATA_FILE} impossible ({e}) — valeurs par défaut.")
     return {"missions_completed": 0, "gifts_given": 0, "mead_consumed": 0}
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f)
+    except OSError as e:
+        logger.warning(f"⚠️ Sauvegarde {DATA_FILE} impossible ({e}) — état non persisté.")
 
 # IMPORT SECURE ENV LOADER
 from pathlib import Path
@@ -129,6 +135,11 @@ except ImportError:
         def __init__(self, *a, **k): pass
 
 johnny_cred = None
+
+try:
+    from shared.ensure_writable import ensure_data_writable
+except ImportError:
+    def ensure_data_writable(*args, **kwargs): pass
 
 try:
     from shared.discord_profile import DiscordDailyBio
@@ -340,6 +351,9 @@ async def on_ready():
     logger.info("🎸 JOHNNY SILVERHAND — Rockerboy de Night City est prêt !")
     logger.info("=" * 60)
     logger.info(f'🎸 Connecté en tant que: {bot.user.name} ({bot.user.id})')
+    
+    ensure_data_writable("johnny", DATA_DIR, logger)
+    
     logger.info(f'🏰 Serveurs: {len(bot.guilds)}')
     logger.info(f'👥 Utilisateurs visibles: {len(bot.users)}')
     
