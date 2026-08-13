@@ -99,6 +99,27 @@ depuis l'hôte, mais rebuild pour rester cohérent avec les autres déploiements
 
 ---
 
+## Résultat (2026-08-13, vérifié)
+Exécuté par Antigravity, vérifié + déployé : commit `388cd6e` poussé sur `main`,
+`docker compose up -d --build --force-recreate maiq johnny sugar`.
+- **247 tests verts** (pas 242 : le socle a grossi depuis).
+- Sonde §3 rejouée dans les 3 conteneurs (`chmod 444 <bot>_data.json` puis appel du
+  `save_data` **réellement déployé**) : WARNING « Sauvegarde impossible », aucune
+  exception → la boucle de réponse survit. Perms remises ensuite.
+- Sonde §2 : M'aiq redémarré avec le fichier en 444 → `⚠️ [Perms] … n'est pas
+  inscriptible` dès le boot, une ligne, avant tout traceback. Absent au boot suivant
+  une fois les perms remises.
+- Vecteurs voisins déjà couverts avant ce plan (vérifié) : `FactMemory.save_facts`,
+  `DailyMemory.save_memory`, archives `.jsonl`, `shared/discord_status.py`,
+  `shared/discord_profile.py` sont tous en try/except → pas d'autre mort silencieuse.
+
+Reliquat assumé (hors scope, non bloquant) :
+- `ensure_data_writable` n'est câblé que sur M'aiq/Johnny/Sugar ; Alfred/Malena/Sheo
+  n'ont pas le diagnostic au boot (5 lignes chacun).
+- Aucun test unitaire sur le chemin dégradé (couvert seulement par la sonde manuelle).
+- Le glob `<bot>_*.json*` ignore les fichiers à suffixe (`discord_status_maiq.json`,
+  `twitch_*_sugar.json`) — sans conséquence, ces écritures sont déjà protégées.
+
 ## Gotchas
 - Horloge conteneur = **UTC**, soit **-2h** par rapport à l'affichage Discord :
   le crash « 11:24:04 » dans les logs = 13:24 à l'écran.
@@ -106,3 +127,7 @@ depuis l'hôte, mais rebuild pour rester cohérent avec les autres déploiements
   au 11 juin (le logger fichier n'écrit plus, à regarder un jour — hors scope ici).
 - Les lignes `[DEBUG RIDDLE] User: ...` sont des `print` bruts qui polluent les logs
   du conteneur ; candidat à un `logger.debug` (hors scope).
+- `docker exec -u 0 <bot> chmod …` échoue en « Operation not permitted » sur un
+  fichier appartenant à `botuser` : le compose fait `cap_drop` (pas de `CAP_FOWNER`).
+  Passer par le propriétaire : `docker exec <bot> chmod …` (sans `-u 0`). Le `-u 0`
+  ne marche que sur les fichiers `root:root` (cas des 6 fichiers de l'incident).
