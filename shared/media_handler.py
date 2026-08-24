@@ -9,6 +9,16 @@ import asyncio
 import base64
 import json
 from google.genai import types
+import PIL.Image
+
+try:
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+except ImportError:  # bot déployé seul, sans shared/
+    GEMINI_FLASH      = "gemini-3.5-flash"
+    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+    GROQ_FAST         = "openai/gpt-oss-120b"
+    MISTRAL_MAIN      = "mistral-large-latest"
+    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 
 logger = logging.getLogger("media_handler")
 
@@ -78,7 +88,7 @@ async def process_image(attachment, api_key: str, personality_prompt: str,
         client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
         
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH,
             contents=[
                 types.Content(role="user", parts=[
                     types.Part(text=f"SYSTEM: {personality_prompt}\n\n[VISION] {text_part} Réponds en restant dans ta personnalité."),
@@ -226,7 +236,7 @@ async def process_voice_message(attachment, api_key: str,
         client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
         
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH,
             contents=[
                 types.Content(role="user", parts=[
                     types.Part(text=(

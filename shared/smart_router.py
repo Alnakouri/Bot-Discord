@@ -8,6 +8,15 @@ import re
 import logging
 import aiohttp
 
+try:
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+except ImportError:  # bot déployé seul, sans shared/
+    GEMINI_FLASH      = "gemini-3.5-flash"
+    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+    GROQ_FAST         = "openai/gpt-oss-120b"
+    MISTRAL_MAIN      = "mistral-large-latest"
+    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+
 logger = logging.getLogger("smart_router")
 
 # ═══════════════════════════════════════════
@@ -94,7 +103,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             is_voice = getattr(att, 'is_voice_message', False) or (filename.endswith('.ogg') and "audio" in ct)
             if is_voice:
                 result["type"] = RequestType.AUDIO
-                result["model"] = "gemini-2.5-flash"
+                result["model"] = GEMINI_FLASH
                 result["reason"] = "🎤 Message vocal Discord → Gemini Audio"
                 result["has_audio"] = True
                 result["audio_attachment"] = att
@@ -104,7 +113,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             # Image détectée
             if any(ct.startswith(mime) for mime in IMAGE_MIME_TYPES):
                 result["type"] = RequestType.IMAGE
-                result["model"] = "gemini-2.5-flash"
+                result["model"] = GEMINI_FLASH
                 result["reason"] = f"🖼️ Image ({ct}) → Gemini Vision"
                 result["has_image"] = True
                 result["image_attachment"] = att
@@ -114,7 +123,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             # Audio standard détecté
             if any(ct.startswith(mime) for mime in AUDIO_MIME_TYPES):
                 result["type"] = RequestType.AUDIO
-                result["model"] = "gemini-2.5-flash"
+                result["model"] = GEMINI_FLASH
                 result["reason"] = f"🎵 Fichier Audio ({ct}) → Gemini Audio"
                 result["has_audio"] = True
                 result["audio_attachment"] = att
@@ -124,7 +133,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
     # 2. Vérifier si raisonnement complexe requis
     if _needs_reasoning(message_text):
         result["type"] = RequestType.REASONING
-        result["model"] = "gemini-2.5-pro"
+        result["model"] = GEMINI_FLASH
         result["reason"] = "🧠 Raisonnement complexe → Gemini Pro"
         logger.info(f"[ROUTER] {result['reason']}")
         return result
@@ -157,18 +166,18 @@ def get_model_cascade(routing_type):
     """
     if routing_type == RequestType.REASONING:
         return [
-            ("gemini", "gemini-2.5-pro"),
-            ("gemini", "gemini-2.5-flash"),
+            ("gemini",  GEMINI_FLASH),
+            ("mistral", MISTRAL_MAIN),
+            ("groq",    GROQ_FAST),
         ]
 
     if routing_type in (RequestType.IMAGE, RequestType.AUDIO):
-        # Vision/audio via Gemini direct (clé propre) + Ollama local.
+        # Vision/audio via Gemini direct (clé propre).
         # Ancien échelon OpenRouter google/gemini-2.0-flash-lite-001 retiré
         # (payant → 402 sur compte vide, et Gemini direct couvre déjà gratis).
         return [
-            ("gemini", "gemini-2.5-flash"),
-            ("gemini", "gemini-2.5-flash-lite"),
-            ("ollama", "moondream"),
+            ("gemini", GEMINI_FLASH),
+            ("gemini", GEMINI_FLASH_LITE),
         ]
     
     if routing_type == RequestType.REPARTEE:
@@ -177,22 +186,21 @@ def get_model_cascade(routing_type):
         return [
             # Ordre pour un rendu FR PROPRE et fidèle à la persona (1er qui répond gagne) :
             # Mistral Large (modèle FR, français le plus propre, obéit bien → moins de tics) en
-            # tête, Llama-3.3-70b (Groq, rapide) en secours, puis Dolphin-Venice :free (mordant
-            # décensuré, base Mistral) tout en bas pour la variété quand les deux propres tombent.
+            # tête, puis gpt-oss-120b (Groq, rapide) en secours, et enfin nemotron-3-super-120b
+            # tout en bas pour la variété quand les deux propres tombent.
             # NB : plus aucun Grok gratuit sur OpenRouter (x-ai/grok-4-fast:free déprécié → 404, 2026-07).
-            ("mistral", "mistral-large-latest"),
-            ("groq", "llama-3.3-70b-versatile"),
-            ("openrouter", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"),
+            ("mistral", MISTRAL_MAIN),
+            ("groq", GROQ_FAST),
+            ("openrouter", OPENROUTER_FREE),
         ]
     
     # TEXT par défaut — 3 fournisseurs à clé propre (Mistral/Groq/Gemini),
-    # aucune dépendance au crédit OpenRouter. (Ancien échelon
-    # google/gemma-4-26b-a4b-it:free retiré : ce slug :free n'existe pas
-    # sur OpenRouter → erreur systématique avant le repli Gemini.)
+    # aucune dépendance au crédit OpenRouter. (Ancien échelon gemma retiré
+    # car il provoque actuellement des erreurs 429).
     return [
-        ("mistral", "mistral-large-latest"),
-        ("groq", "llama-3.3-70b-versatile"),
-        ("gemini", "gemini-2.5-flash-lite"),
+        ("mistral", MISTRAL_MAIN),
+        ("groq", GROQ_FAST),
+        ("gemini", GEMINI_FLASH_LITE),
     ]
 
 

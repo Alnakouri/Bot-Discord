@@ -27,6 +27,15 @@ from shared.smart_router import classify_request, RequestType, download_media, g
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 
 try:
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+except ImportError:  # bot déployé seul, sans shared/
+    GEMINI_FLASH      = "gemini-3.5-flash"
+    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+    GROQ_FAST         = "openai/gpt-oss-120b"
+    MISTRAL_MAIN      = "mistral-large-latest"
+    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+
+try:
     from shared.memes_fr import build_meme_consigne
     MEMES_AVAILABLE = True
 except ImportError:
@@ -1074,7 +1083,7 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
             client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
             resp = await asyncio.to_thread(
                 client.models.generate_content,
-                model='gemini-2.5-flash',
+                model=GEMINI_FLASH,
                 contents=rumor_prompt
             )
             full_response = resp.text
@@ -1086,7 +1095,7 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
         try:
             chat = await asyncio.to_thread(
                 openrouter_client.chat.completions.create,
-                model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+                model=OPENROUTER_FREE,
                 messages=[{"role": "user", "content": rumor_prompt}],
                 temperature=1.0,
                 max_tokens=300
@@ -1309,7 +1318,7 @@ async def check_missed_mentions_sheo():
                         try:
                             chat = groq_client.chat.completions.create(
                                 messages=[{"role": "user", "content": late_prompt}],
-                                model="llama-3.3-70b-versatile",
+                                model=GROQ_FAST,
                                 temperature=0.95,
                                 max_tokens=200
                             )
@@ -1322,7 +1331,7 @@ async def check_missed_mentions_sheo():
                         if api_key:
                             try:
                                 gclient = get_safe_genai_client(api_key=api_key)
-                                resp = gclient.models.generate_content(model='gemini-2.5-flash', contents=late_prompt)
+                                resp = gclient.models.generate_content(model=GEMINI_FLASH, contents=late_prompt)
                                 response_text = resp.text
                             except Exception as e:
                                 error_code = getattr(e, "code", getattr(e, "status_code", 0))
@@ -1649,7 +1658,7 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         if openrouter_client:
             try:
                 chat = openrouter_client.chat.completions.create(
-                    model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+                    model=OPENROUTER_FREE,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=1.0,
                     max_tokens=300
@@ -1660,7 +1669,7 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         if fake_text == "Je suis un imposteur !" and groq_client:
              try:
                 chat = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=GROQ_FAST,
                     messages=[{"role": "user", "content": prompt}]
                 )
                 fake_text = chat.choices[0].message.content
@@ -1856,7 +1865,7 @@ async def on_message(message):
             if groq_client:
                  try:
                     chat = groq_client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model=GROQ_FAST,
                         messages=[{"role": "user", "content": full_prompt}]
                     )
                     fake_text = chat.choices[0].message.content
@@ -1864,7 +1873,7 @@ async def on_message(message):
             elif openrouter_client:
                 try:
                     chat = openrouter_client.chat.completions.create(
-                        model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+                        model=OPENROUTER_FREE,
                         messages=[{"role": "user", "content": full_prompt}],
                         max_tokens=300
                     )
@@ -1906,7 +1915,7 @@ async def on_message(message):
             if openrouter_client:
                 try:
                     chat = openrouter_client.chat.completions.create(
-                        model="cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+                        model=OPENROUTER_FREE,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=1.0,
                         max_tokens=300
@@ -1917,7 +1926,7 @@ async def on_message(message):
             elif groq_client:
                  try:
                     chat = groq_client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model=GROQ_FAST,
                         messages=[{"role": "user", "content": prompt}]
                     )
                     fake_text = chat.choices[0].message.content

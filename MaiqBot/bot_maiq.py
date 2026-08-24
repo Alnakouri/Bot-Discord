@@ -23,6 +23,15 @@ from shared.response_memory import ResponseMemory
 import logging
 from datetime import datetime
 import base64
+
+try:
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+except ImportError:  # bot déployé seul, sans shared/
+    GEMINI_FLASH      = "gemini-3.5-flash"
+    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+    GROQ_FAST         = "openai/gpt-oss-120b"
+    MISTRAL_MAIN      = "mistral-large-latest"
+    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from shared.media_handler import process_image, process_image_ollama, process_voice_message
 try:
@@ -552,7 +561,7 @@ async def publish_daily_rumor():
         try:
             chat = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": rumor_prompt}],
-                model="llama-3.3-70b-versatile",
+                model=GROQ_FAST,
                 temperature=0.9
             )
             rumor_text = chat.choices[0].message.content
@@ -565,7 +574,7 @@ async def publish_daily_rumor():
         if api_key:
             try:
                 client = get_safe_genai_client(api_key=api_key)
-                resp = client.models.generate_content(model='gemini-2.5-flash', contents=rumor_prompt)
+                resp = client.models.generate_content(model='gemini-3.5-flash', contents=rumor_prompt)
                 rumor_text = resp.text
             except Exception as e:
                 error_code = getattr(e, "code", getattr(e, "status_code", 0))
@@ -754,7 +763,7 @@ async def generate_and_post_riddle(target_channel):
             try:
                 chat = groq_client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
-                    model="llama-3.3-70b-versatile",
+                    model=GROQ_FAST,
                     temperature=0.9,
                     response_format={"type": "json_object"}
                 )
@@ -769,7 +778,7 @@ async def generate_and_post_riddle(target_channel):
                 try:
                     client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
                     resp = client.models.generate_content(
-                        model='gemini-2.5-flash', 
+                        model='gemini-3.5-flash', 
                         contents=prompt,
                         config=types.GenerateContentConfig(response_mime_type="application/json")
                     )
@@ -873,7 +882,7 @@ async def profil_maiq_cmd(interaction: discord.Interaction):
         try:
             chat = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama-3.3-70b-versatile",
+                model=GROQ_FAST,
                 temperature=0.8
             )
             quote = chat.choices[0].message.content.strip()
@@ -918,7 +927,7 @@ async def maiq_rumeur(ctx):
         try:
              chat = groq_client.chat.completions.create(
                  messages=[{"role": "user", "content": prompt}],
-                 model="llama-3.3-70b-versatile", 
+                 model=GROQ_FAST, 
                  temperature=0.9
              )
              response_text = chat.choices[0].message.content
@@ -932,7 +941,7 @@ async def maiq_rumeur(ctx):
             try:
                 client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
                 resp = client.models.generate_content(
-                    model='gemini-2.5-flash', 
+                    model='gemini-3.5-flash', 
                     contents=prompt
                 )
                 response_text = resp.text

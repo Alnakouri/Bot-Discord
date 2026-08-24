@@ -4,6 +4,15 @@ import time
 import logging
 from shared.safe_client import get_client as get_safe_genai_client
 
+try:
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+except ImportError:
+    GEMINI_FLASH      = "gemini-3.5-flash"
+    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+    GROQ_FAST         = "openai/gpt-oss-120b"
+    MISTRAL_MAIN      = "mistral-large-latest"
+    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+
 logger = logging.getLogger("eval_judge")
 
 def clean_and_parse_json(text):
@@ -94,7 +103,7 @@ N'ajoute aucune introduction, aucune conclusion, pas de texte de présentation. 
             logger.info("Juge LLM : tentative avec Gemini...")
             client = get_safe_genai_client(api_key=gemini_key, http_options={'api_version': 'v1beta'})
             resp = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=GEMINI_FLASH,
                 contents=prompt
             )
             if resp.text:
@@ -109,12 +118,12 @@ N'ajoute aucune introduction, aucune conclusion, pas de texte de présentation. 
             # Attendre un tout petit peu avant le fallback
             time.sleep(1)
 
-    # 2. TENTATIVE GROQ (llama-3.3-70b-versatile ou similaire)
+    # 2. TENTATIVE GROQ (openai/gpt-oss-120b ou similaire)
     if groq_client:
         try:
             logger.info("Juge LLM : tentative de secours avec Groq...")
             chat = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=GROQ_FAST,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 response_format={"type": "json_object"}
@@ -134,7 +143,7 @@ N'ajoute aucune introduction, aucune conclusion, pas de texte de présentation. 
         try:
             logger.info("Juge LLM : tentative de secours avec Mistral...")
             chat = mistral_client.chat.complete(
-                model="mistral-large-latest",
+                model=MISTRAL_MAIN,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 response_format={"type": "json_object"}

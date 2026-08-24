@@ -38,8 +38,11 @@ def load_punishments():
 
 
 def save_punishments(data):
-    with open(PUNISHMENT_FILE, "w") as f:
-        json.dump(data, f)
+    try:
+        with open(PUNISHMENT_FILE, "w") as f:
+            json.dump(data, f)
+    except OSError as e:
+        logger.warning(f"⚠️ Sauvegarde {PUNISHMENT_FILE} impossible ({e}) — état non persisté.")
 
 
 # LISTE DES SURNOMS DE PUNITION

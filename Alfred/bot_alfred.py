@@ -21,7 +21,14 @@ try:
 except ImportError:
     from dotenv import load_dotenv
     load_dotenv()
-
+try:
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+except ImportError:  # bot déployé seul, sans shared/
+    GEMINI_FLASH      = "gemini-3.5-flash"
+    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+    GROQ_FAST         = "openai/gpt-oss-120b"
+    MISTRAL_MAIN      = "mistral-large-latest"
+    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 
 import discord
 from discord.ext import commands, tasks
@@ -472,7 +479,7 @@ async def weekly_protip_alfred():
                 # Utilise Mistral ou Gemini
                 resp = "Un bon majordome a toujours un mouchoir propre. Pour les larmes... ou le sang."
                 if mistral_client:
-                    chat = mistral_client.chat.complete(model="mistral-large-latest", messages=[{"role": "user", "content": prompt}])
+                    chat = mistral_client.chat.complete(model=MISTRAL_MAIN, messages=[{"role": "user", "content": prompt}])
                     resp = chat.choices[0].message.content
                 
                 await target_channel.send(f"🧐 **[CONSEIL DU VENDREDI]** {resp}")
@@ -812,7 +819,7 @@ async def analyze_audio_with_gemini(wav_data, user_names=None):
         
         # Envoyer l'audio à Gemini
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH,
             contents=[
                 types.Content(
                     role="user",

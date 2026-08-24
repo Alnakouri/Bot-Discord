@@ -54,8 +54,11 @@ class DailyMemory:
             return {"date": str(datetime.now().date()), "users": {}, "conversations": []}
 
     def save_memory(self):
-        with open(self.filename, "w", encoding="utf-8") as f:
-            json.dump(self.memory, f, indent=4)
+        try:
+            with open(self.filename, "w", encoding="utf-8") as f:
+                json.dump(self.memory, f, indent=4)
+        except OSError as e:
+            logger.warning(f"⚠️ Sauvegarde {self.filename} impossible ({e}) — état non persisté.")
 
     def check_reset(self):
         today = str(datetime.now().date())
@@ -151,8 +154,11 @@ class FactMemory:
             return {}
 
     def save_facts(self):
-        with open(self.filename, "w", encoding="utf-8") as f:
-            json.dump(self.facts, f, indent=4, ensure_ascii=False)
+        try:
+            with open(self.filename, "w", encoding="utf-8") as f:
+                json.dump(self.facts, f, indent=4, ensure_ascii=False)
+        except OSError as e:
+            logger.warning(f"⚠️ Sauvegarde {self.filename} impossible ({e}) — état non persisté.")
 
     def get_facts(self, user_id):
         uid = str(user_id)
