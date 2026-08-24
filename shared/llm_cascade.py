@@ -67,10 +67,18 @@ async def generate_response(
                 if media_data:
                     last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
                 gemini_messages.append(types.Content(role="user", parts=last_turn_parts))
+                if routing["type"] == RequestType.REASONING:
+                    cfg = types.GenerateContentConfig(temperature=temperature, max_output_tokens=None)
+                else:
+                    cfg = types.GenerateContentConfig(
+                        temperature=temperature,
+                        max_output_tokens=gemini_max_tokens or max_tokens,
+                        thinking_config=types.ThinkingConfig(thinking_level="minimal")
+                    )
                 resp = await _call(
                     client.models.generate_content,
                     model=model_name, contents=gemini_messages,
-                    config=types.GenerateContentConfig(temperature=temperature, max_output_tokens=gemini_max_tokens or max_tokens),
+                    config=cfg,
                 )
                 response_text = resp.text
                 logger.info(f"✅ [GEMINI {model_name}] {bot_label} via {routing.get('reason', '')}")

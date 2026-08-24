@@ -188,7 +188,11 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                 response = gemini_client.models.generate_content(
                     model=model_name,
                     contents=gemini_messages,
-                    config=types.GenerateContentConfig(temperature=1.1, max_output_tokens=300)
+                    config=types.GenerateContentConfig(
+                        temperature=1.1, 
+                        max_output_tokens=300,
+                        thinking_config=types.ThinkingConfig(thinking_level="minimal")
+                    )
                 )
                 return response.text
  

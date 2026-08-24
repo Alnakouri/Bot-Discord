@@ -1023,8 +1023,7 @@ async def on_message(message):
     if message.author.id == bot.user.id:
         return
         
-    atts = []
-        
+    
     # SILENCE STREAM (Canal ignoré)
     if is_ignored_channel(message.channel):
         return
@@ -1049,8 +1048,8 @@ async def on_message(message):
         or (message.reference and message.reference.resolved and message.reference.resolved.author == bot.user)
         or any(name in message.content.lower() for name in ["maiq", "m'aiq", "le menteur"])
     )
-    if not message.author.bot and _addressed_early:
-        atts = await resolve_media_attachments(message)
+    atts = (await resolve_media_attachments(message)
+            if _addressed_early else message.attachments)
     if atts and not message.author.bot and _addressed_early:
         routing = classify_request(message.content, atts)
         

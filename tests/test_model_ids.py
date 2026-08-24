@@ -35,3 +35,35 @@ def test_no_dead_models():
             pass
             
     assert not failures, f"Des modèles morts ont été trouvés : {', '.join(failures)}"
+
+def test_gemini_thinking_budget():
+    """La config Gemini doit brider le thinking hors REASONING.
+
+    thinking_level="minimal" est la seule valeur acceptee par flash ET flash-lite :
+    thinking_budget=0 fait un 400 INVALID_ARGUMENT sur gemini-3.5-flash-lite.
+    """
+    workspace = Path(__file__).parent.parent
+    needle = 'thinking_level="minimal"'
+
+    llm_cascade = workspace / "shared" / "llm_cascade.py"
+    if llm_cascade.exists():
+        content = llm_cascade.read_text(encoding="utf-8")
+        assert needle in content, (
+            "La config Gemini dans llm_cascade.py doit specifier "
+            'thinking_level="minimal" (sauf REASONING) pour eviter la troncature.'
+        )
+        assert "thinking_budget" not in content, (
+            "thinking_budget est rejete par gemini-3.5-flash-lite (400) : "
+            'utiliser thinking_level="minimal".'
+        )
+
+    bot_malena = workspace / "MalenaBot" / "bot_malena.py"
+    if bot_malena.exists():
+        content = bot_malena.read_text(encoding="utf-8")
+        assert needle in content, (
+            'bot_malena.py doit specifier thinking_level="minimal" sur son appel Gemini.'
+        )
+        assert "thinking_budget" not in content, (
+            "thinking_budget est rejete par gemini-3.5-flash-lite (400) : "
+            'utiliser thinking_level="minimal".'
+        )

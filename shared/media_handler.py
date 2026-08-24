@@ -42,25 +42,6 @@ async def _download_attachment(attachment) -> tuple[bytes | None, str]:
         return None, mime_type
 
 
-def _convert_ogg_to_wav(ogg_bytes: bytes) -> bytes | None:
-    """
-    Convertit des bytes OGG/Opus en WAV mono 16kHz en mémoire.
-    Nécessite pydub + ffmpeg installé sur le système.
-    """
-    try:
-        from pydub import AudioSegment
-        audio = AudioSegment.from_file(io.BytesIO(ogg_bytes), format="ogg")
-        audio = audio.set_channels(1).set_frame_rate(16000)
-        wav_buffer = io.BytesIO()
-        audio.export(wav_buffer, format="wav")
-        wav_buffer.seek(0)
-        return wav_buffer.read()
-    except ImportError:
-        logger.error("[MEDIA] pydub non installé. Installez avec: pip install pydub")
-        return None
-    except Exception as e:
-        logger.error(f"[MEDIA] Erreur conversion OGG→WAV: {e}")
-        return None
 
 
 async def process_image(attachment, api_key: str, personality_prompt: str,
@@ -222,14 +203,8 @@ async def process_voice_message(attachment, api_key: str,
     if not ogg_data:
         return None
 
-    # Conversion OGG → WAV (requis par Gemini pour l'inline audio)
-    wav_data = _convert_ogg_to_wav(ogg_data)
-    if not wav_data:
-        # Fallback: essayer d'envoyer l'OGG directement
-        wav_data = ogg_data
-        mime_type = "audio/ogg"
-    else:
-        mime_type = "audio/wav"
+    audio_data = ogg_data
+    mime_type = "audio/ogg"
 
     try:
         from shared.safe_client import get_client as get_safe_genai_client
@@ -246,13 +221,13 @@ async def process_voice_message(attachment, api_key: str,
                         "puis réponds-lui en restant dans ta personnalité. "
                         "Format : '🎤 *J'ai entendu : \"[transcription]\"*\n\n[ta réponse]'"
                     )),
-                    types.Part(inline_data=types.Blob(mime_type=mime_type, data=wav_data))
+                    types.Part(inline_data=types.Blob(mime_type=mime_type, data=audio_data))
                 ])
             ],
             config=types.GenerateContentConfig(temperature=0.7)
         )
         result = response.text.strip()
-        logger.info(f"✅ [AUDIO] Message vocal traité ({len(wav_data)} bytes → {len(result)} chars)")
+        logger.info(f"✅ [AUDIO] Message vocal traité ({len(audio_data)} bytes → {len(result)} chars)")
         return result
     except Exception as e:
         error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
