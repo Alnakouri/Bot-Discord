@@ -24,7 +24,7 @@ from shared.response_memory import ResponseMemory
 import logging
 from pathlib import Path
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image, process_image_ollama, process_voice_message
+from shared.media_handler import process_image_ollama
 
 try:
     from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE

@@ -20,7 +20,7 @@ from openai import OpenAI
 from datetime import datetime
 import base64
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image, process_image_ollama, process_voice_message
+from shared.media_handler import process_image_ollama
 from google.genai import types
 from shared.safe_client import get_client as get_safe_genai_client
 from groq import Groq
@@ -486,60 +486,6 @@ async def on_message(message):
                 if dr:
                     memory_context += f"\n[CONSIGNE DU JOUR] {dr}"
                 
-                # ══════════════════════════════════════════════════
-                # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
-                # ══════════════════════════════════════════════════
-                if atts:
-                    routing = classify_request(message.content, atts)
-                    
-                    # --- IMAGE ---
-                    if routing["has_image"] and routing["image_attachment"]:
-                        api_key = key_manager.get_key("gemini")
-                        if api_key:
-                            async with message.channel.typing():
-                                # Mood & Personality
-                                mood_instruction = data.MOODS[current_mood]["prompt"]
-                                expression_hint = build_expression_hint(current_mood)
-                                full_personality = f"{data.PERSONALITY_PROMPT}\n\n{mood_instruction}{expression_hint}{memory_context}"
-                                
-                                response = await process_image(
-                                    attachment=routing["image_attachment"],
-                                    api_key=api_key,
-                                    personality_prompt=full_personality,
-                                    user_message=message.content or ""
-                                )
-                            if response:
-                                await message.reply(response)
-                                malena_brain.add_interaction(message.author.id, message.author.name, message.content or "[IMAGE]", response)
-                                asyncio.create_task(malena_brain.refresh_daily_read(message.author.id, _daily_llm_call))
-                                return
-                        else:
-                            await message.reply("Ay ! J'ai pas mes lunettes, je vois rien du tout ! Reviens plus tard, peuchère !")
-                            return
-                    
-                    # --- MESSAGE VOCAL ---
-                    if routing["has_audio"] and routing["audio_attachment"]:
-                        api_key = key_manager.get_key("gemini")
-                        if api_key:
-                            async with message.channel.typing():
-                                mood_instruction = data.MOODS[current_mood]["prompt"]
-                                expression_hint = build_expression_hint(current_mood)
-                                full_personality = f"{data.PERSONALITY_PROMPT}\n\n{mood_instruction}{expression_hint}{memory_context}"
-                                
-                                response = await process_voice_message(
-                                    attachment=routing["audio_attachment"],
-                                    api_key=api_key,
-                                    personality_prompt=full_personality
-                                )
-                            if response:
-                                await message.reply(response)
-                                malena_brain.add_interaction(message.author.id, message.author.name, "[VOCAL]", response)
-                                asyncio.create_task(malena_brain.refresh_daily_read(message.author.id, _daily_llm_call))
-                                return
-                        else:
-                            await message.reply("👂 Ay ! Y'a trop de mistral, j'entends rien ! Mon oreille me fait mal !")
-                            return
-                # ══════════════════════════════════════════════════
 
                 # SMART ROUTER (Media & Intention)
                 _addressed = bool(is_mentioned or is_reply or is_name_mentioned or has_trigger_word)
@@ -562,9 +508,9 @@ async def on_message(message):
                 if has_image and not user_msg.strip():
                     user_msg = "(L'utilisateur te montre une image sans rien dire.)"
                 if has_image:
-                    user_msg += "\n[VISION] Regarde l'image et commente-la avec ton style de marseillaise."
+                    user_msg += "\n[VISION] Regarde l'image et commente-la avec ton style de marseillaise. Décris ce que tu vois !"
                 if has_audio:
-                    user_msg += "\n[🎤 VOCAL] L'utilisateur a envoyé un message vocal. Écoute-le et réponds."
+                    user_msg += "\n[🎤 VOCAL] L'utilisateur a envoyé un message vocal. Écoute-le et réponds avec ton franc-parler de gitane !"
                 
                 prompt = f"L'utilisateur {message.author.name} te dit : '{user_msg}'. Réponds-lui.{nickname_instruction}{memory_context}"
                 

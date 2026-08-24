@@ -22,7 +22,7 @@ from shared.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
 from shared.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
-from shared.media_handler import process_image, process_voice_message
+
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -807,95 +807,9 @@ async def on_message(message):
                 meme_recent[chan_id].append(m.group(1))
         return consigne
 
-    # ══════════════════════════════════════════════════
-    # TRAITEMENT MULTIMODAL (Vision + Audio Vocal)
-    # Uniquement si on s'adresse à Sugar (mention/reply/DM/nom) — pas de
-    # commentaire spontané des images postées.
-    # ══════════════════════════════════════════════════
-    if atts and should_respond:
-        routing = classify_request(message.content, atts)
-        
-        # --- IMAGE ---
-        if routing["has_image"] and routing["image_attachment"]:
-            api_key = key_manager.get_key("gemini")
-            if api_key:
-                async with message.channel.typing():
-                    # Préparation du prompt consolidé
-                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}{_get_meme_addition()}\n{keyword_boost}"
-                    response = await process_image(
-                        attachment=routing["image_attachment"],
-                        api_key=api_key,
-                        personality_prompt=full_personality,
-                        user_message=message.content or ""
-                    )
-                    if response:
-                        # Clean/extract facts
-                        import re
-                        matches = re.findall(r"<fact>(.*?)</fact>", response, re.DOTALL | re.IGNORECASE)
-                        for f in matches:
-                            fact_text = f.strip()
-                            if fact_text:
-                                fact_memory.add_fact(user_id, fact_text)
-                        response = re.sub(r"<fact>.*?</fact>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
-                        response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
-                        response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
-                        response = _strip_didascalies(response)
-                        response = _strip_lead_vocative(response)
 
-                        await message.reply(response)
-                        if message.channel.id not in conversation_history:
-                            conversation_history[message.channel.id] = []
-                        conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
-                        
-                        daily_memory.add_interaction(user_id, user_name, message.content or "[IMAGE]", response)
-                        import asyncio
-                        asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
-                        return
-            else:
-                await message.reply("Désolé, je n'ai pas pu lire l'image.")
-                return
-        
-        # --- MESSAGE VOCAL ---
-        if routing["has_audio"] and routing["audio_attachment"]:
-            api_key = key_manager.get_key("gemini")
-            if api_key:
-                async with message.channel.typing():
-                    full_personality = f"{PERSONALITY_PROMPT}{_get_memory_addition()}{_get_meme_addition()}\n{keyword_boost}"
-                    response = await process_voice_message(
-                        attachment=routing["audio_attachment"],
-                        api_key=api_key,
-                        personality_prompt=full_personality
-                    )
-                if response:
-                    # Clean/extract facts
-                    import re
-                    matches = re.findall(r"<fact>(.*?)</fact>", response, re.DOTALL | re.IGNORECASE)
-                    for f in matches:
-                        fact_text = f.strip()
-                        if fact_text:
-                            fact_memory.add_fact(user_id, fact_text)
-                    response = re.sub(r"<fact>.*?</fact>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
-                    response = re.sub(r"<[a-z_-]+>", "", response, flags=re.IGNORECASE)
-                    response = re.sub(r"</[a-z_-]+>", "", response, flags=re.IGNORECASE).strip()
-                    response = _strip_didascalies(response)
-                    response = _strip_lead_vocative(response)
-
-                    await message.reply(response)
-                    if message.channel.id not in conversation_history:
-                        conversation_history[message.channel.id] = []
-                    conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
-                    
-                    daily_memory.add_interaction(user_id, user_name, "[VOCAL]", response)
-                    import asyncio
-                    asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
-                    return
-            else:
-                await message.reply("Désolé, je n'ai pas pu lire le vocal.")
-                return
-    # ══════════════════════════════════════════════════
-    
     # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
-    elif not is_bot_talking and not should_respond and not has_image_early and random.random() < 0.10:
+    if not is_bot_talking and not should_respond and not has_image_early and random.random() < 0.10:
         if await _other_bot_in_focus(message):
             logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Sugar Bot se tait.")
         else:
@@ -976,9 +890,9 @@ async def on_message(message):
     if has_image and not user_message.strip():
         user_message = "(L'utilisateur montre une image sans rien dire.)"
     if has_image:
-        user_message += "\n[VISION] Regarde l'image et commente-la."
+        user_message += "\n[VISION] Regarde l'image et commente-la comme Sugar le ferait ! Décris ce que tu vois avec ton exubérance !"
     if has_audio:
-        user_message += "\n[🎤 VOCAL] L'utilisateur a envoyé un message vocal. Écoute-le et réponds."
+        user_message += "\n[🎤 VOCAL] L'utilisateur a envoyé un message vocal. Écoute-le et réponds avec ton style exubérant !"
     
 
     # GÉNÉRATION (Smart Router)

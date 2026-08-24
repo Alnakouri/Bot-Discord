@@ -21,7 +21,7 @@ from shared.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image, process_image_ollama, process_voice_message
+from shared.media_handler import process_image_ollama
 from shared.llm_cascade import generate_response
 
 try:

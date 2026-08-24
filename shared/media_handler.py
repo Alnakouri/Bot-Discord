@@ -3,7 +3,7 @@ media_handler.py — Traitement multimodal centralisé (Vision + Audio).
 Utilisé par les 6 bots Discord. Envoie images et audio à Gemini 2.5 Flash.
 """
 import logging
-import io
+
 import aiohttp
 import asyncio
 import base64
@@ -42,49 +42,6 @@ async def _download_attachment(attachment) -> tuple[bytes | None, str]:
         return None, mime_type
 
 
-
-
-async def process_image(attachment, api_key: str, personality_prompt: str,
-                         user_message: str = "") -> str | None:
-    """
-    Télécharge une image Discord et demande à Gemini de l'analyser.
-    
-    Args:
-        attachment: discord.Attachment (image)
-        api_key: Clé Gemini active
-        personality_prompt: Le prompt système du bot (sa personnalité)
-        user_message: Texte accompagnant l'image (peut être vide)
-    
-    Returns:
-        Réponse texte ou None si échec
-    """
-    image_data, mime_type = await _download_attachment(attachment)
-    if not image_data:
-        return None
-
-    text_part = user_message.strip() or "Analyse cette image et commente-la."
-    
-    try:
-        from shared.safe_client import get_client as get_safe_genai_client
-        client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-        
-        response = client.models.generate_content(
-            model=GEMINI_FLASH,
-            contents=[
-                types.Content(role="user", parts=[
-                    types.Part(text=f"SYSTEM: {personality_prompt}\n\n[VISION] {text_part} Réponds en restant dans ta personnalité."),
-                    types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_data))
-                ])
-            ],
-            config=types.GenerateContentConfig(temperature=0.7)
-        )
-        result = response.text.strip()
-        logger.info(f"✅ [VISION] Image analysée ({len(image_data)} bytes → {len(result)} chars)")
-        return result
-    except Exception as e:
-        error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
-        logger.error(f"❌ [VISION] Erreur Gemini: {e} (code={error_code})")
-        return None
 
 
 import os
@@ -184,52 +141,3 @@ async def process_image_ollama(attachment, personality_prompt: str,
         logger.error(f"❌ [OLLAMA VISION] Erreur: {e}")
         return None
 
-
-async def process_voice_message(attachment, api_key: str,
-                                  personality_prompt: str) -> str | None:
-    """
-    Télécharge un message vocal Discord (.ogg), le convertit en WAV,
-    et demande à Gemini de le transcrire + répondre en personnalité.
-    
-    Args:
-        attachment: discord.Attachment (audio/ogg)
-        api_key: Clé Gemini active
-        personality_prompt: Le prompt système du bot (sa personnalité)
-    
-    Returns:
-        Réponse texte (transcription + réponse) ou None si échec
-    """
-    ogg_data, _ = await _download_attachment(attachment)
-    if not ogg_data:
-        return None
-
-    audio_data = ogg_data
-    mime_type = "audio/ogg"
-
-    try:
-        from shared.safe_client import get_client as get_safe_genai_client
-        client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-        
-        response = client.models.generate_content(
-            model=GEMINI_FLASH,
-            contents=[
-                types.Content(role="user", parts=[
-                    types.Part(text=(
-                        f"SYSTEM: {personality_prompt}\n\n"
-                        "[AUDIO] Quelqu'un t'a envoyé un message vocal. "
-                        "Transcris d'abord ce qu'il dit entre guillemets, "
-                        "puis réponds-lui en restant dans ta personnalité. "
-                        "Format : '🎤 *J'ai entendu : \"[transcription]\"*\n\n[ta réponse]'"
-                    )),
-                    types.Part(inline_data=types.Blob(mime_type=mime_type, data=audio_data))
-                ])
-            ],
-            config=types.GenerateContentConfig(temperature=0.7)
-        )
-        result = response.text.strip()
-        logger.info(f"✅ [AUDIO] Message vocal traité ({len(audio_data)} bytes → {len(result)} chars)")
-        return result
-    except Exception as e:
-        error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
-        logger.error(f"❌ [AUDIO] Erreur Gemini: {e} (code={error_code})")
-        return None

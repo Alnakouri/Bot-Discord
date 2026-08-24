@@ -105,6 +105,14 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
         jsonl_handler = JSONLHandler(log_dir, bot_name)
         jsonl_handler.setLevel(logging.INFO)
         logger.addHandler(jsonl_handler)
+        
+        for shared_name in ("smart_router", "llm_cascade", "media_handler",
+                            "safe_client", "discord_status", "discord_profile"):
+            shared_logger = logging.getLogger(shared_name)
+            shared_logger.setLevel(logging.INFO)
+            if not shared_logger.handlers:
+                for h in logger.handlers:
+                    shared_logger.addHandler(h)
     
     logger.info(f"=== {bot_name.upper()} STARTED ===")
     

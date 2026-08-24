@@ -33,7 +33,7 @@ except ImportError:  # bot déployé seul, sans shared/
     MISTRAL_MAIN      = "mistral-large-latest"
     OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image, process_image_ollama, process_voice_message
+from shared.media_handler import process_image_ollama
 try:
     from shared.games import setup_games
     from games_persona import PERSONA
@@ -1050,51 +1050,6 @@ async def on_message(message):
     )
     atts = (await resolve_media_attachments(message)
             if _addressed_early else message.attachments)
-    if atts and not message.author.bot and _addressed_early:
-        routing = classify_request(message.content, atts)
-        
-        # --- IMAGE ---
-        if routing["has_image"] and routing["image_attachment"]:
-            api_key = key_manager.get_key("gemini")
-            if api_key:
-                async with message.channel.typing():
-                    response = await process_image(
-                        attachment=routing["image_attachment"],
-                        api_key=api_key,
-                        personality_prompt=PERSONALITY_PROMPT,
-                        user_message=message.content or ""
-                    )
-                if response:
-                    await message.channel.send(response)
-                    # Sync historique
-                    if message.channel.id not in conversation_history:
-                        conversation_history[message.channel.id] = []
-                    conversation_history[message.channel.id].append({"role": "user", "parts": [message.content or "[IMAGE]"]})
-                    conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
-                    return
-            else:
-                await message.channel.send("☀️ M'aiq ne voit rien aujourd'hui. Le sable est dans ses yeux. C'est gênant. 🐾")
-                return
-        
-        # --- MESSAGE VOCAL ---
-        if routing["has_audio"] and routing["audio_attachment"]:
-            api_key = key_manager.get_key("gemini")
-            if api_key:
-                async with message.channel.typing():
-                    response = await process_voice_message(
-                        attachment=routing["audio_attachment"],
-                        api_key=api_key,
-                        personality_prompt=PERSONALITY_PROMPT
-                    )
-                if response:
-                    await message.channel.send(response)
-                    if message.channel.id not in conversation_history:
-                        conversation_history[message.channel.id] = []
-                    conversation_history[message.channel.id].append({"role": "model", "parts": [response]})
-                    return
-            else:
-                await message.channel.send("📢 Trop de bruit dans les plaines. M'aiq n'entend pas ce que tu dis. 🐾")
-                return
     # ══════════════════════════════════════════════════
 
     # GESTION DES RÉPONSES AUX ÉNIGMES (PASSIVE + REPLY)
