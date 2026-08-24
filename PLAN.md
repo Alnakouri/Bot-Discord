@@ -1,112 +1,108 @@
-# PLAN — Images & vocaux : Sugar, Malena et M'aiq doivent réagir comme Sheo/Alfred/Johnny
+# PLAN — Cause racine trouvée : toute pièce jointe était classée « message vocal »
 
-Demande : **que tous les bots réagissent aux images et aux vocaux naturellement,
-comme un humain** — comme le font déjà Sheo, Alfred et Johnny. Plus de
-« 🎤 J'ai entendu : "..." », plus de réponses hors-sujet à une image.
+## 🔴 Le vrai bug (2026-08-24, 22:54)
 
----
+Sugar répond « J'entends de douces vibrations dans l'air » à une **image**. Les logs
+`shared/` — enfin visibles depuis le passage précédent — donnent la réponse en clair :
 
-## Ce que le test live du 2026-08-24 (20h) a montré
-
-| Bot | Image | Vocal |
-|---|---|---|
-| Alfred | ✅ décrit finement, dans le personnage | ✅ répond directement |
-| Johnny | ✅ décrit finement | ✅ répond directement |
-| Sheo | ✅ décrit finement | ✅ répond directement |
-| Sugar | — | ❌ `🎤 J'ai entendu : "..."` |
-| Malena | — | ❌ `🎤 J'ai entendu : "..."` |
-| M'aiq | ❌ « La boîte magique est ouverte. M'aiq cherche des pinces ici. » | ❌ (même bloc) |
-
-## Cause unique : un bloc multimodal dédié chez 3 bots seulement
-
-Sugar, Malena et M'aiq court-circuitent leur cascade normale par un bloc placé
-**tout en haut** de `on_message`, qui appelle directement
-`shared/media_handler.py` puis fait `return` :
-
-- `MaiqBot/bot_maiq.py:1054-1096` → `process_image()` / `process_voice_message()`
-- `SugarBot/bot_sugar.py:811-870` → idem
-- `MalenaBot/bot_malena.py:486-548` → idem
-
-Ces deux fonctions n'envoient à Gemini **que le prompt de personnalité brut** :
-- `process_image` (`media_handler.py:66`) : ni transcript du salon, ni mémoire, ni
-  consigne « décris ce que tu vois » — juste `« Analyse cette image et commente-la. »`.
-  Avec la persona de M'aiq (évasif, laconique, « commence par un objet »), ça donne
-  mécaniquement « La boîte magique est ouverte » au lieu d'une description.
-  **M'aiq n'est pas aveugle : il voit, mais il répond sans contexte ni consigne.**
-- `process_voice_message` (`media_handler.py:221`) : impose littéralement le format
-  `'🎤 *J'ai entendu : "[transcription]"*\n\n[ta réponse]'` → d'où le préfixe robotique.
-
-Sheo, Alfred et Johnny n'ont **pas** ce bloc : leur image/vocal descend dans la
-cascade normale avec le transcript, la mémoire et une vraie consigne
-(`bot_johnny.py:966-974`), d'où des réactions naturelles.
-
-**Bonne nouvelle** : les 3 bots concernés ont **déjà** ce chemin générique, juste
-en dessous — `bot_sugar.py:955-981`, `bot_malena.py:544-563`, `bot_maiq.py:1344-1363`.
-Il est complet (image ET audio, `download_media` → `media_data` → consigne
-`[VISION]` / `[🎤 VOCAL]`). Il suffit de **supprimer le court-circuit**.
-
----
-
-## À faire
-
-### 1. Supprimer les 3 blocs multimodaux dédiés
-- `MaiqBot/bot_maiq.py` : supprimer le bloc `1054-1096` (de
-  `if atts and not message.author.bot and _addressed_early:` jusqu'au `return` de la
-  branche vocale incluse). **Garder** le calcul de `_addressed_early` et la ligne
-  `atts = (await resolve_media_attachments(message) if _addressed_early else message.attachments)` :
-  `atts` est réutilisé par le `classify_request` de `:1344`.
-- `SugarBot/bot_sugar.py` : supprimer le bloc `811-870`.
-- `MalenaBot/bot_malena.py` : supprimer le bloc `486-548`.
-
-Après suppression, vérifier dans chaque fichier que la variable `atts` (ou
-`routing`) utilisée plus bas est toujours définie sur **tous** les chemins.
-
-### 2. Nettoyer `shared/media_handler.py`
-`process_image` et `process_voice_message` n'auront plus aucun appelant
-(`process_image_ollama`, lui, reste utilisé par `llm_cascade.py:82`). Les supprimer,
-ainsi que les imports devenus morts dans les 3 bots. Retirer aussi `import io`
-(ligne 6), mort depuis la suppression de `_convert_ogg_to_wav`.
-
-### 3. Renforcer la consigne VISION des 3 bots
-Aligner sur Johnny (`bot_johnny.py:972`) : la consigne doit demander de **décrire
-ce qu'on voit** avant de réagir, sinon les personas très typées (M'aiq surtout)
-esquivent. M'aiq a déjà la bonne (`bot_maiq.py:1361`) ; vérifier Sugar et Malena.
-
-### 4. 🔧 Rendre les logs de `shared/` visibles — sans ça on diagnostique à l'aveugle
-`shared/bot_logger.py:setup_logger` ne configure **que** le logger du bot.
-Les loggers `smart_router`, `llm_cascade` et `media_handler` n'ont aucun handler :
-ils retombent sur le « last resort » de Python, qui n'affiche que WARNING et au-dessus.
-Conséquence : `[ROUTER] 🖼️ Image → Gemini Vision`, `✅ [ROUTER] Média téléchargé`,
-`✅ [VISION] Image analysée` et `✅ [GEMINI ...]` sont **invisibles dans les 6 bots** —
-c'est ce qui a rendu ce diagnostic long et incertain.
-
-Dans `setup_logger`, après avoir monté les handlers, les rattacher aussi aux loggers
-partagés :
-```python
-for shared_name in ("smart_router", "llm_cascade", "media_handler",
-                    "safe_client", "discord_status", "discord_profile"):
-    shared_logger = logging.getLogger(shared_name)
-    shared_logger.setLevel(logging.INFO)
-    if not shared_logger.handlers:
-        for h in logger.handlers:
-            shared_logger.addHandler(h)
+```
+[ROUTER] 🎤 Message vocal Discord → Gemini Audio
+✅ [ROUTER] Média téléchargé: 113044 bytes (image/webp)
 ```
 
+Le routeur annonce « message vocal » sur un **image/webp**.
+
+**Cause** : `shared/smart_router.py` faisait
+```python
+is_voice = getattr(att, 'is_voice_message', False) or ...
+```
+Or dans discord.py 2.7, `Attachment.is_voice_message` est une **méthode**, pas un
+attribut (vérifié dans le conteneur : `type: <class 'function'>`). Un `getattr` nu
+renvoie donc la **méthode liée**, toujours vraie → **toutes** les pièces jointes,
+images comprises, partaient en cascade AUDIO.
+
+**Ça explique tout l'historique** :
+- les « 🎤 J'ai entendu : "..." » sur des **images** — c'étaient des captures d'écran :
+  Gemini, sommé de transcrire, lisait le texte de l'image et le rapportait comme
+  entendu (d'où des « transcriptions » étrangement exactes) ;
+- M'aiq et Sugar hors-sujet sur des images ;
+- Sheo/Alfred/Johnny s'en sortaient par chance : leur cascade AUDIO tape le même
+  Gemini, qui voyait bien une image et la décrivait malgré la consigne `[🎤 VOCAL]`.
+
+**Pourquoi aucun test ne l'a vu** : `tests/test_smart_router.py::_FakeAttachment`
+exposait `is_voice_message` comme un **attribut booléen** — le mock ne reproduisait
+pas la vraie API, donc il testait un monde qui n'existe pas.
+
+## ✅ Corrigé et déployé
+
+- `shared/smart_router.py` : helper `_is_voice_message()` qui **appelle** la méthode
+  (et tolère un booléen pour les mocks / vieilles versions).
+- `tests/test_smart_router.py` : le mock expose désormais une **méthode**, plus trois
+  tests anti-retour (image ≠ vocal, vrai vocal toujours détecté, les deux styles d'API).
+- **252 tests passent** (249 → 252). 6 conteneurs recréés, démarrage propre.
+
+## Reste — LE test qui compte
+Envoyer **une image** aux 6 bots. Les logs doivent maintenant dire
+`[ROUTER] 🖼️ Image (image/...) → Gemini Vision` et non plus « Message vocal ».
+
 ---
 
-## Vérification attendue
+# PLAN — Médias unifiés sur les 6 bots : exécution vérifiée (2026-08-24)
 
-1. `.venv/Scripts/python.exe -m pytest` → **249 minimum**, 0 régression.
-2. `docker compose up -d --force-recreate sheogorath maiq alfred johnny sugar malena`
-3. Logs : `docker logs bot-maiq | grep ROUTER` doit **enfin** renvoyer des lignes.
-4. Test live utilisateur : **la même image** envoyée aux 6 bots → 6 réactions
-   naturelles qui décrivent réellement ce qu'elles voient, chacune dans son ton.
-   Puis **un vocal** aux 6 → 6 réponses directes, **aucun « 🎤 J'ai entendu »**.
+Antigravity a exécuté le plan. **Le travail est bon, mais Sugar était cassé :
+`bot_sugar.py` ne compilait plus** — corrigé pendant la vérification. Déployé.
 
-## Reste
-- `git commit` + `git push` : la branche a **1 commit local non poussé** (`3b42e88`)
-  plus les correctifs D1/D2/D3 encore non commités.
-- `pydub` traîne encore dans `Alfred/requirements.txt:10` et `Sheogorath/requirements.txt:9`
-  alors que plus aucun code ne l'importe.
+## 🔴 Défaut bloquant corrigé — Sugar ne démarrait plus
+
+Le bloc multimodal supprimé (`if atts and should_respond:`) était **chaîné** au
+`elif` de l'intervention aléatoire juste en dessous. En retirant le `if`, le `elif`
+est resté orphelin :
+```
+SyntaxError: invalid syntax   (SugarBot/bot_sugar.py:812, `elif not is_bot_talking ...`)
+```
+Sugar n'aurait même pas pu importer son module — bot mort au démarrage.
+
+Corrigé en transformant le `elif` en `if`. **Sémantique inchangée** : la branche
+supprimée exigeait `should_respond` **vrai**, le `elif` exige `should_respond`
+**faux** — les deux étaient déjà mutuellement exclusifs.
+
+Leçon : après suppression d'un bloc, `py_compile` sur **tous** les fichiers touchés.
+Les tests ne l'attrapent pas (aucun n'importe `bot_sugar.py`).
+
+## ✅ Vérifié
+
+| Étape | État | Preuve |
+|---|---|---|
+| 1. Blocs multimodaux supprimés | ✅ | M'aiq (`-45 l.`), Sugar (`-86 l.`), Malena (`-54 l.`) — tous passent par la cascade générique désormais |
+| 2. `media_handler` nettoyé | ✅ | `process_image` et `process_voice_message` supprimées (plus aucun appelant), `import io` mort retiré ; `process_image_ollama` conservée (utilisée par `llm_cascade.py:82`) |
+| 3. Consignes VISION renforcées | ✅ | Sugar et Malena disent maintenant « Décris ce que tu vois » ; M'aiq l'avait déjà (`:1361`) |
+| 4. Logs `shared/` visibles | ✅ | sondé dans `bot-johnny` : `smart_router`, `llm_cascade`, `media_handler` → **3 handlers, niveau INFO**, les lignes `[TEST]` sortent bien dans `docker logs` |
+| Imports morts | ✅ | `process_image` / `process_voice_message` retirés des 5 bots qui les importaient |
+| `pydub` | ✅ | retiré de `Alfred/requirements.txt` et `Sheogorath/requirements.txt` |
+| Syntaxe | ✅ | `py_compile` OK sur les 7 fichiers modifiés |
+| Tests | ✅ | **249 passed, 46 subtests** |
+| Déploiement | ✅ | 6 conteneurs recréés, tous `STARTED` / `prêt`, 0 traceback |
+
+## ⚠️ Détail mineur
+
+Le câblage des loggers partagés est placé **dans** le bloc `if not console_only:`
+de `setup_logger`. En mode console seule (`BOTS_LOG_CONSOLE_ONLY=1`, ou sous pytest)
+les logs `shared/` redeviennent invisibles. Sans effet en Docker, mais à remonter
+d'un cran si on veut l'observabilité partout.
+
+## Reste — test live utilisateur (c'est le seul juge)
+1. **La même image** envoyée aux 6 bots → 6 réactions naturelles qui décrivent
+   réellement ce qu'elles voient, chacune dans son ton. M'aiq inclus.
+2. Vérifier au passage que Sugar répond bien (c'est lui qui était cassé) :
+   `docker logs bot-sugar | grep -E "ROUTER|GEMINI|MISTRAL"` doit enfin être bavard.
+
+## 🅿️ Vocal : mis de côté (décision utilisateur, 2026-08-24)
+On ne travaille plus le vocal et on ne le teste plus. Le code reste en place tel
+quel — l'audio descend dans la cascade générique comme l'image, sans préfixe
+« J'ai entendu » — mais ce n'est plus un critère de validation. Seule l'image compte.
+
+## Reste — divers
+- `git commit` + `git push` : la branche a **2 commits locaux non poussés**
+  (`3b42e88`, `586bb89`) plus ces modifications.
 - Tokens Twitch **401** (johnny, sugar, sheogorath) → ré-autorisation OAuth manuelle
   (`twitch_authorize.py`, gotcha : `--auth --bot <bot>` avant **chaque** bot).

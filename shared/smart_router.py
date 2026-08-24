@@ -66,6 +66,22 @@ class RequestType:
 # CLASSIFICATION
 # ═══════════════════════════════════════════
 
+
+def _is_voice_message(attachment) -> bool:
+    """True si l'attachment est un message vocal Discord.
+
+    `discord.Attachment.is_voice_message` est une **méthode** (discord.py 2.x) : il
+    faut l'appeler. On tolère aussi un simple booléen (mocks, versions anciennes).
+    """
+    flag = getattr(attachment, "is_voice_message", None)
+    if flag is None:
+        return False
+    try:
+        return bool(flag() if callable(flag) else flag)
+    except Exception:
+        return False
+
+
 def classify_request(message_text, attachments=None, *, addressed: bool = False):
     """
     Classifie un message Discord pour déterminer le modèle optimal.
@@ -100,7 +116,10 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             filename = (att.filename or "").lower()
             
             # DETECTION MESSAGE VOCAL (OGG Discord)
-            is_voice = getattr(att, 'is_voice_message', False) or (filename.endswith('.ogg') and "audio" in ct)
+            # ⚠️ discord.py expose is_voice_message comme une METHODE, pas un attribut :
+            # un `getattr(att, 'is_voice_message', False)` nu renvoie la méthode liée,
+            # toujours vraie → TOUTE pièce jointe (images comprises) passait en vocal.
+            is_voice = _is_voice_message(att) or (filename.endswith('.ogg') and "audio" in ct)
             if is_voice:
                 result["type"] = RequestType.AUDIO
                 result["model"] = GEMINI_FLASH

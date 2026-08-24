@@ -18,13 +18,22 @@ from shared.smart_router import (
 
 
 class _FakeAttachment:
-    """Imite discord.Attachment pour les besoins de classify_request."""
+    """Imite discord.Attachment pour les besoins de classify_request.
+
+    IMPORTANT : `is_voice_message` est une **methode** dans discord.py 2.x, pas un
+    attribut. Le mock doit donc l'exposer comme une methode, sinon il ne teste pas
+    la vraie API (c'est ce qui a laisse passer le bug ou toute piece jointe etait
+    classee "vocal").
+    """
     def __init__(self, content_type=None, filename="", is_voice_message=False, size=1024, url="http://x"):
         self.content_type = content_type
         self.filename = filename
-        self.is_voice_message = is_voice_message
+        self._is_voice_message = bool(is_voice_message)
         self.size = size
         self.url = url
+
+    def is_voice_message(self):
+        return self._is_voice_message
 
 
 class TestClassifyRequest(unittest.TestCase):
@@ -216,6 +225,43 @@ class TestResolveMediaAttachments(unittest.IsolatedAsyncioTestCase):
         msg = FakeMessage()
         res = await resolve_media_attachments(msg)
         self.assertEqual(res, [])
+
+
+class TestVoiceMessageDetection(unittest.TestCase):
+    """Anti-retour : discord.Attachment.is_voice_message est une METHODE.
+
+    Un `getattr(att, "is_voice_message", False)` nu renvoie la methode liee, donc
+    une valeur toujours vraie : toutes les images partaient en cascade AUDIO.
+    """
+
+    def test_image_is_not_a_voice_message(self):
+        att = _FakeAttachment(content_type="image/webp", filename="photo.webp")
+        r = classify_request("", [att])
+        self.assertEqual(r["type"], RequestType.IMAGE)
+        self.assertTrue(r["has_image"])
+        self.assertFalse(r["has_audio"])
+
+    def test_real_voice_message_still_detected(self):
+        att = _FakeAttachment(content_type="audio/ogg", filename="voice-message.ogg",
+                              is_voice_message=True)
+        r = classify_request("", [att])
+        self.assertEqual(r["type"], RequestType.AUDIO)
+        self.assertTrue(r["has_audio"])
+        self.assertFalse(r["has_image"])
+
+    def test_method_style_flag_is_called_not_truthy_tested(self):
+        from shared.smart_router import _is_voice_message
+
+        class _MethodStyle:
+            def is_voice_message(self):
+                return False
+
+        class _AttributeStyle:
+            is_voice_message = False
+
+        self.assertFalse(_is_voice_message(_MethodStyle()))
+        self.assertFalse(_is_voice_message(_AttributeStyle()))
+        self.assertFalse(_is_voice_message(object()))
 
 
 if __name__ == "__main__":
