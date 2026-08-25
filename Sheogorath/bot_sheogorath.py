@@ -1316,11 +1316,15 @@ async def check_missed_mentions_sheo():
                     # Essayer les APIs dans l'ordre
                     if groq_client:
                         try:
-                            chat = groq_client.chat.completions.create(
-                                messages=[{"role": "user", "content": late_prompt}],
-                                model=GROQ_FAST,
-                                temperature=0.95,
-                                max_tokens=200
+                            chat = await asyncio.wait_for(
+                                asyncio.to_thread(
+                                    groq_client.chat.completions.create,
+                                    messages=[{"role": "user", "content": late_prompt}],
+                                    model=GROQ_FAST,
+                                    temperature=0.95,
+                                    max_tokens=200
+                                ),
+                                timeout=30
                             )
                             response_text = chat.choices[0].message.content
                         except Exception as e:
@@ -1331,7 +1335,13 @@ async def check_missed_mentions_sheo():
                         if api_key:
                             try:
                                 gclient = get_safe_genai_client(api_key=api_key)
-                                resp = gclient.models.generate_content(model=GEMINI_FLASH, contents=late_prompt)
+                                resp = await asyncio.wait_for(
+                                    asyncio.to_thread(
+                                        gclient.models.generate_content,
+                                        model=GEMINI_FLASH, contents=late_prompt
+                                    ),
+                                    timeout=30
+                                )
                                 response_text = resp.text
                             except Exception as e:
                                 error_code = getattr(e, "code", getattr(e, "status_code", 0))
@@ -1657,20 +1667,28 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         # LLM Call
         if openrouter_client:
             try:
-                chat = openrouter_client.chat.completions.create(
-                    model=OPENROUTER_FREE,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=1.0,
-                    max_tokens=300
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        openrouter_client.chat.completions.create,
+                        model=OPENROUTER_FREE,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=1.0,
+                        max_tokens=300
+                    ),
+                    timeout=15
                 )
                 fake_text = chat.choices[0].message.content
             except Exception: pass
         
         if fake_text == "Je suis un imposteur !" and groq_client:
              try:
-                chat = groq_client.chat.completions.create(
-                    model=GROQ_FAST,
-                    messages=[{"role": "user", "content": prompt}]
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        groq_client.chat.completions.create,
+                        model=GROQ_FAST,
+                        messages=[{"role": "user", "content": prompt}]
+                    ),
+                    timeout=15
                 )
                 fake_text = chat.choices[0].message.content
              except Exception: pass
@@ -1864,18 +1882,26 @@ async def on_message(message):
             # Generation (Fastest avail)
             if groq_client:
                  try:
-                    chat = groq_client.chat.completions.create(
-                        model=GROQ_FAST,
-                        messages=[{"role": "user", "content": full_prompt}]
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            groq_client.chat.completions.create,
+                            model=GROQ_FAST,
+                            messages=[{"role": "user", "content": full_prompt}]
+                        ),
+                        timeout=15
                     )
                     fake_text = chat.choices[0].message.content
                  except Exception: pass
             elif openrouter_client:
                 try:
-                    chat = openrouter_client.chat.completions.create(
-                        model=OPENROUTER_FREE,
-                        messages=[{"role": "user", "content": full_prompt}],
-                        max_tokens=300
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            openrouter_client.chat.completions.create,
+                            model=OPENROUTER_FREE,
+                            messages=[{"role": "user", "content": full_prompt}],
+                            max_tokens=300
+                        ),
+                        timeout=15
                     )
                     fake_text = chat.choices[0].message.content
                 except Exception: pass
@@ -1914,20 +1940,28 @@ async def on_message(message):
             
             if openrouter_client:
                 try:
-                    chat = openrouter_client.chat.completions.create(
-                        model=OPENROUTER_FREE,
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=1.0,
-                        max_tokens=300
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            openrouter_client.chat.completions.create,
+                            model=OPENROUTER_FREE,
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=1.0,
+                            max_tokens=300
+                        ),
+                        timeout=15
                     )
                     fake_text = chat.choices[0].message.content
                 except Exception: pass
             
             elif groq_client:
                  try:
-                    chat = groq_client.chat.completions.create(
-                        model=GROQ_FAST,
-                        messages=[{"role": "user", "content": prompt}]
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            groq_client.chat.completions.create,
+                            model=GROQ_FAST,
+                            messages=[{"role": "user", "content": prompt}]
+                        ),
+                        timeout=15
                     )
                     fake_text = chat.choices[0].message.content
                  except Exception: pass

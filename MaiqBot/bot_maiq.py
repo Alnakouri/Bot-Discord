@@ -559,10 +559,14 @@ async def publish_daily_rumor():
     # Try GROQ first
     if groq_client:
         try:
-            chat = groq_client.chat.completions.create(
-                messages=[{"role": "user", "content": rumor_prompt}],
-                model=GROQ_FAST,
-                temperature=0.9
+            chat = await asyncio.wait_for(
+                asyncio.to_thread(
+                    groq_client.chat.completions.create,
+                    messages=[{"role": "user", "content": rumor_prompt}],
+                    model=GROQ_FAST,
+                    temperature=0.9
+                ),
+                timeout=30
             )
             rumor_text = chat.choices[0].message.content
         except Exception as e:
@@ -574,7 +578,13 @@ async def publish_daily_rumor():
         if api_key:
             try:
                 client = get_safe_genai_client(api_key=api_key)
-                resp = client.models.generate_content(model='gemini-3.5-flash', contents=rumor_prompt)
+                resp = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.models.generate_content,
+                        model='gemini-3.5-flash', contents=rumor_prompt
+                    ),
+                    timeout=30
+                )
                 rumor_text = resp.text
             except Exception as e:
                 error_code = getattr(e, "code", getattr(e, "status_code", 0))
@@ -761,11 +771,15 @@ async def generate_and_post_riddle(target_channel):
         # Essai Groq
         if groq_client:
             try:
-                chat = groq_client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=GROQ_FAST,
-                    temperature=0.9,
-                    response_format={"type": "json_object"}
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        groq_client.chat.completions.create,
+                        messages=[{"role": "user", "content": prompt}],
+                        model=GROQ_FAST,
+                        temperature=0.9,
+                        response_format={"type": "json_object"}
+                    ),
+                    timeout=30
                 )
                 riddle_data = json.loads(chat.choices[0].message.content)
             except Exception as e:
@@ -777,10 +791,14 @@ async def generate_and_post_riddle(target_channel):
             if api_key:
                 try:
                     client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                    resp = client.models.generate_content(
-                        model='gemini-3.5-flash', 
-                        contents=prompt,
-                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                    resp = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.models.generate_content,
+                            model='gemini-3.5-flash',
+                            contents=prompt,
+                            config=types.GenerateContentConfig(response_mime_type="application/json")
+                        ),
+                        timeout=30
                     )
                     riddle_data = json.loads(resp.text)
                 except Exception as e:
@@ -880,10 +898,14 @@ async def profil_maiq_cmd(interaction: discord.Interaction):
             "Génère une très courte remarque sardonique ou mystérieuse (1-2 phrases maximum) de M'aiq à son sujet."
         )
         try:
-            chat = groq_client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=GROQ_FAST,
-                temperature=0.8
+            chat = await asyncio.wait_for(
+                asyncio.to_thread(
+                    groq_client.chat.completions.create,
+                    messages=[{"role": "user", "content": prompt}],
+                    model=GROQ_FAST,
+                    temperature=0.8
+                ),
+                timeout=15
             )
             quote = chat.choices[0].message.content.strip()
         except Exception as e:
@@ -925,10 +947,14 @@ async def maiq_rumeur(ctx):
     # Use Groq (Speed)
     if groq_client:
         try:
-             chat = groq_client.chat.completions.create(
-                 messages=[{"role": "user", "content": prompt}],
-                 model=GROQ_FAST, 
-                 temperature=0.9
+             chat = await asyncio.wait_for(
+                 asyncio.to_thread(
+                     groq_client.chat.completions.create,
+                     messages=[{"role": "user", "content": prompt}],
+                     model=GROQ_FAST,
+                     temperature=0.9
+                 ),
+                 timeout=30
              )
              response_text = chat.choices[0].message.content
         except Exception as e:
@@ -940,9 +966,13 @@ async def maiq_rumeur(ctx):
         if api_key:
             try:
                 client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                resp = client.models.generate_content(
-                    model='gemini-3.5-flash', 
-                    contents=prompt
+                resp = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.models.generate_content,
+                        model='gemini-3.5-flash',
+                        contents=prompt
+                    ),
+                    timeout=30
                 )
                 response_text = resp.text
             except Exception as e:
@@ -1338,12 +1368,16 @@ async def on_message(message):
                 client = get_safe_genai_client(api_key=api_key)
                 
                 # Gemini Call
-                resp = client.models.generate_content(
-                    model=model_name, contents=gemini_messages,
-                    config=types.GenerateContentConfig(
-                        temperature=0.7,
-                        tools=MAIQ_TOOLS_DEFINITION
-                    )
+                resp = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.models.generate_content,
+                        model=model_name, contents=gemini_messages,
+                        config=types.GenerateContentConfig(
+                            temperature=0.7,
+                            tools=MAIQ_TOOLS_DEFINITION
+                        )
+                    ),
+                    timeout=15
                 )
                 
                 # Handling Tool Calls
@@ -1365,12 +1399,16 @@ async def on_message(message):
                         parts=[types.Part(function_response=types.FunctionResponse(name=tool_name, response={"result": tool_result}))]
                     ))
                     
-                    resp = client.models.generate_content(
-                        model=model_name, contents=gemini_messages,
-                        config=types.GenerateContentConfig(
-                            temperature=0.6,
-                            tools=MAIQ_TOOLS_DEFINITION
-                        )
+                    resp = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.models.generate_content,
+                            model=model_name, contents=gemini_messages,
+                            config=types.GenerateContentConfig(
+                                temperature=0.6,
+                                tools=MAIQ_TOOLS_DEFINITION
+                            )
+                        ),
+                        timeout=15
                     )
 
                 response_text = resp.text
@@ -1398,10 +1436,14 @@ async def on_message(message):
 
             # 2. MISTRAL
             elif client_type == "mistral" and mistral_client:
-                chat = mistral_client.chat.complete(
-                    model=model_name,
-                    messages=[{"role": "system", "content": f"{current_personality_prompt}\n{transcript}"},
-                              {"role": "user", "content": user_message}]
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        mistral_client.chat.complete,
+                        model=model_name,
+                        messages=[{"role": "system", "content": f"{current_personality_prompt}\n{transcript}"},
+                                  {"role": "user", "content": user_message}]
+                    ),
+                    timeout=15
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"🌪️ [MISTRAL {model_name}] M'aiq a répondu.")
@@ -1415,7 +1457,13 @@ async def on_message(message):
                     msgs.append({"role": r, "content": msg["parts"][0]})
                 msgs.append({"role": "user", "content": user_message})
                 
-                chat = groq_client.chat.completions.create(messages=msgs, model=model_name, temperature=0.7)
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        groq_client.chat.completions.create,
+                        messages=msgs, model=model_name, temperature=0.7
+                    ),
+                    timeout=15
+                )
                 response_text = chat.choices[0].message.content
                 logger.info(f"⚡ [GROQ {model_name}] M'aiq a répondu.")
                 break
@@ -1441,9 +1489,13 @@ async def on_message(message):
                 else:
                     msgs.append({"role": "user", "content": user_message})
                 
-                chat = openrouter_client.chat.completions.create(
-                    model=model_name, messages=msgs, temperature=0.8, max_tokens=300,
-                    extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Maiq Bot"}
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        openrouter_client.chat.completions.create,
+                        model=model_name, messages=msgs, temperature=0.8, max_tokens=300,
+                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Maiq Bot"}
+                    ),
+                    timeout=15
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"🌌 [OPENROUTER {model_name}] M'aiq a utilisé un secours visuel.")
@@ -1483,7 +1535,6 @@ async def on_message(message):
             
         # LTM - Daily interaction logging
         daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
-        import asyncio
         asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
 
 

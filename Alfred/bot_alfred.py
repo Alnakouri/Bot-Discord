@@ -479,7 +479,13 @@ async def weekly_protip_alfred():
                 # Utilise Mistral ou Gemini
                 resp = "Un bon majordome a toujours un mouchoir propre. Pour les larmes... ou le sang."
                 if mistral_client:
-                    chat = mistral_client.chat.complete(model=MISTRAL_MAIN, messages=[{"role": "user", "content": prompt}])
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            mistral_client.chat.complete,
+                            model=MISTRAL_MAIN, messages=[{"role": "user", "content": prompt}]
+                        ),
+                        timeout=30
+                    )
                     resp = chat.choices[0].message.content
                 
                 await target_channel.send(f"🧐 **[CONSEIL DU VENDREDI]** {resp}")
@@ -818,35 +824,39 @@ async def analyze_audio_with_gemini(wav_data, user_names=None):
         client = get_safe_genai_client(api_key=api_key)
         
         # Envoyer l'audio à Gemini
-        response = client.models.generate_content(
-            model=GEMINI_FLASH,
-            contents=[
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part(inline_data=types.Blob(
-                            mime_type="audio/wav",
-                            data=wav_data
-                        )),
-                        types.Part(text=(
-                            "Écoute attentivement cet audio. Est-ce que quelqu'un CHANTE ou ABUSE de la SOUNDBOARD dans cet enregistrement ? "
-                            "Le chant inclut : fredonner, chanter des paroles, faire des vocalises, siffler une mélodie. "
-                            "L'abus de soundboard inclut : sons répétitifs, effets sonores en boucle, bruits de mème, sons forts et distordus (earrape). "
-                            "La parole normale, les rires naturels, et les bruits de fond ne comptent PAS. "
-                            f"\n\nLes utilisateurs présents dans le vocal sont : {users_str}."
-                            "\n\nRéponds avec ce FORMAT EXACT :\n"
-                            "Ligne 1 : OUI ou NON\n"
-                            "Ligne 2 (SEULEMENT si OUI) : Un commentaire SARCASTIQUE et DRÔLE de 2 phrases maximum, "
-                            "dans le style d'Alfred Pennyworth (majordome britannique cynique de Batman). "
-                            "CITE les utilisateurs par leur NOM dans ton commentaire. "
-                            "Commente ce que tu as RÉELLEMENT entendu : la qualité du chant, le choix de chanson, "
-                            "le niveau de nuisance sonore, ou le spam de soundboard. Sois MÉCHANT mais élégant. "
-                            "Utilise 1-2 emojis parmi : 🧐 😒 🦇 ☕ 🎵❌ 🧹"
-                        ))
-                    ]
-                )
-            ],
-            config=types.GenerateContentConfig(temperature=0.9)
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model=GEMINI_FLASH,
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(inline_data=types.Blob(
+                                mime_type="audio/wav",
+                                data=wav_data
+                            )),
+                            types.Part(text=(
+                                "Écoute attentivement cet audio. Est-ce que quelqu'un CHANTE ou ABUSE de la SOUNDBOARD dans cet enregistrement ? "
+                                "Le chant inclut : fredonner, chanter des paroles, faire des vocalises, siffler une mélodie. "
+                                "L'abus de soundboard inclut : sons répétitifs, effets sonores en boucle, bruits de mème, sons forts et distordus (earrape). "
+                                "La parole normale, les rires naturels, et les bruits de fond ne comptent PAS. "
+                                f"\n\nLes utilisateurs présents dans le vocal sont : {users_str}."
+                                "\n\nRéponds avec ce FORMAT EXACT :\n"
+                                "Ligne 1 : OUI ou NON\n"
+                                "Ligne 2 (SEULEMENT si OUI) : Un commentaire SARCASTIQUE et DRÔLE de 2 phrases maximum, "
+                                "dans le style d'Alfred Pennyworth (majordome britannique cynique de Batman). "
+                                "CITE les utilisateurs par leur NOM dans ton commentaire. "
+                                "Commente ce que tu as RÉELLEMENT entendu : la qualité du chant, le choix de chanson, "
+                                "le niveau de nuisance sonore, ou le spam de soundboard. Sois MÉCHANT mais élégant. "
+                                "Utilise 1-2 emojis parmi : 🧐 😒 🦇 ☕ 🎵❌ 🧹"
+                            ))
+                        ]
+                    )
+                ],
+                config=types.GenerateContentConfig(temperature=0.9)
+            ),
+            timeout=30
         )
         
         result = response.text.strip()
@@ -1644,13 +1654,17 @@ async def on_message(message):
                     gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
 
                     # Gemini Call
-                    resp = client.models.generate_content(
-                        model=model_name, 
-                        contents=gemini_messages,
-                        config=types.GenerateContentConfig(
-                            temperature=0.6,
-                            tools=ALFRED_TOOLS_DEFINITION
-                        )
+                    resp = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            client.models.generate_content,
+                            model=model_name,
+                            contents=gemini_messages,
+                            config=types.GenerateContentConfig(
+                                temperature=0.6,
+                                tools=ALFRED_TOOLS_DEFINITION
+                            )
+                        ),
+                        timeout=15
                     )
                     
                     # Handling Tool Calls
@@ -1674,12 +1688,16 @@ async def on_message(message):
                             parts=[types.Part(function_response=types.FunctionResponse(name=tool_name, response={"result": tool_result}))]
                         ))
                         
-                        resp = client.models.generate_content(
-                            model=model_name, contents=gemini_messages,
-                            config=types.GenerateContentConfig(
-                                temperature=0.5,
-                                tools=ALFRED_TOOLS_DEFINITION
-                            )
+                        resp = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                client.models.generate_content,
+                                model=model_name, contents=gemini_messages,
+                                config=types.GenerateContentConfig(
+                                    temperature=0.5,
+                                    tools=ALFRED_TOOLS_DEFINITION
+                                )
+                            ),
+                            timeout=15
                         )
 
                     response_text = resp.text
@@ -1703,12 +1721,16 @@ async def on_message(message):
 
                 # 2. MISTRAL
                 elif client_type == "mistral" and mistral_client:
-                    chat = mistral_client.chat.complete(
-                        model=model_name, 
-                        messages=[
-                            {"role": "system", "content": final_system_prompt},
-                            {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}
-                        ]
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            mistral_client.chat.complete,
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": final_system_prompt},
+                                {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}
+                            ]
+                        ),
+                        timeout=15
                     )
                     response_text = chat.choices[0].message.content
                     logger.info(f"🎩 [MISTRAL {model_name}] Alfred a servi une réponse.")
@@ -1722,7 +1744,13 @@ async def on_message(message):
                         msgs.append({"role": r, "content": msg["parts"][0]})
                     msgs.append({"role": "user", "content": user_message})
                     
-                    chat = groq_client.chat.completions.create(messages=msgs, model=model_name, temperature=0.6)
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            groq_client.chat.completions.create,
+                            messages=msgs, model=model_name, temperature=0.6
+                        ),
+                        timeout=15
+                    )
                     response_text = chat.choices[0].message.content
                     logger.info(f"⚡ [GROQ {model_name}] Alfred a répondu.")
                     break
@@ -1748,9 +1776,13 @@ async def on_message(message):
                     else:
                         msgs.append({"role": "user", "content": user_message})
                     
-                    chat = openrouter_client.chat.completions.create(
-                        messages=msgs, model=model_name, temperature=0.6, max_tokens=300,
-                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Alfred Bot"}
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            openrouter_client.chat.completions.create,
+                            messages=msgs, model=model_name, temperature=0.6, max_tokens=300,
+                            extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Alfred Bot"}
+                        ),
+                        timeout=15
                     )
                     response_text = chat.choices[0].message.content
                     logger.info(f"🌌 [OPENROUTER {model_name}] Alfred a utilisé un secours visuel.")
@@ -1835,7 +1867,6 @@ async def on_message(message):
             
             # LTM - Daily interaction logging
             daily_memory.add_interaction(message.author.id, message.author.name, message.content or "", response_text)
-            import asyncio
             asyncio.create_task(daily_memory.refresh_daily_read(message.author.id, _daily_llm_call))
     else:
         # FALLBACK: If image but no vision API available

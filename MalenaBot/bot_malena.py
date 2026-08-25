@@ -185,14 +185,18 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
                 gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
 
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=gemini_messages,
-                    config=types.GenerateContentConfig(
-                        temperature=1.1, 
-                        max_output_tokens=300,
-                        thinking_config=types.ThinkingConfig(thinking_level="minimal")
-                    )
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        gemini_client.models.generate_content,
+                        model=model_name,
+                        contents=gemini_messages,
+                        config=types.GenerateContentConfig(
+                            temperature=1.1,
+                            max_output_tokens=300,
+                            thinking_config=types.ThinkingConfig(thinking_level="minimal")
+                        )
+                    ),
+                    timeout=15
                 )
                 return response.text
  
@@ -214,24 +218,32 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
             # 2. MISTRAL
             elif client_type == "mistral" and mistral_client:
                 logger.info(f"🥖 Tentative Mistral ({model_name})...")
-                response = mistral_client.chat.complete(
-                    model=model_name,
-                    messages=[{"role": "system", "content": sys_prompt},
-                              {"role": "user", "content": prompt}],
-                    temperature=0.9,
-                    max_tokens=300
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        mistral_client.chat.complete,
+                        model=model_name,
+                        messages=[{"role": "system", "content": sys_prompt},
+                                  {"role": "user", "content": prompt}],
+                        temperature=0.9,
+                        max_tokens=300
+                    ),
+                    timeout=15
                 )
                 return response.choices[0].message.content
 
             # 4. GROQ
             elif client_type == "groq" and groq_client:
                 logger.info(f"🚀 Tentative Groq ({model_name})...")
-                chat = groq_client.chat.completions.create(
-                    messages=[{"role": "system", "content": sys_prompt},
-                              {"role": "user", "content": prompt}],
-                    model=model_name,
-                    temperature=1.1,
-                    max_tokens=300
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        groq_client.chat.completions.create,
+                        messages=[{"role": "system", "content": sys_prompt},
+                                  {"role": "user", "content": prompt}],
+                        model=model_name,
+                        temperature=1.1,
+                        max_tokens=300
+                    ),
+                    timeout=15
                 )
                 return chat.choices[0].message.content
 
@@ -251,13 +263,17 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                         }
                     ]
                 
-                chat = openrouter_client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "system", "content": sys_prompt},
-                              {"role": "user", "content": user_content}],
-                    temperature=1.1,
-                    max_tokens=300,
-                    extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Malena Bot"}
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        openrouter_client.chat.completions.create,
+                        model=model_name,
+                        messages=[{"role": "system", "content": sys_prompt},
+                                  {"role": "user", "content": user_content}],
+                        temperature=1.1,
+                        max_tokens=300,
+                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Malena Bot"}
+                    ),
+                    timeout=15
                 )
                 return chat.choices[0].message.content
 

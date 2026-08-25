@@ -1048,7 +1048,6 @@ async def on_message(message):
         
     # LTM - Daily interaction logging
     daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
-    import asyncio
     asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
     
     # ENVOI
