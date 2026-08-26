@@ -1623,7 +1623,7 @@ async def on_message(message):
     response_text = None
     
     async with message.channel.typing():
-        cascade = get_model_cascade(routing["type"])
+        cascade = get_model_cascade(routing["type"], "alfred")
         
         for client_type, model_name in cascade:
             try:

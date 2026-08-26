@@ -95,7 +95,7 @@ def test_cascade_partagee_descend_apres_une_reponse_vide(monkeypatch):
 
     groq, openrouter = _FauxGroq(), _FauxOpenRouter()
     monkeypatch.setattr(cascade, "get_model_cascade",
-                        lambda _t: [("groq", "openai/gpt-oss-120b"),
+                        lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
                                     ("openrouter", "modele/secours")])
 
     texte = asyncio.run(cascade.generate_response(
@@ -122,7 +122,7 @@ def test_cascade_inline_malena_descend_apres_une_reponse_vide(monkeypatch):
 
     groq, openrouter = _FauxGroq(), _FauxOpenRouter()
     monkeypatch.setattr(bot_malena, "get_model_cascade",
-                        lambda _t: [("groq", "openai/gpt-oss-120b"),
+                        lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
                                     ("openrouter", "modele/secours")])
     monkeypatch.setattr(bot_malena, "groq_client", groq)
     monkeypatch.setattr(bot_malena, "openrouter_client", openrouter)

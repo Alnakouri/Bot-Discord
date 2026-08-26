@@ -206,7 +206,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
     expression_hint = build_expression_hint(mood)
     sys_prompt = data.PERSONALITY_PROMPT + f"\n\n{mood_instruction}{expression_hint}\n\nET SURTOUT : FAIS COURT (Max 3-4 phrases).{meme_consigne}"
 
-    cascade = get_model_cascade(routing["type"] if routing else RequestType.TEXT)
+    cascade = get_model_cascade(routing["type"] if routing else RequestType.TEXT, "malena")
     
     for client_type, model_name in cascade:
         try:

@@ -14,13 +14,22 @@ import logging
 import aiohttp
 
 try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, cascade_persona
 except ImportError:  # bot déployé seul, sans shared/
     GEMINI_FLASH      = "gemini-3.5-flash"
     GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
     GROQ_FAST         = "openai/gpt-oss-120b"
     MISTRAL_MAIN      = "mistral-large-latest"
     OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+
+    def cascade_persona(_bot_id_ou_label):
+        """Repli : sans models.py, pas de cascade par persona — on garde la generique.
+
+        Sans ce repli, la branche except laisserait `cascade_persona` INDEFINI et
+        get_model_cascade() leverait un NameError a la premiere reponse : le mode de
+        panne « bot vivant mais muet » deja vu deux fois.
+        """
+        return None
 
 logger = logging.getLogger("smart_router")
 
@@ -184,9 +193,16 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
     return result
 
 
-def get_model_cascade(routing_type):
+def get_model_cascade(routing_type, bot_id=None):
     """
     Retourne la liste ordonnée (client_type, model_name) pour un type donné.
+
+    `bot_id` (ou son étiquette d'affichage) sélectionne la cascade PROPRE À LA PERSONA
+    pour le texte et la répartie — voir CASCADES_PERSONA dans models.py, dont le choix
+    vient d'une sonde réelle. Sans lui, on retombe sur la cascade générique historique.
+
+    Vision et raisonnement ne sont PAS personnalisés : là c'est la capacité du modèle
+    qui commande, pas le ton.
     """
     if routing_type == RequestType.REASONING:
         return [
@@ -204,6 +220,13 @@ def get_model_cascade(routing_type):
             ("gemini", GEMINI_FLASH_LITE),
         ]
     
+    # Texte et répartie : c'est là que la « voix » du bot se joue.
+    if routing_type in (RequestType.TEXT, RequestType.REPARTEE) or routing_type not in (
+            RequestType.REASONING, RequestType.IMAGE, RequestType.AUDIO):
+        propre = cascade_persona(bot_id)
+        if propre:
+            return propre
+
     if routing_type == RequestType.REPARTEE:
         # Cascade FREE-TIER optimisée répartie/humour, 3 fournisseurs distincts
         # (pools de rate-limit indépendants → si l'un throttle, l'autre prend le relais) :

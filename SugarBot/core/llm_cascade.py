@@ -75,7 +75,7 @@ async def generate_response(
 
     Si `call_timeout` est fourni, chaque appel provider est borné dans le temps :
     au-delà, on lève TimeoutError → la boucle bascule vers l'échelon suivant (plus rapide)."""
-    cascade = get_model_cascade(routing["type"])
+    cascade = get_model_cascade(routing["type"], bot_label)
     has_image = routing.get("has_image") and media_data is not None
     has_audio = routing.get("has_audio") and media_data is not None
     response_text = None

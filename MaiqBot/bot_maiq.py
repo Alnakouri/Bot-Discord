@@ -1346,7 +1346,7 @@ async def on_message(message):
         last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
     gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
 
-    cascade = get_model_cascade(routing["type"])
+    cascade = get_model_cascade(routing["type"], "maiq")
     
     for client_type, model_name in cascade:
         try:
