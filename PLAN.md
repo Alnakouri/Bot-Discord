@@ -293,12 +293,24 @@ Les 3 groupes qui restaient sont faits :
 | import des 6 bots **avec** `shared/` (condition de prod) | 6/6 OK |
 | import Malena **sans** `shared/` | `DATABASE_AVAILABLE = False` + warning, aucune exception |
 
-### Reste à faire
+### Commité, poussé, déployé
 
-- Commit + push (rien n'est commité, dernier commit = `0131583`).
+`1daec85` poussé sur `main` (78 fichiers, +8 656 / -412).
+`docker compose restart` des 6 bots (le compose bind-monte `./<Bot>:/app/bot:ro`,
+donc `--build` inutile pour un changement Python).
+
+Logs après redémarrage : **6/6 connectés à Discord**, 0 `Traceback`, 0 `ImportError`,
+0 `ModuleNotFoundError`, 0 `heartbeat blocked`. Johnny/Sheo/Sugar reconnectés au chat
+Twitch. Vérifié dans le conteneur : `core.models`, `core.bot_logger` et `core.smart_router`
+résolvent bien vers `/app/bot/core/*.py`.
+
+### Reste à faire
 - Déploiement `docker compose up -d --build` puis **test live** : 2-3 messages d'affilée
   par bot, vérifier réponse + absence de `heartbeat blocked`.
   ⚠️ Ne pas conclure sur « ça compile et les tests passent » — la régression
   `UnboundLocalError` était invisible à ces deux contrôles.
 - Contrôle du repli en conditions réelles : renommer temporairement
   `shared/shared_database.py` et vérifier qu'un bot démarre et répond sans réputation.
+  (Optionnel : `shared/` est bind-monté en lecture seule sur les 6 conteneurs à la fois,
+  donc le renommer touche tout le monde en même temps. Le test d'indépendance couvre
+  déjà le cas à l'import ; ce contrôle-ci ne vaut que pour le comportement à l'exécution.)
