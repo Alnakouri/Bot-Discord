@@ -39,7 +39,12 @@ def groq_kwargs(model_name):
 # Modeles supplementaires, mesures vivants le 2026-08-26
 # (tools/sonde_modeles_persona.py, appels reels avec les vraies personas).
 # ---------------------------------------------------------------------------
-GROQ_QWEN     = "qwen/qwen3.8-27b"      # Groq — le plus incisif, reponses courtes
+# ⚠️ ECARTE des cascades le 2026-08-26 : le francais est trop faible. Mesure sur 5
+# reponses par bot : « Tu ne me trompez pas », « Rien de spiciale », « chewing-gue »,
+# « une serpipe », « ca s'quille » — environ une faute reelle sur deux reponses. Il
+# etait le plus incisif et le plus bref, mais la brievete ne vaut pas ce prix.
+# Conserve ici pour que personne ne le re-choisisse sans savoir. Un test l'interdit.
+GROQ_QWEN     = "qwen/qwen3.8-27b"
 GROQ_SMALL    = "openai/gpt-oss-20b"    # Groq — le plus rapide (0.45 s median)
 MISTRAL_SMALL = "mistral-small-latest"  # Mistral — argot FR le plus naturel
 
@@ -72,13 +77,15 @@ CASCADES_PERSONA = {
     # a sortir le vocabulaire de la rue sans l'edulcorer (« t'es un gonk avec un clavier »).
     "johnny": [("mistral", MISTRAL_SMALL), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
 
-    # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. Qwen ressort le
-    # Wabbajack et Haskill de lui-meme, la ou les autres restent generiques.
-    "sheo": [("groq", GROQ_QWEN), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST)],
+    # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
+    # Wabbajack, Haskill et le fromage de lui-meme, en francais correct. Il ouvre
+    # souvent par « Ah, » — le filet anti-tics de Sheo est justement la pour ca.
+    "sheo": [("groq", GROQ_FAST), ("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE)],
 
-    # Piques courtes et sechees. Qwen a la mediane de tokens la plus basse (43) : il
-    # tranche au lieu de meubler (« plus polymorphe que ton vocabulaire entier, peteur »).
-    "sugar": [("groq", GROQ_QWEN), ("mistral", MISTRAL_SMALL), ("gemini", GEMINI_FLASH_LITE)],
+    # Piques courtes et sechees. gemini-flash-lite tranche sans meubler et garde le
+    # vocabulaire maison (« aussi fragile qu'un sucre glace un jour de pluie, peteur »).
+    # gpt-oss a ete ecarte ici : francais correct mais ton fade, l'acidite disparait.
+    "sugar": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_SMALL), ("groq", GROQ_FAST)],
 
     # Menteur cryptique d'Elder Scrolls : absurde bref a la 3e personne. Gemini Flash-Lite
     # invente les meilleures faussetes (« La troisieme lune existe. Elle est juste

@@ -180,3 +180,12 @@ def test_les_6_copies_vendorisees_portent_la_cascade_d_annonce():
         assert "CASCADE_ANNONCE" in src, f"{dossier} : cascade d'annonce absente"
         src_c = open(os.path.join(_parent_dir, dossier, "core", "llm_cascade.py"), encoding="utf-8").read()
         assert "cascade: list | None = None" in src_c, f"{dossier} : surcharge absente"
+
+
+@pytest.mark.parametrize("bot", BOTS)
+def test_aucune_cascade_n_utilise_le_modele_au_francais_faible(bot):
+    """Mesuré le 2026-08-26, 5 réponses par bot : « Tu ne me trompez pas »,
+    « Rien de spiciale », « chewing-gue », « une serpipe » — environ une faute réelle
+    sur deux réponses. Le modèle était le plus incisif et le plus bref ; la brièveté ne
+    vaut pas ce prix. Le constant reste défini pour documenter le refus."""
+    assert GROQ_QWEN not in [m for _, m in CASCADES_PERSONA[bot]],         f"{bot} : qwen a été remis dans la cascade"

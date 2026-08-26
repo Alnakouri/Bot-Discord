@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 # Contexte de lancement, fige ICI : `sys.argv[0]` est un chemin RELATIF au repertoire
-# de depart (start_dashboard.bat fait « cd dashboard » puis « python backendpp.py »).
+# de depart (start_dashboard.bat fait « cd dashboard » puis « python backend/app.py »).
 # Le relire au moment d'un redemarrage donnerait un chemin faux si le repertoire
 # courant avait change entre-temps.
 _LANCEMENT_CWD = os.getcwd()

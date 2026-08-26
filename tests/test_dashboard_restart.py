@@ -117,9 +117,10 @@ def test_le_relanceur_attend_la_mort_du_parent_avant_de_relancer(tmp_path):
         for proc in (ancien, relanceur):
             if proc is not None and proc.poll() is None:
                 proc.kill()
-        # ne pas laisser le nouveau serveur tenir le port pour les tests suivants
-        subprocess.run(["taskkill", "/F", "/FI", f"WINDOWTITLE eq {PORT_TEST}"],
-                       capture_output=True) if sys.platform == "win32" else None
+        # Ne pas laisser le nouveau serveur tenir le port pour les tests suivants.
+        # Il a ete lance detache : il ne descend pas avec le relanceur.
+        if not port_libre(PORT_TEST):
+            time.sleep(21)   # le serveur factice s'arrete de lui-meme (20 s)
 
 
 def test_le_relanceur_journalise_dans_un_fichier(tmp_path):

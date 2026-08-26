@@ -13,6 +13,7 @@ Gère : utilisateurs, réputation, anniversaires, interactions, quêtes, logs.
 """
 import sqlite3
 import os
+import logging
 from datetime import datetime, date
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
@@ -23,16 +24,60 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = Path(DATA_DIR) / "bots_database.db"
 
 
+logger = logging.getLogger("shared_database")
+
+# Le mode de journalisation est une propriete PERSISTANTE du fichier : il suffit de le
+# poser une fois. Le retenir evite d'emettre 40 PRAGMA par operation et, surtout, evite
+# de repeter le meme avertissement a chaque connexion.
+_JOURNAL_POSE = False
+
+
+def _poser_journal(conn) -> None:
+    """Choisit le mode de journalisation, une seule fois par processus.
+
+    WAL est le bon mode ici (6 bots ecrivent dans le meme fichier), mais il exige un
+    fichier de memoire partagee `-shm`, que les montages Docker sous Windows ne servent
+    pas toujours : d'ou les « disk I/O error » vus le 2026-08-26. Quand WAL echoue, on
+    ne laisse PAS le mode au hasard — on bascule explicitement sur TRUNCATE, qui n'a
+    besoin d'aucune memoire partagee et reste correct entre processus.
+    """
+    global _JOURNAL_POSE
+    if _JOURNAL_POSE:
+        return
+    _JOURNAL_POSE = True
+    try:
+        mode = conn.execute("PRAGMA journal_mode=WAL;").fetchone()[0]
+        if str(mode).lower() != "wal":
+            raise sqlite3.Error(f"mode obtenu : {mode}")
+        logger.debug("[DB] journalisation WAL active.")
+    except sqlite3.Error as e:
+        logger.warning(
+            f"⚠️ [DB] WAL indisponible ({e}) — repli sur TRUNCATE. "
+            "Attendu sur un montage Docker/Windows : la base reste correcte, "
+            "les ecritures serialisent simplement davantage."
+        )
+        try:
+            conn.execute("PRAGMA journal_mode=TRUNCATE;")
+        except sqlite3.Error as e2:
+            logger.error(f"❌ [DB] impossible de poser un mode de journalisation : {e2}")
+
+
 def get_connection() -> sqlite3.Connection:
-    """Crée une connexion à la base de données avec gestion de la concurrence (WAL)."""
+    """Connexion a la base partagee, prete pour l'acces concurrent des 6 bots."""
+    # timeout=20 => busy_timeout de 20 s : un ecrivain concurrent fait ATTENDRE au lieu
+    # d'echouer tout de suite. C'est ce qui rend une base partagee vivable.
     conn = sqlite3.connect(str(DB_PATH), timeout=20)
     conn.row_factory = sqlite3.Row
-    # Activation du mode WAL (Write-Ahead Logging) pour les écritures concurrentes
+
+    # Applique a CHAQUE connexion (reglage par connexion, contrairement au journal).
+    # Etait auparavant dans le meme try que WAL : des que WAL echouait, il n'etait
+    # jamais pose.
     try:
-        conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
     except sqlite3.Error as e:
-        print(f"⚠️ [DB] Impossible d'activer WAL: {e}")
+        logger.debug(f"[DB] synchronous=NORMAL refuse : {e}")
+
+    _poser_journal(conn)
     return conn
 
 

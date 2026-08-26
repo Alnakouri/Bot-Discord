@@ -1,36 +1,67 @@
 name: CI
 
+# Ce workflow n'est pas decoratif : c'est LUI qui fait tourner la sonde de derive.
+# Le noyau est vendorise en 7 exemplaires (shared/ + les 6 <Bot>/core/) ; sans cette
+# execution automatique, deux routeurs peuvent diverger dans le meme processus sans
+# que personne ne s'en apercoive.
+
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:        # permet de le lancer a la main depuis l'onglet Actions
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
+    - name: Python 3.12
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        # 3.12 comme en local : c'est la version qui fait foi pour la suite de tests.
+        python-version: "3.12"
+        cache: pip
 
-    - name: Install dependencies
+    - name: Dependances systeme (audio pour discord.py[voice])
+      run: sudo apt-get update && sudo apt-get install -y libopus0 libsodium23 ffmpeg
+
+    - name: Dependances Python
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-asyncio pytest-cov
 
-    - name: Compile python files
-      run: python -m py_compile */bot_*.py */core/*.py
+    - name: Compilation
+      run: python -m py_compile */bot_*.py */core/*.py shared/*.py tools/*.py dashboard/backend/*.py
 
-    - name: Run sonde_blocking_calls
+    - name: Aucun caractere de controle dans les sources
+      # Un echappement rate laisse un octet invisible dans le code (deja arrive).
+      run: |
+        if grep -rlP '[\x00-\x08\x0b\x0c\x0e-\x1f]' --include="*.py" . ; then
+          echo "::error::caractere de controle trouve dans un fichier source"
+          exit 1
+        fi
+
+    - name: Sonde des appels bloquants
       run: python tools/sonde_blocking_calls.py
 
-    - name: Run sonde_core_drift
+    - name: Sonde de derive du noyau vendorise
       run: python tools/sonde_core_drift.py
 
-    - name: Run pytest
+    - name: Le vendoring est bien a jour
+      # Si quelqu'un a corrige shared/ sans relancer le script, le diff le montre.
+      run: |
+        python tools/vendor_core.py
+        git diff --exit-code -- '*/core/' || {
+          echo "::error::shared/ a ete modifie sans relancer python tools/vendor_core.py"
+          exit 1
+        }
+
+    - name: Tests
+      env:
+        DASHBOARD_RELANCE_SANS_CONSOLE: "1"
       run: python -m pytest -q
