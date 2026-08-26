@@ -115,3 +115,28 @@ def cascade_persona(bot_id_ou_label):
     bot_id = bot_id_ou_label if bot_id_ou_label in CASCADES_PERSONA else bot_id_depuis_label(bot_id_ou_label)
     cascade = CASCADES_PERSONA.get(bot_id)
     return list(cascade) if cascade else None
+
+
+# ---------------------------------------------------------------------------
+# CASCADE DES ANNONCES DE LIVE
+#
+# Une annonce n'est pas une reponse de chat : elle est PUBLIQUE, lue par tout le
+# monde, et un francais bancal s'y voit tout de suite. C'est donc la qualite de
+# langue qui commande, pas le ton — comme pour la vision, ou c'est la capacite du
+# modele qui commande.
+#
+# Mesure du 2026-08-26 sur le vrai prompt d'annonce (Sugar, 4 tirages/modele) :
+#   qwen3.8-27b        francais le PLUS faible : « KCD2, ca s'quille ! Ma_Streameuse
+#                      est derriere les foudres du fer » ne veut rien dire.
+#                      C'est ce modele qui a produit « son goat de Boheme ».
+#   gemini-flash-lite  le plus sur : correct, varie, en personnage, sans invention
+#   mistral-large      francais impeccable mais tres repetitif (3 tirages sur 4
+#                      commencent par la meme tournure) et coupe a 120 tokens
+#   gpt-oss-120b       correct mais invente des superlatifs, ce que le prompt interdit
+#
+# La persona reste audible : elle vient du prompt systeme, pas du modele.
+CASCADE_ANNONCE = [
+    ("gemini", GEMINI_FLASH_LITE),
+    ("mistral", MISTRAL_MAIN),
+    ("groq", GROQ_FAST),
+]

@@ -68,6 +68,7 @@ async def generate_response(
     max_tokens: int = 300,
     gemini_max_tokens: int | None = None,
     call_timeout: float | None = None,   # borne par appel (s) : si un provider traîne, on bascule
+    cascade: list | None = None,         # force une cascade au lieu de celle de la persona
 ) -> str | None:
     """Retourne le texte de réponse, ou None si toute la cascade a échoué.
     Le fallback spécifique au bot (message d'échec multimodal, phrase par défaut)
@@ -75,7 +76,9 @@ async def generate_response(
 
     Si `call_timeout` est fourni, chaque appel provider est borné dans le temps :
     au-delà, on lève TimeoutError → la boucle bascule vers l'échelon suivant (plus rapide)."""
-    cascade = get_model_cascade(routing["type"], bot_label)
+    # Certaines sorties ne doivent PAS suivre la voix du bot : une annonce de live est
+    # publique et c'est la qualité de langue qui prime (cf. CASCADE_ANNONCE).
+    cascade = list(cascade) if cascade else get_model_cascade(routing["type"], bot_label)
     has_image = routing.get("has_image") and media_data is not None
     has_audio = routing.get("has_audio") and media_data is not None
     response_text = None

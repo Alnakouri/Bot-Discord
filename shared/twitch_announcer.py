@@ -308,6 +308,7 @@ class TwitchAnnouncer:
         try:
             from shared.llm_cascade import generate_response
             from shared.smart_router import RequestType
+            from shared.models import CASCADE_ANNONCE
         except Exception:
             return None
 
@@ -335,7 +336,12 @@ class TwitchAnnouncer:
                 conversation_history=[], media_data=None, mime_type="",
                 key_manager=self.key_manager, mistral_client=self.mistral_client,
                 groq_client=self.groq_client, openrouter_client=self.openrouter_client,
-                bot_label=self.bot_label, temperature=0.95, max_tokens=120,
+                bot_label=self.bot_label, temperature=0.95,
+                # 120 tokens coupaient l'annonce en plein mot (mesuré : mistral-large
+                # tronqué sur 2 tirages sur 4). Une accroche fait 1 à 2 phrases, la
+                # consigne s'en charge ; ce plafond n'est qu'un filet.
+                max_tokens=200,
+                cascade=CASCADE_ANNONCE,
             )
             if text and text.strip():
                 return text.strip()

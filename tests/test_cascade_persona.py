@@ -132,3 +132,51 @@ def test_llm_cascade_transmet_le_label_du_bot():
     """Johnny et Sugar passent par llm_cascade : c'est bot_label qui identifie la persona."""
     src = open(os.path.join(_parent_dir, "shared", "llm_cascade.py"), encoding="utf-8").read()
     assert 'get_model_cascade(routing["type"], bot_label)' in src
+
+
+# ---------------------------------------------------------------------------
+# Annonces de live : sortie PUBLIQUE, c'est la qualité de langue qui commande
+# ---------------------------------------------------------------------------
+
+from shared.models import CASCADE_ANNONCE, GROQ_QWEN
+
+
+def test_l_annonce_a_sa_propre_cascade():
+    """Une annonce n'est pas une réponse de chat : elle est lue par tout le monde."""
+    assert len(CASCADE_ANNONCE) >= 2
+    assert len({f for f, _ in CASCADE_ANNONCE}) >= 2, "cascade mono-fournisseur"
+    suffixe_gratuit = ":" + "free"
+    assert not any(m.endswith(suffixe_gratuit) for _, m in CASCADE_ANNONCE)
+
+
+def test_l_annonce_n_utilise_pas_le_modele_au_francais_bancal():
+    """Signalé en prod le 2026-08-26 : « son goat de Bohême », puis mesuré sur 4
+    tirages — « KCD2, ça s'quille ! [...] derrière les foudres du fer ». qwen a le
+    français le plus faible de la sélection ; il ne doit pas écrire les annonces."""
+    assert CASCADE_ANNONCE[0][1] != GROQ_QWEN, \
+        "qwen ne doit pas être en tête de la cascade des annonces"
+
+
+def test_l_annonceur_utilise_cette_cascade_et_ne_tronque_plus():
+    src = open(os.path.join(_parent_dir, "shared", "twitch_announcer.py"), encoding="utf-8").read()
+    assert "from shared.models import CASCADE_ANNONCE" in src
+    assert "cascade=CASCADE_ANNONCE" in src
+    bloc = src.split("async def _generate_hype")[1]
+    assert "max_tokens=120" not in bloc, \
+        "120 tokens coupaient l'annonce en plein mot (mesuré sur mistral-large)"
+    assert "max_tokens=200" in bloc
+
+
+def test_une_cascade_forcee_prime_sur_celle_de_la_persona():
+    """Sans quoi l'annonce repartirait sur le modèle du bot."""
+    src = open(os.path.join(_parent_dir, "shared", "llm_cascade.py"), encoding="utf-8").read()
+    assert "cascade: list | None = None" in src
+    assert "cascade = list(cascade) if cascade else get_model_cascade(" in src
+
+
+def test_les_6_copies_vendorisees_portent_la_cascade_d_annonce():
+    for dossier in ["Alfred", "JohnnyBot", "MaiqBot", "MalenaBot", "Sheogorath", "SugarBot"]:
+        src = open(os.path.join(_parent_dir, dossier, "core", "models.py"), encoding="utf-8").read()
+        assert "CASCADE_ANNONCE" in src, f"{dossier} : cascade d'annonce absente"
+        src_c = open(os.path.join(_parent_dir, dossier, "core", "llm_cascade.py"), encoding="utf-8").read()
+        assert "cascade: list | None = None" in src_c, f"{dossier} : surcharge absente"
