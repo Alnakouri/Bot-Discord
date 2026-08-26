@@ -622,6 +622,16 @@ OPENAI_TOOLS_DEFINITION = [
 
 @bot.event
 async def on_ready():
+    # MODE TEST (dashboard) — garde de publication + remontee des serveurs pour le
+    # menu deroulant. Optionnel : sans shared/, le bot publie normalement.
+    try:
+        from shared.test_mode import installer_garde_publication, enregistrer_serveurs, etat_lisible
+        installer_garde_publication("sheogorath", logger)
+        enregistrer_serveurs("sheogorath", bot, logger)
+        logger.info(f"🧪 [MODE TEST:sheogorath] {etat_lisible('sheogorath')}")
+    except ImportError:
+        pass
+
     logger.info(f'--------------------------------------------------')
     logger.info(f'🧀 Sheogorath règne sur ce serveur ! (Production)')
     logger.info(f'--------------------------------------------------')

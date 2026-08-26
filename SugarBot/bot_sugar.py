@@ -404,6 +404,16 @@ daily_status = DiscordDailyStatus(
 
 @bot.event
 async def on_ready():
+    # MODE TEST (dashboard) — garde de publication + remontee des serveurs pour le
+    # menu deroulant. Optionnel : sans shared/, le bot publie normalement.
+    try:
+        from shared.test_mode import installer_garde_publication, enregistrer_serveurs, etat_lisible
+        installer_garde_publication("sugar", logger)
+        enregistrer_serveurs("sugar", bot, logger)
+        logger.info(f"🧪 [MODE TEST:sugar] {etat_lisible('sugar')}")
+    except ImportError:
+        pass
+
     logger.info("=" * 60)
     logger.info("Sugar Bot est en ligne.")
     logger.info("=" * 60)

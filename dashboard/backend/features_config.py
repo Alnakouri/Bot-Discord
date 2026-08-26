@@ -4,7 +4,19 @@ import json
 from pathlib import Path
 from bot_manager import BOT_REGISTRY
 
-DEFAULTS = {"decret_enabled": True}   # extensible : ajouter ici les futures features Discord
+DEFAULTS = {
+    "decret_enabled": True,
+    # Mode test par bot : ce bot ne publie que sur le serveur prive. S'ajoute a
+    # l'interrupteur global (l'un des deux suffit), cf. shared/bot_features.py.
+    "test_mode": False,
+}
+
+# Reglages qui ne dependent d'aucun bot, ranges sous la cle "_global" du meme fichier.
+CLE_GLOBALE = "_global"
+DEFAULTS_GLOBAUX = {
+    "test_mode": False,      # bascule les 6 bots d'un geste
+    "test_guild_id": None,   # serveur privé autorisé pendant le mode test
+}
 
 class FeaturesConfigManager:
     def __init__(self, data_dir: Path):
@@ -39,6 +51,14 @@ class FeaturesConfigManager:
     def get_all(self) -> dict:
         cfg = self._load_raw()
         updated = False
+        section = cfg.get(CLE_GLOBALE)
+        if not isinstance(section, dict):
+            cfg[CLE_GLOBALE] = section = {}
+            updated = True
+        for k, v in DEFAULTS_GLOBAUX.items():
+            if k not in section:
+                section[k] = v
+                updated = True
         for bot_id in BOT_REGISTRY:
             if bot_id not in cfg:
                 cfg[bot_id] = {}
@@ -66,3 +86,58 @@ class FeaturesConfigManager:
         cfg = self.get_all()
         cfg[bot_id][feature] = value
         self._save_raw(cfg)
+
+    # ---------------------------------------------------------------- global
+
+    def get_global(self) -> dict:
+        return self.get_all()[CLE_GLOBALE]
+
+    def set_global(self, cle: str, valeur):
+        if cle not in DEFAULTS_GLOBAUX:
+            raise ValueError(f"Réglage global '{cle}' inconnu.")
+        if cle == "test_mode":
+            if not isinstance(valeur, bool):
+                raise ValueError("'value' doit être un booléen.")
+        elif cle == "test_guild_id":
+            # Un identifiant Discord est un entier 64 bits ; on le stocke en texte
+            # pour ne pas le voir arrondi par le JSON du navigateur.
+            if valeur in (None, "", 0):
+                valeur = None
+            else:
+                try:
+                    valeur = str(int(str(valeur).strip()))
+                except (TypeError, ValueError):
+                    raise ValueError("Identifiant de serveur invalide.")
+        cfg = self.get_all()
+        cfg[CLE_GLOBALE][cle] = valeur
+        self._save_raw(cfg)
+        return cfg[CLE_GLOBALE]
+
+    def get_guilds(self) -> dict:
+        """Serveurs remontés par les bots (shared/test_mode.enregistrer_serveurs).
+
+        Le dashboard n'est pas un client Discord : sans cette remontée, il faudrait
+        coller un identifiant à la main.
+        """
+        chemin = self.data_dir / "bot_guilds.json"
+        if not chemin.exists():
+            return {"guilds": [], "bots_vus": []}
+        try:
+            with open(chemin, "r", encoding="utf-8") as f:
+                brut = json.load(f) or {}
+        except Exception:
+            return {"guilds": [], "bots_vus": []}
+
+        fusion, bots_vus = {}, []
+        for bot_id, bloc in brut.items():
+            if not isinstance(bloc, dict):
+                continue
+            bots_vus.append(bot_id)
+            for g in bloc.get("guilds", []):
+                gid = str(g.get("id"))
+                entree = fusion.setdefault(gid, {"id": gid, "name": g.get("name"), "bots": []})
+                entree["bots"].append(bot_id)
+        return {
+            "guilds": sorted(fusion.values(), key=lambda g: (g["name"] or "").lower()),
+            "bots_vus": sorted(bots_vus),
+        }

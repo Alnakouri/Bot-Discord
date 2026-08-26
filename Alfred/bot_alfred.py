@@ -348,6 +348,16 @@ async def on_ready():
     logger.info('--------------------------------------------------')
     logger.info('☕ Alfred est à votre service. Le thé est chaud.')
     logger.info('--------------------------------------------------')
+
+    # MODE TEST (dashboard) — garde de publication + remontee des serveurs pour le
+    # menu deroulant. Optionnel : sans shared/, le bot publie normalement.
+    try:
+        from shared.test_mode import installer_garde_publication, enregistrer_serveurs, etat_lisible
+        installer_garde_publication("alfred", logger)
+        enregistrer_serveurs("alfred", bot, logger)
+        logger.info(f"🧪 [MODE TEST:alfred] {etat_lisible('alfred')}")
+    except ImportError:
+        pass
     
     # HEALTH CHECK
     logger.info('📊 [HEALTH CHECK] APIs disponibles :')

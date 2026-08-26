@@ -279,6 +279,16 @@ daily_status = DiscordDailyStatus(
 
 @bot.event
 async def on_ready():
+    # MODE TEST (dashboard) — garde de publication + remontee des serveurs pour le
+    # menu deroulant. Optionnel : sans shared/, le bot publie normalement.
+    try:
+        from shared.test_mode import installer_garde_publication, enregistrer_serveurs, etat_lisible
+        installer_garde_publication("maiq", logger)
+        enregistrer_serveurs("maiq", bot, logger)
+        logger.info(f"🧪 [MODE TEST:maiq] {etat_lisible('maiq')}")
+    except ImportError:
+        pass
+
     logger.info('--------------------------------------------------')
     logger.info('🐱 M\'aiq le Menteur est prêt (Production Mode).')
     logger.info('--------------------------------------------------')

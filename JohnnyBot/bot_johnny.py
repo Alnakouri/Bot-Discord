@@ -343,6 +343,16 @@ async def on_ready():
     logger.info("🎸 JOHNNY SILVERHAND — Rockerboy de Night City est prêt !")
     logger.info("=" * 60)
     logger.info(f'🎸 Connecté en tant que: {bot.user.name} ({bot.user.id})')
+
+    # MODE TEST (dashboard) — garde de publication + remontee des serveurs pour le
+    # menu deroulant. Optionnel : sans shared/, le bot publie normalement.
+    try:
+        from shared.test_mode import installer_garde_publication, enregistrer_serveurs, etat_lisible
+        installer_garde_publication("johnny", logger)
+        enregistrer_serveurs("johnny", bot, logger)
+        logger.info(f"🧪 [MODE TEST:johnny] {etat_lisible('johnny')}")
+    except ImportError:
+        pass
     
     ensure_data_writable("johnny", DATA_DIR, logger)
     

@@ -399,6 +399,16 @@ async def oubliemoi(ctx):
 
 @bot.event
 async def on_ready():
+    # MODE TEST (dashboard) — garde de publication + remontee des serveurs pour le
+    # menu deroulant. Optionnel : sans shared/, le bot publie normalement.
+    try:
+        from shared.test_mode import installer_garde_publication, enregistrer_serveurs, etat_lisible
+        installer_garde_publication("malena", logger)
+        enregistrer_serveurs("malena", bot, logger)
+        logger.info(f"🧪 [MODE TEST:malena] {etat_lisible('malena')}")
+    except ImportError:
+        pass
+
     logger.info(f'✅ Connectée en tant que {bot.user} (Gitana Mode)')
     logger.info(f'✅ {bot.user} est là ! (Gemini + Groq Hybrid)')
     # Lancer les tâches périodiques

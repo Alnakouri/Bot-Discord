@@ -290,6 +290,7 @@ window.loadDiscordConfig = async function(botId) {
             for (const [featureName, value] of Object.entries(cfg)) {
                 let displayName = featureName;
                 if (featureName === 'decret_enabled') displayName = "Décret activé";
+                if (featureName === 'test_mode') displayName = "Mode test (ne publie que sur le serveur privé)";
                 
                 let disabledAttr = '';
                 let note = '';
@@ -1581,3 +1582,119 @@ window.saveListenSettings = async function() {
         toast(`Erreur réseau: ${e}`, 'error');
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MODE TEST — « les bots ne publient que sur le serveur privé »
+//
+// Les bots relisent data/bot_features.json toutes les 5 s : basculer ici prend
+// effet sans redémarrage.
+// ═══════════════════════════════════════════════════════════════════════════
+
+window.loadTestMode = async function () {
+    const banniere = document.getElementById('testmode-banner');
+    if (!banniere) return;
+    try {
+        const res = await fetch(`${API_BASE}/testmode`);
+        if (!res.ok) return;
+        const data = await res.json();
+        banniere.style.display = 'block';
+
+        const actifGlobal = !!(data.global && data.global.test_mode);
+        document.getElementById('testmode-global').checked = actifGlobal;
+
+        // Menu déroulant alimenté par ce que les bots ont réellement remonté.
+        const select = document.getElementById('testmode-guild');
+        const choisi = data.global && data.global.test_guild_id ? String(data.global.test_guild_id) : '';
+        select.innerHTML = '<option value="">— aucun —</option>';
+        (data.guilds || []).forEach(g => {
+            const opt = document.createElement('option');
+            opt.value = g.id;
+            opt.textContent = `${g.name} (${g.bots.length} bot${g.bots.length > 1 ? 's' : ''})`;
+            if (g.id === choisi) opt.selected = true;
+            select.appendChild(opt);
+        });
+        // Un serveur configuré mais qu'aucun bot n'a remonté doit rester visible,
+        // sinon l'enregistrer le remettrait silencieusement à « aucun ».
+        if (choisi && !(data.guilds || []).some(g => g.id === choisi)) {
+            const opt = document.createElement('option');
+            opt.value = choisi;
+            opt.textContent = `${choisi} (aucun bot connecté)`;
+            opt.selected = true;
+            select.appendChild(opt);
+        }
+
+        const parBot = Object.entries(data.bots || {}).filter(([, v]) => v).map(([b]) => b);
+        const etat = document.getElementById('testmode-state');
+        if (actifGlobal) {
+            etat.textContent = '🧪 Les 6 bots sont muselés.';
+        } else if (parBot.length) {
+            etat.textContent = `🧪 Muselés individuellement : ${parBot.join(', ')}.`;
+        } else {
+            etat.textContent = '🟢 Publication normale.';
+        }
+
+        const avert = document.getElementById('testmode-warning');
+        if (data.avertissement) {
+            avert.textContent = '⚠️ ' + data.avertissement;
+            avert.style.display = 'block';
+        } else {
+            avert.style.display = 'none';
+        }
+
+        const aide = document.getElementById('testmode-hint');
+        aide.textContent = (data.bots_vus && data.bots_vus.length)
+            ? `Serveurs remontés par : ${data.bots_vus.join(', ')}. Le réglage par bot est dans Discord → Fonctionnalités.`
+            : "Aucun bot n'a encore remonté ses serveurs — démarre les bots, puis actualise.";
+    } catch (e) {
+        console.error('Mode test : chargement impossible', e);
+    }
+};
+
+async function envoyerTestMode(corps, message) {
+    try {
+        const res = await fetch(`${API_BASE}/testmode`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corps)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            toast(`Erreur: ${err.detail || res.status}`, 'error');
+        } else if (message) {
+            toast(message, 'success');
+        }
+    } catch (e) {
+        toast(`Erreur réseau: ${e}`, 'error');
+    }
+    await window.loadTestMode();
+}
+
+window.setTestModeGlobal = async function (actif) {
+    // Activer sans serveur choisi = silence total. On le dit AVANT, pas après.
+    if (actif) {
+        const select = document.getElementById('testmode-guild');
+        if (!select.value) {
+            const ok = await confirmDialog(
+                "Aucun serveur privé n'est sélectionné : les 6 bots ne publieront NULLE PART " +
+                "(ni Discord, ni Twitch, ni messages privés). Activer quand même ?"
+            );
+            if (!ok) {
+                document.getElementById('testmode-global').checked = false;
+                return;
+            }
+        }
+    }
+    await envoyerTestMode(
+        { test_mode: actif },
+        actif ? 'Mode test activé' : 'Mode test désactivé — publication normale'
+    );
+};
+
+window.setTestGuild = async function (guildId) {
+    await envoyerTestMode(
+        { test_guild_id: guildId || null },
+        guildId ? 'Serveur privé enregistré' : 'Serveur privé retiré'
+    );
+};
+
+document.addEventListener('DOMContentLoaded', () => window.loadTestMode());

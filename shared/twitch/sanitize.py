@@ -321,8 +321,26 @@ def sanitize_twitch_output(text: str, bot_id: str = None) -> str:
         
     return modified_text
 
+def _mode_test_actif(bot_id):
+    """Le mode test est un confort de dashboard : son absence ne doit jamais
+    empêcher un bot d'écrire sur Twitch."""
+    try:
+        from shared.bot_features import is_test_mode
+        return is_test_mode(bot_id)
+    except Exception:
+        return False
+
+
 async def send_chat_safe(ws, chan, text, *, bot_id=None, logger=None):
     """Envoie un message sur Twitch après l'avoir nettoyé (balises, ToS)."""
+    # 0. MODE TEST : un chat Twitch est public par nature, il n'y a pas de « serveur
+    #    privé » possible ici. Tant que le mode test est actif, ce bot se tait.
+    #    Point de passage unique de toutes les sorties Twitch — comme
+    #    Messageable.send côté Discord (cf. shared/test_mode.py).
+    if bot_id and _mode_test_actif(bot_id):
+        if logger:
+            logger.info(f"🧪 [MODE TEST:{bot_id}] message Twitch bloqué (#{chan}).")
+        return
     # 1. Nettoyer les stage directions/balises
     cleaned_text = strip_stage_directions(text)
     # 2. Appliquer la sécurité ToS

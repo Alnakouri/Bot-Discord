@@ -28,3 +28,68 @@ def is_feature_enabled(bot_id: str, feature: str, default: bool = True) -> bool:
     bot = _load().get(bot_id, {})
     val = bot.get(feature, default)
     return bool(val) if isinstance(val, bool) else default
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODE TEST — « les bots ne publient que sur le serveur prive »
+#
+# Reglages globaux stockes sous la cle "_global" du meme fichier, donc pilotes
+# par le dashboard et relus avec le meme TTL de 5 s : basculer le mode ne demande
+# AUCUN redemarrage.
+# ═══════════════════════════════════════════════════════════════════════════
+CLE_GLOBALE = "_global"
+
+
+def get_global(cle: str, defaut=None):
+    """Lit un reglage global (hors bot particulier)."""
+    section = _load().get(CLE_GLOBALE, {})
+    return section.get(cle, defaut) if isinstance(section, dict) else defaut
+
+
+def is_test_mode(bot_id: str) -> bool:
+    """Le bot est-il en mode test ?
+
+    Interrupteur GLOBAL ou case du bot : l'un des deux suffit. Le global permet de
+    tout basculer d'un geste, la case par bot de n'isoler qu'un bot.
+    """
+    if bool(get_global("test_mode", False)):
+        return True
+    return is_feature_enabled(bot_id, "test_mode", default=False)
+
+
+def test_guild_id():
+    """Identifiant du serveur prive, ou None s'il n'est pas encore choisi."""
+    brut = get_global("test_guild_id", None)
+    if brut in (None, "", 0):
+        return None
+    try:
+        return int(brut)
+    except (TypeError, ValueError):
+        return None
+
+
+def peut_publier(bot_id: str, guild_id) -> bool:
+    """Ce bot a-t-il le droit de publier a cet endroit ?
+
+    Hors mode test, tout est permis : le comportement est strictement inchange.
+
+    En mode test, la regle est FERMEE PAR DEFAUT — on n'autorise que ce qui est
+    explicitement le serveur prive. En particulier, mode test actif SANS serveur
+    choisi = silence total, pas « publie partout ». Pour une fonction dont le seul
+    but est d'empecher une publication publique, se tromper dans le sens du silence
+    est le seul sens acceptable.
+
+    Les messages prives (guild_id None) sont coupes aussi : en mode test, seul le
+    serveur prive parle.
+    """
+    if not is_test_mode(bot_id):
+        return True
+    if guild_id is None:
+        return False
+    cible = test_guild_id()
+    if cible is None:
+        return False
+    try:
+        return int(guild_id) == cible
+    except (TypeError, ValueError):
+        return False

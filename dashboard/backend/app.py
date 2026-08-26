@@ -512,6 +512,59 @@ def set_feature(bot_id: str, body: dict):
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MODE TEST — « les bots ne publient que sur le serveur privé »
+#
+# Chemin distinct de /api/features/{bot_id} : « global » y serait capturé comme
+# un identifiant de bot.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/testmode")
+def get_test_mode():
+    """État complet : réglages globaux, état par bot, et serveurs disponibles."""
+    try:
+        cfg = features_config_manager.get_all()
+        glob = features_config_manager.get_global()
+        serveurs = features_config_manager.get_guilds()
+        return {
+            "global": glob,
+            "bots": {b: bool(cfg.get(b, {}).get("test_mode", False)) for b in BOT_REGISTRY},
+            "guilds": serveurs["guilds"],
+            "bots_vus": serveurs["bots_vus"],
+            # Mode test actif sans serveur choisi = silence total : le dashboard doit
+            # le dire, sinon on croit à des bots en panne.
+            "avertissement": (
+                "Mode test actif mais aucun serveur privé sélectionné : les bots concernés "
+                "ne publieront NULLE PART."
+                if glob.get("test_mode") and not glob.get("test_guild_id") else None
+            ),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/testmode")
+def set_test_mode(body: dict):
+    """Bascule l'interrupteur global ou choisit le serveur privé."""
+    try:
+        modifie = {}
+        for cle in ("test_mode", "test_guild_id"):
+            if cle in body:
+                modifie[cle] = features_config_manager.set_global(cle, body[cle])[cle]
+        if not modifie:
+            raise HTTPException(status_code=400, detail="Rien à modifier ('test_mode' ou 'test_guild_id').")
+        audit_analyzer.log("update_test_mode", details=f"Mode test global -> {modifie}")
+        return {"status": "ok", **features_config_manager.get_global()}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/testmode/guilds")
+def get_test_mode_guilds():
+    """Serveurs remontés par les bots, pour alimenter le menu déroulant."""
+    return features_config_manager.get_guilds()
+
+
 @app.get("/api/twitch/rewards/{bot_id}")
 async def get_twitch_rewards(bot_id: str):
     try:
