@@ -15,6 +15,7 @@ from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
 from core.media_handler import process_image_ollama
 from core.smart_router import get_model_cascade, RequestType
+from core.models import groq_kwargs
 
 logger = logging.getLogger("llm_cascade")
 
@@ -27,6 +28,26 @@ def _est_vide(txt):
     muet. Le vide n'est pas une réponse : on descend la cascade au lieu de la casser.
     """
     return not (txt and txt.strip())
+
+
+def _fuite_de_raisonnement(msg):
+    """Certains modèles recopient leur PENSÉE dans `content` au lieu de la garder à part.
+
+    Mesuré le 2026-08-26 sur `nvidia/nemotron-3-super-120b-a12b:free` (OpenRouter) :
+    `content` commence par le raisonnement en anglais (« Okay, the user sent... »), le
+    budget de tokens y passe entièrement (`finish_reason="length"`) et aucune vraie
+    réponse n'arrive jamais. Malena a récité ce raisonnement en plein Discord.
+    `reasoning: {exclude: true}` ne corrige PAS le problème : il retire juste le champ,
+    la pensée reste dans `content`.
+
+    On détecte la recopie : `content` démarre comme `reasoning`.
+    """
+    pensee = (getattr(msg, "reasoning", None) or "").strip()
+    contenu = (getattr(msg, "content", None) or "").strip()
+    if not pensee or not contenu:
+        return False
+    tete = pensee[:60]
+    return len(tete) >= 20 and contenu.startswith(tete)
 
 
 async def generate_response(
@@ -144,6 +165,7 @@ async def generate_response(
                 chat = await _call(
                     groq_client.chat.completions.create,
                     messages=msgs, model=model_name, temperature=temperature,
+                    **groq_kwargs(model_name),
                 )
                 response_text = chat.choices[0].message.content
                 if _est_vide(response_text):
@@ -170,6 +192,10 @@ async def generate_response(
                     temperature=temperature, max_tokens=max_tokens,
                     extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": bot_label},
                 )
+                if _fuite_de_raisonnement(chat.choices[0].message):
+                    logger.warning(f"⚠️ [OPENROUTER {model_name}] le modèle a recopié son raisonnement dans la réponse → échelon suivant")
+                    response_text = None
+                    continue
                 response_text = chat.choices[0].message.content
                 if _est_vide(response_text):
                     logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")

@@ -133,3 +133,77 @@ def test_cascade_inline_malena_descend_apres_une_reponse_vide(monkeypatch):
     assert openrouter.appels == 1, "l'échelon suivant devait être atteint malgré le vide"
     assert texte == "Wesh ma vie !"
     assert "Erreur API" not in texte
+
+
+# ---------------------------------------------------------------------------
+# Modèles à RAISONNEMENT : la pensée ne doit ni manger le budget de tokens,
+# ni atterrir dans la réponse.
+# ---------------------------------------------------------------------------
+
+from shared.models import GROQ_FAST, groq_kwargs
+from shared.llm_cascade import _fuite_de_raisonnement
+
+
+def test_groq_kwargs_brident_le_raisonnement_du_modele_de_prod():
+    """Mesuré le 2026-08-26 : sans ça, gpt-oss dépense 144 tokens en pensée sur 300,
+    et rend un content VIDE dès que le prompt de persona s'allonge."""
+    kw = groq_kwargs(GROQ_FAST)
+    assert kw.get("reasoning_effort") == "low"
+    assert kw.get("reasoning_format") == "hidden", \
+        "sans 'hidden', la pensée peut atterrir dans content"
+
+
+@pytest.mark.parametrize("modele", ["un-modele-sans-raisonnement", "mixtral-8x7b", "", None])
+def test_groq_kwargs_ne_touchent_pas_aux_modeles_sans_raisonnement(modele):
+    """Passer reasoning_effort à un modèle qui ne raisonne pas ferait un 400."""
+    assert groq_kwargs(modele) == {}
+
+
+class _FauxMessageRaisonneur:
+    def __init__(self, content, reasoning=None):
+        self.content = content
+        self.reasoning = reasoning
+
+
+_PENSEE = ('Okay, the user sent "benisoubenisou" which seems like a typo or gibberish. '
+           'They want me to act as Malena, a gypsy diva from Marseille.')
+
+
+def test_fuite_de_raisonnement_detecte_la_recopie():
+    """Cas réel : nemotron:free recopie sa pensée dans content, tronquée à 300 tokens."""
+    msg = _FauxMessageRaisonneur(content=_PENSEE[:300], reasoning=_PENSEE)
+    assert _fuite_de_raisonnement(msg) is True
+
+
+def test_fuite_de_raisonnement_laisse_passer_une_vraie_reponse():
+    """Une pensée présente mais une réponse DISTINCTE : c'est le fonctionnement normal."""
+    msg = _FauxMessageRaisonneur(content="Wesh ma vie ! 💅", reasoning=_PENSEE)
+    assert _fuite_de_raisonnement(msg) is False
+
+
+@pytest.mark.parametrize("msg", [
+    _FauxMessageRaisonneur(content="Wesh ma vie !", reasoning=None),
+    _FauxMessageRaisonneur(content="Wesh ma vie !", reasoning=""),
+    _FauxMessageRaisonneur(content="", reasoning=_PENSEE),
+    _FauxMessageRaisonneur(content=None, reasoning=_PENSEE),
+])
+def test_fuite_de_raisonnement_sans_faux_positif(msg):
+    """Pas de champ reasoning, ou pas de contenu : rien à détecter ici (le vide est
+    déjà traité par _est_vide)."""
+    assert _fuite_de_raisonnement(msg) is False
+
+
+def test_les_6_copies_vendorisees_ont_le_garde_fou_de_fuite():
+    bots = ["Alfred", "JohnnyBot", "MaiqBot", "MalenaBot", "Sheogorath", "SugarBot"]
+    for bot in bots:
+        src = open(os.path.join(_parent_dir, bot, "core", "llm_cascade.py"), encoding="utf-8").read()
+        assert "def _fuite_de_raisonnement" in src, f"{bot} : détection de fuite absente"
+        src_models = open(os.path.join(_parent_dir, bot, "core", "models.py"), encoding="utf-8").read()
+        assert "def groq_kwargs" in src_models, f"{bot} : groq_kwargs absent"
+
+
+def test_malena_inline_a_les_deux_garde_fous():
+    """Rappel : Malena a sa PROPRE cascade, les correctifs de shared/ ne la couvrent pas."""
+    src = open(os.path.join(_parent_dir, "MalenaBot", "bot_malena.py"), encoding="utf-8").read()
+    assert "def _fuite_de_raisonnement" in src
+    assert "groq_kwargs(model_name)" in src

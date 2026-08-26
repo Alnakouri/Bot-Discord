@@ -24,7 +24,7 @@ import logging
 from datetime import datetime
 import base64
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, groq_kwargs
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.media_handler import process_image_ollama
 try:
@@ -549,6 +549,7 @@ async def publish_daily_rumor():
                     groq_client.chat.completions.create,
                     messages=[{"role": "user", "content": rumor_prompt}],
                     model=GROQ_FAST,
+                    **groq_kwargs(GROQ_FAST),
                     temperature=0.9
                 ),
                 timeout=30
@@ -761,6 +762,7 @@ async def generate_and_post_riddle(target_channel):
                         groq_client.chat.completions.create,
                         messages=[{"role": "user", "content": prompt}],
                         model=GROQ_FAST,
+                        **groq_kwargs(GROQ_FAST),
                         temperature=0.9,
                         response_format={"type": "json_object"}
                     ),
@@ -888,6 +890,7 @@ async def profil_maiq_cmd(interaction: discord.Interaction):
                     groq_client.chat.completions.create,
                     messages=[{"role": "user", "content": prompt}],
                     model=GROQ_FAST,
+                    **groq_kwargs(GROQ_FAST),
                     temperature=0.8
                 ),
                 timeout=15
@@ -937,6 +940,7 @@ async def maiq_rumeur(ctx):
                      groq_client.chat.completions.create,
                      messages=[{"role": "user", "content": prompt}],
                      model=GROQ_FAST,
+                     **groq_kwargs(GROQ_FAST),
                      temperature=0.9
                  ),
                  timeout=30
@@ -1445,7 +1449,8 @@ async def on_message(message):
                 chat = await asyncio.wait_for(
                     asyncio.to_thread(
                         groq_client.chat.completions.create,
-                        messages=msgs, model=model_name, temperature=0.7
+                        messages=msgs, model=model_name, temperature=0.7,
+                        **groq_kwargs(model_name),
                     ),
                     timeout=15
                 )

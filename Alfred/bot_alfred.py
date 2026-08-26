@@ -17,7 +17,7 @@ from pathlib import Path
 from core.secure_env import load_secure_env
 # Unsets conflicting Google Cloud env vars
 load_secure_env(Path(__file__).parent)
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, groq_kwargs
 
 import discord
 from discord.ext import commands, tasks
@@ -1732,7 +1732,8 @@ async def on_message(message):
                     chat = await asyncio.wait_for(
                         asyncio.to_thread(
                             groq_client.chat.completions.create,
-                            messages=msgs, model=model_name, temperature=0.6
+                            messages=msgs, model=model_name, temperature=0.6,
+                            **groq_kwargs(model_name),
                         ),
                         timeout=15
                     )

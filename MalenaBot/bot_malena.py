@@ -20,6 +20,7 @@ from openai import OpenAI
 from datetime import datetime
 import base64
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.models import groq_kwargs
 from core.media_handler import process_image_ollama
 from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
@@ -183,6 +184,20 @@ def _est_vide(txt):
     return not (txt and txt.strip())
 
 
+def _fuite_de_raisonnement(msg):
+    """Le modèle recopie sa PENSÉE dans `content` au lieu de la garder à part.
+
+    Mesuré le 2026-08-26 sur `nvidia/nemotron-...:free` (dernier échelon OpenRouter) :
+    Malena a récité son raisonnement en anglais en plein Discord.
+    """
+    pensee = (getattr(msg, "reasoning", None) or "").strip()
+    contenu = (getattr(msg, "content", None) or "").strip()
+    if not pensee or not contenu:
+        return False
+    tete = pensee[:60]
+    return len(tete) >= 20 and contenu.startswith(tete)
+
+
 async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None, mime_type=None, meme_consigne=""):
     """Essaie selon le Smart Router : Gemini (Image/Audio) -> Groq (Texte) -> Mistral (Fallback)."""
     
@@ -266,11 +281,15 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                         messages=[{"role": "system", "content": sys_prompt},
                                   {"role": "user", "content": prompt}],
                         model=model_name,
+                        **groq_kwargs(model_name),
                         temperature=1.1,
                         max_tokens=300
                     ),
                     timeout=15
                 )
+                if _fuite_de_raisonnement(chat.choices[0].message):
+                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
+                    continue
                 texte = chat.choices[0].message.content
                 if _est_vide(texte):
                     logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
@@ -305,6 +324,9 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     ),
                     timeout=15
                 )
+                if _fuite_de_raisonnement(chat.choices[0].message):
+                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
+                    continue
                 texte = chat.choices[0].message.content
                 if _est_vide(texte):
                     logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")

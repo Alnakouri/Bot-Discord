@@ -26,7 +26,7 @@ from pathlib import Path
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.media_handler import process_image_ollama
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, groq_kwargs
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -1301,6 +1301,7 @@ async def check_missed_mentions_sheo():
                                     groq_client.chat.completions.create,
                                     messages=[{"role": "user", "content": late_prompt}],
                                     model=GROQ_FAST,
+                                    **groq_kwargs(GROQ_FAST),
                                     temperature=0.95,
                                     max_tokens=200
                                 ),
@@ -1666,6 +1667,7 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
                     asyncio.to_thread(
                         groq_client.chat.completions.create,
                         model=GROQ_FAST,
+                        **groq_kwargs(GROQ_FAST),
                         messages=[{"role": "user", "content": prompt}]
                     ),
                     timeout=15
@@ -1866,6 +1868,7 @@ async def on_message(message):
                         asyncio.to_thread(
                             groq_client.chat.completions.create,
                             model=GROQ_FAST,
+                            **groq_kwargs(GROQ_FAST),
                             messages=[{"role": "user", "content": full_prompt}]
                         ),
                         timeout=15
@@ -1939,6 +1942,7 @@ async def on_message(message):
                         asyncio.to_thread(
                             groq_client.chat.completions.create,
                             model=GROQ_FAST,
+                            **groq_kwargs(GROQ_FAST),
                             messages=[{"role": "user", "content": prompt}]
                         ),
                         timeout=15
@@ -2493,7 +2497,8 @@ async def on_message(message):
                         groq_client.chat.completions.create,
                         messages=[{"role": "system", "content": system_instruction},
                                   {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}],
-                        model=model_name, temperature=0.9, max_tokens=max_tokens_val
+                        model=model_name, temperature=0.9, max_tokens=max_tokens_val,
+                        **groq_kwargs(model_name),
                     ),
                     timeout=15
                 )
