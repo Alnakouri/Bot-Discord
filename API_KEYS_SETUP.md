@@ -4,13 +4,28 @@
 > **RÈGLE D'OR : INDÉPENDANCE TOTALE**
 > Il est FORMELLEMENT INTERDIT de supprimer l'indépendance des bots au niveau de leurs clés API. Chaque bot DOIT conserver son propre système de gestion, ses propres fichiers `.env` et ses propres clés. La mutualisation des clés est bannie pour garantir la résilience et l'isolation.
 
-## 🧠 Stratégie de Routage (Expertise par Modèle)
+## 🧠 Stratégie de Routage
 
-Chaque bot utilise l'IA la plus performante dans son domaine de spécialité :
-- **Humour & Répartie** : Priorité à **Grok 4.20** via OpenRouter (`x-ai/grok-4.20`). Idéal pour le chaos, le sarcasme et la personnalité.
-- **Raisonnement & Logique** : Priorité à **Gemini 2.0 Pro** (`gemini-2.0-pro-exp`). Utilisé pour les tâches complexes, le raisonnement et les explications détaillées.
-- **Vision & Audio** : Priorité à **Gemini 2.0 Flash** (`gemini-2.0-flash` / `gemini-2.0-flash-lite`). Rapide et efficace pour l'analyse multimédia (images, audio).
-- **Réponse Rapide & Fallback** : **Mistral** (`mistral-large-latest`), **Llama 3.3** via Groq (`llama-3.3-70b-versatile`) et **Gemma 4** via OpenRouter (`google/gemma-4-26b-a4b-it:free`).
+> [!IMPORTANT]
+> Les identifiants de modèles ne se recopient PAS ici. La source unique est
+> [`shared/models.py`](shared/models.py) ; ce document décrit seulement **quels
+> fournisseurs** il faut provisionner en clés. Un identifiant dupliqué dans la doc finit
+> périmé sans que personne ne s'en aperçoive — c'était le cas de ce paragraphe.
+
+Quatre fournisseurs sont sollicités, et chaque cascade en **mélange plusieurs** :
+leurs quotas étant indépendants, si l'un limite, l'échelon suivant répond quand même.
+
+| Fournisseur | Sert à | Clé requise |
+|---|---|---|
+| **Google Gemini** | Vision et audio (seul à les traiter), plus du texte | `GEMINI_KEY_1`, `GEMINI_KEY_2`… |
+| **Mistral** | Texte — le français le plus sûr | `MISTRAL_API_KEY` |
+| **Groq** | Texte — le plus rapide | `GROQ_API_KEY` |
+| **OpenRouter** | Dernier recours uniquement | `OPENROUTER_API_KEY` |
+
+> [!WARNING]
+> Le **free-tier OpenRouter** a été mesuré inutilisable (12 échecs sur 12 : quotas
+> dépassés en rafale, 60 à 120 s de latence, raisonnement recopié dans la réponse).
+> Aucune cascade n'en dépend aujourd'hui ; la clé ne sert que si l'on y revient un jour.
 
 ## Variables d'Environnement (Indépendantes par Bot)
 

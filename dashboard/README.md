@@ -4,7 +4,7 @@ Ce tableau de bord permet de surveiller l'état de santé en temps réel de l'é
 
 ## ⚙️ Configuration & Authentification
 
-1. Copier [dashboard/.env.example](file:///I:/IA/Bot%20Discord/dashboard/.env.example) → `.env`
+1. Copier [dashboard/.env.example](.env.example) → `.env`
 2. Configurer le mot de passe fort d'accès au dashboard :
    ```env
    DASHBOARD_PASSWORD=MonMotDePasseTresSecuriseEtLong

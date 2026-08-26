@@ -7,7 +7,7 @@ Le Khajiit vagabond légendaire (univers The Elder Scrolls) transposé sur Disco
 - **Style de langage** : Évasif, cryptique, fatigué de ses longs voyages. S'exprime exclusivement à la troisième personne ("M'aiq pense...", "M'aiq dit..."). Mélange de vérités évidentes et de mensonges absurdes.
 
 ## ⚙️ Configuration
-1. Copier [MaiqBot/.env.example](file:///I:/IA/Bot%20Discord/MaiqBot/.env.example) → `.env` et renseigner les clés lues par [bot_maiq.py](file:///I:/IA/Bot%20Discord/MaiqBot/bot_maiq.py) :
+1. Copier [MaiqBot/.env.example](.env.example) → `.env` et renseigner les clés lues par [bot_maiq.py](bot_maiq.py) :
    - `DISCORD_TOKEN`
    - `GEMINI_KEY_1`, `GEMINI_KEY_2`, `GEMINI_KEY_3`
    - `MISTRAL_API_KEY`, `GROQ_API_KEY` (fournisseur prioritaire pour M'aiq), `OPENROUTER_API_KEY`
@@ -24,7 +24,7 @@ Le Khajiit vagabond légendaire (univers The Elder Scrolls) transposé sur Disco
 - **Docker** : Lancer le service `maiq` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](file:///I:/IA/Bot%20Discord/COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!maiq` (aliases: `profil`, `stats`) : Affiche les statistiques de M'aiq (pinces volées, état de fatigue).
   - `!rumeur` : Lance une rumeur ou un mensonge farfelu.
@@ -45,8 +45,8 @@ M'aiq réagit de manière unique à certaines réactions ajoutées sur ses messa
 - **Duels inter-bots** : Se chamaille fréquemment avec Sheogorath ou d'autres bots lorsqu'ils se mentionnent mutuellement.
 
 ## 🗂️ Fichiers
-- [bot_maiq.py](file:///I:/IA/Bot%20Discord/MaiqBot/bot_maiq.py) : Point d'entrée principal, boucle d'événements et gestion des énigmes.
-- [maiq_data.py](file:///I:/IA/Bot%20Discord/MaiqBot/maiq_data.py) : Personnalité de M'aiq, invites système et liste de rumeurs prédéfinies.
-- [maiq_memory.py](file:///I:/IA/Bot%20Discord/MaiqBot/maiq_memory.py) : Système de mémoire à long terme (Conversations / Profils utilisateurs).
-- [minigames.py](file:///I:/IA/Bot%20Discord/MaiqBot/minigames.py) : Logique de validation et de distribution des récompenses d'énigmes.
-- [debug_db.py](file:///I:/IA/Bot%20Discord/MaiqBot/debug_db.py) : Petit script de débogage pour examiner l'état de la base SQLite.
+- [bot_maiq.py](bot_maiq.py) : Point d'entrée principal, boucle d'événements et gestion des énigmes.
+- [maiq_data.py](maiq_data.py) : Personnalité de M'aiq, invites système et liste de rumeurs prédéfinies.
+- [maiq_memory.py](maiq_memory.py) : Système de mémoire à long terme (Conversations / Profils utilisateurs).
+- [minigames.py](minigames.py) : Logique de validation et de distribution des récompenses d'énigmes.
+- [debug_db.py](debug_db.py) : Petit script de débogage pour examiner l'état de la base SQLite.

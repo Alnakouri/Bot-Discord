@@ -7,10 +7,10 @@ Bot Discord à la personnalité **douce comme du sucre… mais qui pique quand o
 - **Style** : adorable par défaut (compliments, énergie positive, vocabulaire sucré), mais avec du répondant — répartie fine et sans vulgarité quand on la provoque. Son insulte signature : « **péteur / péteuse** ».
 - **Touche Serpentard** : elle se revendique de la maison Serpentard (univers Harry Potter) et glisse des clins d'œil au canon (Salazar, Choixpeau, Basilic, Rogue, Malefoy…).
 - **Adaptation au ton** : douce avec les gentils, mordante avec les malpolis, et **rassurante** avec ceux qui vont mal (elle range ses griffes).
-- **Carnet de rancunes** : elle tient un compte implicite (0→5) par personne — glaciale envers qui l'a blessée, radoucie à mesure qu'on se rachète, jusqu'au pardon explicite. Voir [sugar_grudge.py](file:///I:/IA/Bot%20Discord/SugarBot/sugar_grudge.py).
+- **Carnet de rancunes** : elle tient un compte implicite (0→5) par personne — glaciale envers qui l'a blessée, radoucie à mesure qu'on se rachète, jusqu'au pardon explicite. Voir [sugar_grudge.py](sugar_grudge.py).
 
 ## ⚙️ Configuration
-1. Copier [SugarBot/.env.example](file:///I:/IA/Bot%20Discord/SugarBot/.env.example) → `.env` et renseigner les clés lues par [bot_sugar.py](file:///I:/IA/Bot%20Discord/SugarBot/bot_sugar.py) :
+1. Copier [SugarBot/.env.example](.env.example) → `.env` et renseigner les clés lues par [bot_sugar.py](bot_sugar.py) :
    - `DISCORD_TOKEN`
    - `GEMINI_KEY_1`, `GEMINI_KEY_2`, `GEMINI_KEY_3`, `GEMINI_KEY_4`
    - `GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`
@@ -28,7 +28,7 @@ Bot Discord à la personnalité **douce comme du sucre… mais qui pique quand o
 - **Docker** : lancer le service `sugar` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : voir [COMMANDES.md](file:///I:/IA/Bot%20Discord/COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!exploit` (alias : `histoire`, `legende`) : raconte un exploit de Sugar.
   - `!chanson` (alias : `frime`, `chante`) : sort une punchline de Sugar.
@@ -44,8 +44,8 @@ Bot Discord à la personnalité **douce comme du sucre… mais qui pique quand o
 - **Silence total entre bots** : Sugar ne répond jamais à un autre bot et ne les inclut pas dans son contexte.
 
 ## 🗂️ Fichiers
-- [bot_sugar.py](file:///I:/IA/Bot%20Discord/SugarBot/bot_sugar.py) : point d'entrée principal.
-- [sugar_data.py](file:///I:/IA/Bot%20Discord/SugarBot/sugar_data.py) : prompt de personnalité et répliques.
-- [sugar_memory.py](file:///I:/IA/Bot%20Discord/SugarBot/sugar_memory.py) : mémoire long terme + journalière (JSON local).
-- [sugar_grudge.py](file:///I:/IA/Bot%20Discord/SugarBot/sugar_grudge.py) : carnet de rancunes.
-- [games_persona.py](file:///I:/IA/Bot%20Discord/SugarBot/games_persona.py) : voix de Sugar dans les mini-jeux.
+- [bot_sugar.py](bot_sugar.py) : point d'entrée principal.
+- [sugar_data.py](sugar_data.py) : prompt de personnalité et répliques.
+- [sugar_memory.py](sugar_memory.py) : mémoire long terme + journalière (JSON local).
+- [sugar_grudge.py](sugar_grudge.py) : carnet de rancunes.
+- [games_persona.py](games_persona.py) : voix de Sugar dans les mini-jeux.

@@ -7,7 +7,7 @@ Le rockerboy anarchiste et légendaire de Night City (univers Cyberpunk 2077) tr
 - **Style de langage** : Vulgaire, cynique, direct, rebelle. Utilise des expressions typiques de Night City ("choom", "eddies", "chrome"). Haine viscérale des corporations (Arasaka, Militech) et mépris pour l'autorité.
 
 ## ⚙️ Configuration
-1. Copier [JohnnyBot/.env.example](file:///I:/IA/Bot%20Discord/JohnnyBot/.env.example) → `.env` et renseigner les clés lues par [bot_johnny.py](file:///I:/IA/Bot%20Discord/JohnnyBot/bot_johnny.py) :
+1. Copier [JohnnyBot/.env.example](.env.example) → `.env` et renseigner les clés lues par [bot_johnny.py](bot_johnny.py) :
    - `DISCORD_TOKEN`
    - `GEMINI_KEY_1`, `GEMINI_KEY_2`, `GEMINI_KEY_3`, `GEMINI_KEY_4`
    - `GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`
@@ -24,7 +24,7 @@ Le rockerboy anarchiste et légendaire de Night City (univers Cyberpunk 2077) tr
 - **Docker** : Lancer le service `johnny` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](file:///I:/IA/Bot%20Discord/COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!gig` (aliases: `job`, `mission`, `run`, `contrat`) : Johnny raconte un de ses braquages ou concerts mythiques.
   - `!loot` (aliases: `gift`, `chrome`, `eddies`) : Johnny offre un objet de pacotille ou une pièce de cyberware de la rue.
@@ -41,6 +41,6 @@ Le rockerboy anarchiste et légendaire de Night City (univers Cyberpunk 2077) tr
 - **Statistiques** : Enregistre le nombre total de verres bus, de cadeaux distribués et de missions de mercenaires réussies.
 
 ## 🗂️ Fichiers
-- [bot_johnny.py](file:///I:/IA/Bot%20Discord/JohnnyBot/bot_johnny.py) : Point d'entrée principal, boucle d'événements et gestion des interactions.
-- [johnny_data.py](file:///I:/IA/Bot%20Discord/JohnnyBot/johnny_data.py) : Contient les traits de caractère, répliques types, anecdotes de concerts et de braquages.
-- [johnny_memory.py](file:///I:/IA/Bot%20Discord/JohnnyBot/johnny_memory.py) : Gestionnaire local de la base de mémoire à long terme de Johnny (fichiers JSON).
+- [bot_johnny.py](bot_johnny.py) : Point d'entrée principal, boucle d'événements et gestion des interactions.
+- [johnny_data.py](johnny_data.py) : Contient les traits de caractère, répliques types, anecdotes de concerts et de braquages.
+- [johnny_memory.py](johnny_memory.py) : Gestionnaire local de la base de mémoire à long terme de Johnny (fichiers JSON).

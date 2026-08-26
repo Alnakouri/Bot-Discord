@@ -6,11 +6,11 @@
 
 | Bot | Personnalité | Spécialités |
 |-----|-------------|-------------|
-| **Sheogorath** | Prince de la Folie (TES) | Chaos, punitions, Wabbajack, voix française clonée (Philippe Bozo) |
+| **Sheogorath** | Prince de la Folie (TES) | Chaos, punitions, décrets, Wabbajack, humeurs (manie / démence / félicité) |
 | **M'aiq** | Khajiit menteur (TES) | Énigmes, rumeurs, mensonges |
 | **Alfred** | Majordome de Batman | Vocal TTS (ElevenLabs), cynisme, service, modération |
 | **Johnny Silverbot** | Rockerboy (Cyberpunk 2077) | Anti-corpo, cynisme, provocation, duels |
-| **Sugar Bot** | (personnalité vidée) | — |
+| **Sugar Bot** | Douce puis venimeuse | Compliments qui piquent, vannes qui fondent ; traite les malpolis de « péteur / péteuse » |
 | **Malena** | Gitana marseillaise | Tarot, prédictions, style gitane |
 
 ---
@@ -19,19 +19,19 @@
 
 Pour naviguer dans l'écosystème de documentation technique et utilisateur :
 
-- **[ARCHITECTURE.md](file:///I:/IA/Bot%20Discord/ARCHITECTURE.md)** : Constitution technique globale, arborescence des fichiers et conventions de développement. **Source de vérité.**
-- **[DEV_GUIDE.md](file:///I:/IA/Bot%20Discord/DEV_GUIDE.md)** : Guide d'onboarding pour développeurs (venv, boucle d'outils, persistance, historique des modifications).
-- **[COMMANDES.md](file:///I:/IA/Bot%20Discord/COMMANDES.md)** : Guide utilisateur complet (slash commands communes et déclencheurs spécifiques par bot).
-- **[API_KEYS_SETUP.md](file:///I:/IA/Bot%20Discord/API_KEYS_SETUP.md)** : Gestion et chiffrement des clés d'API (Gemini, Groq, Mistral, OpenRouter).
-- **[MAINTENANCE.md](file:///I:/IA/Bot%20Discord/MAINTENANCE.md)** : Guide opérationnel (sauvegardes, redémarrages, logs, dépannage).
-- **[DEPLOY_ORACLE.md](file:///I:/IA/Bot%20Discord/DEPLOY_ORACLE.md)** : *(Archivé)* Guide historique du déploiement VM cloud (Oracle Always Free).
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** : Constitution technique globale, arborescence des fichiers et conventions de développement. **Source de vérité.**
+- **[DEV_GUIDE.md](DEV_GUIDE.md)** : Guide d'onboarding pour développeurs (venv, boucle d'outils, persistance, historique des modifications).
+- **[COMMANDES.md](COMMANDES.md)** : Guide utilisateur complet (slash commands communes et déclencheurs spécifiques par bot).
+- **[API_KEYS_SETUP.md](API_KEYS_SETUP.md)** : Gestion et chiffrement des clés d'API (Gemini, Groq, Mistral, OpenRouter).
+- **[MAINTENANCE.md](MAINTENANCE.md)** : Guide opérationnel (sauvegardes, redémarrages, logs, dépannage).
+- **[DEPLOY_ORACLE.md](DEPLOY_ORACLE.md)** : *(Archivé)* Guide historique du déploiement VM cloud (Oracle Always Free).
 - **Documentation par bot** :
-  - [Alfred/README.md](file:///I:/IA/Bot%20Discord/Alfred/README.md)
-  - [Sheogorath/README.md](file:///I:/IA/Bot%20Discord/Sheogorath/README.md)
-  - [MaiqBot/README.md](file:///I:/IA/Bot%20Discord/MaiqBot/README.md)
-  - [JohnnyBot/README.md](file:///I:/IA/Bot%20Discord/JohnnyBot/README.md)
-  - [SugarBot/README.md](file:///I:/IA/Bot%20Discord/SugarBot/README.md)
-  - [MalenaBot/README.md](file:///I:/IA/Bot%20Discord/MalenaBot/README.md)
+  - [Alfred/README.md](Alfred/README.md)
+  - [Sheogorath/README.md](Sheogorath/README.md)
+  - [MaiqBot/README.md](MaiqBot/README.md)
+  - [JohnnyBot/README.md](JohnnyBot/README.md)
+  - [SugarBot/README.md](SugarBot/README.md)
+  - [MalenaBot/README.md](MalenaBot/README.md)
 
 ---
 
@@ -62,17 +62,103 @@ python Alfred/bot_alfred.py   # Lancer Alfred individuellement
 
 ## 🧠 Stack IA
 
-Les requêtes sont routées via le module intelligent `shared/smart_router.py` pour optimiser l'utilisation des quotas :
+`shared/models.py` est la **source unique** des identifiants de modèles ;
+`shared/smart_router.py` décide quelle cascade utiliser. Chaque cascade essaie ses
+échelons dans l'ordre et descend d'un cran si l'un échoue, rend un contenu vide ou
+recopie son raisonnement dans la réponse.
 
-| Rôle | Modèle principal | Fournisseur / Fallback |
-|------|------------------|------------------------|
-| 🧠 Raisonnement complexe | `gemini-2.0-pro-exp` | Google AI |
-| 🖼️ Vision & Audio | `gemini-2.0-flash` / `lite` | Google AI |
-| 🎭 Humour & Répartie | `x-ai/grok-4.20` | OpenRouter |
-| 💬 Texte standard / Fallback | `mistral-large-latest` | Mistral / Groq / OpenRouter |
+### Une voix par bot
+
+Le texte et la répartie passent par une cascade **propre à chaque persona**, choisie
+sur mesures réelles (`tools/sonde_modeles_persona.py` envoie le vrai prompt de persona
+à chaque modèle candidat) :
+
+| Bot | Tête de cascade | Pourquoi |
+|-----|-----------------|----------|
+| **Alfred** | `mistral-large-latest` | Ironie sèche de majordome, registre « Monsieur » tenu |
+| **Johnny** | `mistral-small-latest` | Seul à sortir l'argot de rue sans l'édulcorer |
+| **Sheogorath** | `openai/gpt-oss-120b` (Groq) | Sort Wabbajack, Haskill et le fromage de lui-même |
+| **Sugar Bot** | `gemini-3.5-flash-lite` | Tranche sans meubler, garde le vocabulaire maison |
+| **M'aiq** | `gemini-3.5-flash-lite` | Les meilleures faussetés cryptiques |
+| **Malena** | `mistral-small-latest` | L'argot marseillais sort tout seul |
+
+Chaque cascade mélange des **fournisseurs différents** : leurs quotas sont indépendants,
+donc si l'un limite, l'échelon suivant répond quand même.
+
+### Ce qui n'est PAS personnalisé
+
+Là, c'est la **capacité** du modèle qui commande, pas le ton :
+
+| Rôle | Cascade |
+|------|---------|
+| 🖼️ Vision & audio | `gemini-3.5-flash` → `gemini-3.5-flash-lite` |
+| 🧠 Raisonnement complexe | `gemini-3.5-flash` → `mistral-large-latest` → `openai/gpt-oss-120b` |
+| 📢 Annonces de live | `gemini-3.5-flash-lite` → `mistral-large-latest` → `openai/gpt-oss-120b` |
+
+> [!NOTE]
+> Les annonces de live sont **publiques** : c'est la qualité de langue qui prime, pas le
+> ton. La persona reste audible, elle vient du prompt système et non du modèle.
+
+> [!WARNING]
+> Le **free-tier OpenRouter** a été mesuré inutilisable (12 échecs sur 12 : quotas
+> dépassés en rafale, 60 à 120 s de latence, raisonnement recopié dans la réponse).
+> Aucune cascade n'en dépend, et un test l'interdit.
 
 > [!IMPORTANT]
-> Les fonctionnalités GPU locales (TTS voice-cloning Chatterbox pour Sheogorath et vision locale Moondream) sont actuellement **parquées** (désactivées par défaut pour compatibilité avec les architectures CPU-only). Les pipelines basculent automatiquement en mode dégradé sur le texte cloud ou les fallback Gemini. Voir [FEATURE_VOIX_VISION_GPU.md](file:///I:/IA/Bot%20Discord/FEATURE_VOIX_VISION_GPU.md).
+> Les fonctionnalités GPU locales (TTS voice-cloning Chatterbox pour Sheogorath et vision locale Moondream) sont actuellement **parquées** (désactivées par défaut pour compatibilité avec les architectures CPU-only). Les pipelines basculent automatiquement en mode dégradé sur le texte cloud ou les fallback Gemini. Voir [FEATURE_VOIX_VISION_GPU.md](FEATURE_VOIX_VISION_GPU.md).
+
+---
+
+## 🧩 Chaque bot est déployable seul
+
+Un dossier de bot doit pouvoir tourner **sans `shared/`**. Le noyau technique
+(10 modules : routeur, cascade LLM, gestion des clés, journalisation…) est donc **copié**
+dans `<Bot>/core/` par `tools/vendor_core.py`.
+
+> [!IMPORTANT]
+> `shared/` reste la **source de maintenance** : on corrige là, puis on relance
+> `python tools/vendor_core.py`, et les 6 copies suivent. Corriger une copie directement
+> serait perdu au prochain vendoring — les fichiers générés le disent en en-tête.
+
+Il existe donc **7 exemplaires** du routeur (`shared/` plus les 6 copies), parce que la
+pile Twitch de `shared/` en dépend et ne peut pas être migrée. C'est tenable à une seule
+condition : que les copies restent **identiques**. `tools/sonde_core_drift.py` échoue dès
+qu'une diverge, et la CI l'exécute à chaque push — sans quoi deux routeurs différents
+pourraient cohabiter dans le même processus sans que personne ne le voie.
+
+Ce qui reste **partagé** et volontairement non dupliqué : `shared_database.py` (état commun
+— réputation, anniversaires, énigmes : le dupliquer casserait sa raison d'être) et
+`server_events.py`. Ces deux-là sont importés sous garde, et **chaque appel teste le
+drapeau** `DATABASE_AVAILABLE` : un drapeau posé mais jamais lu produit un bot vivant mais
+inerte, panne déjà rencontrée deux fois.
+
+---
+
+## 🧪 Mode test
+
+Le dashboard porte un interrupteur **Mode test** : les bots ne publient plus que sur un
+serveur Discord privé, que l'on choisit dans un menu déroulant alimenté par les serveurs
+que les bots remontent eux-mêmes. Twitch et les messages privés sont coupés aussi.
+
+- Réglable **globalement** (les 6 d'un geste) ou **bot par bot** — l'un des deux suffit.
+- Relu toutes les 5 s : basculer ne demande **aucun redémarrage**.
+- **Fermé par défaut** : mode actif sans serveur choisi = silence total, jamais
+  « publie partout ». Le dashboard prévient avant d'activer.
+
+---
+
+## ✅ Vérifications automatiques
+
+`.github/workflows/ci.yml` tourne à chaque push et à chaque pull request :
+
+```bash
+python tools/sonde_blocking_calls.py   # aucun appel LLM synchrone dans la boucle asyncio
+python tools/sonde_core_drift.py       # les 6 copies du noyau n'ont pas divergé
+python tools/vendor_core.py            # ... et le vendoring est bien à jour
+python -m pytest -q                    # la suite complète
+```
+
+En local, avant de pousser, la même séquence suffit.
 
 ---
 
@@ -85,4 +171,4 @@ python crypto_utils.py encrypt   # Chiffre les .env → .env.encrypted
 python crypto_utils.py decrypt   # Déchiffre les fichiers pour modification
 ```
 
-Pour plus de détails sur le cycle de vie des clés et la rotation, consultez [API_KEYS_SETUP.md](file:///I:/IA/Bot%20Discord/API_KEYS_SETUP.md).
+Pour plus de détails sur le cycle de vie des clés et la rotation, consultez [API_KEYS_SETUP.md](API_KEYS_SETUP.md).

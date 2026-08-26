@@ -3,14 +3,20 @@ import os
 import re
 from pathlib import Path
 
+# Source UNIQUE des modeles morts. Ne pas recopier cette liste ailleurs : ce fichier est
+# le seul que le scan s'autorise a ignorer, donc toute copie ailleurs se declencherait
+# elle-meme (deja arrive avec tests/test_documentation.py).
+DEAD_PATTERNS = [
+    r"gemini-2\.5",
+    r"llama-3\.3-70b-versatile",
+    r"dolphin-mistral-24b",
+]
+
+
 def test_no_dead_models():
     """Vérifie qu'aucun modèle mort n'est câblé en dur."""
     workspace = Path(__file__).parent.parent
-    dead_patterns = [
-        r"gemini-2\.5",
-        r"llama-3\.3-70b-versatile",
-        r"dolphin-mistral-24b"
-    ]
+    dead_patterns = DEAD_PATTERNS
     
     files_to_check = list(workspace.rglob("*.py"))
     

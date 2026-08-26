@@ -130,13 +130,11 @@ Bot Discord/
 
 | Composant | Technologie | Version |
 |---|---|---|
-| Runtime | Python | 3.11 (Docker) |
+| Runtime | Python | 3.12 (Docker et CI) |
 | Framework Discord | discord.py | >=2.7.1 |
-| IA Principale | Google Gemini | `gemini-2.0-pro-exp` / `gemini-2.0-flash` |
-| IA Fallback #1 | Mistral | `mistral-large-latest` |
-| IA Fallback #2 | Groq | `llama-3.3-70b-versatile` |
-| IA Fallback #3 | xAI Grok (OpenRouter)| `x-ai/grok-4.20` |
-| IA Fallback #4 | OpenRouter (Gemma) | `google/gemma-4-26b-a4b-it:free` |
+| Modèles IA | — | **Voir [`shared/models.py`](shared/models.py), source unique.** Les recopier ici les rendrait périmés en silence. |
+| Fournisseurs IA | Gemini, Mistral, Groq | Chaque cascade en mélange plusieurs (quotas indépendants) |
+| Cascade par persona | `shared/models.py` | Une voix par bot, choisie sur mesures réelles (`tools/sonde_modeles_persona.py`) |
 | Vision locale (Parquée) | Ollama Moondream | moondream (conteneur Docker) |
 | Base de données | SQLite | WAL mode, accès concurrent |
 | Dashboard | FastAPI + Vanilla JS | Port 8501 (Orchestration Docker native) |

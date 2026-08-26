@@ -7,7 +7,7 @@ Majordome dévoué de la famille Wayne (univers Batman) transposé sur Discord p
 - **Style de langage** : Très formel, flegme britannique, poli mais extrêmement sarcastique. N'utilise jamais le pronom "je" directement, préférant la troisième personne ("votre humble serviteur", "le soussigné") ou des tournures passives ("Il est à noter que...").
 
 ## ⚙️ Configuration
-1. Copier [Alfred/.env.example](file:///I:/IA/Bot%20Discord/Alfred/.env.example) → `.env` et renseigner les clés lues par [bot_alfred.py](file:///I:/IA/Bot%20Discord/Alfred/bot_alfred.py) :
+1. Copier [Alfred/.env.example](.env.example) → `.env` et renseigner les clés lues par [bot_alfred.py](bot_alfred.py) :
    - `DISCORD_TOKEN`
    - `GEMINI_KEY_1`, `GEMINI_KEY_2`, `GEMINI_KEY_3`, `GEMINI_KEY_4`
    - `MISTRAL_API_KEY` (fournisseur prioritaire pour Alfred)
@@ -27,7 +27,7 @@ Majordome dévoué de la famille Wayne (univers Batman) transposé sur Discord p
 - **Docker** : Lancer le service `alfred` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](file:///I:/IA/Bot%20Discord/COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!servir <action>` : Demande à Alfred de servir quelque chose (ex: café, thé, remontrances).
   - `!parle <texte>` : Demande à Alfred de prononcer un texte dans le salon vocal.
@@ -45,6 +45,6 @@ Majordome dévoué de la famille Wayne (univers Batman) transposé sur Discord p
 - **Duels inter-bots** : Capacité à entrer en joute verbale avec Johnny Silverbot ou Sheogorath s'ils l'importunent.
 
 ## 🗂️ Fichiers
-- [bot_alfred.py](file:///I:/IA/Bot%20Discord/Alfred/bot_alfred.py) : Point d'entrée principal, boucle d'événements Discord et exécution des outils de modération.
-- [alfred_data.py](file:///I:/IA/Bot%20Discord/Alfred/alfred_data.py) : Définitions de la personnalité, invites systèmes, répliques types, surnoms et configurations.
-- [alfred_memory.py](file:///I:/IA/Bot%20Discord/Alfred/alfred_memory.py) : Moteur de gestion de mémoire à long terme locale (fichiers JSON) et synthèse des faits.
+- [bot_alfred.py](bot_alfred.py) : Point d'entrée principal, boucle d'événements Discord et exécution des outils de modération.
+- [alfred_data.py](alfred_data.py) : Définitions de la personnalité, invites systèmes, répliques types, surnoms et configurations.
+- [alfred_memory.py](alfred_memory.py) : Moteur de gestion de mémoire à long terme locale (fichiers JSON) et synthèse des faits.

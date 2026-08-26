@@ -46,7 +46,7 @@ python -c "from shared.shared_database import get_connection; print('DB Connecti
 
 | Script | Fonction | Usage |
 |---|---|---|
-| [crypto_utils.py](file:///I:/IA/Bot%20Discord/crypto_utils.py) | Chiffrer/déchiffrer les `.env` locaux via Fernet. | `python crypto_utils.py encrypt` ou `decrypt` |
+| [crypto_utils.py](crypto_utils.py) | Chiffrer/déchiffrer les `.env` locaux via Fernet. | `python crypto_utils.py encrypt` ou `decrypt` |
 | `start_all_bots.bat` | Script batch pour lancer simultanément les 6 bots en local dans des fenêtres distinctes. | Double-clic / Lancement shell |
 | `test_bot.bat` | Menu interactif permettant de choisir et démarrer un seul bot en développement local. | Double-clic / Lancement shell |
 
@@ -93,9 +93,9 @@ Pour doter un bot d'une nouvelle capacité (ex: interroger une API météo, donn
 
 ## 💾 Persistance des Données
 
-- **Base de Données Commune** : Une base SQLite unique ([data/bots_database.db](file:///I:/IA/Bot%20Discord/data/bots_database.db)) est partagée par tous les processus. Les requêtes s'effectuent via [shared/shared_database.py](file:///I:/IA/Bot%20Discord/shared/shared_database.py). Le mode journalier **WAL** est activé pour supporter les écritures concurrentes.
+- **Base de Données Commune** : Une base SQLite unique ([data/bots_database.db](data/bots_database.db)) est partagée par tous les processus. Les requêtes s'effectuent via [shared/shared_database.py](shared/shared_database.py). Le mode journalier **WAL** est activé pour supporter les écritures concurrentes.
 - **Sauvegarde de l'état (Punitions)** : Les métamorphoses temporaires infligées par Sheogorath (Wabbajack) sont sauvegardées dans `sheo_punishments.json`. En cas de crash ou de redémarrage du conteneur, le bot reprend le décompte des sanctions sur le serveur au démarrage.
-- **Règles Sensibles** : Ne modifiez ni ne supprimez jamais les fichiers secrets `.master_key` ou les bases de données SQLite existantes (se référer aux consignes de sécurité dans [AGENTS.md](file:///I:/IA/Bot%20Discord/AGENTS.md)).
+- **Règles Sensibles** : Ne modifiez ni ne supprimez jamais les fichiers secrets `.master_key` ou les bases de données SQLite existantes (se référer aux consignes de sécurité dans [AGENTS.md](AGENTS.md)).
 
 ---
 
@@ -109,6 +109,32 @@ Pour maintenir la cohérence de l'écosystème lors de l'édition des prompts sy
 ---
 
 ## 📊 Historique des Changements & Optimisations
+
+> [!NOTE]
+> Les identifiants de modèles cités dans les entrées ci-dessous sont ceux **en vigueur à
+> l'époque** de chaque changement. Ils ne décrivent pas l'état actuel : la source unique
+> est [`shared/models.py`](shared/models.py).
+
+### Août 2026 — Indépendance, voix par bot, garde-fous
+
+- **Chaque bot embarque son noyau** : les 10 modules techniques sont copiés dans
+  `<Bot>/core/` par `tools/vendor_core.py`, `shared/` restant la source de maintenance.
+  Un bot se déploie désormais seul. Contrepartie assumée : 7 exemplaires du routeur, donc
+  `tools/sonde_core_drift.py` en CI, obligatoire.
+- **31 appels LLM synchrones** sortis de la boucle asyncio (`asyncio.to_thread`) : ils
+  gelaient le bot pendant chaque génération.
+- **Une cascade de modèles par persona**, choisie sur mesures réelles
+  (`tools/sonde_modeles_persona.py`, qui envoie le vrai prompt de persona aux candidats).
+  Les annonces de live font exception : publiques, elles passent par une cascade choisie
+  pour la **qualité de langue**, pas pour le ton.
+- **Robustesse des cascades** : une réponse vide ou un raisonnement recopié dans le
+  contenu ne cassent plus la génération, ils font descendre d'un échelon. Un succès HTTP
+  200 ne veut pas dire qu'il y a une réponse dedans.
+- **Mode test** (dashboard) : les bots ne publient plus que sur un serveur privé. La garde
+  entoure `abc.Messageable.send`, point de passage unique de toutes les sorties Discord —
+  poser une garde dans chacune des ~35 boucles aurait garanti d'en oublier une.
+- **CI** (`.github/workflows/ci.yml`) : compilation, sondes, vendoring à jour, suite de
+  tests. Sans elle, les sondes ne tournent que si quelqu'un y pense.
 
 ### Avril 2026 — Refactoring & Dockerisation
 - **Modularisation & DRY** : Déplacement de la DB dans `shared/shared_database.py`, de l'anti-répétition dans `shared/response_memory.py`, et des commandes slash dans `shared/slash_commands.py`.
