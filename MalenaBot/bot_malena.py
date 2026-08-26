@@ -173,6 +173,16 @@ def build_expression_hint(mood):
         f"seulement si ça colle au contexte) : {expr_list}"
     )
 
+def _est_vide(txt):
+    """Un modèle peut répondre 200 OK avec un contenu VIDE, sans lever d'exception.
+
+    Vu en prod le 2026-08-26 : Groq rend un contenu vide, Malena tente un envoi Discord
+    vide -> 400 « Cannot send an empty message », donc muette. Le vide n'est pas une
+    réponse : on descend la cascade au lieu de la casser.
+    """
+    return not (txt and txt.strip())
+
+
 async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None, mime_type=None, meme_consigne=""):
     """Essaie selon le Smart Router : Gemini (Image/Audio) -> Groq (Texte) -> Mistral (Fallback)."""
     
@@ -207,6 +217,9 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     ),
                     timeout=15
                 )
+                if _est_vide(response.text):
+                    logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
+                    continue
                 return response.text
  
             # 1.bis OLLAMA (Moondream)
@@ -238,7 +251,11 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     ),
                     timeout=15
                 )
-                return response.choices[0].message.content
+                texte = response.choices[0].message.content
+                if _est_vide(texte):
+                    logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
+                    continue
+                return texte
 
             # 4. GROQ
             elif client_type == "groq" and groq_client:
@@ -254,7 +271,11 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     ),
                     timeout=15
                 )
-                return chat.choices[0].message.content
+                texte = chat.choices[0].message.content
+                if _est_vide(texte):
+                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
+                    continue
+                return texte
 
             # 5. OPENROUTER
             elif client_type == "openrouter" and openrouter_client:
@@ -284,10 +305,14 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     ),
                     timeout=15
                 )
-                return chat.choices[0].message.content
+                texte = chat.choices[0].message.content
+                if _est_vide(texte):
+                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
+                    continue
+                return texte
 
         except Exception as e:
-            logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {e}")
+            logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {type(e).__name__}: {e}")
             continue
 
     return "Ay caramba ! J'ai mal au crâne, plus personne ne marche là-dedans ! (Erreur API Totale)"
@@ -555,6 +580,12 @@ async def on_message(message):
                 if not reply_text and (has_image or has_audio):
                     media_type_str = "l'image" if has_image else "le message vocal"
                     reply_text = f"Ay <@{message.author.id}> ! J'arrive pas à ouvrir {media_type_str}... Mon téléphone a encore buggé ! 🙄"
+
+                # Dernier rempart : Discord refuse un message vide (400 / code 50006), et
+                # l'exception remontait jusqu'au repli « (Erreur API) » visible par l'user.
+                if _est_vide(reply_text):
+                    logger.warning("⚠️ [MALENA] cascade sans texte exploitable → repli en personnage")
+                    reply_text = "Ay caramba ! J'ai la tête ailleurs là, redemande-moi ça ma vie ! 💅"
 
                 # Logging DB
                 if DATABASE_AVAILABLE:

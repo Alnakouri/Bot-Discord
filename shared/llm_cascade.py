@@ -14,6 +14,16 @@ from shared.smart_router import get_model_cascade, RequestType
 logger = logging.getLogger("llm_cascade")
 
 
+def _est_vide(txt):
+    """Un modèle peut répondre 200 OK avec un contenu VIDE, sans lever d'exception.
+
+    Vu en prod le 2026-08-26 : Groq (openai/gpt-oss-120b) rend un contenu vide et le bot
+    tente alors un envoi Discord vide -> 400 « Cannot send an empty message », donc bot
+    muet. Le vide n'est pas une réponse : on descend la cascade au lieu de la casser.
+    """
+    return not (txt and txt.strip())
+
+
 async def generate_response(
     *,
     routing: dict,
@@ -81,6 +91,10 @@ async def generate_response(
                     config=cfg,
                 )
                 response_text = resp.text
+                if _est_vide(response_text):
+                    logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
+                    response_text = None
+                    continue
                 logger.info(f"✅ [GEMINI {model_name}] {bot_label} via {routing.get('reason', '')}")
                 break
 
@@ -108,6 +122,10 @@ async def generate_response(
                               {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nMESSAGE: {user_message}"}],
                 )
                 response_text = chat.choices[0].message.content
+                if _est_vide(response_text):
+                    logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
+                    response_text = None
+                    continue
                 logger.info(f"🌪️ [MISTRAL {model_name}] {bot_label}")
                 break
 
@@ -123,6 +141,10 @@ async def generate_response(
                     messages=msgs, model=model_name, temperature=temperature,
                 )
                 response_text = chat.choices[0].message.content
+                if _est_vide(response_text):
+                    logger.warning(f"⚠️ [GROQ {model_name}] réponse vide → échelon suivant")
+                    response_text = None
+                    continue
                 logger.info(f"⚡ [GROQ {model_name}] {bot_label}")
                 break
 
@@ -144,9 +166,7 @@ async def generate_response(
                     extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": bot_label},
                 )
                 response_text = chat.choices[0].message.content
-                # Un modèle :free peut renvoyer un contenu VIDE sans lever d'exception →
-                # on ne casse pas la cascade sur du vide, on tente l'échelon suivant.
-                if not (response_text and response_text.strip()):
+                if _est_vide(response_text):
                     logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")
                     response_text = None
                     continue
@@ -154,7 +174,7 @@ async def generate_response(
                 break
 
         except Exception as e:
-            logger.warning(f"⚠️ [{client_type.upper()} FAIL] {e}")
+            logger.warning(f"⚠️ [{client_type.upper()} FAIL] {type(e).__name__}: {e}")
             if client_type == "gemini" and api_key:
                 error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
                 key_manager.report_error("gemini", api_key, error_code)
