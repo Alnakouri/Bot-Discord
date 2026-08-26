@@ -1,10 +1,20 @@
 import os
+import sys
 import hmac
 import json
 import time
 import hashlib
 import secrets
+import subprocess
 from pathlib import Path
+
+# Contexte de lancement, fige ICI : `sys.argv[0]` est un chemin RELATIF au repertoire
+# de depart (start_dashboard.bat fait « cd dashboard » puis « python backendpp.py »).
+# Le relire au moment d'un redemarrage donnerait un chemin faux si le repertoire
+# courant avait change entre-temps.
+_LANCEMENT_CWD = os.getcwd()
+_LANCEMENT_ARGV = list(sys.argv)
+
 from fastapi import FastAPI, WebSocket, Query, HTTPException, Request, Response, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -624,6 +634,57 @@ async def get_twitch_leaderboard(bot_id: str):
         return twitch_config_manager.get_leaderboard(bot_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# REDEMARRAGE DU DASHBOARD LUI-MEME
+#
+# Les bots redemarrent via `docker compose restart`. Le dashboard, lui, est un
+# processus Python local : personne d'autre ne peut le relancer. Il delegue donc a
+# un petit programme detache (relauncher.py) qui attend sa mort ET la liberation du
+# port avant de le rallumer — relancer trop tot donnerait un « address already in
+# use » et laisserait l'utilisateur sans dashboard du tout.
+# ═══════════════════════════════════════════════════════════════════════════
+
+DASHBOARD_PORT = 8501
+
+
+@app.post("/api/dashboard/restart")
+async def restart_dashboard():
+    """Redémarre le dashboard. Répond AVANT de mourir, sinon le navigateur
+    afficherait une erreur réseau au lieu d'une confirmation."""
+    import threading
+
+    relanceur = Path(__file__).parent / "relauncher.py"
+    if not relanceur.exists():
+        raise HTTPException(status_code=500, detail="relauncher.py introuvable.")
+
+    commande = [sys.executable, str(relanceur), str(os.getpid()), str(DASHBOARD_PORT),
+                _LANCEMENT_CWD, sys.executable] + _LANCEMENT_ARGV
+
+    try:
+        options = {}
+        if sys.platform == "win32":
+            # Détaché : il doit survivre à la mort de son parent, c'est tout son rôle.
+            options["creationflags"] = (subprocess.DETACHED_PROCESS
+                                        | subprocess.CREATE_NEW_PROCESS_GROUP)
+        else:
+            options["start_new_session"] = True
+        subprocess.Popen(commande, **options)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Relanceur non lancé : {e}")
+
+    audit_analyzer.log("restart_dashboard", details="Redémarrage du dashboard via l'interface")
+
+    def _quitter():
+        # Laisse la réponse partir, puis coupe net : un arrêt « propre » d'uvicorn
+        # peut traîner sur les connexions ouvertes, et le relanceur attend de toute
+        # façon que le port soit libre.
+        time.sleep(1.0)
+        os._exit(0)
+
+    threading.Thread(target=_quitter, daemon=True).start()
+    return {"status": "ok", "message": "Redémarrage en cours...", "port": DASHBOARD_PORT}
+
 
 @app.get("/api/health")
 async def health():

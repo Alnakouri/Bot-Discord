@@ -147,6 +147,14 @@
                 <button class="btn btn-danger" id="btn-stop-all-bots" onclick="actionAllBots('stop')">
                     <i class="fa-solid fa-stop"></i> Arrêter Tous les Bots
                 </button>
+
+                <!-- Séparé des boutons de bots : celui-ci ne touche PAS aux bots,
+                     il redémarre l'interface elle-même. -->
+                <span style="width:1px; background:var(--border-glass); margin:0 5px;"></span>
+                <button class="btn btn-outline" id="btn-restart-dashboard" onclick="restartDashboard()"
+                        title="Redémarre l'interface. Les 6 bots continuent de tourner.">
+                    <i class="fa-solid fa-gauge-high"></i> Redémarrer le Dashboard
+                </button>
             </div>
 
             <!-- Grille de contrôle des bots -->

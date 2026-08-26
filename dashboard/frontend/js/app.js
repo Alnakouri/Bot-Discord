@@ -1698,3 +1698,76 @@ window.setTestGuild = async function (guildId) {
 };
 
 document.addEventListener('DOMContentLoaded', () => window.loadTestMode());
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REDEMARRAGE DU DASHBOARD LUI-MEME
+//
+// Contrairement aux bots, l'interface qui envoie l'ordre est celle qui meurt :
+// la requête n'aura pas de « fin » normale et le serveur sera injoignable un
+// instant. On attend donc son retour avant de recharger, plutôt que d'afficher
+// une erreur réseau qui ferait croire à un échec.
+// ═══════════════════════════════════════════════════════════════════════════
+
+window.restartDashboard = async function () {
+    const ok = await confirmDialog(
+        "Redémarrer le dashboard ? L'interface sera injoignable quelques secondes. " +
+        "Les 6 bots continuent de tourner, ils ne sont pas touchés."
+    );
+    if (!ok) return;
+
+    const bouton = document.getElementById('btn-restart-dashboard');
+    if (bouton) {
+        bouton.disabled = true;
+        bouton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Redémarrage...';
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/dashboard/restart`, { method: 'POST' });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            toast(`Redémarrage impossible : ${err.detail || res.status}`, 'error');
+            if (bouton) {
+                bouton.disabled = false;
+                bouton.innerHTML = '<i class="fa-solid fa-gauge-high"></i> Redémarrer le Dashboard';
+            }
+            return;
+        }
+    } catch (e) {
+        // Le serveur peut mourir avant de finir de répondre : ce n'est pas un échec.
+        console.warn('Réponse interrompue (attendu) :', e);
+    }
+
+    toast("Redémarrage du dashboard en cours...", 'info');
+    await attendreRetourDashboard();
+};
+
+async function attendreRetourDashboard() {
+    const DEBUT_ATTENTE = 1500;   // laisse le temps au processus de mourir
+    const INTERVALLE = 700;
+    const LIMITE = 45000;
+
+    await new Promise(r => setTimeout(r, DEBUT_ATTENTE));
+    const echeance = Date.now() + LIMITE;
+
+    while (Date.now() < echeance) {
+        try {
+            const res = await fetch(`${API_BASE}/health`, { cache: 'no-store' });
+            if (res.ok) {
+                toast("Dashboard redémarré.", 'success');
+                setTimeout(() => window.location.reload(), 600);
+                return;
+            }
+        } catch (e) {
+            // normal tant qu'il n'est pas revenu
+        }
+        await new Promise(r => setTimeout(r, INTERVALLE));
+    }
+
+    // Ne pas recharger : une page blanche serait plus déroutante que ce message.
+    toast("Le dashboard n'est pas revenu. Relance start_dashboard.bat à la main.", 'error');
+    const bouton = document.getElementById('btn-restart-dashboard');
+    if (bouton) {
+        bouton.disabled = false;
+        bouton.innerHTML = '<i class="fa-solid fa-gauge-high"></i> Redémarrer le Dashboard';
+    }
+}
