@@ -14,21 +14,10 @@ import base64
 # LOAD SECURE ENV (Supports encrypted .env files)
 # This MUST be done before any other imports that might use environment variables
 from pathlib import Path
-try:
-    from shared.secure_env import load_secure_env
-    # Unsets conflicting Google Cloud env vars
-    load_secure_env(Path(__file__).parent)
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
-try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
-except ImportError:  # bot déployé seul, sans shared/
-    GEMINI_FLASH      = "gemini-3.5-flash"
-    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
-    GROQ_FAST         = "openai/gpt-oss-120b"
-    MISTRAL_MAIN      = "mistral-large-latest"
-    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+from core.secure_env import load_secure_env
+# Unsets conflicting Google Cloud env vars
+load_secure_env(Path(__file__).parent)
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
 
 import discord
 from discord.ext import commands, tasks
@@ -41,12 +30,12 @@ import aiohttp
 import asyncio
 import random
 import re
-from shared.response_memory import ResponseMemory
+from core.response_memory import ResponseMemory
 import json
 import logging
 from datetime import datetime, timedelta
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image_ollama
+from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.media_handler import process_image_ollama
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -69,12 +58,8 @@ except ImportError:
     save = None
 
 # LOGGING STRUCTURÉ
-try:
-    from shared.bot_logger import setup_logger
-    logger = setup_logger("alfred")
-except ImportError:
-    logger = logging.getLogger("alfred")
-    logging.basicConfig(level=logging.INFO)
+from core.bot_logger import setup_logger
+logger = setup_logger("alfred")
 
 if ElevenLabs is None:
     logger.warning("[INIT] ElevenLabs non disponible. Fonctions vocales désactivées.")
@@ -86,7 +71,7 @@ if ElevenLabs is None:
 # by ensuring the Gemini client does not incorrectly default to Vertex AI.
 # The previous try/except block was hiding potential `ImportError` if `google-genai`
 # was not installed, leading to silent failures.
-from shared.safe_client import get_client as get_safe_genai_client
+from core.safe_client import get_client as get_safe_genai_client
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
 
@@ -161,8 +146,8 @@ conversation_history = {}
 MAX_HISTORY = 30
 
 # MULTI-API KEY MANAGER (Gère TOUTES les APIs avec cooldowns)
-from shared.api_manager import MultiAPIKeyManager
-from shared.graceful_shutdown import setup_graceful_shutdown
+from core.api_manager import MultiAPIKeyManager
+from core.graceful_shutdown import setup_graceful_shutdown
 
 # Initialisation
 key_manager = MultiAPIKeyManager()

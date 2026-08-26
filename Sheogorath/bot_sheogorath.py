@@ -20,20 +20,13 @@ import re
 from datetime import datetime
 import os
 import base64
-from shared.response_memory import ResponseMemory
+from core.response_memory import ResponseMemory
 import logging
 from pathlib import Path
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image_ollama
+from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.media_handler import process_image_ollama
 
-try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
-except ImportError:  # bot déployé seul, sans shared/
-    GEMINI_FLASH      = "gemini-3.5-flash"
-    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
-    GROQ_FAST         = "openai/gpt-oss-120b"
-    MISTRAL_MAIN      = "mistral-large-latest"
-    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -78,15 +71,11 @@ except ImportError:
     logger_msg = "⚠️ [VOICE] Module sheo_voice.py non disponible"
 
 # IMPORT SECURE ENV LOADER (Supports encrypted .env files)
-try:
-    from shared.secure_env import load_secure_env
-    load_secure_env(Path(__file__).parent)
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
+from core.secure_env import load_secure_env
+load_secure_env(Path(__file__).parent)
 
 # IMPORT SAFE CLIENT (Fix invalid project name error)
-from shared.safe_client import get_client as get_safe_genai_client
+from core.safe_client import get_client as get_safe_genai_client
 
 try:
     import sheo_data
@@ -104,7 +93,6 @@ try:
         get_bot_persona, start_imposter_session, stop_imposter_session, get_active_session
     )
     from sheo_decrees import generate_decree_image, apply_decree_role, cleanup_old_decree_roles
-    from shared.shared_database import add_reputation
 except ImportError:
     from Sheogorath import sheo_data
     from Sheogorath.sheo_memory import DailyMemory, FactMemory
@@ -121,26 +109,18 @@ except ImportError:
         get_bot_persona, start_imposter_session, stop_imposter_session, get_active_session
     )
     from Sheogorath.sheo_decrees import generate_decree_image, apply_decree_role, cleanup_old_decree_roles
-    from shared.shared_database import add_reputation
 
 # LOGGING STRUCTURÉ
-try:
-    from shared.bot_logger import setup_logger
-    logger = setup_logger("sheogorath")
-except ImportError:
-    logger = logging.getLogger("sheogorath")
-    logger.setLevel(logging.INFO)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(message)s", datefmt="%H:%M:%S"))
-        logger.addHandler(handler)
+from core.bot_logger import setup_logger
+logger = setup_logger("sheogorath")
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
 
 try:
     from shared.shared_database import (
         get_or_create_user, is_maintenance_mode, is_ignored_channel,
-        get_active_riddle, delete_active_riddle, get_reputation, get_reputation_level
+        get_active_riddle, delete_active_riddle, get_reputation, get_reputation_level,
+        add_reputation
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
@@ -224,8 +204,8 @@ conversation_history = {}
 MAX_HISTORY = 30 
 
 # MULTI-API KEY MANAGER (Gère TOUTES les APIs avec cooldowns)
-from shared.api_manager import MultiAPIKeyManager
-from shared.graceful_shutdown import setup_graceful_shutdown
+from core.api_manager import MultiAPIKeyManager
+from core.graceful_shutdown import setup_graceful_shutdown
 
 # Initialisation du gestionnaire
 key_manager = MultiAPIKeyManager()
@@ -358,7 +338,7 @@ def get_smart_string_response_v2(text, guild_id):
 daily_brain = DailyMemory()
 
 async def _daily_llm_call(system_prompt, user_message):
-    from shared.llm_cascade import generate_response
+    from core.llm_cascade import generate_response
     return await generate_response(
         routing={"type": RequestType.TEXT, "reason": "daily_read"},
         system_prompt=system_prompt, transcript="", user_message=user_message,
@@ -738,8 +718,8 @@ async def on_ready():
                 f"Style Sheogorath : obsessionnel (fromage, papillons, intestins), absurde et menaçant. "
                 f"Écris une seule phrase de décret courte (max 200 caractères), en personnage, sans guillemets ni didascalies."
             )
-            from shared.llm_cascade import generate_response
-            from shared.smart_router import RequestType
+            from core.llm_cascade import generate_response
+            from core.smart_router import RequestType
             try:
                 text = await generate_response(
                     routing={"type": RequestType.TEXT, "reason": "twitch_decret"},

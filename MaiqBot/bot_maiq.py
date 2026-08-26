@@ -19,21 +19,14 @@ import random
 import re
 import json
 import os
-from shared.response_memory import ResponseMemory
+from core.response_memory import ResponseMemory
 import logging
 from datetime import datetime
 import base64
 
-try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
-except ImportError:  # bot déployé seul, sans shared/
-    GEMINI_FLASH      = "gemini-3.5-flash"
-    GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
-    GROQ_FAST         = "openai/gpt-oss-120b"
-    MISTRAL_MAIN      = "mistral-large-latest"
-    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image_ollama
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.media_handler import process_image_ollama
 try:
     from shared.games import setup_games
     from games_persona import PERSONA
@@ -52,12 +45,8 @@ import collections
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
 
 # LOGGING STRUCTURÉ
-try:
-    from shared.bot_logger import setup_logger
-    logger = setup_logger("maiq")
-except ImportError:
-    logger = logging.getLogger("maiq")
-    logging.basicConfig(level=logging.INFO)
+from core.bot_logger import setup_logger
+logger = setup_logger("maiq")
 
 # FILE PATHS
 DATA_DIR = os.getenv("DATA_DIR", ".")
@@ -84,15 +73,11 @@ def save_data(data):
 
 # IMPORT SECURE ENV LOADER (Supports encrypted .env files)
 from pathlib import Path
-try:
-    from shared.secure_env import load_secure_env
-    load_secure_env(Path(__file__).parent)
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
+from core.secure_env import load_secure_env
+load_secure_env(Path(__file__).parent)
 
 # IMPORT SAFE CLIENT
-from shared.safe_client import get_client as get_safe_genai_client
+from core.safe_client import get_client as get_safe_genai_client
 
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
@@ -151,8 +136,8 @@ conversation_history = {}
 MAX_HISTORY = 30 
 
 # MULTI-API KEY MANAGER (Gère TOUTES les APIs avec cooldowns)
-from shared.api_manager import MultiAPIKeyManager
-from shared.graceful_shutdown import setup_graceful_shutdown
+from core.api_manager import MultiAPIKeyManager
+from core.graceful_shutdown import setup_graceful_shutdown
 
 # Initialisation
 key_manager = MultiAPIKeyManager()

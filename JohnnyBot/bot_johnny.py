@@ -17,12 +17,12 @@ import aiohttp
 import random
 import json
 import base64
-from shared.response_memory import ResponseMemory, merge_recent_responses
+from core.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image_ollama
-from shared.llm_cascade import generate_response
+from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.media_handler import process_image_ollama
+from core.llm_cascade import generate_response
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -35,12 +35,8 @@ import collections
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
 
 # LOGGING STRUCTURÉ
-try:
-    from shared.bot_logger import setup_logger
-    logger = setup_logger("johnny")
-except ImportError:
-    logger = logging.getLogger("johnny")
-    logging.basicConfig(level=logging.INFO)
+from core.bot_logger import setup_logger
+logger = setup_logger("johnny")
 
 # FILE PATHS
 DATA_DIR = os.getenv("DATA_DIR", ".")
@@ -64,15 +60,11 @@ def save_data(data):
 
 # IMPORT SECURE ENV LOADER
 from pathlib import Path
-try:
-    from shared.secure_env import load_secure_env
-    load_secure_env(Path(__file__).parent)
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
+from core.secure_env import load_secure_env
+load_secure_env(Path(__file__).parent)
 
 # IMPORT SAFE CLIENT
-from shared.safe_client import get_client as get_safe_genai_client
+from core.safe_client import get_client as get_safe_genai_client
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
 try:
@@ -184,8 +176,8 @@ conversation_history = {}
 MAX_HISTORY = 30
 
 # MULTI-API KEY MANAGER
-from shared.api_manager import MultiAPIKeyManager
-from shared.graceful_shutdown import setup_graceful_shutdown
+from core.api_manager import MultiAPIKeyManager
+from core.graceful_shutdown import setup_graceful_shutdown
 
 # Initialisation
 key_manager = MultiAPIKeyManager()
@@ -261,7 +253,7 @@ try:
     from johnny_memory import FactMemory, DailyMemory
 except ImportError:
     from JohnnyBot.johnny_memory import FactMemory, DailyMemory
-from shared.smart_router import RequestType
+from core.smart_router import RequestType
 
 johnny_facts_file = os.path.join(DATA_DIR, "johnny_facts.json")
 johnny_memory_file = os.path.join(DATA_DIR, "johnny_memory.json")

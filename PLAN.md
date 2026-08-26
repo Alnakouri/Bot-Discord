@@ -1,341 +1,304 @@
-# PLAN — Débloquer la boucle asyncio : 31 appels LLM synchrones dans des coroutines
+# PLAN — Indépendance stricte : chaque bot embarque son noyau
 
-## 🔴 Le problème (audit 2026-08-25)
+## Décision
 
-Quatre bots sur six appellent les SDK LLM **en synchrone, directement dans un `async def`** :
+**Chaque bot doit tourner sans `shared/`.** Le noyau technique est copié dans chaque
+dossier bot ; `shared/` ne garde que ce qui est *réellement* partagé (état commun) ou
+*réellement* optionnel (features).
 
-```python
-resp = client.models.generate_content(...)      # ← bloque la boucle
-chat = groq_client.chat.completions.create(...) # ← bloque la boucle
+Constat de départ (mesuré 2026-08-25) : **les 6 bots échouent à l'import** dès que
+`shared/` est absent.
+
+```
+ECHEC bot_maiq        -> bot_maiq.py:22   from shared.response_memory import ResponseMemory
+ECHEC bot_sheogorath  -> bot_sheogorath.py:23  from shared.response_memory import ResponseMemory
+ECHEC bot_alfred      -> bot_alfred.py:44   from shared.response_memory import ResponseMemory
+ECHEC bot_malena      -> bot_malena.py:22   from shared.smart_router import classify_request, ...
+ECHEC bot_johnny      -> bot_johnny.py:20   from shared.response_memory import ResponseMemory, ...
+ECHEC bot_sugar       -> bot_sugar.py:21    from shared.response_memory import ResponseMemory, ...
 ```
 
-Ces SDK (`google-genai`, `groq`, `mistralai`, `openai`) sont **synchrones** : l'appel
-tient le thread pendant toute la génération (souvent 2 à 10 s). Or c'est le thread de
-la boucle asyncio. Pendant ce temps, le bot ne fait **plus rien du tout** :
-
-- heartbeat Discord suspendu (déconnexions / reconnexions à répétition) ;
-- WebSocket Twitch EventSub muet ;
-- `@tasks.loop` en retard ou sautées ;
-- les autres messages en attente ne sont pas traités, même triviaux.
-
-C'est **exactement** le bug déjà diagnostiqué et corrigé une fois (mémoire
-`fix-cascade-bloque-boucle` : « SDK sync non-awaités tuaient le WS EventSub →
-asyncio.to_thread ×6 »). Le correctif n'a jamais été propagé.
-
-**Preuve que c'est le bon diagnostic** : Johnny et Sugar ont **0 appel bloquant**.
-Ce sont les deux seuls bots dont la cascade passe par `shared/llm_cascade.py`, qui
-fait déjà `asyncio.to_thread`. Sheogorath a aussi la bonne forme dans sa cascade
-principale (`bot_sheogorath.py:2301`) — ce sont ses *autres* appels qui ont été oubliés.
-
-## ⚖️ Contrainte : indépendance des bots
-
-**Chaque bot doit rester déployable seul.** Ce plan la respecte intégralement :
-la correction est **100 % locale à chaque fichier `bot_*.py`**, n'ajoute **aucun**
-import `shared/`, ne déplace aucun code, ne crée aucune dépendance croisée.
-`asyncio` est déjà importé dans les 6 bots — rien à ajouter.
-
-Chaque bot peut être traité, testé et déployé **séparément**, dans n'importe quel ordre.
+Point acquis à ne pas perdre : **aucun bot n'importe un autre bot** (vérifié, 0 sur 6).
 
 ---
 
-## Le patch type
+## ⚠️ Le piège à comprendre avant de commencer
 
-`asyncio.to_thread(fn, **kwargs)` exécute l'appel bloquant dans un thread du pool et
-rend la main à la boucle. `asyncio.wait_for` borne la durée : si un provider traîne,
-on lève `TimeoutError` et la cascade bascule à l'échelon suivant au lieu de figer le bot.
+Le noyau **ne peut pas** être retiré de `shared/` : la pile Twitch de `shared/` en dépend.
 
-**Avant**
-
-```python
-resp = client.models.generate_content(
-    model=model_name,
-    contents=gemini_messages,
-    config=types.GenerateContentConfig(temperature=0.7),
-)
+```
+shared/twitch/llm.py, dispatch.py, events.py, voice.py, daily_profile.py
+shared/twitch_announcer.py, twitch_eventsub.py
+shared/discord_status.py, discord_profile.py
+        └── importent shared.smart_router et shared.llm_cascade
 ```
 
-**Après**
+Donc après vendoring il y aura **7 copies** de `smart_router` : une par bot + celle de
+`shared/`. Dans un même processus, le bot routera avec `core/smart_router.py` et son
+côté Twitch avec `shared/smart_router.py`.
 
-```python
-resp = await asyncio.wait_for(
-    asyncio.to_thread(
-        client.models.generate_content,
-        model=model_name,
-        contents=gemini_messages,
-        config=types.GenerateContentConfig(temperature=0.7),
-    ),
-    timeout=15,
-)
-```
-
-La référence exacte à copier existe déjà dans le dépôt :
-**`Sheogorath/bot_sheogorath.py:2301-2312`**.
-
-### Règles de portage
-
-1. **Ne jamais mettre les parenthèses de l'appel** après le nom de la fonction :
-   on passe `client.models.generate_content` (la fonction), pas
-   `client.models.generate_content(...)`. Se tromper ici annule tout l'intérêt du
-   patch sans produire d'erreur visible.
-2. **Tous les arguments restent identiques**, simplement décalés d'un cran.
-   Vérifié : **les 31 sites utilisent uniquement des arguments nommés**, aucun
-   positionnel. Le portage est donc mécanique et sûr.
-3. `timeout=15` pour les appels sur le chemin d'une réponse à l'utilisateur.
-   `timeout=30` pour les tâches de fond (rumeur, énigme, protip hebdo) : elles ne
-   bloquent personne et gagnent à aboutir.
-4. **Traiter les sites d'un même fichier de la ligne la plus BASSE vers la plus HAUTE**,
-   sinon les numéros de ligne ci-dessous se décalent au fur et à mesure des éditions.
-5. Ne **rien** changer d'autre : ni les prompts, ni les modèles, ni les températures,
-   ni les `try/except`. Ce plan ne corrige qu'une seule chose.
+**C'est acceptable à une seule condition : les copies doivent être strictement
+identiques.** Si elles le sont, savoir laquelle est chargée n'a aucune importance.
+C'est le rôle de la sonde de dérive (phase 4) — elle n'est pas un bonus, c'est ce qui
+rend cette architecture tenable. Sans elle, on fabrique deux routeurs divergents dans
+le même processus.
 
 ---
 
-## Inventaire exact des 31 sites
+## Périmètre : ce qui est copié, ce qui reste partagé
 
-### `MaiqBot/bot_maiq.py` — 12 sites (le plus atteint)
+### À VENDORISER — le noyau, 10 modules, 1 282 lignes
 
-| ligne | appel | coroutine | timeout |
+Fermeture transitive calculée (aucun autre module n'est tiré) :
+
+| module | lignes | dépend de |
+|---|---|---|
+| `smart_router.py` | 377 | `models` |
+| `api_manager.py` | 271 | — |
+| `llm_cascade.py` | 163 | `media_handler`, `safe_client`, `smart_router` |
+| `media_handler.py` | 143 | `models` |
+| `bot_logger.py` | 124 | — |
+| `secure_env.py` | 67 | — |
+| `graceful_shutdown.py` | 52 | — |
+| `safe_client.py` | 50 | — |
+| `response_memory.py` | 28 | — |
+| `models.py` | 7 | — |
+
+Destination : **`<Bot>/core/`** (pas en vrac dans le dossier du bot — on doit voir d'un
+coup d'œil ce qui est vendorisé).
+
+### RESTE DANS `shared/` — état partagé, import gardé + repli réel
+
+| module | lignes | pourquoi | repli si absent |
 |---|---|---|---|
-| 1444 | `openrouter_client.chat.completions.create` | `on_message` | 15 |
-| 1418 | `groq_client.chat.completions.create` | `on_message` | 15 |
-| 1401 | `mistral_client.chat.complete` | `on_message` | 15 |
-| 1368 | `client.models.generate_content` | `on_message` | 15 |
-| 1341 | `client.models.generate_content` | `on_message` | 15 |
-| 943 | `client.models.generate_content` | `maiq_rumeur` | 30 |
-| 928 | `groq_client.chat.completions.create` | `maiq_rumeur` | 30 |
-| 883 | `groq_client.chat.completions.create` | `profil_maiq_cmd` | 15 |
-| 780 | `client.models.generate_content` | `generate_and_post_riddle` | 30 |
-| 764 | `groq_client.chat.completions.create` | `generate_and_post_riddle` | 30 |
-| 577 | `client.models.generate_content` | `publish_daily_rumor` | 30 |
-| 562 | `groq_client.chat.completions.create` | `publish_daily_rumor` | 30 |
+| `shared_database.py` | 1163 | **État commun** entre bots (réputation, anniversaires, énigmes). Le dupliquer ne rendrait pas le bot indépendant, ça casserait sa raison d'être. | Le bot tourne sans réputation ni classement inter-bots. |
+| `server_events.py` | 246 | Comportement à l'échelle du serveur (accueil, départ, anniversaires). | Pas de message d'accueil/départ. |
 
-### `Sheogorath/bot_sheogorath.py` — 8 sites
+Ces deux-là doivent passer en `try/except ImportError` **avec un vrai repli**, pas un
+no-op muet : si l'appelant ne teste pas le drapeau, on veut un comportement défini.
 
-| ligne | appel | coroutine | timeout |
-|---|---|---|---|
-| 1928 | `groq_client.chat.completions.create` | `on_message` | 15 |
-| 1917 | `openrouter_client.chat.completions.create` | `on_message` | 15 |
-| 1875 | `openrouter_client.chat.completions.create` | `on_message` | 15 |
-| 1867 | `groq_client.chat.completions.create` | `on_message` | 15 |
-| 1671 | `groq_client.chat.completions.create` | `imposteur_cmd` | 15 |
-| 1660 | `openrouter_client.chat.completions.create` | `imposteur_cmd` | 15 |
-| 1334 | `gclient.models.generate_content` | `check_missed_mentions_sheo` | 30 |
-| 1319 | `groq_client.chat.completions.create` | `check_missed_mentions_sheo` | 30 |
+### NE PAS TOUCHER — déjà gardés, déjà optionnels
 
-> Les sites `2301` et suivants (cascade principale) sont **déjà corrects** — ne pas y toucher.
-
-### `Alfred/bot_alfred.py` — 7 sites
-
-| ligne | appel | coroutine | timeout |
-|---|---|---|---|
-| 1751 | `openrouter_client.chat.completions.create` | `on_message` | 15 |
-| 1725 | `groq_client.chat.completions.create` | `on_message` | 15 |
-| 1706 | `mistral_client.chat.complete` | `on_message` | 15 |
-| 1677 | `client.models.generate_content` | `on_message` | 15 |
-| 1647 | `client.models.generate_content` | `on_message` | 15 |
-| 821 | `client.models.generate_content` | `analyze_audio_with_gemini` | 30 |
-| 482 | `mistral_client.chat.complete` | `weekly_protip_alfred` | 30 |
-
-### `MalenaBot/bot_malena.py` — 4 sites
-
-| ligne | appel | coroutine | timeout |
-|---|---|---|---|
-| 254 | `openrouter_client.chat.completions.create` | `generate_response_hybrid` | 15 |
-| 229 | `groq_client.chat.completions.create` | `generate_response_hybrid` | 15 |
-| 217 | `mistral_client.chat.complete` | `generate_response_hybrid` | 15 |
-| 188 | `gemini_client.models.generate_content` | `generate_response_hybrid` | 15 |
-
-### Rien à faire
-
-`JohnnyBot/bot_johnny.py` et `SugarBot/bot_sugar.py` : **0 site**. Ne pas les modifier.
+`memes_fr`, `games/`, `twitch/`, `twitch_chat`, `bot_features`, `discord_status`,
+`discord_profile`, `slash_commands`, `healthcheck`, `ensure_writable`, `stream_listener`.
+Ils sont déjà en `try/except` avec dégradation propre. Les laisser tels quels.
 
 ---
 
-## Gestion du `TimeoutError`
+## Phase 1 — Script de vendoring
 
-Chaque site est déjà dans un `try/except Exception` (ou le sera par la cascade
-englobante). `asyncio.TimeoutError` **hérite de `Exception`** en Python 3.11+, donc
-les `except Exception` existants l'attrapent sans modification.
+Créer **`tools/vendor_core.py`** (versionné) :
 
-Seul point d'attention : là où un `except` appelle `key_manager.report_error(...)`,
-un timeout n'est **pas** une erreur de clé API. Le code lit un code via
-`getattr(e, "code", getattr(e, "status_code", 0))`, ce qui donnera `0` sur un
-`TimeoutError` — comportement déjà toléré aujourd'hui, donc **aucun changement
-requis**. Ne pas sur-corriger.
+- source : `shared/<module>.py` pour les 10 modules du noyau ;
+- destination : `<Bot>/core/<module>.py` pour les 6 bots ;
+- réécrit les imports internes : `from shared.models import X` → `from core.models import X`,
+  `from shared.smart_router import Y` → `from core.smart_router import Y` (concerne
+  `llm_cascade`, `media_handler`, `smart_router`) ;
+- ajoute en tête de chaque fichier copié un bandeau :
+
+```python
+# ⚠️ FICHIER GENERE — NE PAS EDITER ICI.
+# Source : shared/<module>.py — modifier la source puis relancer :
+#     python tools/vendor_core.py
+# La sonde tools/sonde_core_drift.py echoue si cette copie diverge.
+```
+
+- crée `<Bot>/core/__init__.py` ;
+- idempotent : relancé deux fois, il ne change rien.
+
+**`shared/` reste la source de vérité pour la maintenance.** On corrige dans `shared/`,
+on relance le script, les 6 copies suivent. C'est ce qui évite le « propager 6 fois à la
+main » qui a produit le bug des 31 appels bloquants.
+
+## Phase 2 — Recâbler les 6 bots
+
+Dans chaque `bot_*.py` **et** dans les modules locaux du bot (`sheo_llm.py`,
+`*_memory.py`, `*_data.py`… — l'audit doit balayer tout le dossier) :
+
+```python
+# avant
+from shared.smart_router import classify_request, RequestType, download_media, ...
+from shared.response_memory import ResponseMemory, merge_recent_responses
+from shared.llm_cascade import generate_response
+
+# après
+from core.smart_router import classify_request, RequestType, download_media, ...
+from core.response_memory import ResponseMemory, merge_recent_responses
+from core.llm_cascade import generate_response
+```
+
+Import **dur**, sans `try/except` : le module est dans le dossier du bot, il est toujours
+là. Un `except ImportError` ici ne masquerait qu'une erreur d'installation.
+
+Pour `shared_database` et `server_events`, à l'inverse :
+
+```python
+try:
+    from shared.shared_database import get_or_create_user, add_reputation, log_interaction
+    DB_PARTAGEE = True
+except ImportError:
+    DB_PARTAGEE = False
+    logger.warning("[CORE] shared/ absent : reputation et classement inter-bots desactives.")
+```
+
+Et **chaque appel** doit être gardé par le drapeau. Un drapeau posé mais jamais testé est
+pire que pas de drapeau : c'est le mode de panne « bot vivant mais inerte » déjà vu deux
+fois (M'aiq muet sur `PermissionError`, puis sur `UnboundLocalError`).
+
+`sys.path` : le bot tourne avec `working_dir=/app/bot`, donc `core/` est déjà importable.
+Rien à ajouter au `docker-compose.yml`.
+
+## Phase 3 — Le test qui rend la règle vérifiable
+
+Créer **`tests/test_independance_bots.py`**.
+
+Deux assertions, la seconde est celle qui compte :
+
+1. **Aucun import croisé entre bots** — statique (AST), rapide. Vaut 0 aujourd'hui, doit
+   le rester.
+2. **Chaque bot s'importe avec `shared/` bloqué** — en **sous-processus**, un par bot :
+   importer six bots dans le même interpréteur ferait collisionner leurs états globaux
+   (six instances `discord.Bot`, mêmes noms de modules locaux).
+
+Le blocage se fait par un `meta_path` finder qui lève `ImportError` sur `shared` et
+`shared.*`. Prototype fonctionnel déjà validé pendant l'audit — il produit exactement la
+sortie `ECHEC …` citée en tête de ce plan.
+
+Distinguer trois issues, sinon on conclut à tort :
+- `ImportError` sur `shared*` → **échec du test** (dépendance dure résiduelle) ;
+- autre exception (token absent, fichier manquant) → **skip explicite** avec le motif,
+  ce n'est pas le sujet ;
+- import réussi → succès.
+
+Environnement : les bots lisent leur `.env` au chargement. Le test doit fournir des
+valeurs factices (`DISCORD_TOKEN`, clés API) pour ne pas dépendre des secrets réels.
+
+## Phase 4 — Sonde de dérive (non négociable)
+
+Créer **`tools/sonde_core_drift.py`** :
+
+- compare `<Bot>/core/<module>.py` aux 6 bots **et** à `shared/<module>.py`, modulo la
+  réécriture d'imports `shared.` → `core.` et le bandeau généré ;
+- signale toute divergence, avec le bot et le module ;
+- sort en **code 1** si dérive.
+
+C'est la contrepartie du piège des 7 copies. Une divergence non détectée = deux routeurs
+différents dans le même processus.
+
+Autotest obligatoire : modifier volontairement une copie doit faire échouer la sonde. Une
+sonde qui ne dit jamais « non » ne vaut rien.
+
+## Phase 5 — CI
+
+Créer **`.github/workflows/ci.yml`** — le dépôt n'a aucun `.github` aujourd'hui.
+
+```yaml
+- python -m pytest -q
+- python tools/sonde_blocking_calls.py
+- python tools/sonde_core_drift.py
+```
+
+Sans CI, les phases 3 et 4 ne tourneront que si quelqu'un y pense — et les 31 appels
+bloquants ont montré que personne n'y pense.
 
 ---
 
 ## Vérification
 
-### 1. Compilation
-
 ```bash
-python -m py_compile MaiqBot/bot_maiq.py Sheogorath/bot_sheogorath.py \
-                     Alfred/bot_alfred.py MalenaBot/bot_malena.py
+python tools/vendor_core.py            # idempotent : 2e passage = 0 changement
+python tools/sonde_core_drift.py       # attendu : 0 derive, exit 0
+python tools/sonde_blocking_calls.py   # attendu : TOTAL 0, exit 0
+python -m pytest -q                    # 252 tests + les nouveaux
+python -m py_compile */bot_*.py */core/*.py
 ```
 
-### 2. Sonde automatique — doit afficher `TOTAL: 0`
-
-Enregistrer sous `tools/sonde_blocking_calls.py` puis `python tools/sonde_blocking_calls.py` :
-
-```python
-import ast, pathlib
-
-BLOCK = ('generate_content', 'chat.completions.create', 'chat.complete')
-total = 0
-for p in sorted(pathlib.Path('.').glob('*/bot_*.py')):
-    src = p.read_text(encoding='utf-8')
-    lines = src.splitlines()
-    tree = ast.parse(src)
-    fns = []
-
-    def walk(n):
-        for ch in ast.iter_child_nodes(n):
-            if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                fns.append((ch.lineno, ch.end_lineno, isinstance(ch, ast.AsyncFunctionDef)))
-            walk(ch)
-
-    walk(tree)
-    bad = []
-    for n in ast.walk(tree):
-        if not isinstance(n, ast.Call):
-            continue
-        seg = ast.get_source_segment(src, n.func) or ''
-        if not any(b in seg for b in BLOCK):
-            continue
-        ctx = "\n".join(lines[max(0, n.lineno - 5):n.lineno])
-        if 'to_thread' in ctx or 'run_in_executor' in ctx:
-            continue
-        inner = [f for f in fns if f[0] <= n.lineno <= f[1]]
-        if inner and max(inner, key=lambda f: f[0])[2]:
-            bad.append(n.lineno)
-    total += len(bad)
-    print(f"{p}: {len(bad)} appel(s) bloquant(s) {bad if bad else ''}")
-print("TOTAL:", total, "-> ATTENDU: 0")
-```
-
-Cette sonde est aussi le **filet anti-régression** : elle rejouera après chaque
-modification future d'un bot.
-
-### 3. Suite de tests — les 252 doivent rester verts
-
-```bash
-python -m pytest -q
-```
-
-### 4. Test live (le seul qui prouve le gain)
-
-Déployer bot par bot, l'indépendance le permet :
+Puis, **bot par bot** (l'indépendance le permet, c'est même tout l'intérêt) :
 
 ```bash
 docker compose up -d --build maiq
+docker logs bot-maiq --since 5m | grep -iE "FAIL|Traceback|CORE"
 ```
 
-Puis, dans un salon Discord : envoyer **3 messages d'affilée** à M'aiq sans attendre
-sa réponse. **Avant** le patch, il traite le 1er et retarde lourdement les suivants.
-**Après**, les trois doivent être pris en charge en parallèle.
+Test live : envoyer 2-3 messages d'affilée, vérifier une réponse et l'absence de
+`heartbeat blocked`. **Ne pas conclure sur « ça compile et les tests passent »** : la
+régression `UnboundLocalError` du patch précédent était invisible à ces deux contrôles.
 
-Vérifier aussi dans `docker logs bot-maiq` la disparition de :
-
-```
-discord.gateway: Shard ID None heartbeat blocked for more than N seconds
-```
-
-C'est **le** message qui signe le bug.
-
----
+Contrôle spécifique du repli : renommer temporairement `shared/shared_database.py` et
+vérifier que le bot démarre et répond, sans réputation, **sans exception**.
 
 ## Ordre recommandé
 
-M'aiq (12) → Sheogorath (8) → Alfred (7) → Malena (4).
+Phase 1 → 4 → 2 → 3 → 5.
 
-M'aiq d'abord : c'est le plus atteint, ses 5 sites dans `on_message` sont sur le
-chemin critique de chaque réponse, et c'est le bot dont les silences ont déjà été
-signalés en production (mémoire `plan-maiq-permissionerror-fatigue`).
+La sonde de dérive (4) **avant** le recâblage (2) : dès la première copie posée, elle
+garde le filet tendu. Recâbler d'abord et sonder ensuite laisse une fenêtre où la
+divergence passe inaperçue.
+
+Un seul bot en pilote (**Malena**, 757 lignes, le plus petit) sur les phases 1-2 avant
+de dérouler les cinq autres.
+
+## Ce que ce plan coûte, en clair
+
+- **~7 700 lignes dupliquées** dans git (1 282 × 6).
+- `shared/models.py` — désigné « source unique » lors de l'audit des modèles morts
+  (2026-08-24) — existera en **7 exemplaires**. Chaque correction d'ID modèle devra
+  repasser par `vendor_core.py`, sinon les bots divergent sur les modèles appelés.
+- Toute correction de noyau = `shared/` puis `python tools/vendor_core.py` puis commit
+  des 6 copies. Oublier le script = dérive silencieuse, rattrapée par la sonde
+  seulement si la CI tourne.
 
 ## Ce que ce plan ne fait PAS
 
-- Il ne touche pas à `shared/`.
-- Il ne fusionne aucune cascade, ne supprime aucune duplication.
-- Il ne corrige pas l'absence de `max_output_tokens` chez Sheo/Alfred/M'aiq
-  (sujet distinct, à traiter séparément).
-- Il n'ajoute aucun test unitaire sur les `bot_*.py` — chantier suivant :
-  test d'indépendance (`shared/` absent) + CI.
+- Il ne duplique pas `shared_database` (état commun) ni `server_events`.
+- Il ne touche pas aux imports déjà gardés (features optionnelles).
+- Il ne corrige pas `max_output_tokens` absent chez Sheo/Alfred/M'aiq.
+- Il n'ajoute aucun test unitaire sur le contenu de `on_message`.
 
 ---
 
-# ✅ RÉSULTAT — exécuté, corrigé et validé live (2026-08-25)
+## ÉTAT AU 2026-08-26 — phase 2 terminée, plan exécuté à 100 % (non commité)
 
-## Ce qui a été fait
+Les 3 groupes qui restaient sont faits :
 
-**31 appels enveloppés** dans `asyncio.wait_for(asyncio.to_thread(...))` :
-M'aiq 12, Sheogorath 8, Alfred 7, Malena 4. Johnny et Sugar non touchés (0 site).
-21× `timeout=15`, 10× `timeout=30`, conformes au plan. Aucun import `shared/` ajouté :
-l'indépendance des bots est intacte.
+1. **Malena + Sheo passent le test d'indépendance.**
+   Malena : `shared_database` + `server_events` regroupés dans un seul `try/except`
+   avec drapeau `DATABASE_AVAILABLE` (idiome des 5 autres bots) + warning au démarrage ;
+   **les 7 appels sont gardés** (`is_ignored_channel` ×2, `get_or_create_user`/
+   `log_interaction`, `check_and_send_birthdays` + son `.start()`, `handle_member_join`,
+   `handle_member_remove`).
+   Sheo : `from shared.shared_database import add_reputation` supprimé des **deux**
+   branches du `try/except` de chemins locaux et rapatrié dans le bloc gardé
+   `DATABASE_AVAILABLE` (le seul appel, `tool_mod_reputation`, était déjà gardé).
 
-Vérifications statiques : 6/6 bots compilent, sonde à `TOTAL: 0`, aucun
-`to_thread(fn(...))`, et **comparaison AST des signatures avant/après → aucun argument
-perdu, ajouté ou modifié** sur les 41 appels LLM. 252 tests verts.
+2. **4 imports noyau en fonction** passés sur `core.` : `Sheogorath:361, 741, 742`,
+   `MalenaBot:134`.
 
-Le formatage laissé par le patch automatique (indentation en escalier, 58 lignes avec
-espaces en fin de ligne) a été repris : 31 blocs ré-indentés, diff ramené de
-612+/271− à 288+/154−.
+3. **14 imports qui contournaient `core/`** passés en import **dur** `from core.X` :
+   `models` (Alfred, M'aiq, Sheo — les replis qui réécrivaient les IDs modèles en dur
+   sont supprimés), `bot_logger` (Alfred, M'aiq, Sheo, Johnny, Sugar), `secure_env`
+   (les 6). Vérifié en condition de prod (`shared/` présent) : c'est bien
+   `MaiqBot/core/models.py` et `MaiqBot/core/bot_logger.py` qui sont chargés.
 
-## 🔴 La régression qu'il a fallu corriger
+### Vérifications passées
 
-Après déploiement, **M'aiq et Alfred sont devenus muets**. Logs :
+| contrôle | résultat |
+|---|---|
+| `python -m py_compile */bot_*.py */core/*.py` | OK |
+| `python tools/vendor_core.py` ×2 | idempotent, 0 changement |
+| `python tools/sonde_core_drift.py` | 0 dérive, exit 0 — **autotesté** (dérive injectée → détectée + exit 1 → restaurée) |
+| `python tools/sonde_blocking_calls.py` | TOTAL 0, exit 0 |
+| `python -m pytest -q` | **259 passed**, 0 failed (46 subtests) — était 257/2 |
+| `tests/test_independance_bots.py` | 7/7 **passed**, aucun `skip` |
+| import des 6 bots **avec** `shared/` (condition de prod) | 6/6 OK |
+| import Malena **sans** `shared/` | `DATABASE_AVAILABLE = False` + warning, aucune exception |
 
-```
-[ROUTER] 🎭 Banter adressé → Grok (xAI)
-⚠️ [MISTRAL FAIL] cannot access local variable 'asyncio' where it is not associated with a value
-⚠️ [GROQ FAIL] cannot access local variable 'asyncio' ...
-⚠️ [OPENROUTER FAIL] cannot access local variable 'asyncio' ...
-```
+### Reste à faire
 
-`on_message` contenait tout en bas un `import asyncio` redondant (M'aiq l.1538,
-Alfred l.1870), alors que le module est déjà importé en tête de fichier. En Python,
-un `import` dans une fonction rend ce nom **local à tout son corps** : les
-`asyncio.wait_for(...)` ajoutés **plus haut** levaient donc `UnboundLocalError`, et
-toute la cascade tombait.
-
-Corrigé en supprimant les 4 `import asyncio` locaux — M'aiq et Alfred (cassés), plus
-Johnny l.1051 et Sugar l.972 qui portaient la même mine sans l'avoir encore déclenchée.
-
-**Leçon** : ce bug est invisible à `py_compile`, à la comparaison AST et aux 252 tests.
-Il vit dans `on_message`, la fonction que rien ne teste. « Ça compile et les tests
-passent » ne prouve rien sur le chemin de réponse des bots — le test live est obligatoire.
-
-## Validation live (2026-08-25, 23:17-23:18)
-
-M'aiq enchaîne quatre messages rapprochés sans décrocher :
-
-```
-21:17:16 | [ROUTER] 🎭 Banter adressé → Grok (xAI)
-21:17:18 | 🌪️ [MISTRAL mistral-large-latest] M'aiq a répondu.      ← 2 s
-21:17:40 | ... 21:17:42 | M'aiq a répondu.
-21:18:33 | ... 21:18:35 | M'aiq a répondu.
-21:18:47 | [ROUTER] 🖼️ Image (image/webp) → Gemini Vision
-21:18:54 | ✅ [GEMINI gemini-3.5-flash] M'aiq via 🖼️ Image          ← 6 s sans geler la boucle
-```
-
-(Les logs conteneur sont à **−2 h** de l'heure Discord.)
-
-**0 `heartbeat blocked` sur les 6 bots**, 0 erreur résiduelle.
-
-## Filet anti-régression
-
-`tools/sonde_blocking_calls.py` (versionné) contrôle désormais **trois** choses et
-sort en code 1 si l'une échoue — utilisable tel quel en CI :
-
-1. appel LLM synchrone dans une coroutine ;
-2. piège des parenthèses `to_thread(fn(...))` ;
-3. `import asyncio` local masquant le module (la régression ci-dessus).
-
-Auto-testée contre le code d'avant le patch : elle y retrouve bien les 12 sites de
-M'aiq, plus les deux pièges sur un fichier factice.
-
-## Reste à faire
-
-- Chantier suivant : test d'indépendance (importer chaque `bot_*.py` avec `shared/`
-  absent) + CI GitHub Actions — le dépôt n'a **aucun** `.github`.
-- Toujours ouvert : `max_output_tokens` absent chez Sheo/Alfred/M'aiq.
+- Commit + push (rien n'est commité, dernier commit = `0131583`).
+- Déploiement `docker compose up -d --build` puis **test live** : 2-3 messages d'affilée
+  par bot, vérifier réponse + absence de `heartbeat blocked`.
+  ⚠️ Ne pas conclure sur « ça compile et les tests passent » — la régression
+  `UnboundLocalError` était invisible à ces deux contrôles.
+- Contrôle du repli en conditions réelles : renommer temporairement
+  `shared/shared_database.py` et vérifier qu'un bot démarre et répond sans réputation.

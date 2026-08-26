@@ -18,10 +18,10 @@ import random
 import re
 import json
 import os
-from shared.response_memory import ResponseMemory, merge_recent_responses
+from core.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
-from shared.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
+from core.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
 
 
 try:
@@ -35,12 +35,8 @@ import collections
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
 
 # LOGGING STRUCTURÉ
-try:
-    from shared.bot_logger import setup_logger
-    logger = setup_logger("sugar")
-except ImportError:
-    logger = logging.getLogger("sugar")
-    logging.basicConfig(level=logging.INFO)
+from core.bot_logger import setup_logger
+logger = setup_logger("sugar")
 
 # FILE PATHS
 DATA_DIR = os.getenv("DATA_DIR", ".")
@@ -189,15 +185,11 @@ _last_reply_had_vocative = {}
 
 # IMPORT SECURE ENV LOADER
 from pathlib import Path
-try:
-    from shared.secure_env import load_secure_env
-    load_secure_env(Path(__file__).parent)
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
+from core.secure_env import load_secure_env
+load_secure_env(Path(__file__).parent)
 
 # IMPORT LLM CASCADE
-from shared.llm_cascade import generate_response
+from core.llm_cascade import generate_response
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
 
@@ -333,8 +325,8 @@ conversation_history = {}
 MAX_HISTORY = 30
 
 # MULTI-API KEY MANAGER
-from shared.api_manager import MultiAPIKeyManager
-from shared.graceful_shutdown import setup_graceful_shutdown
+from core.api_manager import MultiAPIKeyManager
+from core.graceful_shutdown import setup_graceful_shutdown
 
 # Initialisation
 key_manager = MultiAPIKeyManager()

@@ -19,10 +19,10 @@ import random
 from openai import OpenAI
 from datetime import datetime
 import base64
-from shared.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
-from shared.media_handler import process_image_ollama
+from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.media_handler import process_image_ollama
 from google.genai import types
-from shared.safe_client import get_client as get_safe_genai_client
+from core.safe_client import get_client as get_safe_genai_client
 from groq import Groq
 from mistralai import Mistral
 from pathlib import Path
@@ -36,16 +36,21 @@ except ImportError:
 
 import collections
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
-try:
-    from shared.secure_env import load_secure_env
-    load_secure_env(Path(__file__).parent)
-except ImportError:
-    from dotenv import load_dotenv
-    load_dotenv()
+from core.secure_env import load_secure_env
+load_secure_env(Path(__file__).parent)
 
 # Import modules partagés
-from shared.bot_logger import setup_logger
-from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel
+from core.bot_logger import setup_logger
+# shared/ = etat commun entre bots (reputation, anniversaires). Optionnel : le bot doit
+# demarrer et repondre sans, chaque appel est garde par DATABASE_AVAILABLE.
+try:
+    from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel
+    from shared.server_events import check_and_send_birthdays, handle_member_join, handle_member_remove
+    DATABASE_AVAILABLE = True
+    _DB_IMPORT_ERROR = None
+except ImportError as _e:
+    DATABASE_AVAILABLE = False
+    _DB_IMPORT_ERROR = _e
 try:
     from shared.games import setup_games
     from games_persona import PERSONA
@@ -56,8 +61,7 @@ except ImportError:
 # Import données spécifiques
 import malena_data as data
 from malena_memory import MalenaMemory
-from shared.server_events import check_and_send_birthdays, handle_member_join, handle_member_remove
-from shared.graceful_shutdown import setup_graceful_shutdown
+from core.graceful_shutdown import setup_graceful_shutdown
 
 try:
     from shared.twitch_announcer import setup_twitch_announcer
@@ -82,6 +86,11 @@ except ImportError:
 
 # Configuration du Logger
 logger = setup_logger("malena", "logs")
+if not DATABASE_AVAILABLE:
+    logger.warning(
+        f"⚠️ [CORE] shared/ absent ({_DB_IMPORT_ERROR}) : reputation, salons ignores, "
+        "anniversaires et messages d'accueil/depart desactives."
+    )
 
 # MISSED MENTIONS TRACKING
 checked_messages_malena = set()
@@ -123,7 +132,7 @@ if OPENROUTER_API_KEY:
     except Exception as e: logger.warning(f"⚠️ OpenRouter indisponible : {e}")
 
 # KEY MANAGER (Standardisé)
-from shared.api_manager import MultiAPIKeyManager
+from core.api_manager import MultiAPIKeyManager
 key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", [GEMINI_API_KEY] if GEMINI_API_KEY else [])
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
@@ -131,7 +140,7 @@ key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else []
 key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
 
 async def _daily_llm_call(system_prompt, user_message):
-    from shared.llm_cascade import generate_response
+    from core.llm_cascade import generate_response
     return await generate_response(
         routing={"type": RequestType.TEXT, "reason": "daily_read"},
         system_prompt=system_prompt, transcript="", user_message=user_message,
@@ -348,7 +357,7 @@ async def on_ready():
     # Lancer les tâches périodiques
     if not check_missed_mentions_malena.is_running():
         check_missed_mentions_malena.start()
-    if not birthday_loop_malena.is_running():
+    if DATABASE_AVAILABLE and not birthday_loop_malena.is_running():
         birthday_loop_malena.start()
     if daily_bio and not daily_bio_loop_malena.is_running():
         daily_bio_loop_malena.start()
@@ -400,7 +409,7 @@ async def on_message(message):
         return
         
     # SILENCE STREAM (Canal ignoré)
-    if is_ignored_channel(message.channel):
+    if DATABASE_AVAILABLE and is_ignored_channel(message.channel):
         return
         
     await bot.process_commands(message)
@@ -548,11 +557,12 @@ async def on_message(message):
                     reply_text = f"Ay <@{message.author.id}> ! J'arrive pas à ouvrir {media_type_str}... Mon téléphone a encore buggé ! 🙄"
 
                 # Logging DB
-                try:
-                    user_data = get_or_create_user(message.author.id, message.author.name, message.author.display_name)
-                    log_interaction(user_data['user_id'], "Malena", "message")
-                except Exception as db_err:
-                    logger.error(f"DB Error: {db_err}")
+                if DATABASE_AVAILABLE:
+                    try:
+                        user_data = get_or_create_user(message.author.id, message.author.name, message.author.display_name)
+                        log_interaction(user_data['user_id'], "Malena", "message")
+                    except Exception as db_err:
+                        logger.error(f"DB Error: {db_err}")
 
                 await message.reply(reply_text)
                 logger.info(f"✅ Répondu à {message.author.name}")
@@ -586,7 +596,7 @@ async def check_missed_mentions_malena():
             if not perms.read_messages or not perms.send_messages or not perms.read_message_history:
                 continue
 
-            if is_ignored_channel(channel): continue
+            if DATABASE_AVAILABLE and is_ignored_channel(channel): continue
             
             try:
                 messages = []
@@ -696,6 +706,8 @@ async def before_missed_mentions():
 @tasks.loop(hours=12)
 async def birthday_loop_malena():
     """Vérifie les anniversaires toutes les 12 heures."""
+    if not DATABASE_AVAILABLE:
+        return
     try:
         await check_and_send_birthdays(bot, "Malena")
         logger.info("🎂 [ANNIVERSAIRE] Vérification des anniversaires effectuée.")
@@ -761,11 +773,15 @@ async def before_status_malena():
 @bot.event
 async def on_member_join(member):
     """Message de bienvenue quand un membre rejoint."""
+    if not DATABASE_AVAILABLE:
+        return
     await handle_member_join(bot, member, "Malena")
 
 @bot.event
 async def on_member_remove(member):
     """Message de départ quand un membre quitte."""
+    if not DATABASE_AVAILABLE:
+        return
     await handle_member_remove(bot, member, "Malena")
 
 if __name__ == "__main__":
