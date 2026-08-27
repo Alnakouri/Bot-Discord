@@ -109,9 +109,11 @@ def test_le_relanceur_attend_la_mort_du_parent_avant_de_relancer(tmp_path):
         ancien.wait(timeout=10)
 
         code = relanceur.wait(timeout=60)
+        # Le port se verifie AVANT toute lecture : le serveur relance ne vit que
+        # 20 s, et une lecture qui traine ferait constater un port deja relache.
+        assert not port_libre(PORT_TEST), "le port devait etre repris par le nouveau"
         sortie = relanceur.stdout.read()
         assert code == 0, "relanceur en echec (code %s) : %s" % (code, sortie)
-        assert not port_libre(PORT_TEST), "le port devait etre repris par le nouveau"
         assert "port %d libere" % PORT_TEST in sortie
     finally:
         for proc in (ancien, relanceur):
@@ -121,6 +123,43 @@ def test_le_relanceur_attend_la_mort_du_parent_avant_de_relancer(tmp_path):
         # Il a ete lance detache : il ne descend pas avec le relanceur.
         if not port_libre(PORT_TEST):
             time.sleep(21)   # le serveur factice s'arrete de lui-meme (20 s)
+
+
+def test_le_processus_relance_ne_retient_pas_les_tuyaux_du_relanceur(tmp_path):
+    """Le relance ne doit pas garder la sortie du relanceur ouverte derriere lui.
+
+    Sans console, un processus lance HERITE des descripteurs standard de son
+    lanceur. Le dashboard relance les tiendrait donc ouverts pour toujours, et
+    `stdout.read()` sur le relanceur ne rendrait la main qu'a la mort du dashboard
+    — alors que le relanceur, lui, est mort depuis longtemps.
+
+    Mesure du 2026-08-26 (CI Linux) : la lecture rendait la main 20 s trop tard,
+    et le test constatait un port deja relache. Invisible sous Windows, ou
+    l'heritage ne se fait pas de la meme facon : seule la CI l'a vu.
+    """
+    env = dict(os.environ, DASHBOARD_RELANCE_SANS_CONSOLE="1")
+    duree_du_relance = 30          # bien plus long que la lecture attendue
+
+    relanceur = subprocess.Popen([
+        sys.executable, str(RELANCEUR),
+        "999999", str(PORT_TEST), str(tmp_path),
+        sys.executable, "-c", SERVEUR_FACTICE, str(PORT_TEST), str(duree_du_relance),
+    ], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert relanceur.wait(timeout=60) == 0
+        depart = time.monotonic()
+        relanceur.stdout.read()        # doit atteindre EOF tout de suite
+        lecture = time.monotonic() - depart
+        assert lecture < 5.0, (
+            "la sortie du relanceur n'a atteint EOF qu'apres %.1f s : le processus "
+            "relance retient encore le tuyau" % lecture
+        )
+    finally:
+        if relanceur.poll() is None:
+            relanceur.kill()
+        limite = time.time() + duree_du_relance + 10
+        while time.time() < limite and not port_libre(PORT_TEST):
+            time.sleep(0.5)
 
 
 def test_le_relanceur_journalise_dans_un_fichier(tmp_path):

@@ -100,11 +100,31 @@ def attendre(condition, delai_max: float) -> bool:
 
 
 def _options_lancement(mode: str) -> dict:
-    if sys.platform != "win32":
-        return {"start_new_session": True}
-    if mode == "console":
+    """Options de lancement du dashboard relance.
+
+    Detail qui a coute une CI rouge : sans console (POSIX, ou DETACHED_PROCESS),
+    le processus lance HERITE des tuyaux standard du relanceur. Il les tient alors
+    ouverts aussi longtemps qu'il vit, c'est-a-dire indefiniment pour un dashboard :
+    quiconque lit la sortie du relanceur reste bloque, meme apres sa mort, parce que
+    le tuyau n'atteint jamais EOF. On coupe donc net l'heritage sur DEVNULL — de
+    toute facon, sans console, cette sortie n'irait nulle part.
+    Le mode console est la seule exception : Windows lui alloue une vraie console,
+    et c'est precisement pour y VOIR les logs qu'on le prefere.
+    """
+    if sys.platform == "win32" and mode == "console":
         return {"creationflags": subprocess.CREATE_NEW_CONSOLE}
-    return {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+
+    sans_heritage = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if sys.platform != "win32":
+        return {"start_new_session": True, **sans_heritage}
+    return {
+        "creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        **sans_heritage,
+    }
 
 
 def tenter_lancement(commande, repertoire, port, mode) -> bool:

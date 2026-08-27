@@ -72,12 +72,14 @@ alfred_response.mp3
 *.swp
 *.swo
 
-# Tests et debug (scripts ad-hoc à la racine : test_bot, check_stt, etc.)
-test_*.py
-check_*.py
-*_test.py
-# … mais on SUIT les vrais tests unitaires versionnés sous tests/
-!tests/test_*.py
+# Tests et debug : scripts ad-hoc DE LA RACINE (test_bot, check_stt, etc.).
+# Le « / » initial est vital. Sans lui, la règle s'applique à TOUS les niveaux :
+# elle a avalé shared/test_mode.py — le module qui empêche les bots de publier en
+# public — pendant tout le commit 7278ca3, sans que rien ne le signale (les bots
+# l'importent sous try/except, donc un clone frais perdait le garde-fou EN SILENCE).
+/test_*.py
+/check_*.py
+/*_test.py
 debug/
 diag_results.txt
 found_models.txt
