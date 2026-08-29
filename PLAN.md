@@ -1,316 +1,624 @@
-# PLAN — Indépendance stricte : chaque bot embarque son noyau
+# PLAN — Remettre en marche le suivi des appels API
 
-## Décision
+> **✅ EXÉCUTÉ le 2026-08-29** — phases A → I dans l'arbre, 432 tests verts, vendoring
+> stable, aucune dérive. Vérifié fichier par fichier, pas sur annonce.
+> Cinq défauts relevés à la relecture et corrigés au passage :
+> 1. traces fantômes — une branche qui ne tourne pas (pas de clé Gemini, client absent)
+>    écrivait un échec sans cause → `raison = "pas_de_cle"` / `"non_tentee"` ;
+> 2. `reinitialiser_pour_tests()` posait sa pilule **avant** de vider la file → sur file
+>    pleine (cas H.5) `put_nowait` levait `Full` et l'écrivain ne s'arrêtait jamais ;
+> 3. le helper d'attente des tests guettait `is_alive()` d'un thread démon **toujours
+>    vivant** → 25 s de sable, et aucun drainage réellement vérifié ;
+> 4. le test H.3 vérifiait que le label brut ressort brut — l'inverse de D1, et il
+>    passait déjà avant le chantier. Refait sur la vraie cascade (+ 2 tests) ;
+> 5. `get_keys_status` du dashboard avalait son erreur sans un mot (R6), et
+>    `api_manager.py` gardait `sqlite3`/`Path`/`deque` morts (phases D et E).
+> H.7 était en écart : une seconde `_FauxConnexion` avait été écrite au lieu de
+> réutiliser celle de `test_base_partagee`. Corrigé par sous-classe.
+>
+> **Reste : le déploiement et la vérification réelle (§ PHASE I) — c'est elle le critère.**
 
-**Chaque bot doit tourner sans `shared/`.** Le noyau technique est copié dans chaque
-dossier bot ; `shared/` ne garde que ce qui est *réellement* partagé (état commun) ou
-*réellement* optionnel (features).
-
-Constat de départ (mesuré 2026-08-25) : **les 6 bots échouent à l'import** dès que
-`shared/` est absent.
-
-```
-ECHEC bot_maiq        -> bot_maiq.py:22   from shared.response_memory import ResponseMemory
-ECHEC bot_sheogorath  -> bot_sheogorath.py:23  from shared.response_memory import ResponseMemory
-ECHEC bot_alfred      -> bot_alfred.py:44   from shared.response_memory import ResponseMemory
-ECHEC bot_malena      -> bot_malena.py:22   from shared.smart_router import classify_request, ...
-ECHEC bot_johnny      -> bot_johnny.py:20   from shared.response_memory import ResponseMemory, ...
-ECHEC bot_sugar       -> bot_sugar.py:21    from shared.response_memory import ResponseMemory, ...
-```
-
-Point acquis à ne pas perdre : **aucun bot n'importe un autre bot** (vérifié, 0 sur 6).
-
----
-
-## ⚠️ Le piège à comprendre avant de commencer
-
-Le noyau **ne peut pas** être retiré de `shared/` : la pile Twitch de `shared/` en dépend.
-
-```
-shared/twitch/llm.py, dispatch.py, events.py, voice.py, daily_profile.py
-shared/twitch_announcer.py, twitch_eventsub.py
-shared/discord_status.py, discord_profile.py
-        └── importent shared.smart_router et shared.llm_cascade
-```
-
-Donc après vendoring il y aura **7 copies** de `smart_router` : une par bot + celle de
-`shared/`. Dans un même processus, le bot routera avec `core/smart_router.py` et son
-côté Twitch avec `shared/smart_router.py`.
-
-**C'est acceptable à une seule condition : les copies doivent être strictement
-identiques.** Si elles le sont, savoir laquelle est chargée n'a aucune importance.
-C'est le rôle de la sonde de dérive (phase 4) — elle n'est pas un bonus, c'est ce qui
-rend cette architecture tenable. Sans elle, on fabrique deux routeurs divergents dans
-le même processus.
+> **Destinataire : Antigravity.** Plan d'exécution.
+> **État au 2026-08-29 : seule la phase A est dans l'arbre, et elle est fausse.**
+> Antigravity a annoncé « plan exécuté » le 2026-08-27 ; vérification faite, le dernier
+> commit est toujours `c1b0696` et les phases B→I n'existent pas. Commencer par **A-bis**
+> (correctif du fichier déjà écrit), puis B→I. **Vérifier l'arbre, pas l'annonce.**
+> **Base de référence : commit `c1b0696`.** Tous les numéros de ligne ci-dessous sont
+> pris sur cet état de l'arbre. Chaque ancre est doublée d'un extrait « AVANT » unique :
+> **en cas de désaccord entre le numéro et l'extrait, c'est l'extrait qui fait foi.**
 
 ---
 
-## Périmètre : ce qui est copié, ce qui reste partagé
+## 1. Constat (mesuré le 2026-08-27 sur `data/api_usage.db`)
 
-### À VENDORISER — le noyau, 10 modules, 1 282 lignes
+Le point de départ était « durcir la deuxième base partagée comme `a6e8327` a durci la
+première ». En ouvrant la base, le problème s'est révélé plus grand que ses réglages
+SQLite : **elle n'enregistre presque rien, et ce qu'elle enregistre est faux.**
 
-Fermeture transitive calculée (aucun autre module n'est tiré) :
+```
+api_calls               : 121 lignes, depuis toujours
+dernier appel d'un bot NOMME : 2026-06-13  (johnny)
+noms presents           : alfred, johnny, maiq, onizuka, za'ji, unknown
+                                             └──────┴── renommes depuis des mois
+75 lignes sur 121 sont « unknown », toutes en success=0, derniere le 2026-08-23
+api_key_status : gemini -> total_calls=0, total_errors=69
+```
 
-| module | lignes | dépend de |
+Quatre causes, chacune vérifiée dans le code :
+
+| # | Cause | Preuve |
 |---|---|---|
-| `smart_router.py` | 377 | `models` |
-| `api_manager.py` | 271 | — |
-| `llm_cascade.py` | 163 | `media_handler`, `safe_client`, `smart_router` |
-| `media_handler.py` | 143 | `models` |
-| `bot_logger.py` | 124 | — |
-| `secure_env.py` | 67 | — |
-| `graceful_shutdown.py` | 52 | — |
-| `safe_client.py` | 50 | — |
-| `response_memory.py` | 28 | — |
-| `models.py` | 7 | — |
+| 1 | `track_call` n'est appelé **de nulle part** sur le chemin nominal | son unique appelant est `report_error`, `shared/api_manager.py:206` |
+| 2 | `report_error` n'est appelé que pour **`"gemini"`** | `shared/llm_cascade.py:207-209`, idem dans les 6 bots |
+| 3 | `bot_name="unknown"` est **écrit en dur** | `shared/api_manager.py:207` |
+| 4 | `track_tokens` n'a **aucun appelant** | `grep -rn "track_tokens(" --include="*.py" .` ne rend que la définition |
 
-Destination : **`<Bot>/core/`** (pas en vrac dans le dossier du bot — on doit voir d'un
-coup d'œil ce qui est vendorisé).
+Conséquence : la base ne peut contenir que des **échecs Gemini anonymes**. Le panneau
+`/api/api-usage` du dashboard affiche 0 appel sur 24 h en permanence, et c'est structurel.
 
-### RESTE DANS `shared/` — état partagé, import gardé + repli réel
-
-| module | lignes | pourquoi | repli si absent |
-|---|---|---|---|
-| `shared_database.py` | 1163 | **État commun** entre bots (réputation, anniversaires, énigmes). Le dupliquer ne rendrait pas le bot indépendant, ça casserait sa raison d'être. | Le bot tourne sans réputation ni classement inter-bots. |
-| `server_events.py` | 246 | Comportement à l'échelle du serveur (accueil, départ, anniversaires). | Pas de message d'accueil/départ. |
-
-Ces deux-là doivent passer en `try/except ImportError` **avec un vrai repli**, pas un
-no-op muet : si l'appelant ne teste pas le drapeau, on veut un comportement défini.
-
-### NE PAS TOUCHER — déjà gardés, déjà optionnels
-
-`memes_fr`, `games/`, `twitch/`, `twitch_chat`, `bot_features`, `discord_status`,
-`discord_profile`, `slash_commands`, `healthcheck`, `ensure_writable`, `stream_listener`.
-Ils sont déjà en `try/except` avec dégradation propre. Les laisser tels quels.
+**Ce que ça coûte** : c'est exactement l'information qui manquait pendant
+`d0dda1c` (cascade par persona). Il a fallu écrire `tools/sonde_modeles_persona.py` et
+sonder à la main ce que cette base était censée donner en continu. La question est déjà
+revenue trois fois (`3b42e88`, `d0dda1c`, `9af50cd`).
 
 ---
 
-## Phase 1 — Script de vendoring
+## 2. Règles d'exécution — à lire avant la première ligne de code
 
-Créer **`tools/vendor_core.py`** (versionné) :
+**R1. `api_manager.py` et `llm_cascade.py` sont vendorisés en 6 copies.** On modifie
+**uniquement `shared/`**, puis on lance `python tools/vendor_core.py`. Ne jamais éditer
+un fichier sous `<Bot>/core/` : il porte un en-tête « FICHIER GENERE — NE PAS EDITER ».
 
-- source : `shared/<module>.py` pour les 10 modules du noyau ;
-- destination : `<Bot>/core/<module>.py` pour les 6 bots ;
-- réécrit les imports internes : `from shared.models import X` → `from core.models import X`,
-  `from shared.smart_router import Y` → `from core.smart_router import Y` (concerne
-  `llm_cascade`, `media_handler`, `smart_router`) ;
-- ajoute en tête de chaque fichier copié un bandeau :
+**R2. La liste des modules vendorisés est DUPLIQUÉE dans deux fichiers.**
+`tools/vendor_core.py:6` et `tools/sonde_core_drift.py:6`. Un module ajouté à l'une et
+pas à l'autre est copié **sans jamais être surveillé** — la sonde de dérive l'ignore en
+silence. **Les deux listes doivent rester identiques.**
 
-```python
-# ⚠️ FICHIER GENERE — NE PAS EDITER ICI.
-# Source : shared/<module>.py — modifier la source puis relancer :
-#     python tools/vendor_core.py
-# La sonde tools/sonde_core_drift.py echoue si cette copie diverge.
-```
+**R3. Le réécrivage d'imports ne couvre que les modules listés.** `vendor_core.py:51-52`
+ne réécrit `from shared.X` en `from core.X` que pour les `X` de `MODULES`. Un nouveau
+module non listé laisserait `from shared.api_tracking` dans les copies → **les bots
+perdent leur indépendance** (règle `bots-independants`, décision `1daec85`).
+⚠️ **Et la réécriture est ancrée en début de ligne** (`re.MULTILINE`, motif `^from shared\.`).
+Un `from shared.api_tracking import tracer_appel` écrit **à l'intérieur d'une fonction**
+(donc indenté) n'est **pas** réécrit : il resterait `shared.` dans les 6 copies. Tous les
+imports du nouveau module doivent être **en tête de fichier, colonne 0**.
+⚠️ Corollaire du gotcha `import asyncio` local (`UnboundLocalError`) : un import posé dans
+un corps de fonction rend le nom local à **toute** la fonction. Colonne 0, sans exception.
 
-- crée `<Bot>/core/__init__.py` ;
-- idempotent : relancé deux fois, il ne change rien.
+**R4. La sonde d'appels bloquants ne verra PAS une écriture SQLite.**
+`tools/sonde_blocking_calls.py:26` ne surveille que `generate_content`,
+`chat.completions.create`, `chat.complete`. Une écriture sqlite synchrone dans une
+coroutine gèlerait la boucle **sans qu'aucune sonde ne le dise**. C'est pour ça que la
+phase A impose une écriture hors boucle par construction.
 
-**`shared/` reste la source de vérité pour la maintenance.** On corrige dans `shared/`,
-on relance le script, les 6 copies suivent. C'est ce qui évite le « propager 6 fois à la
-main » qui a produit le bug des 31 appels bloquants.
+**R5. Il y a DEUX cascades.** `shared/llm_cascade.py:generate_response` sert cinq bots ;
+**Malena a sa propre cascade inline** : `MalenaBot/bot_malena.py:205`
+`generate_response_hybrid`. C'est le piège de `f1fbf72`, où corriger `shared/` n'avait
+pas couvert Malena. Phase C n'est pas optionnelle.
 
-## Phase 2 — Recâbler les 6 bots
-
-Dans chaque `bot_*.py` **et** dans les modules locaux du bot (`sheo_llm.py`,
-`*_memory.py`, `*_data.py`… — l'audit doit balayer tout le dossier) :
-
-```python
-# avant
-from shared.smart_router import classify_request, RequestType, download_media, ...
-from shared.response_memory import ResponseMemory, merge_recent_responses
-from shared.llm_cascade import generate_response
-
-# après
-from core.smart_router import classify_request, RequestType, download_media, ...
-from core.response_memory import ResponseMemory, merge_recent_responses
-from core.llm_cascade import generate_response
-```
-
-Import **dur**, sans `try/except` : le module est dans le dossier du bot, il est toujours
-là. Un `except ImportError` ici ne masquerait qu'une erreur d'installation.
-
-Pour `shared_database` et `server_events`, à l'inverse :
-
-```python
-try:
-    from shared.shared_database import get_or_create_user, add_reputation, log_interaction
-    DB_PARTAGEE = True
-except ImportError:
-    DB_PARTAGEE = False
-    logger.warning("[CORE] shared/ absent : reputation et classement inter-bots desactives.")
-```
-
-Et **chaque appel** doit être gardé par le drapeau. Un drapeau posé mais jamais testé est
-pire que pas de drapeau : c'est le mode de panne « bot vivant mais inerte » déjà vu deux
-fois (M'aiq muet sur `PermissionError`, puis sur `UnboundLocalError`).
-
-`sys.path` : le bot tourne avec `working_dir=/app/bot`, donc `core/` est déjà importable.
-Rien à ajouter au `docker-compose.yml`.
-
-## Phase 3 — Le test qui rend la règle vérifiable
-
-Créer **`tests/test_independance_bots.py`**.
-
-Deux assertions, la seconde est celle qui compte :
-
-1. **Aucun import croisé entre bots** — statique (AST), rapide. Vaut 0 aujourd'hui, doit
-   le rester.
-2. **Chaque bot s'importe avec `shared/` bloqué** — en **sous-processus**, un par bot :
-   importer six bots dans le même interpréteur ferait collisionner leurs états globaux
-   (six instances `discord.Bot`, mêmes noms de modules locaux).
-
-Le blocage se fait par un `meta_path` finder qui lève `ImportError` sur `shared` et
-`shared.*`. Prototype fonctionnel déjà validé pendant l'audit — il produit exactement la
-sortie `ECHEC …` citée en tête de ce plan.
-
-Distinguer trois issues, sinon on conclut à tort :
-- `ImportError` sur `shared*` → **échec du test** (dépendance dure résiduelle) ;
-- autre exception (token absent, fichier manquant) → **skip explicite** avec le motif,
-  ce n'est pas le sujet ;
-- import réussi → succès.
-
-Environnement : les bots lisent leur `.env` au chargement. Le test doit fournir des
-valeurs factices (`DISCORD_TOKEN`, clés API) pour ne pas dépendre des secrets réels.
-
-## Phase 4 — Sonde de dérive (non négociable)
-
-Créer **`tools/sonde_core_drift.py`** :
-
-- compare `<Bot>/core/<module>.py` aux 6 bots **et** à `shared/<module>.py`, modulo la
-  réécriture d'imports `shared.` → `core.` et le bandeau généré ;
-- signale toute divergence, avec le bot et le module ;
-- sort en **code 1** si dérive.
-
-C'est la contrepartie du piège des 7 copies. Une divergence non détectée = deux routeurs
-différents dans le même processus.
-
-Autotest obligatoire : modifier volontairement une copie doit faire échouer la sonde. Une
-sonde qui ne dit jamais « non » ne vaut rien.
-
-## Phase 5 — CI
-
-Créer **`.github/workflows/ci.yml`** — le dépôt n'a aucun `.github` aujourd'hui.
-
-```yaml
-- python -m pytest -q
-- python tools/sonde_blocking_calls.py
-- python tools/sonde_core_drift.py
-```
-
-Sans CI, les phases 3 et 4 ne tourneront que si quelqu'un y pense — et les 31 appels
-bloquants ont montré que personne n'y pense.
+**R6. Ne jamais faire échouer un appel LLM à cause de la trace.** Toute erreur
+d'enregistrement est avalée — mais **journalisée**, jamais `except: pass`.
 
 ---
 
-## Vérification
+## 3. Décisions déjà prises (ne pas les rouvrir)
 
-```bash
-python tools/vendor_core.py            # idempotent : 2e passage = 0 changement
-python tools/sonde_core_drift.py       # attendu : 0 derive, exit 0
-python tools/sonde_blocking_calls.py   # attendu : TOTAL 0, exit 0
-python -m pytest -q                    # 252 tests + les nouveaux
-python -m py_compile */bot_*.py */core/*.py
-```
+**D1 — Le nom du bot vient de `bot_label`, pas d'une nouvelle configuration.**
+`shared/models.py:105 bot_id_depuis_label()` normalise déjà « Johnny Silverhand » →
+`"johnny"`, « M'aiq le Menteur » → `"maiq"`. Cette fonction est **déjà** utilisée pour
+choisir la cascade (`models.py:122`). `generate_response` reçoit **déjà** `bot_label`
+(`llm_cascade.py:61`). Le nom est donc disponible au point de passage, gratuitement, et
+il tombera sur les **mêmes clés** que `CASCADES_PERSONA` : `sheo`, `sugar`, `maiq`,
+`alfred`, `johnny`, `malena`. Aucun `BOT_NAME` à ajouter au `docker-compose.yml` (il n'y
+en a pas aujourd'hui — vérifié).
+⚠️ `bot_id_depuis_label` rend **`None`** si aucun marqueur ne correspond (le défaut de
+`generate_response` est `bot_label="Bot"`). Repli : garder le **label brut** en minuscules.
+Ne jamais réécrire un nom inconnu en `"unknown"` — c'est ce qui a rendu la base illisible.
 
-Puis, **bot par bot** (l'indépendance le permet, c'est même tout l'intérêt) :
+**D2 — `TRUNCATE` plutôt que `WAL` pour `api_usage.db`.**
+Le dashboard lit cette base en **lecture seule** (`api_tracker.py:14`, URI `?mode=ro`).
+Un lecteur read-only sur une base WAL exige que le fichier `-shm` existe **et soit
+accessible en écriture** — précisément ce que le montage bind Docker/Windows ne sert pas
+de façon fiable (`gotcha-sqlite-wal-bind-mount`, `a6e8327`). Ça marche aujourd'hui sur
+l'hôte (vérifié le 2026-08-27 : `journal_mode=wal`, lecteur `mode=ro` OK), mais le jour
+où ça lâche, le lecteur rend `None` en silence et on ne distingue plus « aucun appel » de
+« base injoignable ». TRUNCATE n'a besoin d'aucune mémoire partagée.
+⚠️ **La base existante est en WAL** : le mode est une propriété **persistante du
+fichier**. Poser TRUNCATE au démarrage suffit à la convertir, mais le vérifier
+explicitement en phase I (étape 4).
 
-```bash
-docker compose up -d --build maiq
-docker logs bot-maiq --since 5m | grep -iE "FAIL|Traceback|CORE"
-```
+**D3 — On supprime la machinerie TPM au lieu de la câbler.**
+On ne durcit pas une façade. Un compteur que personne n'incrémente donne une fausse
+assurance de quota. Les quotas sont déjà tenus par la quarantaine de clés de
+`report_error`, qui, elle, fonctionne.
 
-Test live : envoyer 2-3 messages d'affilée, vérifier une réponse et l'absence de
-`heartbeat blocked`. **Ne pas conclure sur « ça compile et les tests passent »** : la
-régression `UnboundLocalError` du patch précédent était invisible à ces deux contrôles.
-
-Contrôle spécifique du repli : renommer temporairement `shared/shared_database.py` et
-vérifier que le bot démarre et répond, sans réputation, **sans exception**.
-
-## Ordre recommandé
-
-Phase 1 → 4 → 2 → 3 → 5.
-
-La sonde de dérive (4) **avant** le recâblage (2) : dès la première copie posée, elle
-garde le filet tendu. Recâbler d'abord et sonder ensuite laisse une fenêtre où la
-divergence passe inaperçue.
-
-Un seul bot en pilote (**Malena**, 757 lignes, le plus petit) sur les phases 1-2 avant
-de dérouler les cinq autres.
-
-## Ce que ce plan coûte, en clair
-
-- **~7 700 lignes dupliquées** dans git (1 282 × 6).
-- `shared/models.py` — désigné « source unique » lors de l'audit des modèles morts
-  (2026-08-24) — existera en **7 exemplaires**. Chaque correction d'ID modèle devra
-  repasser par `vendor_core.py`, sinon les bots divergent sur les modèles appelés.
-- Toute correction de noyau = `shared/` puis `python tools/vendor_core.py` puis commit
-  des 6 copies. Oublier le script = dérive silencieuse, rattrapée par la sonde
-  seulement si la CI tourne.
-
-## Ce que ce plan ne fait PAS
-
-- Il ne duplique pas `shared_database` (état commun) ni `server_events`.
-- Il ne touche pas aux imports déjà gardés (features optionnelles).
-- Il ne corrige pas `max_output_tokens` absent chez Sheo/Alfred/M'aiq.
-- Il n'ajoute aucun test unitaire sur le contenu de `on_message`.
+**D4 — On ne touche pas à la quarantaine de clés.**
+`report_error` / `is_api_available` / `get_key` : cette logique sert en vrai. On lui
+retire seulement son `track_call` parasite (phase D).
 
 ---
 
-## ÉTAT AU 2026-08-26 — phase 2 terminée, plan exécuté à 100 % (non commité)
+## PHASE A — Un écrivain unique, hors boucle asyncio
 
-Les 3 groupes qui restaient sont faits :
+**Nouveau fichier : `shared/api_tracking.py`.**
 
-1. **Malena + Sheo passent le test d'indépendance.**
-   Malena : `shared_database` + `server_events` regroupés dans un seul `try/except`
-   avec drapeau `DATABASE_AVAILABLE` (idiome des 5 autres bots) + warning au démarrage ;
-   **les 7 appels sont gardés** (`is_ignored_channel` ×2, `get_or_create_user`/
-   `log_interaction`, `check_and_send_birthdays` + son `.start()`, `handle_member_join`,
-   `handle_member_remove`).
-   Sheo : `from shared.shared_database import add_reputation` supprimé des **deux**
-   branches du `try/except` de chemins locaux et rapatrié dans le bloc gardé
-   `DATABASE_AVAILABLE` (le seul appel, `tool_mod_reputation`, était déjà gardé).
+Un module qui expose **une seule fonction publique** :
 
-2. **4 imports noyau en fonction** passés sur `core.` : `Sheogorath:361, 741, 742`,
-   `MalenaBot:134`.
+```python
+tracer_appel(bot, api, modele, index_cle, succes, code_erreur=None,
+             latence_ms=None, raison=None) -> None
+```
 
-3. **14 imports qui contournaient `core/`** passés en import **dur** `from core.X` :
-   `models` (Alfred, M'aiq, Sheo — les replis qui réécrivaient les IDs modèles en dur
-   sont supprimés), `bot_logger` (Alfred, M'aiq, Sheo, Johnny, Sugar), `secure_env`
-   (les 6). Vérifié en condition de prod (`shared/` présent) : c'est bien
-   `MaiqBot/core/models.py` et `MaiqBot/core/bot_logger.py` qui sont chargés.
+### Conception imposée
 
-### Vérifications passées
+- **Non bloquante par construction** : `tracer_appel` **empile dans une
+  `queue.Queue`** et rend la main immédiatement. Un **unique thread démon** dépile et
+  écrit. Trois problèmes réglés d'un coup :
+  1. la boucle asyncio n'est jamais bloquée (R4) — pas besoin d'un `to_thread` chez
+     l'appelant, donc rien à ajouter dans la cascade ;
+  2. **un seul thread possède la connexion** → le `check_same_thread=False` sans verrou
+     de `api_manager.py:45` disparaît de lui-même ;
+  3. la file borne l'impact : `Queue(maxsize=1000)`, et **`put_nowait` avec `except
+     queue.Full`** → on perd une trace plutôt que de retarder un bot.
+- **File pleine** : journaliser **une seule fois** (drapeau de module), pas à chaque
+  perte. Motif déjà en place : `shared/shared_database.py:32 _JOURNAL_POSE`.
+- **Démarrage paresseux** : le thread démarre à la première trace, pas à l'import (un
+  import ne doit rien lancer).
+- Thread **démon** : pas de `setup_graceful_shutdown` à modifier. Perdre les quelques
+  traces en file à l'arrêt est acceptable ; bloquer un arrêt Docker ne l'est pas.
 
-| contrôle | résultat |
+### La connexion (les 4 défauts SQLite, ici et nulle part ailleurs)
+
+Reprendre le modèle de `shared/shared_database.py:65 get_connection()` :
+
+| défaut actuel (`api_manager.py`) | correction |
 |---|---|
-| `python -m py_compile */bot_*.py */core/*.py` | OK |
-| `python tools/vendor_core.py` ×2 | idempotent, 0 changement |
-| `python tools/sonde_core_drift.py` | 0 dérive, exit 0 — **autotesté** (dérive injectée → détectée + exit 1 → restaurée) |
-| `python tools/sonde_blocking_calls.py` | TOTAL 0, exit 0 |
-| `python -m pytest -q` | **259 passed**, 0 failed (46 subtests) — était 257/2 |
-| `tests/test_independance_bots.py` | 7/7 **passed**, aucun `skip` |
-| import des 6 bots **avec** `shared/` (condition de prod) | 6/6 OK |
-| import Malena **sans** `shared/` | `DATABASE_AVAILABLE = False` + warning, aucune exception |
+| `sqlite3.connect(db_path, check_same_thread=False)` sans verrou (l.45) | connexion possédée par le thread écrivain, `check_same_thread` inutile |
+| pas de `timeout=` → 5 s (l.45) | `timeout=20` (busy_timeout 20 s, comme l'autre base) |
+| aucun `journal_mode` | `PRAGMA journal_mode=TRUNCATE` (D2), en **vérifiant la valeur rendue** — SQLite peut rendre un autre mode **sans lever** |
+| `except Exception: pass` (l.96) | `logger.warning`, **une seule fois** |
 
-### Commité, poussé, déployé
+Poser aussi `PRAGMA synchronous=NORMAL` dans **son propre `try`** — c'est le défaut
+corrigé par `a6e8327` sur l'autre base : mis dans le même `try` que le journal, il
+n'était jamais posé dès que le journal échouait.
 
-`1daec85` poussé sur `main` (78 fichiers, +8 656 / -412).
-`docker compose restart` des 6 bots (le compose bind-monte `./<Bot>:/app/bot:ro`,
-donc `--build` inutile pour un changement Python).
+### Schéma
 
-Logs après redémarrage : **6/6 connectés à Discord**, 0 `Traceback`, 0 `ImportError`,
-0 `ModuleNotFoundError`, 0 `heartbeat blocked`. Johnny/Sheo/Sugar reconnectés au chat
-Twitch. Vérifié dans le conteneur : `core.models`, `core.bot_logger` et `core.smart_router`
-résolvent bien vers `/app/bot/core/*.py`.
+Réutiliser les tables existantes `api_calls` et `api_key_status`
+(`api_manager.py:46-73`) : ne pas les recréer ailleurs, **déplacer** les `CREATE TABLE
+IF NOT EXISTS` dans le nouveau module et les retirer de `_init_usage_db`.
+Ajouter une colonne `raison TEXT` à `api_calls` via `ALTER TABLE` gardé
+(`try/except sqlite3.OperationalError`) — la base existante a 121 lignes qu'on ne
+détruit pas.
 
-### Reste à faire
-- Déploiement `docker compose up -d --build` puis **test live** : 2-3 messages d'affilée
-  par bot, vérifier réponse + absence de `heartbeat blocked`.
-  ⚠️ Ne pas conclure sur « ça compile et les tests passent » — la régression
-  `UnboundLocalError` était invisible à ces deux contrôles.
-- Contrôle du repli en conditions réelles : renommer temporairement
-  `shared/shared_database.py` et vérifier qu'un bot démarre et répond sans réputation.
-  (Optionnel : `shared/` est bind-monté en lecture seule sur les 6 conteneurs à la fois,
-  donc le renommer touche tout le monde en même temps. Le test d'indépendance couvre
-  déjà le cas à l'import ; ce contrôle-ci ne vaut que pour le comportement à l'exécution.)
+### ⚠️ Vendoring
+
+`api_tracking.py` doit être ajouté aux **deux** listes `MODULES` (R2) :
+`tools/vendor_core.py:6` et `tools/sonde_core_drift.py:6`. Sans ça, R3 casse
+l'indépendance des bots. ✅ **Déjà fait** (les deux listes portent `api_tracking.py`,
+en 17e position — vérifié le 2026-08-29). Rien à refaire ici.
+
+---
+
+## PHASE A-bis — Corriger `shared/api_tracking.py`, déjà écrit mais faux
+
+Le fichier existe dans l'arbre (non suivi par git, 164 lignes). Sa structure est la
+bonne — file + thread démon unique, TRUNCATE vérifié sur la valeur rendue, `synchronous`
+dans son propre `try`, `ALTER TABLE` gardé : tout ça est conforme et **ne doit pas être
+réécrit**. Mais quatre défauts le rendent muet exactement dans le cas où il devrait parler,
+et **font échouer trois des tests de la phase H** tels qu'ils sont spécifiés.
+
+### A-bis.1 — `_get_connection()` est hors du `try` intérieur : le thread meurt en silence
+
+```
+AVANT (l. 75-82)
+def _writer_loop():
+    global _JOURNAL_POSE
+    conn = None
+    try:
+        conn = _get_connection()
+        while True:
+            try:
+                task = _queue.get()
+```
+
+Le `try` extérieur n'a **que** `finally`, pas d'`except`. Si la base est illisible
+(dossier en lecture seule, disque plein, `-shm` refusé par le bind mount),
+`_get_connection()` lève, l'exception traverse `_writer_loop` et part dans
+`threading.excepthook` → **stderr, pas `logger`**. Trois conséquences :
+
+1. **R6 n'est pas tenue** : aucune trace journalisée. Le test **H.4** (`caplog`) ne verra
+   rien et échouera.
+2. `_ensure_thread()` teste `is_alive()` : le thread étant mort, il en **relance un
+   neuf à chaque trace**, condamné de la même façon. Sous charge → un thread par appel LLM.
+3. La perte est totale et silencieuse, ce qui est le bug d'origine du chantier.
+
+**Correction imposée** : ouvrir la connexion **dans** une zone protégée, journaliser
+**une fois** au niveau `warning`, puis **abandonner définitivement** — poser un drapeau
+de module (`_ECRIVAIN_HS = True`) que `_ensure_thread()` consulte **avant** de relancer.
+Un écrivain qui ne peut pas ouvrir sa base ne s'améliorera pas au 500e essai ; le
+contrat est « on perd des traces, on ne gêne jamais un bot » (R6). `tracer_appel` devient
+alors un `return` immédiat, pas une relance.
+
+### A-bis.2 — Les erreurs d'écriture sont en `logger.debug` : muettes en production
+
+```
+AVANT (l. 113-114)
+            except Exception as e:
+                logger.debug(f"[API TRACKING] Erreur d'écriture SQLite : {e}")
+```
+
+`debug` n'est pas émis avec la configuration des bots. C'est le `except: pass` de
+`api_manager.py:96` sous un autre nom — or c'est précisément ce que R6 interdit.
+**Correction** : `logger.warning`, **une seule fois**, sur le modèle
+`shared/shared_database.py:32 _JOURNAL_POSE`.
+
+⚠️ **Il faut DEUX drapeaux distincts, pas un.** Aujourd'hui `_JOURNAL_POSE` sert déjà à
+la file pleine (l. 144 et 162). Le réutiliser pour les erreurs d'écriture ferait qu'une
+file pleine **bâillonne** le premier échec d'écriture, et inversement : deux pannes de
+nature différente, dont une seule serait jamais vue. Trois drapeaux nommés :
+`_JOURNAL_FILE_PLEINE`, `_JOURNAL_ECRITURE`, `_JOURNAL_CONNEXION`.
+Au passage, le bloc `except queue.Full` est écrit deux fois à l'identique
+(`tracer_appel` l. 141-146, `tracer_etat_cle` l. 159-164) : le factoriser en un
+`_empiler(tache)` privé — deux copies dérivent, c'est la leçon de `f1fbf72`.
+
+### A-bis.3 — `task_done()` est sauté sur le chemin d'erreur → la phase H se bloque
+
+```
+AVANT (l. 111-114)
+                conn.commit()
+                _queue.task_done()
+            except Exception as e:
+```
+
+`task_done()` est la **dernière** instruction du `try` : dès qu'un `INSERT` échoue, il est
+sauté. Le compteur interne de la `Queue` ne redescend jamais → **`_queue.join()` bloque
+pour toujours**. Ce n'est pas cosmétique : `join()` est la seule façon propre pour le test
+**H.6** (« deux threads qui tracent ne perdent aucune ligne ») d'attendre le drainage sans
+`sleep` arbitraire. Le pill d'arrêt (l. 83-84, `break`) le saute aussi.
+**Correction** : `task_done()` dans un `finally` de l'itération, appelé sur **tous** les
+chemins dès qu'un `get()` a rendu quelque chose.
+
+### A-bis.4 — L'état de module n'est pas réinitialisable : la phase H ne peut pas s'écrire
+
+`_queue`, `_writer_thread` et les drapeaux sont construits à l'import. Les tests H.4, H.5
+et H.7 ont besoin de repartir propre (file vide, drapeaux baissés, thread arrêté, nouveau
+`DATA_DIR`) — sinon un test qui remplit la file (H.5) rend muets tous les suivants, et
+l'ordre de collecte de pytest décide du résultat.
+
+**Ajouter une fonction publique `reinitialiser_pour_tests()`** : arrête l'écrivain
+(pill), vide la file, remet les trois drapeaux à `False` et `_ECRIVAIN_HS` à `False`.
+Elle est appelée **uniquement** par `tests/test_suivi_api.py` (fixture `autouse`), jamais
+par un bot. C'est le seul ajout d'API autorisé : le module garde ses **deux** fonctions
+métier, `tracer_appel` et `tracer_etat_cle`.
+
+### Ce qu'il ne faut PAS changer en passant
+
+- Le schéma des tables (l. 36-70) est conforme à la phase A : il réutilise les tables
+  existantes et l'`ALTER TABLE` gardé. **Ne pas détruire les 121 lignes existantes.**
+- `PRAGMA journal_mode=TRUNCATE` avec vérification de la valeur rendue (l. 24-26) est
+  exactement ce que D2 demande. Ne pas le « simplifier ».
+- `synchronous` est bien dans son propre `try` (l. 30-33) — c'est le défaut corrigé par
+  `a6e8327`, verrouillé par le test H.8. Ne pas le refusionner.
+- `check_same_thread` reste absent : un seul thread possède la connexion. C'est le point.
+
+---
+
+## PHASE B — Brancher au point de passage unique
+
+**Fichier : `shared/llm_cascade.py`, fonction `generate_response`.**
+
+Le point de passage est **le corps de la boucle** `for client_type, model_name in
+cascade:` (l. 86), **pas** les ~10 sites de `break`/`continue`.
+
+### Mécanique imposée : `try/finally` par itération
+
+Un `finally` s'exécute sur `break`, sur `continue` **et** sur exception : une trace par
+tentative de branche, sans toucher aux sorties.
+
+⚠️ **`time` n'est pas importé dans `shared/llm_cascade.py`** (vérifié : imports l. 5-13,
+`asyncio`, `base64`, `logging` seulement). Ajouter `import time` **en tête de fichier,
+colonne 0** — jamais dans le corps de `generate_response` (R3, gotcha `UnboundLocalError`).
+
+```
+AVANT (l. 86-87)
+    for client_type, model_name in cascade:
+        try:
+
+APRES
+    for client_type, model_name in cascade:
+        _depart = time.perf_counter()
+        _code_erreur = None
+        _raison = None
+        try:
+          try:
+```
+…et le `finally` correspondant se referme après le `except Exception as e:` existant
+(l. 205-210), en appelant `tracer_appel(...)`.
+
+**Le succès se déduit de `response_text`, sans toucher aux branches.** Vérifié : toute
+sortie qui laisse `response_text` non vide fait un `break` ; toutes les branches d'échec
+le remettent à `None` avant de continuer (l. 120, 151, 171, 195, 200). Donc
+`succes = bool(response_text)` dans le `finally` est fidèle.
+⚠️ `response_text` est une variable de **fonction**, pas d'itération (initialisée l. 79).
+Le raisonnement ci-dessus tient parce que toute branche d'échec la réinitialise — **ne
+pas casser cette propriété** en ajoutant une branche qui l'oublierait.
+
+**La raison de l'échec**, elle, demande 6 affectations d'une ligne, aux endroits qui
+émettent déjà un `logger.warning` :
+
+| ligne | contexte | poser |
+|---|---|---|
+| 119-120 | Gemini réponse vide | `_raison = "vide"` |
+| 150-151 | Mistral réponse vide | `_raison = "vide"` |
+| 170-171 | Groq réponse vide | `_raison = "vide"` |
+| 193-195 | OpenRouter fuite de raisonnement | `_raison = "fuite_raisonnement"` |
+| 198-200 | OpenRouter réponse vide | `_raison = "vide"` |
+| 205-206 | exception | `_raison = type(e).__name__` |
+
+Ces motifs-là sont précisément ceux qui ont coûté `f1fbf72` et `ff0ecd2` : les compter
+est tout l'intérêt du chantier.
+
+**Le code d'erreur** : l'expression existe déjà l. 208
+(`getattr(e, 'code', getattr(e, 'status_code', 0))`), aujourd'hui calculée **seulement
+pour Gemini**. La sortir du `if client_type == "gemini"` pour la calculer sur toute
+exception, et la mettre dans `_code_erreur`. **Ne pas déplacer** l'appel à
+`key_manager.report_error`, qui doit rester réservé à Gemini (D4).
+
+**Le nom du bot** : `bot_id_depuis_label(bot_label) or (bot_label or "").lower()` (D1).
+Importer depuis `shared.models` — déjà importé l. 13, compléter la ligne d'import.
+
+**L'index de clé** : `api_key` n'existe que dans la branche Gemini (l. 90) et **fuit
+d'une itération à l'autre** (c'est déjà le cas aujourd'hui l. 207, un bug latent).
+L'initialiser à `None` **au début de chaque itération** et ne passer un index que pour
+Gemini. Ne pas écrire la clé elle-même dans la base — **jamais de secret en base**.
+
+---
+
+## PHASE C — Malena (R5)
+
+**Fichier : `MalenaBot/bot_malena.py`, `generate_response_hybrid` (l. 205-340).**
+
+Même mécanique : `try/finally` par itération autour de la boucle l. 211
+(`for client_type, model_name in cascade:`), `finally` après le `except Exception as e:`
+l. **336** (numéro revérifié le 2026-08-29 ; le plan disait 335).
+⚠️ **`time` n'est pas importé non plus dans `bot_malena.py`** : `import time` en tête,
+colonne 0.
+
+⚠️ **Différence structurelle** : Malena fait `return texte` sur succès — **trois** sites
+revérifiés : l. **273**, **297** et **334** au lieu de `break`. Le `finally` s'exécute quand même —
+mais **`response_text` n'existe pas** ici : la variable locale est `texte`, et elle n'est
+pas partagée entre branches. Il faut donc une variable d'itération dédiée
+(`_texte_branche`), posée dans chaque branche juste avant le `return`.
+
+**Appeler la même fonction `tracer_appel` que la phase B.** Pas une adaptation, pas une
+copie : l'import passe par `core.api_tracking` (Malena importe déjà son noyau en
+`from core.*`, cf. l. 22 et 144). Deux implémentations dériveront — c'est exactement ce
+qui a produit `f1fbf72`.
+
+Le nom du bot est ici constant : `"malena"` (déjà écrit en dur l. 209 pour la cascade).
+
+---
+
+## PHASE D — Retirer l'écrivain parasite
+
+**Fichier : `shared/api_manager.py`.**
+
+1. **Supprimer l'appel `self.track_call(...)` dans `report_error`** — bloc l. 200-212,
+   depuis le commentaire `# Tracking de l'erreur` jusqu'à la parenthèse fermante. C'est
+   la source des 75 lignes `unknown`, et la phase B enregistre désormais le même
+   événement, avec le bon nom et la bonne API.
+   ⚠️ Le calcul de `key_index` juste au-dessus (l. 201-205) est **encore utilisé** par la
+   synchronisation `api_key_status` l. 214. **Ne pas le supprimer avec.**
+2. **Supprimer la méthode `track_call`** (l. 78-97) : plus aucun appelant après le
+   point 1. Vérifier par `grep -rn "track_call" --include="*.py" .` — ne doivent rester
+   que les 6 copies vendorisées, qui disparaîtront à la phase G.
+3. **`_init_usage_db`** (l. 39-76) : les `CREATE TABLE` partent en phase A.
+   La synchronisation `api_key_status` de `report_error` (l. 214-234) **reste**, mais elle
+   doit passer par la connexion du nouveau module, pas par `self._usage_db`.
+   → Exposer dans `api_tracking.py` une seconde fonction publique
+   `tracer_etat_cle(api, index_cle, valide, cooldown_iso, erreur)` qui emprunte la **même
+   file** et le **même thread écrivain**. Après quoi `self._usage_db` et `_init_usage_db`
+   n'ont plus de raison d'être : les supprimer, ainsi que `import sqlite3` et
+   `from pathlib import Path` s'ils deviennent inutilisés (`py_compile` ne le dira pas).
+
+---
+
+## PHASE E — Retirer le code TPM mort (D3)
+
+**Fichier : `shared/api_manager.py`.** Supprimer :
+
+- `self._tpm_windows = {}` (l. 27)
+- `self.TPM_LIMITS = {...}` (l. 28-32)
+- `self.TPM_ALERT_THRESHOLD` (l. 33), `self.TPM_PAUSE_THRESHOLD` (l. 34)
+- la méthode `track_tokens` entière (l. 146-176)
+- `from collections import deque` (l. 6) s'il devient inutilisé
+
+**Vérification préalable obligatoire**, avant de supprimer quoi que ce soit :
+
+```
+grep -rn "track_tokens\|TPM_LIMITS\|TPM_ALERT\|TPM_PAUSE\|_tpm_windows" \
+     --include="*.py" . | grep -v __pycache__ | grep -v "/core/" | grep -v "\.venv"
+```
+Doit ne rendre que `shared/api_manager.py`. **Si un appelant apparaît, s'arrêter et le
+signaler** au lieu de supprimer.
+
+---
+
+## PHASE F — Rendre le lecteur du dashboard bavard
+
+**Fichier : `dashboard/backend/api_tracker.py`, `_get_connection` (l. 8-21).**
+
+Aujourd'hui : `print()` puis `return None`. Le panneau affiche des zéros, et rien ne
+distingue « aucun appel » de « base illisible » (D2).
+
+- remplacer le `print` par un `logger` (module `logging`, comme le reste du backend) ;
+- distinguer les deux cas dans le retour : base **absente** (normale au premier
+  démarrage) vs base **illisible** (anomalie) ;
+- les méthodes `get_usage` / `get_keys_status` doivent pouvoir remonter cet état au
+  frontend plutôt que de renvoyer un zéro indiscernable.
+
+⚠️ **Ne pas passer le lecteur en lecture-écriture** pour contourner un problème WAL : le
+dashboard tourne sur l'hôte, les bots dans des conteneurs, et le `?mode=ro` est ce qui
+garantit qu'un bug de dashboard ne corrompt pas la base des bots. D2 règle le problème
+par le mode de journalisation, pas par les permissions.
+
+---
+
+## PHASE G — Vendoring
+
+```
+python tools/vendor_core.py
+python tools/sonde_core_drift.py
+git diff --stat -- '*/core/'
+```
+
+Attendu : `api_manager.py`, `llm_cascade.py` **et** `api_tracking.py` modifiés/créés dans
+les **6** dossiers `<Bot>/core/`. Si `api_tracking.py` n'apparaît pas → R2 non appliquée.
+
+Puis vérifier l'indépendance, qui est la raison d'être de tout ça :
+
+```
+grep -rn "from shared\." */core/
+```
+Doit ne rien rendre.
+
+---
+
+## PHASE H — Le filet
+
+**Nouveau fichier : `tests/test_suivi_api.py`.** Chaque test doit échouer sur le code
+d'avant — sinon il ne verrouille rien.
+
+1. **Un succès produit une ligne** avec `success=1`, le bon `bot_name`, la bonne
+   `api_name` et le bon `model`. *(Défaut 1 : impossible aujourd'hui.)*
+2. **Un échec Mistral/Groq produit une ligne.** *(Défaut 2 : seul Gemini remontait.)*
+3. **Le nom du bot est réel**, pas `"unknown"` — y compris depuis un label non normalisé
+   comme `"Johnny Silverhand"`. *(Défaut 3.)*
+4. **Une écriture impossible** (base en lecture seule, ou dossier inaccessible)
+   **ne fait pas échouer l'appel LLM** et **laisse une trace dans les logs** (R6) —
+   tester les deux moitiés, `caplog` pour la seconde.
+5. **La file pleine ne bloque pas l'appelant** : remplir la `Queue`, vérifier que
+   `tracer_appel` rend la main sans lever et journalise **une seule fois**.
+6. **Deux threads qui tracent en même temps ne perdent aucune ligne** — sinon la
+   phase A.2 est décorative.
+7. **WAL indisponible → repli TRUNCATE explicite**, et **mode vérifié sur la valeur
+   rendue** (SQLite ne lève pas toujours). ⚠️ **Réutiliser la `_FauxConnexion` de
+   `tests/test_base_partagee.py:25`**, ne pas en réécrire une seconde.
+8. **`synchronous` n'est pas dans le même `try` que le journal** — même test que
+   `tests/test_base_partagee.py:120`, adapté au nouveau module.
+9. **Malena appelle la même fonction que la cascade partagée** : test statique sur les
+   sources, dans l'esprit de `f1fbf72`. Vérifier que `bot_malena.py` importe
+   `tracer_appel` et n'a pas sa propre écriture SQLite.
+10. **Le code TPM a bien disparu** : `track_tokens`, `TPM_LIMITS` absents de
+    `shared/api_manager.py`. *(Empêche la résurrection silencieuse au prochain merge.)*
+11. **Une base impossible à ouvrir ne fait pas naître un thread par trace** (A-bis.1) :
+    après un premier échec de connexion, 50 `tracer_appel` d'affilée laissent
+    `threading.active_count()` stable, et le `warning` n'apparaît **qu'une fois**.
+12. **`_queue.join()` rend la main même quand un `INSERT` échoue** (A-bis.3) : sans le
+    `task_done()` en `finally`, ce test **pend** — le lancer avec un timeout, pas en nu.
+
+**Fixture obligatoire** : un `@pytest.fixture(autouse=True)` qui appelle
+`reinitialiser_pour_tests()` **avant et après** chaque test (A-bis.4). Sans elle, H.5
+(file pleine) rend muets tous les tests collectés après lui et le résultat dépend de
+l'ordre de collecte.
+
+**Ne pas polluer `logs/`** : `plan-pytest-logs-et-pont-v2` — pytest sur l'hôte écrit dans
+les mêmes dossiers que le dashboard et fabrique de fausses « erreurs » dans l'interface.
+Écrire dans `tmp_path`, jamais dans `data/` ni `logs/`.
+
+**Ne pas écrire dans la vraie `data/api_usage.db`.** Le module lit `DATA_DIR` de
+l'environnement (`api_manager.py:42`) : `monkeypatch.setenv("DATA_DIR", str(tmp_path))`.
+
+---
+
+## PHASE I — Vérification et déploiement
+
+### En local, dans cet ordre
+
+```
+python -m py_compile */bot_*.py */core/*.py shared/*.py tools/*.py dashboard/backend/*.py
+python tools/sonde_blocking_calls.py      # doit rester a 0 probleme
+python tools/sonde_core_drift.py          # No drift detected
+python tools/vendor_core.py && git diff --exit-code -- '*/core/'
+$env:DASHBOARD_RELANCE_SANS_CONSOLE=1; python -m pytest -q
+```
+
+### Puis pousser et **regarder la CI**
+
+```
+gh run list --repo LeDev/Bot-Discord --limit 3
+gh run watch <id> --repo LeDev/Bot-Discord --exit-status
+```
+`gh` est installé et authentifié depuis le 2026-08-27. La CI a été **rouge pendant cinq
+commits** sans que personne ne regarde (`c1b0696`) — ne pas refaire ça.
+
+### Déploiement
+
+```
+docker compose restart
+```
+⚠️ Bind mount : pas besoin de `--build`. Mais **un conteneur déjà `Up` tourne l'ancien
+code en mémoire** — le `restart` est obligatoire (`decision-independance-stricte-vendoring-core`).
+
+### Vérification réelle — c'est ELLE le critère de réussite
+
+Les tests passaient déjà pendant les mois où la base ne recevait rien. Après quelques
+échanges sur les 6 bots :
+
+```python
+import sqlite3
+c = sqlite3.connect("data/api_usage.db")
+print(c.execute("PRAGMA journal_mode;").fetchone())          # attendu : truncate (D2)
+print(c.execute("SELECT bot_name, api_name, success, COUNT(*) FROM api_calls "
+                "WHERE timestamp > datetime('now','-1 hour') "
+                "GROUP BY 1,2,3").fetchall())
+```
+
+Attendu, et **rien de moins** :
+1. les **six** noms de bots présents — `malena` incluse (c'est le test de la phase C) ;
+2. des lignes `success=1` — impossible avant ce chantier ;
+3. des `api_name` autres que `gemini` ;
+4. `journal_mode = truncate` ;
+5. le panneau API du dashboard affiche autre chose que 0.
+
+Si `malena` manque alors que les cinq autres sont là : la phase C n'a pas pris, ce n'est
+pas un bot silencieux.
+
+---
+
+## 4. Récapitulatif des fichiers touchés
+
+| fichier | phase | nature |
+|---|---|---|
+| `shared/api_tracking.py` | A | **créé, dans l'arbre** — non suivi par git |
+| `shared/api_tracking.py` | **A-bis** | **4 correctifs** : connexion, `warning`, `task_done`, reset |
+| `tools/vendor_core.py` | A | ✅ fait (+`api_tracking.py`, l. 17) |
+| `tools/sonde_core_drift.py` | A | ✅ fait (+`api_tracking.py`, l. 17) — **R2** |
+| `shared/llm_cascade.py` | B | `try/finally` + 6 affectations `_raison` |
+| `MalenaBot/bot_malena.py` | C | idem, variante `return` |
+| `shared/api_manager.py` | D, E | suppressions |
+| `dashboard/backend/api_tracker.py` | F | logger + état lisible |
+| `*/core/*.py` | G | **généré**, ne jamais éditer à la main |
+| `tests/test_suivi_api.py` | H | **création** |
+
+## 5. Ordre de bataille
+
+**A-bis** d'abord (le fichier existe, il faut le rendre honnête), puis **B → C** ensemble
+(l'écrivain n'a de sens qu'avec ses appelants, et inversement), puis D → E, puis
+G → H → I. **F est autonome** : livrable seul si le reste devait s'arrêter.
+
+⚠️ **Ne pas annoncer « plan exécuté » sans preuve.** À la fin, coller la sortie réelle de :
+`git status --short`, `python -m pytest -q` (dernier bloc), et
+`grep -rn "tracer_appel" --include="*.py" shared/ MalenaBot/ | grep -v __pycache__`.
+Le 2026-08-27, l'annonce a été faite alors que **seule la phase A** existait.
+
+## 6. Hors périmètre — noté, pas à faire ici
+
+- **Fusionner la cascade inline de Malena dans `shared/`.** Elle a déjà coûté `f1fbf72`
+  et coûte une réplication ici. Chantier distinct, à ne pas mélanger.
+- Le tas de fiches « Reste : test live » qui traînent depuis des semaines.
+- Les voix (Sheo `gpt-oss-120b`, Sugar `gemini-3.5-flash-lite`) : **parquées** à la
+  demande du 2026-08-27. La phase B donnera la mesure qui manquait pour les juger.
+- Documenter le panneau API dans `README.md` : possible, mais ⚠️ `tests/test_documentation.py`
+  interdit de recopier un identifiant de modèle dans la doc.

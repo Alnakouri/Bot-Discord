@@ -7,6 +7,7 @@
 Cascade LLM partagée — essaie les modèles dans l'ordre renvoyé par get_model_cascade()
 jusqu'à obtenir une réponse. Extrait de bot_johnny.py (référence) pour dédupliquer les 6 bots.
 """
+import time
 import asyncio
 import base64
 import logging
@@ -15,7 +16,8 @@ from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
 from core.media_handler import process_image_ollama
 from core.smart_router import get_model_cascade, RequestType
-from core.models import groq_kwargs
+from core.models import groq_kwargs, bot_id_depuis_label
+from core.api_tracking import tracer_appel
 
 logger = logging.getLogger("llm_cascade")
 
@@ -89,129 +91,166 @@ async def generate_response(
         return await (asyncio.wait_for(coro, timeout=call_timeout) if call_timeout else coro)
 
     for client_type, model_name in cascade:
+        _depart = time.perf_counter()
+        _code_erreur = None
+        _raison = None
+        api_key = None
         try:
-            # 1. GEMINI
-            if client_type == "gemini":
-                api_key = key_manager.get_key("gemini")
-                if not api_key:
-                    continue
-                client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                gemini_messages = []
-                for h_msg in conversation_history:
-                    gemini_messages.append(types.Content(
-                        role=h_msg["role"],
-                        parts=[types.Part(text=p) for p in h_msg["parts"]],
-                    ))
-                last_turn_parts = [types.Part(text=f"{system_prompt}\n\nDernier message : {user_message}")]
-                if media_data:
-                    last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
-                gemini_messages.append(types.Content(role="user", parts=last_turn_parts))
-                if routing["type"] == RequestType.REASONING:
-                    cfg = types.GenerateContentConfig(temperature=temperature, max_output_tokens=None)
-                else:
-                    cfg = types.GenerateContentConfig(
-                        temperature=temperature,
-                        max_output_tokens=gemini_max_tokens or max_tokens,
-                        thinking_config=types.ThinkingConfig(thinking_level="minimal")
+            try:
+                # 1. GEMINI
+                if client_type == "gemini":
+                    api_key = key_manager.get_key("gemini")
+                    if not api_key:
+                        _raison = "pas_de_cle"
+                        continue
+                    client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
+                    gemini_messages = []
+                    for h_msg in conversation_history:
+                        gemini_messages.append(types.Content(
+                            role=h_msg["role"],
+                            parts=[types.Part(text=p) for p in h_msg["parts"]],
+                        ))
+                    last_turn_parts = [types.Part(text=f"{system_prompt}\n\nDernier message : {user_message}")]
+                    if media_data:
+                        last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
+                    gemini_messages.append(types.Content(role="user", parts=last_turn_parts))
+                    if routing["type"] == RequestType.REASONING:
+                        cfg = types.GenerateContentConfig(temperature=temperature, max_output_tokens=None)
+                    else:
+                        cfg = types.GenerateContentConfig(
+                            temperature=temperature,
+                            max_output_tokens=gemini_max_tokens or max_tokens,
+                            thinking_config=types.ThinkingConfig(thinking_level="minimal")
+                        )
+                    resp = await _call(
+                        client.models.generate_content,
+                        model=model_name, contents=gemini_messages,
+                        config=cfg,
                     )
-                resp = await _call(
-                    client.models.generate_content,
-                    model=model_name, contents=gemini_messages,
-                    config=cfg,
-                )
-                response_text = resp.text
-                if _est_vide(response_text):
-                    logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
-                    response_text = None
-                    continue
-                logger.info(f"✅ [GEMINI {model_name}] {bot_label} via {routing.get('reason', '')}")
-                break
-
-            # 1.bis OLLAMA (Moondream) — vision locale uniquement
-            elif client_type == "ollama":
-                if routing["type"] == RequestType.IMAGE and routing.get("image_attachment"):
-                    response_text = await process_image_ollama(
-                        attachment=routing["image_attachment"],
-                        personality_prompt=system_prompt,
-                        user_message=user_message,
+                    response_text = resp.text
+                    if _est_vide(response_text):
+                        logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
+                        response_text = None
+                        _raison = "vide"
+                        continue
+                    logger.info(f"✅ [GEMINI {model_name}] {bot_label} via {routing.get('reason', '')}")
+                    break
+    
+                # 1.bis OLLAMA (Moondream) — vision locale uniquement
+                elif client_type == "ollama":
+                    if routing["type"] == RequestType.IMAGE and routing.get("image_attachment"):
+                        response_text = await process_image_ollama(
+                            attachment=routing["image_attachment"],
+                            personality_prompt=system_prompt,
+                            user_message=user_message,
+                        )
+                        if response_text:
+                            logger.info(f"✅ [OLLAMA {model_name}] {bot_label}")
+                            break
+                        continue
+                    else:
+                        continue
+    
+                # 2. MISTRAL
+                elif client_type == "mistral" and mistral_client:
+                    chat = await _call(
+                        mistral_client.chat.complete,
+                        model=model_name,
+                        messages=[{"role": "system", "content": system_prompt},
+                                  {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nMESSAGE: {user_message}"}],
                     )
-                    if response_text:
-                        logger.info(f"✅ [OLLAMA {model_name}] {bot_label}")
-                        break
-                    continue
-                else:
-                    continue
-
-            # 2. MISTRAL
-            elif client_type == "mistral" and mistral_client:
-                chat = await _call(
-                    mistral_client.chat.complete,
-                    model=model_name,
-                    messages=[{"role": "system", "content": system_prompt},
-                              {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nMESSAGE: {user_message}"}],
-                )
-                response_text = chat.choices[0].message.content
-                if _est_vide(response_text):
-                    logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
-                    response_text = None
-                    continue
-                logger.info(f"🌪️ [MISTRAL {model_name}] {bot_label}")
-                break
-
-            # 3. GROQ
-            elif client_type == "groq" and groq_client:
-                msgs = [{"role": "system", "content": system_prompt}]
-                for msg in conversation_history:
-                    r = "user" if msg["role"] == "user" else "assistant"
-                    msgs.append({"role": r, "content": msg["parts"][0]})
-                msgs.append({"role": "user", "content": user_message})
-                chat = await _call(
-                    groq_client.chat.completions.create,
-                    messages=msgs, model=model_name, temperature=temperature,
-                    **groq_kwargs(model_name),
-                )
-                response_text = chat.choices[0].message.content
-                if _est_vide(response_text):
-                    logger.warning(f"⚠️ [GROQ {model_name}] réponse vide → échelon suivant")
-                    response_text = None
-                    continue
-                logger.info(f"⚡ [GROQ {model_name}] {bot_label}")
-                break
-
-            # 4. OPENROUTER (texte + secours multimodal)
-            elif client_type == "openrouter" and openrouter_client:
-                user_content = f"{transcript}\n{user_message}"
-                if has_image and media_data:
-                    b64_image = base64.b64encode(media_data).decode('utf-8')
-                    user_content = [
-                        {"type": "text", "text": f"{transcript}\n{user_message}"},
-                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}},
-                    ]
-                chat = await _call(
-                    openrouter_client.chat.completions.create,
-                    model=model_name,
-                    messages=[{"role": "system", "content": system_prompt},
-                              {"role": "user", "content": user_content}],
-                    temperature=temperature, max_tokens=max_tokens,
-                    extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": bot_label},
-                )
-                if _fuite_de_raisonnement(chat.choices[0].message):
-                    logger.warning(f"⚠️ [OPENROUTER {model_name}] le modèle a recopié son raisonnement dans la réponse → échelon suivant")
-                    response_text = None
-                    continue
-                response_text = chat.choices[0].message.content
-                if _est_vide(response_text):
-                    logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")
-                    response_text = None
-                    continue
-                logger.info(f"🌌 [OPENROUTER {model_name}] {bot_label}")
-                break
-
-        except Exception as e:
-            logger.warning(f"⚠️ [{client_type.upper()} FAIL] {type(e).__name__}: {e}")
-            if client_type == "gemini" and api_key:
-                error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
-                key_manager.report_error("gemini", api_key, error_code)
-            continue
+                    response_text = chat.choices[0].message.content
+                    if _est_vide(response_text):
+                        logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
+                        response_text = None
+                        _raison = "vide"
+                        continue
+                    logger.info(f"🌪️ [MISTRAL {model_name}] {bot_label}")
+                    break
+    
+                # 3. GROQ
+                elif client_type == "groq" and groq_client:
+                    msgs = [{"role": "system", "content": system_prompt}]
+                    for msg in conversation_history:
+                        r = "user" if msg["role"] == "user" else "assistant"
+                        msgs.append({"role": r, "content": msg["parts"][0]})
+                    msgs.append({"role": "user", "content": user_message})
+                    chat = await _call(
+                        groq_client.chat.completions.create,
+                        messages=msgs, model=model_name, temperature=temperature,
+                        **groq_kwargs(model_name),
+                    )
+                    response_text = chat.choices[0].message.content
+                    if _est_vide(response_text):
+                        logger.warning(f"⚠️ [GROQ {model_name}] réponse vide → échelon suivant")
+                        response_text = None
+                        _raison = "vide"
+                        continue
+                    logger.info(f"⚡ [GROQ {model_name}] {bot_label}")
+                    break
+    
+                # 4. OPENROUTER (texte + secours multimodal)
+                elif client_type == "openrouter" and openrouter_client:
+                    user_content = f"{transcript}\n{user_message}"
+                    if has_image and media_data:
+                        b64_image = base64.b64encode(media_data).decode('utf-8')
+                        user_content = [
+                            {"type": "text", "text": f"{transcript}\n{user_message}"},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}},
+                        ]
+                    chat = await _call(
+                        openrouter_client.chat.completions.create,
+                        model=model_name,
+                        messages=[{"role": "system", "content": system_prompt},
+                                  {"role": "user", "content": user_content}],
+                        temperature=temperature, max_tokens=max_tokens,
+                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": bot_label},
+                    )
+                    if _fuite_de_raisonnement(chat.choices[0].message):
+                        logger.warning(f"⚠️ [OPENROUTER {model_name}] le modèle a recopié son raisonnement dans la réponse → échelon suivant")
+                        response_text = None
+                        _raison = "fuite_raisonnement"
+                        continue
+                    response_text = chat.choices[0].message.content
+                    if _est_vide(response_text):
+                        logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")
+                        response_text = None
+                        _raison = "vide"
+                        continue
+                    logger.info(f"🌌 [OPENROUTER {model_name}] {bot_label}")
+                    break
+    
+            except Exception as e:
+                _raison = type(e).__name__
+                _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
+                logger.warning(f"⚠️ [{client_type.upper()} FAIL] {type(e).__name__}: {e}")
+                if client_type == "gemini" and api_key:
+                    key_manager.report_error("gemini", api_key, _code_erreur)
+                continue
+        finally:
+            _latence = int((time.perf_counter() - _depart) * 1000)
+            _succes = bool(response_text)
+            if not _succes and _raison is None:
+                # Aucune branche n'a tourné (client absent, échelon inconnu) : pas un
+                # échec d'API. Sans ça, la base se remplit d'échecs sans cause — le
+                # bruit « unknown » que ce chantier existe pour supprimer.
+                _raison = "non_tentee"
+            _index_cle = None
+            if client_type == "gemini" and api_key and hasattr(key_manager, "apis"):
+                try:
+                    _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
+                except (ValueError, KeyError, AttributeError):
+                    pass
+            _bot_nom = bot_id_depuis_label(bot_label) or (bot_label or "").lower()
+            tracer_appel(
+                bot=_bot_nom,
+                api=client_type,
+                modele=model_name,
+                index_cle=_index_cle,
+                succes=_succes,
+                code_erreur=_code_erreur,
+                latence_ms=_latence,
+                raison=_raison
+            )
 
     return response_text

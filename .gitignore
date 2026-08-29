@@ -132,3 +132,6 @@ maintenance_report.md
 twitch_chat_auth_*.json
 data/twitch_chat_auth_*.json
 
+
+# Journal SQLite en mode TRUNCATE (data/api_usage.db)
+*.db-journal

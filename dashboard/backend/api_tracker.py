@@ -1,5 +1,8 @@
 import sqlite3
 import os
+import logging
+
+logger = logging.getLogger("api_tracker")
 
 class APITracker:
     def __init__(self, db_path):
@@ -8,7 +11,7 @@ class APITracker:
     def _get_connection(self):
         """Ouvre une connexion read-only sur la base de données api_usage.db."""
         if not os.path.exists(self.db_path):
-            return None
+            raise FileNotFoundError("Base api_usage.db absente (normal au premier lancement)")
             
         from pathlib import Path
         uri = Path(self.db_path).absolute().as_uri() + "?mode=ro"
@@ -17,13 +20,17 @@ class APITracker:
             conn.row_factory = sqlite3.Row
             return conn
         except sqlite3.Error as e:
-            print(f"⚠️ [API Tracker] Connect Error: {e}")
-            return None
+            logger.error(f"⚠️ [API Tracker] Base api_usage.db présente mais illisible : {e}")
+            raise
 
     def get_usage(self, hours=24):
-        conn = self._get_connection()
-        if not conn:
-            return {"period_hours": hours, "total_calls": 0, "by_api": {}}
+        try:
+            conn = self._get_connection()
+        except FileNotFoundError as e:
+            logger.info(str(e))
+            return {"period_hours": hours, "total_calls": 0, "by_api": {}, "status": "missing"}
+        except sqlite3.Error as e:
+            return {"period_hours": hours, "total_calls": 0, "by_api": {}, "status": "error", "error": str(e)}
             
         try:
             cursor = conn.cursor()
@@ -51,16 +58,24 @@ class APITracker:
             return {
                 "period_hours": hours,
                 "total_calls": total,
-                "by_api": by_api
+                "by_api": by_api,
+                "status": "ok"
             }
         except Exception as e:
             if conn: conn.close()
-            return {"error": str(e)}
+            logger.error(f"Error reading usage: {e}")
+            return {"period_hours": hours, "total_calls": 0, "by_api": {}, "status": "error", "error": str(e)}
 
     def get_keys_status(self):
         """Récupère l'état de santé complet des clés depuis api_key_status."""
-        conn = self._get_connection()
-        if not conn: return []
+        try:
+            conn = self._get_connection()
+        except FileNotFoundError as e:
+            logger.info(str(e))
+            return []
+        except Exception as e:
+            logger.error(f"⚠️ [API Tracker] État des clés illisible : {e}")
+            return []
         
         try:
             cursor = conn.cursor()
@@ -100,6 +115,6 @@ class APITracker:
             conn.close()
             return keys
         except Exception as e:
-            print(f"Error in get_keys_status: {e}")
+            logger.error(f"Error in get_keys_status: {e}")
             if conn: conn.close()
             return []

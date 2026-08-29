@@ -12,6 +12,7 @@ Bot Discord : Malena (La Gitana Marseillaise)
 Version : 1.0.0
 """
 
+import time
 import os
 import discord
 import asyncio
@@ -21,6 +22,7 @@ from datetime import datetime
 import base64
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.models import groq_kwargs
+from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
@@ -209,133 +211,167 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
     cascade = get_model_cascade(routing["type"] if routing else RequestType.TEXT, "malena")
     
     for client_type, model_name in cascade:
+        _depart = time.perf_counter()
+        _code_erreur = None
+        _raison = None
+        _texte_branche = None
         try:
-            # 1. GEMINI
-            if client_type == "gemini" and gemini_client:
-                logger.info(f"🧠 Tentative Gemini ({model_name})...")
-                # Construire le payload Gemini
-                last_turn_parts = [types.Part(text=f"SYSTEM: {sys_prompt}\n\nUSER: {prompt}")]
-                if media_data:
-                    last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
-                gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
+            try:
+                # 1. GEMINI
+                if client_type == "gemini" and gemini_client:
+                    logger.info(f"🧠 Tentative Gemini ({model_name})...")
+                    # Construire le payload Gemini
+                    last_turn_parts = [types.Part(text=f"SYSTEM: {sys_prompt}\n\nUSER: {prompt}")]
+                    if media_data:
+                        last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
+                    gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
 
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        gemini_client.models.generate_content,
-                        model=model_name,
-                        contents=gemini_messages,
-                        config=types.GenerateContentConfig(
-                            temperature=1.1,
-                            max_output_tokens=300,
-                            thinking_config=types.ThinkingConfig(thinking_level="minimal")
-                        )
-                    ),
-                    timeout=15
-                )
-                if _est_vide(response.text):
-                    logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
-                    continue
-                return response.text
- 
-            # 1.bis OLLAMA (Moondream)
-            elif client_type == "ollama":
-                if routing and routing["type"] == RequestType.IMAGE and routing["image_attachment"]:
-                    response_text = await process_image_ollama(
-                        attachment=routing["image_attachment"],
-                        personality_prompt=sys_prompt,
-                        user_message=prompt
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            gemini_client.models.generate_content,
+                            model=model_name,
+                            contents=gemini_messages,
+                            config=types.GenerateContentConfig(
+                                temperature=1.1,
+                                max_output_tokens=300,
+                                thinking_config=types.ThinkingConfig(thinking_level="minimal")
+                            )
+                        ),
+                        timeout=15
                     )
-                    if response_text:
-                        logger.info(f"✅ [OLLAMA {model_name}] Malena a utilisé Moondream local !")
-                        return response_text
-                    continue
-                else:
-                    continue
+                    if _est_vide(response.text):
+                        logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
+                        _raison = "vide"
+                        continue
+                    _texte_branche = response.text
+                    return _texte_branche
+     
+                # 1.bis OLLAMA (Moondream)
+                elif client_type == "ollama":
+                    if routing and routing["type"] == RequestType.IMAGE and routing["image_attachment"]:
+                        response_text = await process_image_ollama(
+                            attachment=routing["image_attachment"],
+                            personality_prompt=sys_prompt,
+                            user_message=prompt
+                        )
+                        if response_text:
+                            logger.info(f"✅ [OLLAMA {model_name}] Malena a utilisé Moondream local !")
+                            _texte_branche = response_text
+                            return _texte_branche
+                        continue
+                    else:
+                        continue
 
-            # 2. MISTRAL
-            elif client_type == "mistral" and mistral_client:
-                logger.info(f"🥖 Tentative Mistral ({model_name})...")
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        mistral_client.chat.complete,
-                        model=model_name,
-                        messages=[{"role": "system", "content": sys_prompt},
-                                  {"role": "user", "content": prompt}],
-                        temperature=0.9,
-                        max_tokens=300
-                    ),
-                    timeout=15
-                )
-                texte = response.choices[0].message.content
-                if _est_vide(texte):
-                    logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
-                    continue
-                return texte
+                # 2. MISTRAL
+                elif client_type == "mistral" and mistral_client:
+                    logger.info(f"🥖 Tentative Mistral ({model_name})...")
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            mistral_client.chat.complete,
+                            model=model_name,
+                            messages=[{"role": "system", "content": sys_prompt},
+                                      {"role": "user", "content": prompt}],
+                            temperature=0.9,
+                            max_tokens=300
+                        ),
+                        timeout=15
+                    )
+                    texte = response.choices[0].message.content
+                    if _est_vide(texte):
+                        logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
+                        _raison = "vide"
+                        continue
+                    _texte_branche = texte
+                    return _texte_branche
 
-            # 4. GROQ
-            elif client_type == "groq" and groq_client:
-                logger.info(f"🚀 Tentative Groq ({model_name})...")
-                chat = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        groq_client.chat.completions.create,
-                        messages=[{"role": "system", "content": sys_prompt},
-                                  {"role": "user", "content": prompt}],
-                        model=model_name,
-                        **groq_kwargs(model_name),
-                        temperature=1.1,
-                        max_tokens=300
-                    ),
-                    timeout=15
-                )
-                if _fuite_de_raisonnement(chat.choices[0].message):
-                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
-                    continue
-                texte = chat.choices[0].message.content
-                if _est_vide(texte):
-                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
-                    continue
-                return texte
+                # 4. GROQ
+                elif client_type == "groq" and groq_client:
+                    logger.info(f"🚀 Tentative Groq ({model_name})...")
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            groq_client.chat.completions.create,
+                            messages=[{"role": "system", "content": sys_prompt},
+                                      {"role": "user", "content": prompt}],
+                            model=model_name,
+                            **groq_kwargs(model_name),
+                            temperature=1.1,
+                            max_tokens=300
+                        ),
+                        timeout=15
+                    )
+                    if _fuite_de_raisonnement(chat.choices[0].message):
+                        logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
+                        _raison = "fuite_raisonnement"
+                        continue
+                    texte = chat.choices[0].message.content
+                    if _est_vide(texte):
+                        logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
+                        _raison = "vide"
+                        continue
+                    _texte_branche = texte
+                    return _texte_branche
 
-            # 5. OPENROUTER
-            elif client_type == "openrouter" and openrouter_client:
-                logger.info(f"🌌 Tentative OpenRouter ({model_name})...")
-                
-                user_content = prompt
-                # Support Multimodal Secours
-                if media_data:
-                    b64_image = base64.b64encode(media_data).decode('utf-8')
-                    user_content = [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
-                        }
-                    ]
-                
-                chat = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        openrouter_client.chat.completions.create,
-                        model=model_name,
-                        messages=[{"role": "system", "content": sys_prompt},
-                                  {"role": "user", "content": user_content}],
-                        temperature=1.1,
-                        max_tokens=300,
-                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Malena Bot"}
-                    ),
-                    timeout=15
-                )
-                if _fuite_de_raisonnement(chat.choices[0].message):
-                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
-                    continue
-                texte = chat.choices[0].message.content
-                if _est_vide(texte):
-                    logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
-                    continue
-                return texte
+                # 5. OPENROUTER
+                elif client_type == "openrouter" and openrouter_client:
+                    logger.info(f"🌌 Tentative OpenRouter ({model_name})...")
+                    
+                    user_content = prompt
+                    # Support Multimodal Secours
+                    if media_data:
+                        b64_image = base64.b64encode(media_data).decode('utf-8')
+                        user_content = [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
+                            }
+                        ]
+                    
+                    chat = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            openrouter_client.chat.completions.create,
+                            model=model_name,
+                            messages=[{"role": "system", "content": sys_prompt},
+                                      {"role": "user", "content": user_content}],
+                            temperature=1.1,
+                            max_tokens=300,
+                            extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Malena Bot"}
+                        ),
+                        timeout=15
+                    )
+                    if _fuite_de_raisonnement(chat.choices[0].message):
+                        logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
+                        _raison = "fuite_raisonnement"
+                        continue
+                    texte = chat.choices[0].message.content
+                    if _est_vide(texte):
+                        logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
+                        _raison = "vide"
+                        continue
+                    _texte_branche = texte
+                    return _texte_branche
 
-        except Exception as e:
-            logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {type(e).__name__}: {e}")
-            continue
+            except Exception as e:
+                _raison = type(e).__name__
+                _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
+                logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {type(e).__name__}: {e}")
+                continue
+        finally:
+            _latence = int((time.perf_counter() - _depart) * 1000)
+            _succes = bool(_texte_branche)
+            if not _succes and _raison is None:
+                # Aucune branche n'a tourné (client absent) : pas un échec d'API.
+                _raison = "non_tentee"
+            tracer_appel(
+                bot="malena",
+                api=client_type,
+                modele=model_name,
+                index_cle=None,
+                succes=_succes,
+                code_erreur=_code_erreur,
+                latence_ms=_latence,
+                raison=_raison
+            )
 
     return "Ay caramba ! J'ai mal au crâne, plus personne ne marche là-dedans ! (Erreur API Totale)"
 
