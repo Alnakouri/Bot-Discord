@@ -14,6 +14,10 @@ from shared.smart_router import RequestType
 # une seconde — deux doublures dérivent, c'est la leçon de f1fbf72.
 from tests.test_base_partagee import _FauxConnexion, _Resultat
 
+# Relevé à l'import du module, donc APRÈS conftest et AVANT toute fixture : la fixture
+# autouse ci-dessous détourne DATA_DIR pour chaque test, elle masquerait la vraie valeur.
+_DATA_DIR_DE_CONFTEST = os.environ.get("DATA_DIR")
+
 
 class _FauxConnexionTruncate(_FauxConnexion):
     """La doublure partagée, à qui on apprend le PRAGMA TRUNCATE de api_tracking
@@ -241,3 +245,16 @@ def test_12_queue_join_rend_la_main(tmp_path):
         assert not t.is_alive(), "queue.join() est resté bloqué"
     finally:
         api_tracking._get_connection = original_get_connection
+
+
+def test_13_la_suite_n_ecrit_pas_dans_la_base_des_bots():
+    """La suite tourne sur l'hôte, les bots dans des conteneurs, et les deux partagent
+    `data/`. Depuis que la cascade trace, `test_cascade_reponse_vide` écrivait de vraies
+    lignes (bot_name « test ») dans `data/api_usage.db` — 40 relevées le 2026-08-29.
+    Même incident que pytest polluant `logs/`, même garde : DATA_DIR détourné par
+    conftest.py. Sans ça, la base censée mesurer les bots mesure aussi les tests."""
+    reel = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+    assert _DATA_DIR_DE_CONFTEST, "conftest.py ne pose plus DATA_DIR"
+    assert os.path.abspath(_DATA_DIR_DE_CONFTEST) != reel, (
+        "DATA_DIR pointe sur le data/ du dépôt : la suite va polluer la base des bots"
+    )

@@ -16,7 +16,25 @@
 > H.7 était en écart : une seconde `_FauxConnexion` avait été écrite au lieu de
 > réutiliser celle de `test_base_partagee`. Corrigé par sous-classe.
 >
-> **Reste : le déploiement et la vérification réelle (§ PHASE I) — c'est elle le critère.**
+> **Phase I faite le 2026-08-29** (CI verte, `docker compose restart`, 6/6 `Up`).
+> Vérification réelle sur la base après échanges : les **six** noms présents, `malena`
+> incluse (preuve de la phase C), des `success=1`, des `api_name` autres que `gemini`,
+> et le panneau du dashboard rend `total_calls=26` au lieu de 0.
+>
+> ⚠️ **Correction à D2 / critère 4.** Le plan attendait `PRAGMA journal_mode` → `truncate`
+> depuis n'importe quelle connexion. C'est faux : **seul WAL est inscrit dans l'en-tête
+> du fichier**. Les modes de rollback (delete/truncate/persist) sont une propriété **de
+> la connexion**, pas de la base. Une connexion neuve rendra donc toujours `delete`.
+> Le bon critère est **« la base n'est plus en WAL »** — vérifié : plus de `-wal` ni de
+> `-shm`, et un `api_usage.db-journal` de taille 0, signature de TRUNCATE. Le lecteur
+> `mode=ro` du dashboard n'a plus besoin de mémoire partagée, ce qui était tout l'enjeu.
+>
+> ⚠️ **Défaut trouvé pendant la vérification réelle, et corrigé** : la suite de tests de
+> l'hôte écrivait dans la **vraie** `data/api_usage.db` — `test_cascade_reponse_vide`
+> appelle la vraie cascade, qui trace désormais. 40 lignes parasites `bot_name='test'`,
+> dans la base même dont ce chantier restaure l'honnêteté. Même incident que pytest
+> polluant `logs/`, même garde : `DATA_DIR` détourné dans `tests/conftest.py`, verrouillé
+> par le test 13. Les lignes parasites ont été supprimées (147 lignes restantes).
 
 > **Destinataire : Antigravity.** Plan d'exécution.
 > **État au 2026-08-29 : seule la phase A est dans l'arbre, et elle est fausse.**
