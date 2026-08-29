@@ -16,6 +16,7 @@ ignorer.
 import os
 import re
 import sys
+import subprocess
 import urllib.parse
 from pathlib import Path
 
@@ -82,7 +83,16 @@ def test_aucun_lien_absolu_vers_cette_machine():
 
 
 def test_les_liens_internes_pointent_sur_des_fichiers_existants():
-    """Un lien mort est une doc qui ment, en plus discret."""
+    """Un lien mort est une doc qui ment, en plus discret.
+
+    Exister sur ce poste ne suffit pas : un lien vers un fichier GÉNÉRÉ et écarté par
+    `.gitignore` (une base SQLite, un cache) passe en local et casse sur un clone frais.
+    Vu le 2026-08-29 : `DEV_GUIDE.md -> data/bots_database.db` tenait uniquement parce
+    qu'un test créait la base au passage ; le jour où ce test a cessé d'écrire dans
+    `data/`, la CI est tombée sur un lien mort depuis des mois. Même famille que le
+    `.gitignore` non ancré qui avait avalé `shared/test_mode.py` (`c1b0696`) : ce qui
+    n'est pas dans le dépôt n'existe pas ailleurs que sur la machine qui l'a fabriqué.
+    """
     casses = []
     for f in _documents():
         for m in re.finditer(r"\[([^\]]*)\]\(([^)\s]+)\)", f.read_text(encoding="utf-8")):
@@ -92,8 +102,17 @@ def test_les_liens_internes_pointent_sur_des_fichiers_existants():
             brut = urllib.parse.unquote(cible.split("#")[0])
             if not brut:
                 continue
-            if not (f.parent / brut).exists():
-                casses.append(f"{f.relative_to(_racine).as_posix()} -> {cible}")
+            chemin = f.parent / brut
+            if not chemin.exists():
+                casses.append(f"{f.relative_to(_racine).as_posix()} -> {cible} (absent)")
+            elif subprocess.run(
+                ["git", "check-ignore", "-q", str(chemin)],
+                cwd=_racine, capture_output=True,
+            ).returncode == 0:
+                casses.append(
+                    f"{f.relative_to(_racine).as_posix()} -> {cible} "
+                    "(écarté par .gitignore : absent d'un clone frais)"
+                )
     assert not casses, "liens internes cassés :\n  " + "\n  ".join(casses)
 
 
