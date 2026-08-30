@@ -12,8 +12,15 @@ import json
 import time
 import logging
 import random
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
+
+INSECABLE = " "
+_PONCTUATION_DOUBLE = re.compile(r"\s+([!?;:])")
+
+def espaces_francaises(texte):
+    texte = " ".join((texte or "").split())      # normalise tabulations / retours
+    return _PONCTUATION_DOUBLE.sub(lambda m: INSECABLE + m.group(1), texte)
 
 logger = logging.getLogger("sheogorath")
 
@@ -115,7 +122,7 @@ def _clean_for_image(text):
 def _wrap_by_width(draw, text, font, max_width):
     """Découpe `text` en lignes qui tiennent dans `max_width` pixels."""
     lines, cur = [], ""
-    for word in text.split():
+    for word in espaces_francaises(text).split(" "):
         trial = (cur + " " + word).strip()
         if draw.textlength(trial, font=font) <= max_width or not cur:
             cur = trial
@@ -153,44 +160,65 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
         title = _clean_for_image(title)
         text = _clean_for_image(text)
 
-        # 3. Écrire le Titre — taille auto-réduite pour tenir dans la largeur.
+        # 3. Écrire le Titre — taille max 64px, plier sur 2 lignes si besoin
         margin = 150
         max_title_w = width - 2 * margin
-        title_size = 60
+        title_size = 64
         while title_size > 28:
             font_title = _load_font(_FONT_CANDIDATES_BOLD, title_size)
-            tb = draw.textbbox((0, 0), title, font=font_title)
-            if (tb[2] - tb[0]) <= max_title_w:
+            lines_title = _wrap_by_width(draw, title, font_title, max_title_w)
+            if len(lines_title) <= 2:
                 break
             title_size -= 4
-        title_bbox = draw.textbbox((0, 0), title, font=font_title)
-        title_w = title_bbox[2] - title_bbox[0]
-        draw.text(((width - title_w) / 2, 150), title, font=font_title, fill=COLORS["PURPLE"])
+        
+        y_title = 150
+        for line_t in lines_title:
+            tw = draw.textlength(line_t, font=font_title)
+            draw.text(((width - tw) / 2, y_title), line_t, font=font_title, fill=COLORS["PURPLE"])
+            y_title += int(title_size * 1.2)
 
-        # 4. Corps du texte : grande police auto-ajustée + retour à la ligne au
-        #    pixel près, bloc centré horizontalement et verticalement dans le
-        #    parchemin (sous le titre).
-        body_margin = 120
+        # Filet doré
+        filet_y = y_title + 10
+        filet_w = 400
+        draw.line(((width - filet_w) / 2, filet_y, (width + filet_w) / 2, filet_y), fill=(150, 106, 32), width=3)
+
+        # 4. Corps du texte
+        body_margin = 165
         max_width = width - 2 * body_margin
-        top = 300                      # sous le titre
-        bottom = height - 150          # marge basse du parchemin
+        top = filet_y + 40
+        bottom = height - 150
         zone_h = bottom - top
 
-        body_size = 70
-        while body_size > 30:
-            font_text = _load_font(_FONT_CANDIDATES_REGULAR, body_size)
-            lines = _wrap_by_width(draw, text, font_text, max_width)
-            line_h = int(body_size * 1.35)
-            if line_h * len(lines) <= zone_h:
-                break
-            body_size -= 4
+        body_size = 40
+        font_text = _load_font(_FONT_CANDIDATES_REGULAR, body_size)
+        lines = _wrap_by_width(draw, text, font_text, max_width)
+        line_h = int(body_size * 1.5)
 
         block_h = line_h * len(lines)
-        y = top + max(0, (zone_h - block_h) // 2)   # centré verticalement
+        y = top + max(0, (zone_h - block_h) // 2)
+
+        # Halo mask
+        txt_mask = Image.new('L', img.size, 0)
+        draw_mask = ImageDraw.Draw(txt_mask)
+        
+        y_mask = y
         for line in lines:
             lw = draw.textlength(line, font=font_text)
-            draw.text(((width - lw) / 2, y), line, font=font_text, fill=COLORS["BLACK"])
-            y += line_h
+            draw_mask.text(((width - lw) / 2, y_mask), line, font=font_text, fill=255)
+            y_mask += line_h
+            
+        blurred_mask = txt_mask.filter(ImageFilter.GaussianBlur(6))
+        cream_layer = Image.new('RGB', img.size, (250, 240, 214))
+        img.paste(cream_layer, (0, 0), blurred_mask)
+        
+        # Texte par-dessus en sépia
+        draw_text_final = ImageDraw.Draw(img)
+        y_text = y
+        sepia = (54, 34, 18)
+        for line in lines:
+            lw = draw_text_final.textlength(line, font=font_text)
+            draw_text_final.text(((width - lw) / 2, y_text), line, font=font_text, fill=sepia)
+            y_text += line_h
 
         # 5. Sauvegarder en mémoire
         buf = BytesIO()
