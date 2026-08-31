@@ -359,6 +359,22 @@ intents.voice_states = True  # Voice channel support (TTS Piper)
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+@bot.event
+async def on_command_error(ctx, error):
+    """Les 6 bots partagent le prefixe « ! » : chacun voit donc les commandes des cinq
+    autres et leve CommandNotFound. Sans ce gestionnaire, discord.py les journalise en
+    ERROR — six lignes rouges pour un seul « !decret », et le compteur d'erreurs du
+    dashboard qui gonfle alors qu'il ne se passe rien d'anormal.
+
+    ⚠️ On n'avale QUE CommandNotFound. Definir ce gestionnaire remplace celui de
+    discord.py : tout le reste doit donc etre journalise ici, sinon on rendrait muettes
+    de vraies erreurs de commande.
+    """
+    if isinstance(error, commands.CommandNotFound):
+        return
+    logger.error(f"❌ [COMMANDE] {ctx.command} : {error}", exc_info=error)
+
+
 # Client Initialization
 
 

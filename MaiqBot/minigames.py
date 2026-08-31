@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # INJECTION SHARED FOLDER
+import logging
 import sys
 import os
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11,6 +12,8 @@ if _parent_dir not in sys.path:
 Système de mini-jeux pour M'aiq le Menteur.
 Énigmes et vérités (ou mensonges).
 """
+
+logger = logging.getLogger(__name__)
 import random
 import re
 from typing import Dict, Optional, Tuple
@@ -143,8 +146,11 @@ def check_answer(channel_id: int, user_answer: str) -> Tuple[bool, Optional[int]
     user_answer_norm = normalize_answer(user_answer)
     valid_answers_norm = [normalize_answer(a) for a in game["answer"]]
     
-    # Debug log (via print for now as logger not passed here)
-    print(f"[DEBUG RIDDLE] User: '{user_answer}' -> '{user_answer_norm}' | Valid: {valid_answers_norm}")
+    # ⚠️ C'etait un `print`, donc du bruit permanent qu'aucun niveau de log ne pouvait
+    # filtrer : l'enigme est confrontee a CHAQUE message tant qu'une partie est ouverte,
+    # y compris aux commandes des autres bots. Six lignes rien que pour un « !decret ».
+    logger.debug("[ENIGME] reponse '%s' -> '%s' | attendu : %s",
+                 user_answer, user_answer_norm, valid_answers_norm)
     
     # Check if ANY valid answer is IN the user's normalized answer using regex word boundaries
     # (More lenient than exact match but stricter than basic substring)
