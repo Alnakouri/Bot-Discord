@@ -26,7 +26,7 @@ from pathlib import Path
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.media_handler import process_image_ollama
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, groq_kwargs
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -1080,19 +1080,24 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
         except Exception as e:
             logger.warning(f"⚠️ [RUMEUR SHEO] Gemini failed: {e}")
     
-    # Fallback OpenRouter/Dolphin
-    if not full_response and openrouter_client:
+    # Repli Mistral. ⚠️ C'etait nemotron:free (OPENROUTER_FREE), ecarte pour FUITE DE
+    # RAISONNEMENT : il recopie sa pensee dans `content`. Ces appels-ci sont DIRECTS,
+    # hors llm_cascade, donc sans le garde-fou `_fuite_de_raisonnement()` — c'est le
+    # montage exact qui a fait reciter son raisonnement a Malena en plein Discord.
+    # Mistral est le bon repli : autre fournisseur que Gemini (quota independant,
+    # tout l'interet d'un repli) et il passe les criteres d'admission.
+    if not full_response and mistral_client:
         try:
             chat = await asyncio.to_thread(
-                openrouter_client.chat.completions.create,
-                model=OPENROUTER_FREE,
+                mistral_client.chat.complete,
+                model=MISTRAL_MAIN,
                 messages=[{"role": "user", "content": rumor_prompt}],
                 temperature=1.0,
                 max_tokens=300
             )
             full_response = chat.choices[0].message.content
         except Exception as e:
-            logger.warning(f"⚠️ [RUMEUR SHEO] Grok (OpenRouter) failed: {e}")
+            logger.warning(f"⚠️ [RUMEUR SHEO] Mistral failed: {e}")
     
     if not full_response:
         # Repli (les 2 IA ont échoué) : décrets variés DANS la voix de Sheogorath,
@@ -1656,12 +1661,12 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         fake_text = "Je suis un imposteur !" # Fallback
         
         # LLM Call
-        if openrouter_client:
+        if mistral_client:
             try:
                 chat = await asyncio.wait_for(
                     asyncio.to_thread(
-                        openrouter_client.chat.completions.create,
-                        model=OPENROUTER_FREE,
+                        mistral_client.chat.complete,
+                        model=MISTRAL_MAIN,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=1.0,
                         max_tokens=300
@@ -1885,12 +1890,12 @@ async def on_message(message):
                     )
                     fake_text = chat.choices[0].message.content
                  except Exception: pass
-            elif openrouter_client:
+            elif mistral_client:
                 try:
                     chat = await asyncio.wait_for(
                         asyncio.to_thread(
-                            openrouter_client.chat.completions.create,
-                            model=OPENROUTER_FREE,
+                            mistral_client.chat.complete,
+                            model=MISTRAL_MAIN,
                             messages=[{"role": "user", "content": full_prompt}],
                             max_tokens=300
                         ),
@@ -1931,12 +1936,12 @@ async def on_message(message):
             
             fake_text = "Moi aussi je dis des choses !" # Fallback
             
-            if openrouter_client:
+            if mistral_client:
                 try:
                     chat = await asyncio.wait_for(
                         asyncio.to_thread(
-                            openrouter_client.chat.completions.create,
-                            model=OPENROUTER_FREE,
+                            mistral_client.chat.complete,
+                            model=MISTRAL_MAIN,
                             messages=[{"role": "user", "content": prompt}],
                             temperature=1.0,
                             max_tokens=300

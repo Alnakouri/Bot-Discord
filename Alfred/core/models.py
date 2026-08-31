@@ -9,7 +9,6 @@ GEMINI_FLASH      = "gemini-3.5-flash"
 GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
 GROQ_FAST         = "openai/gpt-oss-120b"
 MISTRAL_SMALL     = "mistral-small-latest"  # Mistral - argot FR le plus naturel
-OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 
 # ATTENTION : mistral-large est HORS ABONNEMENT depuis le 2026-08-30.
 # Sonde du 2026-08-30, 9 appels sur 3 personas : 9 echecs, tous identiques.
@@ -78,7 +77,12 @@ GROQ_SMALL    = "openai/gpt-oss-20b"    # Groq — le plus rapide (0.45 s median
 #                               si un jour un modele gratuit redevient fiable.
 #   - qwen3.6-27b             : recopie sa pensee (<think>) dans la reponse.
 #   - groq/compound-mini      : 8 echecs sur 12.
-#   - nemotron*:free          : fuite de raisonnement systematique (cf. gotcha).
+#   - nemotron*:free          : fuite de raisonnement systematique (cf. gotcha). Il a
+#                               survecu 5 jours a son propre rejet, parce qu'il restait
+#                               defini en tete de fichier parmi les modeles en service
+#                               et cite dans 4 appels DIRECTS de Sheogorath (hors
+#                               cascade, donc hors garde-fou). Retire le 2026-08-31.
+OPENROUTER_ECARTE = "nvidia/nemotron-3-super-120b-a12b:free"
 #   - gemini-3.5-flash        : 10,3 s de latence mediane — trop lent pour du chat.
 #
 # Chaque cascade melange des fournisseurs DIFFERENTS : leurs quotas sont independants,

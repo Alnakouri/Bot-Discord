@@ -12,7 +12,7 @@ from google.genai import types
 import PIL.Image
 
 try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
 except ImportError:  # bot déployé seul, sans shared/
     GEMINI_FLASH      = "gemini-3.5-flash"
     GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
@@ -20,7 +20,6 @@ except ImportError:  # bot déployé seul, sans shared/
     # mistral-large est hors abonnement (403 tier_not_allowed, 2026-08-30) : ce repli
     # le ressuscitait des qu'un bot tournait sans shared/. Cf. MISTRAL_HORS_TIER.
     MISTRAL_MAIN      = "mistral-small-latest"
-    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 
 logger = logging.getLogger("media_handler")
 

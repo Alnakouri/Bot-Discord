@@ -17,7 +17,7 @@ from pathlib import Path
 from core.secure_env import load_secure_env
 # Unsets conflicting Google Cloud env vars
 load_secure_env(Path(__file__).parent)
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, groq_kwargs
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs
 
 import discord
 from discord.ext import commands, tasks

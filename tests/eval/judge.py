@@ -5,13 +5,14 @@ import logging
 from shared.safe_client import get_client as get_safe_genai_client
 
 try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
 except ImportError:
     GEMINI_FLASH      = "gemini-3.5-flash"
     GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
     GROQ_FAST         = "openai/gpt-oss-120b"
-    MISTRAL_MAIN      = "mistral-large-latest"
-    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+    # mistral-large est hors abonnement (403 tier_not_allowed) et nemotron est ecarte
+    # pour fuite de raisonnement : ce repli les ressuscitait tous les deux.
+    MISTRAL_MAIN      = "mistral-small-latest"
 
 logger = logging.getLogger("eval_judge")
 

@@ -7,6 +7,8 @@ différentes. Le choix par persona vient d'une sonde réelle
 (`tools/sonde_modeles_persona.py`), pas d'une intuition.
 """
 import os
+import re
+from pathlib import Path
 import sys
 
 import pytest
@@ -16,10 +18,11 @@ if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
 from shared.models import (
-    CASCADES_PERSONA, bot_id_depuis_label, cascade_persona,
-    OPENROUTER_FREE,
+    CASCADES_PERSONA, bot_id_depuis_label, cascade_persona, OPENROUTER_ECARTE,
 )
 from shared.smart_router import get_model_cascade, RequestType
+
+_parent_dir_path = Path(_parent_dir)
 
 BOTS = ["alfred", "johnny", "maiq", "malena", "sheo", "sugar"]
 
@@ -284,3 +287,66 @@ def test_la_sonde_de_repartie_mesure_bien_la_capitulation():
     fuite = "Thinking Process: 1. **Analyze the Request:** * Role: Sugar Bot."  # qwen3.5, réel
     assert any(m in fuite.lower() for m in sonde_repartie.FUITE)
     assert not any(m in tient.lower() for m in sonde_repartie.FUITE)
+
+
+# ---------------------------------------------------------------------------
+# nemotron : ecarte pour fuite de raisonnement, et pourtant encore appele
+# ---------------------------------------------------------------------------
+
+_BOTS_SOURCES = ["Alfred", "JohnnyBot", "MaiqBot", "MalenaBot", "Sheogorath", "SugarBot"]
+
+
+def test_aucune_cascade_ne_rappelle_le_modele_qui_fuit():
+    """nemotron recopie sa pensee dans `content` (cf. `_fuite_de_raisonnement`).
+
+    Il figurait pourtant encore en dernier echelon de la cascade REPARTIE generique,
+    sous un commentaire qui vantait « Mistral Large en tete » — un modele hors
+    abonnement depuis le 2026-08-30. La cascade decrivait un monde disparu.
+    """
+    for bot in BOTS:
+        assert OPENROUTER_ECARTE not in [m for _, m in CASCADES_PERSONA[bot]]
+    for type_requete in (RequestType.TEXT, RequestType.REPARTEE, RequestType.IMAGE,
+                         RequestType.AUDIO, RequestType.REASONING):
+        cascade = get_model_cascade(type_requete, None)
+        assert OPENROUTER_ECARTE not in [m for _, m in cascade], \
+            f"{type_requete} : cascade generique sur un modele ecarte"
+
+
+@pytest.mark.parametrize("bot", _BOTS_SOURCES)
+def test_aucun_bot_n_appelle_le_modele_qui_fuit_hors_cascade(bot):
+    """Le vrai danger n'etait pas la cascade, c'etait les appels DIRECTS.
+
+    Sheogorath appelait nemotron dans 4 endroits vivants (rumeur du jour, imposteur
+    x3) sans passer par `llm_cascade` — donc sans `_fuite_de_raisonnement()` ni
+    `_est_vide()`. C'est le montage exact qui a fait reciter son raisonnement a Malena
+    en plein Discord. Un modele ecarte doit l'etre PARTOUT, pas seulement dans les
+    listes ou on pense a regarder.
+
+    ⚠️ On ne cherche PAS le mot « nemotron » : les commentaires et les docstrings qui
+    documentent le refus le citent legitimement, et un test qui les interdit pousse a
+    effacer la memoire du bug. On cherche les deux formes qui le remettent EN SERVICE :
+    le passer comme `model=` d'un appel, ou le redefinir en constante de repli.
+    """
+    # Trois formes, parce que deux ne suffisaient pas — verifie par mutation : remettre
+    # l'appel d'origine `model=OPENROUTER_FREE` passait au travers, le nom de la
+    # constante masquant l'identifiant du modele.
+    #   1. le litteral passe a un appel ;
+    #   2. le NOM historique, qui signifiait « en service » ;
+    #   3. une constante redefinie avec cet id — sauf *_ECARTE, qui dit son statut :
+    #      c'est la memoire du refus, pas une remise en service.
+    dangereux = re.compile(
+        r"""model\s*=.*nemotron"""
+        r"""|OPENROUTER_FREE"""
+        r"""|^\s*(?!\w*ECARTE)[A-Z_]+\s*=\s*["']nvidia/nemotron""")
+    sources = (list((_parent_dir_path / bot).glob("*.py"))
+               + list((_parent_dir_path / bot / "core").glob("*.py")))
+    assert sources, f"{bot} : aucune source lue, le test ne prouverait rien"
+    for source in sources:
+        for numero, ligne in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+            # On ne juge que la partie CODE : citer le nom dans un commentaire, c'est
+            # documenter le refus, et un test qui l'interdit pousse a effacer la
+            # memoire du bug. Ce qui suit un « # » n'est jamais execute.
+            code = ligne.split("#", 1)[0]
+            assert not dangereux.search(code), (
+                f"{source.name}:{numero} remet en service un modele ecarte pour "
+                f"fuite de raisonnement")

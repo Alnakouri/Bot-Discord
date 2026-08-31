@@ -9,7 +9,7 @@ import logging
 import aiohttp
 
 try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, cascade_persona
+    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, cascade_persona
 except ImportError:  # bot déployé seul, sans shared/
     GEMINI_FLASH      = "gemini-3.5-flash"
     GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
@@ -17,7 +17,6 @@ except ImportError:  # bot déployé seul, sans shared/
     # mistral-large est hors abonnement (403 tier_not_allowed, 2026-08-30) : ce repli
     # le ressuscitait des qu'un bot tournait sans shared/. Cf. MISTRAL_HORS_TIER.
     MISTRAL_MAIN      = "mistral-small-latest"
-    OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 
     def cascade_persona(_bot_id_ou_label):
         """Repli : sans models.py, pas de cascade par persona — on garde la generique.
@@ -224,20 +223,14 @@ def get_model_cascade(routing_type, bot_id=None):
         if propre:
             return propre
 
-    if routing_type == RequestType.REPARTEE:
-        # Cascade FREE-TIER optimisée répartie/humour, 3 fournisseurs distincts
-        # (pools de rate-limit indépendants → si l'un throttle, l'autre prend le relais) :
-        return [
-            # Ordre pour un rendu FR PROPRE et fidèle à la persona (1er qui répond gagne) :
-            # Mistral Large (modèle FR, français le plus propre, obéit bien → moins de tics) en
-            # tête, puis gpt-oss-120b (Groq, rapide) en secours, et enfin nemotron-3-super-120b
-            # tout en bas pour la variété quand les deux propres tombent.
-            # NB : plus aucun Grok gratuit sur OpenRouter (x-ai/grok-4-fast:free déprécié → 404, 2026-07).
-            ("mistral", MISTRAL_MAIN),
-            ("groq", GROQ_FAST),
-            ("openrouter", OPENROUTER_FREE),
-        ]
-    
+    # ⚠️ Il y avait ici une cascade RÉPARTIE distincte, dont le dernier échelon était
+    # nemotron:free. Elle est supprimée, pour deux raisons qui tiennent chacune seule :
+    #   — nemotron est ÉCARTÉ (fuite de raisonnement : il recopie sa pensée dans
+    #     `content`, cf. `_fuite_de_raisonnement` dans llm_cascade) ;
+    #   — son commentaire vantait « Mistral Large en tête », modèle hors abonnement
+    #     depuis le 2026-08-30 : la cascade décrivait un monde qui n'existait plus.
+    # La répartie tombe donc sur la cascade TEXT ci-dessous, qui mélange déjà trois
+    # fournisseurs à quotas indépendants et n'utilise que des modèles admis.
     # TEXT par défaut — 3 fournisseurs à clé propre (Mistral/Groq/Gemini),
     # aucune dépendance au crédit OpenRouter. (Ancien échelon gemma retiré
     # car il provoque actuellement des erreurs 429).

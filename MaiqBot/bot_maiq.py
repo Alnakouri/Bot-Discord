@@ -24,7 +24,7 @@ import logging
 from datetime import datetime
 import base64
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, OPENROUTER_FREE, groq_kwargs
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.media_handler import process_image_ollama
 try:
