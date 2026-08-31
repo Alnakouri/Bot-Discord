@@ -142,6 +142,48 @@ COLORS = {
     "DEMENTIA": (50, 0, 0)
 }
 
+# Couleurs du décret. Nommées plutôt qu'inline : la D.A. se règle ici, et un test
+# peut détourner _HALO_CREME pour vérifier que le halo est réellement posé.
+#
+# Le halo crème flou sous le texte est CE QUI REND LE DÉCRET LISIBLE : l'encre seule sur
+# un parchemin moucheté et bordé de brume violette se noie (rendu rejeté le 2026-08-30).
+# Ne pas le remplacer par un `stroke_width` : le contour net donne un rendu d'autocollant.
+_HALO_CREME = (250, 240, 214)
+_ENCRE_SEPIA = (54, 34, 18)
+_FILET_OR = (150, 106, 32)
+
+# Bornes du corps de texte. 44 px est confortable pour un décret ordinaire ; 24 px est
+# le plancher en dessous duquel on préfère un texte serré à un texte illisible.
+_CORPS_MAX, _CORPS_MIN, _INTERLIGNE = 44, 24, 1.5
+
+
+def _ajuster_corps(draw, text, max_width, zone_h):
+    """Choisit la plus grande taille de corps qui TIENT dans `zone_h`.
+
+    Rend `(police, lignes, hauteur_de_ligne)`.
+
+    ⚠️ Ne pas remplacer par une taille fixe. Une taille en dur ne déborde pas sur un
+    décret court, mais Sheogorath en écrit de très longs : mesuré le 2026-08-30 avec
+    `body_size = 40` figé, un décret de 12 lignes sortait **par le bas de l'image**, les
+    trois dernières lignes coupées net. La boucle d'ajustement existait avant la refonte
+    visuelle et avait disparu avec elle.
+    """
+    for taille in range(_CORPS_MAX, _CORPS_MIN - 1, -2):
+        police = _load_font(_FONT_CANDIDATES_REGULAR, taille)
+        lignes = _wrap_by_width(draw, text, police, max_width)
+        hauteur = int(taille * _INTERLIGNE)
+        if hauteur * len(lignes) <= zone_h:
+            return police, lignes, hauteur
+
+    # Même au plancher ça déborde : on rend le plancher plutôt que rien, et on le dit.
+    police = _load_font(_FONT_CANDIDATES_REGULAR, _CORPS_MIN)
+    lignes = _wrap_by_width(draw, text, police, max_width)
+    logger.warning(
+        "⚠️ [DECRET] Texte trop long même à %d px (%d lignes) : le bas sera coupé.",
+        _CORPS_MIN, len(lignes))
+    return police, lignes, int(_CORPS_MIN * _INTERLIGNE)
+
+
 def generate_decree_image(text, title="DÉCRET DAEDRA"):
     """
     Génère une image de parchemin avec le texte du décret.
@@ -180,7 +222,8 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
         # Filet doré
         filet_y = y_title + 10
         filet_w = 400
-        draw.line(((width - filet_w) / 2, filet_y, (width + filet_w) / 2, filet_y), fill=(150, 106, 32), width=3)
+        draw.line(((width - filet_w) / 2, filet_y, (width + filet_w) / 2, filet_y),
+                  fill=_FILET_OR, width=3)
 
         # 4. Corps du texte
         body_margin = 165
@@ -189,10 +232,7 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
         bottom = height - 150
         zone_h = bottom - top
 
-        body_size = 40
-        font_text = _load_font(_FONT_CANDIDATES_REGULAR, body_size)
-        lines = _wrap_by_width(draw, text, font_text, max_width)
-        line_h = int(body_size * 1.5)
+        font_text, lines, line_h = _ajuster_corps(draw, text, max_width, zone_h)
 
         block_h = line_h * len(lines)
         y = top + max(0, (zone_h - block_h) // 2)
@@ -208,13 +248,13 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
             y_mask += line_h
             
         blurred_mask = txt_mask.filter(ImageFilter.GaussianBlur(6))
-        cream_layer = Image.new('RGB', img.size, (250, 240, 214))
+        cream_layer = Image.new('RGB', img.size, _HALO_CREME)
         img.paste(cream_layer, (0, 0), blurred_mask)
         
         # Texte par-dessus en sépia
         draw_text_final = ImageDraw.Draw(img)
         y_text = y
-        sepia = (54, 34, 18)
+        sepia = _ENCRE_SEPIA
         for line in lines:
             lw = draw_text_final.textlength(line, font=font_text)
             draw_text_final.text(((width - lw) / 2, y_text), line, font=font_text, fill=sepia)
