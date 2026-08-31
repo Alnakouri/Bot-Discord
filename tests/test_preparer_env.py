@@ -31,9 +31,9 @@ CLES = {
 
 @pytest.fixture
 def faux_depot(tmp_path, monkeypatch):
-    """Deux bots chiffres : Sheogorath (4 emplacements Gemini, un jeton mort) et
-    MalenaBot (un SEUL emplacement), qui partagent la meme cle Gemini."""
-    for bot, nb_emplacements in (("Sheogorath", 4), ("MalenaBot", 1)):
+    """Deux bots chiffres qui partagent la meme cle Gemini, dont un (Sheogorath)
+    porte un jeton mort."""
+    for bot in ("Sheogorath", "MalenaBot"):
         d = tmp_path / bot
         d.mkdir()
         cle = Fernet.generate_key()
@@ -41,10 +41,6 @@ def faux_depot(tmp_path, monkeypatch):
         contenu = "\n".join(f"{n}={v}" for n, v in CLES.items()
                             if n != "HF_TOKEN" or bot == "Sheogorath")
         (d / ".env.encrypted").write_bytes(Fernet(cle).encrypt(contenu.encode()))
-        # La source du bot : c'est elle qui dit combien d'emplacements il LIT.
-        (d / f"bot_{bot.lower()}.py").write_text(
-            "\n".join(f'os.getenv("GEMINI_KEY_{i}")' for i in range(1, nb_emplacements + 1)),
-            encoding="utf-8")
 
     monkeypatch.setattr(preparer_env, "RACINE", tmp_path)
     monkeypatch.setattr(preparer_env, "BOTS", ["Sheogorath", "MalenaBot"])
@@ -105,16 +101,34 @@ def test_le_chiffre_d_origine_n_est_pas_touche_par_l_ouverture(faux_depot):
     assert (faux_depot / "Sheogorath" / ".env.encrypted").read_bytes() == avant
 
 
-def test_on_ne_propose_que_les_emplacements_que_le_bot_lit(faux_depot):
-    """MalenaBot ne lit qu'UNE cle Gemini. Lui proposer un GEMINI_KEY_2 ferait saisir
-    une cle qui ne servirait jamais — et donnerait l'illusion d'une rotation."""
+def test_aucun_emplacement_de_rotation_n_est_reclame(faux_depot):
+    """UNE cle Gemini par bot suffit (decision utilisateur, 2026-08-31). Les bots
+    savent en lire jusqu'a 4, mais une 2e demanderait un 2e compte Google — et quand
+    le quota de la premiere tombe, la cascade bascule deja sur Groq ou Mistral, dont
+    les quotas sont independants.
+
+    Reclamer un champ inutile n'est pas neutre : un champ reclame finit rempli, et il
+    se remplit avec la cle du voisin. C'est l'origine exacte du partage Johnny/Malena.
+    """
     preparer_env.ouvrir()
-    malena = _variables_du_fichier(faux_depot / "MalenaBot" / ".env")
-    sheo = _variables_du_fichier(faux_depot / "Sheogorath" / ".env")
-    assert "GEMINI_KEY_2" not in malena
-    assert ["GEMINI_KEY_2", "GEMINI_KEY_3", "GEMINI_KEY_4"] == [
-        n for n in sheo if n.startswith("GEMINI_KEY_") and n != "GEMINI_KEY_1"]
-    assert all(v == "" for n, v in sheo.items() if n in ("GEMINI_KEY_2", "GEMINI_KEY_3"))
+    for bot in ("Sheogorath", "MalenaBot"):
+        noms = _variables_du_fichier(faux_depot / bot / ".env")
+        assert "GEMINI_KEY_1" in noms, "la cle du bot doit rester demandee"
+        assert not [n for n in noms if n.startswith("GEMINI_KEY_") and n != "GEMINI_KEY_1"],             f"{bot} : un emplacement de rotation est reclame"
+
+
+def test_une_cle_de_rotation_deja_saisie_n_est_pas_retiree(faux_depot):
+    """On cesse d'en DEMANDER, on n'en supprime pas : les bots lisent toujours
+    GEMINI_KEY_2 a 4, et retirer une cle en service rendrait le bot muet un cran plus
+    tot sans que personne ne comprenne pourquoi."""
+    d = faux_depot / "Sheogorath"
+    cle = (d / ".master_key").read_bytes()
+    texte = Fernet(cle).decrypt((d / ".env.encrypted").read_bytes()).decode()
+    (d / ".env.encrypted").write_bytes(
+        Fernet(cle).encrypt((texte + "\nGEMINI_KEY_2=cle-en-service").encode()))
+
+    preparer_env.ouvrir()
+    assert _variables_du_fichier(d / ".env")["GEMINI_KEY_2"] == "cle-en-service"
 
 
 def test_la_cle_partagee_est_signalee_chez_LES_DEUX_bots(faux_depot):
@@ -146,8 +160,10 @@ def test_une_variable_identique_par_construction_n_est_pas_un_partage(faux_depot
 def test_sceller_sauvegarde_rechiffre_et_efface_le_clair(faux_depot):
     preparer_env.ouvrir()
     chemin = faux_depot / "Sheogorath" / ".env"
+    # La saisie que l'utilisateur vient de faire : la cle partagee est remplacee.
     chemin.write_text(chemin.read_text(encoding="utf-8").replace(
-        "GEMINI_KEY_2=", "GEMINI_KEY_2=cle-neuve"), encoding="utf-8")
+        "GEMINI_KEY_1=" + CLES["GEMINI_KEY_1"], "GEMINI_KEY_1=cle-neuve"),
+        encoding="utf-8")
 
     preparer_env.sceller()
 
@@ -157,7 +173,8 @@ def test_sceller_sauvegarde_rechiffre_et_efface_le_clair(faux_depot):
     cle = (faux_depot / "Sheogorath" / ".master_key").read_bytes()
     relu = Fernet(cle).decrypt(
         (faux_depot / "Sheogorath" / ".env.encrypted").read_bytes()).decode("utf-8")
-    assert "GEMINI_KEY_2=cle-neuve" in relu
+    assert "GEMINI_KEY_1=cle-neuve" in relu
+    assert CLES["GEMINI_KEY_1"] not in relu, "l'ancienne cle partagee est encore la"
 
 
 def test_le_clair_survit_si_la_relecture_ne_correspond_pas(faux_depot, monkeypatch):

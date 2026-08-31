@@ -21,10 +21,15 @@ CE QUE --ouvrir PREPARE, et pourquoi
 ------------------------------------
 1. Il RETIRE les variables mortes (cf. MORTES) : une cle qui rend 401 ne se voit pas,
    le bot bascule sur l'echelon suivant et personne ne remarque rien.
-2. Il AJOUTE les emplacements vides que le code du bot lit reellement, et lui seul :
-   le nombre de `GEMINI_KEY_n` est relu dans la source de CHAQUE bot, pas ecrit en dur
-   ici. MalenaBot n'en lit qu'UNE (`GEMINI_API_KEY or GEMINI_KEY_1`) : lui proposer un
-   `GEMINI_KEY_2` serait un champ mort, saisi pour rien.
+2. Il AJOUTE les emplacements du SOCLE qui manquent — et rien d'autre.
+   ⚠️ PAS de `GEMINI_KEY_2/3/4`. Les bots savent tourner sur 4 cles Gemini, mais
+   UNE SEULE PAR BOT SUFFIT (decision utilisateur, 2026-08-31) : une 2e cle
+   demanderait un 2e compte Google, et quand le quota de la premiere tombe la cascade
+   bascule deja sur Groq ou Mistral, dont les quotas sont independants. Proposer ces
+   champs, c'est reclamer une saisie qui ne sert a rien — et un champ reclame finit
+   toujours rempli avec la cle du voisin.
+   Une cle GEMINI_KEY_2 deja saisie n'est PAS retiree pour autant : les bots la lisent
+   toujours, on cesse simplement d'en demander.
 3. Il SIGNALE les cles partagees entre deux bots, la ou il faut saisir la neuve.
    Une variable laissee vide est filtree par les bots (`[k for k in ... if k]`), donc
    un emplacement non rempli ne casse rien.
@@ -34,7 +39,6 @@ la cle d'un autre bot pour depanner — c'est exactement comme ca qu'une cle fin
 mutualisee sans que personne ne l'ait decide.
 """
 import argparse
-import re
 import shutil
 import sys
 import time
@@ -116,20 +120,6 @@ def variables(texte):
     return trouvees
 
 
-def emplacements_gemini(bot):
-    """Combien de GEMINI_KEY_n le bot lit-il REELLEMENT ?
-
-    Relu dans sa source a chaque execution : un bot qui gagne un emplacement le voit
-    apparaitre ici sans que personne ne pense a modifier cet outil. MalenaBot n'en lit
-    qu'une seule, lui en proposer d'autres ferait saisir une cle pour rien.
-    """
-    maxi = 0
-    for source in (RACINE / bot).glob("bot_*.py"):
-        for n in re.findall(r"GEMINI_KEY_(\d+)", source.read_text(encoding="utf-8")):
-            maxi = max(maxi, int(n))
-    return maxi or 1
-
-
 def partagees():
     """{(nom_var, bot)} pour toute cle portee par deux bots ou plus.
 
@@ -180,10 +170,6 @@ def ouvrir():
             lignes.append(f"{nom}={valeur}")
 
         manquantes = [n for n in SOCLE if n not in existantes]
-        for n in range(2, emplacements_gemini(bot) + 1):
-            nom = f"GEMINI_KEY_{n}"
-            if nom not in existantes:
-                manquantes.append(nom)
 
         corps = ENTETE.format(bot=bot, date=time.strftime("%Y-%m-%d %H:%M"))
         if retirees:
