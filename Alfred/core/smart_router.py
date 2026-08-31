@@ -19,7 +19,9 @@ except ImportError:  # bot déployé seul, sans shared/
     GEMINI_FLASH      = "gemini-3.5-flash"
     GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
     GROQ_FAST         = "openai/gpt-oss-120b"
-    MISTRAL_MAIN      = "mistral-large-latest"
+    # mistral-large est hors abonnement (403 tier_not_allowed, 2026-08-30) : ce repli
+    # le ressuscitait des qu'un bot tournait sans shared/. Cf. MISTRAL_HORS_TIER.
+    MISTRAL_MAIN      = "mistral-small-latest"
     OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
 
     def cascade_persona(_bot_id_ou_label):

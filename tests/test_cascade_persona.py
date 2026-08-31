@@ -189,3 +189,98 @@ def test_aucune_cascade_n_utilise_le_modele_au_francais_faible(bot):
     sur deux réponses. Le modèle était le plus incisif et le plus bref ; la brièveté ne
     vaut pas ce prix. Le constant reste défini pour documenter le refus."""
     assert GROQ_QWEN not in [m for _, m in CASCADES_PERSONA[bot]],         f"{bot} : qwen a été remis dans la cascade"
+
+
+# ---------------------------------------------------------------------------
+# mistral-large : hors abonnement depuis le 2026-08-30
+# ---------------------------------------------------------------------------
+
+from shared.models import MISTRAL_HORS_TIER, MISTRAL_MAIN
+
+
+@pytest.mark.parametrize("bot", BOTS)
+def test_aucune_cascade_n_utilise_le_modele_hors_abonnement(bot):
+    """Sonde du 2026-08-30 : 9 appels sur 3 personas, 9 refus identiques —
+    403 « This model is not available in your subscription tier » (code 1910).
+    Confirmé en base : 7 échecs sur 7, latence 134-283 ms, le temps d'un refus.
+
+    Alfred le portait en TÊTE : il perdait un appel à chaque message. Sheo l'avait
+    juste derrière Groq, donc il tombait dessus pile après un 429.
+
+    ⚠️ `models.list()` le liste quand même (54 ids rendus, celui-ci inclus) : ne pas
+    le remettre sur la foi du catalogue, seul un appel réel tranche.
+    """
+    assert MISTRAL_HORS_TIER not in [m for _, m in CASCADES_PERSONA[bot]], \
+        f"{bot} : mistral-large a été remis dans la cascade (403 tier_not_allowed)"
+
+
+def test_ni_l_annonce_ni_les_cascades_generiques_ne_l_utilisent():
+    """La cascade d'annonce et les replis de smart_router le portaient aussi."""
+    assert MISTRAL_HORS_TIER not in [m for _, m in CASCADE_ANNONCE]
+    types_requete = [RequestType.TEXT, RequestType.REPARTEE, RequestType.IMAGE,
+                     RequestType.AUDIO, RequestType.REASONING]
+    for type_requete in types_requete:
+        cascade = get_model_cascade(type_requete, None)
+        assert MISTRAL_HORS_TIER not in [m for _, m in cascade], \
+            f"{type_requete} : cascade générique sur un modèle hors abonnement"
+
+
+def test_le_repli_sans_shared_ne_ressuscite_pas_le_modele_mort():
+    """Les branches `except ImportError` recopient les ids en dur : sans ce test,
+    un bot déployé seul repartirait sur mistral-large — la règle d'indépendance
+    remettrait en marche exactement ce que ce correctif retire."""
+    for module in ("smart_router", "media_handler"):
+        src = open(os.path.join(_parent_dir, "shared", module + ".py"), encoding="utf-8").read()
+        repli = src.split("except ImportError")[1].split("\ndef ")[0]
+        assert MISTRAL_HORS_TIER not in repli, \
+            f"shared/{module}.py : le repli sans shared/ ressuscite mistral-large"
+
+
+def test_mistral_main_pointe_sur_un_modele_de_l_abonnement():
+    assert MISTRAL_MAIN != MISTRAL_HORS_TIER
+
+
+# ---------------------------------------------------------------------------
+# La répartie est un critère d'admission, pas une impression
+# ---------------------------------------------------------------------------
+
+def test_les_criteres_d_admission_sont_ecrits_dans_la_source_de_verite():
+    """Ajouté le 2026-08-30 : la répartie a été mesurée pour la première fois, et trois
+    modèles « sans filtre » ont capitulé devant l'insulte — hermes-3 (2/5), hermes-4
+    (« Désolé »), dolphin-venice. Rien ne mesurait ça avant, donc rien ne l'interdisait.
+
+    Les critères vivent dans `shared/models.py`, à côté des cascades qu'ils gouvernent :
+    dans un document séparé, ils seraient périmés en trois semaines."""
+    src = open(os.path.join(_parent_dir, "shared", "models.py"), encoding="utf-8").read()
+    assert "CRITERES D'ADMISSION" in src
+    for critere in ("FRANCAIS", "REPARTIE", "FUITE", "VIDE", "LATENCE", "TIC"):
+        assert critere in src, f"le critère {critere} n'est plus documenté"
+    for sonde in ("sonde_modeles_persona.py", "sonde_repartie.py"):
+        assert sonde in src, f"{sonde} n'est pas cité comme l'outil qui tranche"
+
+
+def test_l_outil_qui_mesure_la_repartie_existe():
+    chemin = os.path.join(_parent_dir, "tools", "sonde_repartie.py")
+    assert os.path.exists(chemin), "tools/sonde_repartie.py manquant"
+    src = open(chemin, encoding="utf-8").read()
+    assert "CAPITULE" in src, "la sonde ne détecte plus la capitulation"
+    assert "FUITE" in src, "la sonde ne détecte plus la fuite de raisonnement"
+    # Les modèles EN PLACE doivent y figurer : un candidat ne vaut que comparé.
+    for enplace in ("gpt-oss-120b", "mistral-small", "flash-lite"):
+        assert enplace in src, f"{enplace} (en production) absent des candidats comparés"
+
+
+def test_la_sonde_de_repartie_mesure_bien_la_capitulation():
+    """Le test le plus important du lot : si les marqueurs ne détectent rien, la sonde
+    rend « 0/5 » pour tout le monde et son classement ne veut plus rien dire."""
+    sys.path.insert(0, os.path.join(_parent_dir, "tools"))
+    import sonde_repartie
+
+    couche = "Tu as raison, je ne sers pas à grand-chose."          # dolphin-venice, réel
+    tient = "Ah, c'est mignon, le peteur qui croit que l'ignorance est un talent."
+    assert any(m in couche.lower() for m in sonde_repartie.CAPITULE)
+    assert not any(m in tient.lower() for m in sonde_repartie.CAPITULE)
+
+    fuite = "Thinking Process: 1. **Analyze the Request:** * Role: Sugar Bot."  # qwen3.5, réel
+    assert any(m in fuite.lower() for m in sonde_repartie.FUITE)
+    assert not any(m in tient.lower() for m in sonde_repartie.FUITE)

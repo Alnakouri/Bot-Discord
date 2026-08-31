@@ -75,7 +75,7 @@ sur mesures réelles (`tools/sonde_modeles_persona.py` envoie le vrai prompt de 
 
 | Bot | Tête de cascade | Pourquoi |
 |-----|-----------------|----------|
-| **Alfred** | `mistral-large-latest` | Ironie sèche de majordome, registre « Monsieur » tenu |
+| **Alfred** | `mistral-small-latest` | Ironie sèche de majordome, registre « Monsieur » tenu |
 | **Johnny** | `mistral-small-latest` | Seul à sortir l'argot de rue sans l'édulcorer |
 | **Sheogorath** | `openai/gpt-oss-120b` (Groq) | Sort Wabbajack, Haskill et le fromage de lui-même |
 | **Sugar Bot** | `gemini-3.5-flash-lite` | Tranche sans meubler, garde le vocabulaire maison |
@@ -85,6 +85,13 @@ sur mesures réelles (`tools/sonde_modeles_persona.py` envoie le vrai prompt de 
 Chaque cascade mélange des **fournisseurs différents** : leurs quotas sont indépendants,
 donc si l'un limite, l'échelon suivant répond quand même.
 
+> [!WARNING]
+> **Mistral Large a été retiré de toutes les cascades le 2026-08-30** : il rend
+> `403 tier_not_allowed` — hors abonnement. Il apparaît pourtant toujours dans
+> `models.list()` : ne le remettre qu'après un appel réel réussi. Un test l'interdit.
+> (Son identifiant n'est volontairement pas écrit en code ici : le test qui vérifie
+> les modèles cités le lirait comme un modèle en service.)
+
 ### Ce qui n'est PAS personnalisé
 
 Là, c'est la **capacité** du modèle qui commande, pas le ton :
@@ -92,8 +99,8 @@ Là, c'est la **capacité** du modèle qui commande, pas le ton :
 | Rôle | Cascade |
 |------|---------|
 | 🖼️ Vision & audio | `gemini-3.5-flash` → `gemini-3.5-flash-lite` |
-| 🧠 Raisonnement complexe | `gemini-3.5-flash` → `mistral-large-latest` → `openai/gpt-oss-120b` |
-| 📢 Annonces de live | `gemini-3.5-flash-lite` → `mistral-large-latest` → `openai/gpt-oss-120b` |
+| 🧠 Raisonnement complexe | `gemini-3.5-flash` → `mistral-small-latest` → `openai/gpt-oss-120b` |
+| 📢 Annonces de live | `gemini-3.5-flash-lite` → `mistral-small-latest` → `openai/gpt-oss-120b` |
 
 > [!NOTE]
 > Les annonces de live sont **publiques** : c'est la qualité de langue qui prime, pas le

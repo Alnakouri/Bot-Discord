@@ -3,8 +3,25 @@
 GEMINI_FLASH      = "gemini-3.5-flash"
 GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
 GROQ_FAST         = "openai/gpt-oss-120b"
-MISTRAL_MAIN      = "mistral-large-latest"
+MISTRAL_SMALL     = "mistral-small-latest"  # Mistral - argot FR le plus naturel
 OPENROUTER_FREE   = "nvidia/nemotron-3-super-120b-a12b:free"
+
+# ATTENTION : mistral-large est HORS ABONNEMENT depuis le 2026-08-30.
+# Sonde du 2026-08-30, 9 appels sur 3 personas : 9 echecs, tous identiques.
+#   403 {"message":"This model is not available in your subscription tier",
+#        "type":"tier_not_allowed","code":"1910"}
+# En base (data/api_usage.db) : 7 echecs sur 7 depuis le 2026-08-29, latence 134-283 ms
+# — le temps d'un refus, pas d'une reponse. Alfred perdait donc un appel a chaque
+# message (son echelon de TETE), et Sheo tombait dessus juste apres un 429 Groq.
+#
+# ⚠️ `models.list()` LE LISTE QUAND MEME (54 ids rendus, mistral-large-latest inclus).
+# Meme mensonge que l'audit 2026-08-24 : seul un appel reel tranche. Ne pas le
+# remettre dans une cascade sur la foi du catalogue — un test l'interdit.
+MISTRAL_HORS_TIER = "mistral-large-latest"
+
+# Le Mistral de service. Pointait sur `mistral-large-latest` jusqu'au 2026-08-30 ;
+# bascule sur small, choisi sur sonde (cf. CASCADES_PERSONA, entree "alfred").
+MISTRAL_MAIN      = MISTRAL_SMALL
 
 
 # Modeles a RAISONNEMENT : ils depensent des tokens en pensee AVANT de repondre.
@@ -41,7 +58,7 @@ def groq_kwargs(model_name):
 # Conserve ici pour que personne ne le re-choisisse sans savoir. Un test l'interdit.
 GROQ_QWEN     = "qwen/qwen3.8-27b"
 GROQ_SMALL    = "openai/gpt-oss-20b"    # Groq — le plus rapide (0.45 s median)
-MISTRAL_SMALL = "mistral-small-latest"  # Mistral — argot FR le plus naturel
+# MISTRAL_SMALL est remonte en haut du fichier : il sert desormais de MISTRAL_MAIN.
 
 # ---------------------------------------------------------------------------
 # CASCADE PAR PERSONA
@@ -62,11 +79,55 @@ MISTRAL_SMALL = "mistral-small-latest"  # Mistral — argot FR le plus naturel
 # Chaque cascade melange des fournisseurs DIFFERENTS : leurs quotas sont independants,
 # donc si l'un throttle, l'echelon suivant repond quand meme.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# LES CRITERES D'ADMISSION D'UN MODELE
+#
+# Aucun modele n'entre dans une cascade sur sa fiche marketing. Il passe les deux
+# sondes, dans cet ordre, et il est ecarte des le premier critere manque :
+#
+#   tools/sonde_modeles_persona.py   tient-il le personnage, en francais ?
+#   tools/sonde_repartie.py          encaisse-t-il une insulte et rend-il le coup ?
+#
+# 1. FRANCAIS          zero faute reelle. C'est le critere le plus eliminatoire :
+#                      il a coute qwen (« une serpipe », « ca s'quille »), gemma-3-27b
+#                      (« Penteur »), ministral-8b, dolphin-venice (« tu mezouves »,
+#                      « tu maniques », et des lettres GRECQUES au milieu d'un mot).
+# 2. REPARTIE          ne JAMAIS donner raison a l'insulte, ne jamais s'excuser, ne
+#                      jamais dire « je suis un programme ». Ajoute comme critere le
+#                      2026-08-30 : rien ne le mesurait, et c'est pourtant ce qu'un bot
+#                      de salon fait toute la journee. Mesure sur 5 piques croissantes.
+#                      Ecarte ce jour-la : hermes-3 (2/5), hermes-4 (1/5, « Desole »),
+#                      dolphin-venice (1/5).
+# 3. PAS DE FUITE      ni raisonnement, ni notes de travail, ni prompt systeme recopies
+#                      dans la reponse. Ecarte : nemotron, qwen3.5-flash (publie son
+#                      « Thinking Process » en anglais), hermes-3 (recite son propre
+#                      prompt), ministral-8b (« (Note : j'ai respecte la contrainte) »).
+# 4. PAS DE VIDE       un 200 OK au contenu vide casse la cascade (cf. _est_vide dans
+#                      llm_cascade). deepseek-v4-flash : 2 reponses vides sur 5.
+# 5. LATENCE           sous ~2 s. Ecarte gemini-3.5-flash (10,3 s median) et
+#                      hermes-3-70b (3,0 s).
+# 6. TIC D'OUVERTURE   combien de reponses commencent par le meme mot. Ce n'est pas
+#                      eliminatoire mais ca se paie : gpt-oss-120b ouvre par « Ah, »
+#                      5 fois sur 5, d'ou build_anti_tic_consigne cote Sheo.
+#
+# ⚠️ La sonde de repartie tourne sur un prompt COURT et sur UNE persona seche (Sugar),
+# contrainte par le plafond du free tier OpenRouter (1864 tokens). Son classement ne se
+# transpose pas tel quel a Alfred ou M'aiq : re-mesurer avant de deplacer leur cascade.
+# ---------------------------------------------------------------------------
 CASCADES_PERSONA = {
-    # Majordome : ironie seche, formulation soignee. Mistral Large tient le registre
-    # « Monsieur » sans deraper. (« Monsieur a enfin compris l'evidence. Une demi-journee
-    # de retard, mais mieux vaut tard que jamais. »)
-    "alfred": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
+    # Majordome : ironie seche, formulation soignee. Mistral Large tenait ce registre,
+    # mais il est passe hors abonnement (cf. MISTRAL_HORS_TIER). Re-sonde du 2026-08-30
+    # sur les 3 memes messages, 4 candidats : mistral-small gagne, et de loin.
+    #   mistral-small  0,6 s — « Le bonjour precede la question, Monsieur. Impressionnant
+    #                  d'avoir inverse une tradition aussi elementaire. » Registre tenu.
+    #   mistral-medium 1,1 s — voix propre, mais 2 fautes reelles sur 6 reponses
+    #                  (« le service du Manoir despedt toujours debout ») : le motif
+    #                  exact qui a fait ecarter qwen. Refuse pour la meme raison.
+    #   gpt-oss-120b   7,75 s sur la question ouverte, et c'est lui qui prend les 429.
+    #   flash-lite     le plus court, mais ton fade et tic « helas » 2 fois sur 3.
+    # Il partage le modele de Johnny et Malena : la voix vient du prompt de persona,
+    # et les trois sorties restent nettement distinctes a la sonde.
+    "alfred": [("mistral", MISTRAL_SMALL), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
 
     # Rockerboy de Night City : argot cru, phrases qui cognent. Mistral Small est le seul
     # a sortir le vocabulaire de la rue sans l'edulcorer (« t'es un gonk avec un clavier »).
