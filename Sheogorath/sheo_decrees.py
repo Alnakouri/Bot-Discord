@@ -118,13 +118,49 @@ def _clean_for_image(text):
     return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
+def petites_capitales(draw, texte, font, x_center, y, couleur, ecart):
+    """Dessine du texte en ajoutant un écart en pixels entre chaque caractère, centré sur x_center."""
+    texte = texte.upper()
+    largeur_totale = sum(draw.textlength(c, font=font) for c in texte) + ecart * (len(texte) - 1)
+    x = x_center - largeur_totale / 2
+    for c in texte:
+        draw.text((x, y), c, font=font, fill=couleur)
+        x += draw.textlength(c, font=font) + ecart
 
-def _wrap_by_width(draw, text, font, max_width):
+
+def justifie(draw, ligne, font, largeur_visee, derniere, x_start, y, couleur):
+    """Dessine une ligne justifiée, ou au fer à gauche si `derniere`."""
+    mots = ligne.split(" ")
+    if not mots:
+        return
+    if derniere or len(mots) == 1:
+        # Fer à gauche
+        x = x_start
+        for mot in mots:
+            draw.text((x, y), mot, font=font, fill=couleur)
+            x += draw.textlength(mot + " ", font=font)
+        return
+
+    # Justification
+    largeur_mots = sum(draw.textlength(mot, font=font) for mot in mots)
+    espace_dispo = largeur_visee - largeur_mots
+    ecart_moyen = espace_dispo / (len(mots) - 1)
+    
+    x = x_start
+    for i, mot in enumerate(mots):
+        draw.text((x, y), mot, font=font, fill=couleur)
+        if i < len(mots) - 1:
+            x += draw.textlength(mot, font=font) + ecart_moyen
+
+
+
+def _wrap_by_width(draw, text, font, max_width, indent_lines=0, indent_width=0):
     """Découpe `text` en lignes qui tiennent dans `max_width` pixels."""
     lines, cur = [], ""
     for word in espaces_francaises(text).split(" "):
+        current_max = max_width - indent_width if len(lines) < indent_lines else max_width
         trial = (cur + " " + word).strip()
-        if draw.textlength(trial, font=font) <= max_width or not cur:
+        if draw.textlength(trial, font=font) <= current_max or not cur:
             cur = trial
         else:
             lines.append(cur)
@@ -151,13 +187,16 @@ COLORS = {
 _HALO_CREME = (250, 240, 214)
 _ENCRE_SEPIA = (54, 34, 18)
 _FILET_OR = (150, 106, 32)
+# Gris de l'ombre du titre. Volontairement clair : l'image est en RGB, donc PIL
+# ignore tout canal alpha — la douceur ne peut venir que de la couleur elle-meme.
+_OMBRE_TITRE = (120, 100, 90)
 
 # Bornes du corps de texte. 44 px est confortable pour un décret ordinaire ; 24 px est
 # le plancher en dessous duquel on préfère un texte serré à un texte illisible.
 _CORPS_MAX, _CORPS_MIN, _INTERLIGNE = 44, 24, 1.5
 
 
-def _ajuster_corps(draw, text, max_width, zone_h):
+def _ajuster_corps(draw, text, max_width, zone_h, indent_lines=0, indent_width=0):
     """Choisit la plus grande taille de corps qui TIENT dans `zone_h`.
 
     Rend `(police, lignes, hauteur_de_ligne)`.
@@ -170,14 +209,14 @@ def _ajuster_corps(draw, text, max_width, zone_h):
     """
     for taille in range(_CORPS_MAX, _CORPS_MIN - 1, -2):
         police = _load_font(_FONT_CANDIDATES_REGULAR, taille)
-        lignes = _wrap_by_width(draw, text, police, max_width)
+        lignes = _wrap_by_width(draw, text, police, max_width, indent_lines, indent_width)
         hauteur = int(taille * _INTERLIGNE)
         if hauteur * len(lignes) <= zone_h:
             return police, lignes, hauteur
 
     # Même au plancher ça déborde : on rend le plancher plutôt que rien, et on le dit.
     police = _load_font(_FONT_CANDIDATES_REGULAR, _CORPS_MIN)
-    lignes = _wrap_by_width(draw, text, police, max_width)
+    lignes = _wrap_by_width(draw, text, police, max_width, indent_lines, indent_width)
     logger.warning(
         "⚠️ [DECRET] Texte trop long même à %d px (%d lignes) : le bas sera coupé.",
         _CORPS_MIN, len(lignes))
@@ -198,10 +237,20 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
         draw = ImageDraw.Draw(img)
         width, height = img.size
 
-        # 2. On retire les emoji/symboles non couverts par la police (sinon carrés).
+        # 2. On retire les emoji/symboles non couverts par la police
         title = _clean_for_image(title)
         text = _clean_for_image(text)
 
+        # Sur-titre. ⚠️ UNE seule source pour la chaine : le halo et le texte visible
+        # doivent etre poses avec le MEME texte et le MEME interlettrage. Les separer
+        # (une chaine pre-espacee pour le masque, `petites_capitales` pour le rendu)
+        # donnait un halo plus large que le texte, decale d'une dizaine de pixels.
+        SUR_TITRE = "ÉDIT IMPÉRIAL"
+        ECART_SUR_TITRE = 4
+        font_sur_titre = _load_font(_FONT_CANDIDATES_REGULAR, 18)
+        y_sur_titre = 100
+        x_center = width / 2
+        
         # 3. Écrire le Titre — taille max 64px, plier sur 2 lignes si besoin
         margin = 150
         max_title_w = width - 2 * margin
@@ -212,52 +261,123 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
             if len(lines_title) <= 2:
                 break
             title_size -= 4
-        
-        y_title = 150
+
+        y_title = 135
+        # On calcule où s'arrête le titre
+        y_title_end = y_title
         for line_t in lines_title:
-            tw = draw.textlength(line_t, font=font_title)
-            draw.text(((width - tw) / 2, y_title), line_t, font=font_title, fill=COLORS["PURPLE"])
-            y_title += int(title_size * 1.2)
+            y_title_end += int(title_size * 1.2)
 
-        # Filet doré
-        filet_y = y_title + 10
+        # Filet doré avec losange
+        filet_y = y_title_end + 15
         filet_w = 400
-        draw.line(((width - filet_w) / 2, filet_y, (width + filet_w) / 2, filet_y),
-                  fill=_FILET_OR, width=3)
-
+        
         # 4. Corps du texte
-        body_margin = 165
+        body_margin = 185
         max_width = width - 2 * body_margin
         top = filet_y + 40
         bottom = height - 150
         zone_h = bottom - top
 
-        font_text, lines, line_h = _ajuster_corps(draw, text, max_width, zone_h)
-
+        # Gestion de la lettrine
+        lettrine = text[0] if text else ""
+        reste_texte = text[1:] if text else ""
+        
+        # Taille fixe pour la lettrine : 2.5x le corps max
+        lettrine_size = int(_CORPS_MAX * 2.5)
+        font_lettrine = _load_font(_FONT_CANDIDATES_REGULAR, lettrine_size)
+        lettrine_w = draw.textlength(lettrine, font=font_lettrine)
+        indent_w = lettrine_w + 12
+        indent_lines = 2
+        
+        font_text, lines, line_h = _ajuster_corps(draw, reste_texte, max_width, zone_h, indent_lines=indent_lines, indent_width=indent_w)
+        
         block_h = line_h * len(lines)
-        y = top + max(0, (zone_h - block_h) // 2)
+        y_body = top + max(0, (zone_h - block_h) // 2)
 
-        # Halo mask
+        # Masque du halo : sur-titre, titre, lettrine et corps. PAS le filet ni le
+        # losange — ce sont des aplats, ils se lisent sans etre detoures.
         txt_mask = Image.new('L', img.size, 0)
         draw_mask = ImageDraw.Draw(txt_mask)
         
-        y_mask = y
-        for line in lines:
-            lw = draw.textlength(line, font=font_text)
-            draw_mask.text(((width - lw) / 2, y_mask), line, font=font_text, fill=255)
+        # Halo Sur-titre
+        petites_capitales(draw_mask, SUR_TITRE, font_sur_titre, x_center, y_sur_titre,
+                          255, ECART_SUR_TITRE)
+        
+        # Halo Titre
+        y_m = y_title
+        for line_t in lines_title:
+            tw = draw.textlength(line_t, font=font_title)
+            draw_mask.text(((width - tw) / 2, y_m), line_t, font=font_title, fill=255)
+            y_m += int(title_size * 1.2)
+            
+        # Halo lettrine
+        draw_mask.text((body_margin, y_body), lettrine, font=font_lettrine, fill=255)
+        
+        # Halo Corps
+        y_mask = y_body
+        for i, line in enumerate(lines):
+            x_m = body_margin + (indent_w if i < indent_lines else 0)
+            draw_mask.text((x_m, y_mask), line, font=font_text, fill=255)
             y_mask += line_h
             
         blurred_mask = txt_mask.filter(ImageFilter.GaussianBlur(6))
         cream_layer = Image.new('RGB', img.size, _HALO_CREME)
         img.paste(cream_layer, (0, 0), blurred_mask)
         
-        # Texte par-dessus en sépia
+        # Texte par-dessus
         draw_text_final = ImageDraw.Draw(img)
-        y_text = y
-        sepia = _ENCRE_SEPIA
-        for line in lines:
-            lw = draw_text_final.textlength(line, font=font_text)
-            draw_text_final.text(((width - lw) / 2, y_text), line, font=font_text, fill=sepia)
+        
+        # Dessin Sur-titre (petites capitales)
+        petites_capitales(draw_text_final, SUR_TITRE, font_sur_titre, x_center, y_sur_titre,
+                          _ENCRE_SEPIA, ECART_SUR_TITRE)
+        
+        # Dessin Titre
+        y_t = y_title
+        for line_t in lines_title:
+            tw = draw_text_final.textlength(line_t, font=font_title)
+            # Ombre portee. ⚠️ PIL ignore le canal alpha sur une image RGB : un
+            # `fill=(50, 50, 50, 100)` donnait un gris PLEIN, pas une ombre douce.
+            # La douceur vient donc d'un gris deja proche du parchemin, pas d'alpha.
+            draw_text_final.text(((width - tw) / 2 + 3, y_t + 3), line_t, font=font_title,
+                                 fill=_OMBRE_TITRE)
+            draw_text_final.text(((width - tw) / 2, y_t), line_t, font=font_title, fill=COLORS["PURPLE"])
+            y_t += int(title_size * 1.2)
+            
+        # Dessin Filet avec losange
+        draw_text_final.line(((width - filet_w) / 2, filet_y, (width + filet_w) / 2, filet_y), fill=_FILET_OR, width=2)
+        draw_text_final.regular_polygon((x_center, filet_y, 12), 4, rotation=45, fill=COLORS["PURPLE"])
+        
+        # Dessin lettrine
+        # Ajustement manuel pour la lettrine (aligner avec le texte)
+        y_lettrine = y_body - (lettrine_size * 0.15)
+        draw_text_final.text((body_margin, y_lettrine), lettrine, font=font_lettrine, fill=COLORS["PURPLE"])
+        
+        # Dessin Corps justifié
+        y_text = y_body
+        for i, line in enumerate(lines):
+            x_start = body_margin + (indent_w if i < indent_lines else 0)
+            largeur_visee = max_width - (indent_w if i < indent_lines else 0)
+            derniere = (i == len(lines) - 1)
+            
+            if "@" in line:
+                mots = line.split(" ")
+                largeur_mots = sum(draw_text_final.textlength(mot, font=font_text) for mot in mots)
+                espace_dispo = largeur_visee - largeur_mots
+                ecart_moyen = espace_dispo / (len(mots) - 1) if len(mots) > 1 and not derniere else 0
+                
+                x = x_start
+                for mot in mots:
+                    is_pseudo = mot.startswith("@")
+                    color = COLORS["PURPLE"] if is_pseudo else _ENCRE_SEPIA
+                    draw_text_final.text((x, y_text), mot, font=font_text, fill=color)
+                    if is_pseudo:
+                        mw = draw_text_final.textlength(mot, font=font_text)
+                        draw_text_final.line((x, y_text + line_h - 4, x + mw, y_text + line_h - 4), fill=COLORS["PURPLE"], width=2)
+                    
+                    x += draw_text_final.textlength(mot, font=font_text) + (ecart_moyen if not derniere else draw_text_final.textlength(" ", font=font_text))
+            else:
+                justifie(draw_text_final, line, font_text, largeur_visee, derniere, x_start, y_text, _ENCRE_SEPIA)
             y_text += line_h
 
         # 5. Sauvegarder en mémoire
@@ -269,6 +389,7 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
     except Exception as e:
         logger.error(f"❌ [DECRET] Erreur génération image : {e}")
         return None
+
 
 
 async def apply_decree_role(guild, member, title, duration=600):
