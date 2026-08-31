@@ -217,3 +217,25 @@ def test_l_outil_n_imprime_jamais_une_valeur(faux_depot, capsys):
     sortie = capsys.readouterr().out
     for valeur in CLES.values():
         assert valeur not in sortie, "une valeur de cle est passee dans la sortie"
+
+
+def test_le_partage_est_juge_sur_le_clair_quand_il_existe(faux_depot):
+    """Meme ordre de priorite que `shared/secure_env.py` : le .env en clair l'emporte.
+
+    Le bug reel (2026-08-31) : l'utilisateur venait de poser deux cles Gemini neuves et
+    distinctes dans les fichiers en clair, et l'outil criait toujours au partage — il
+    relisait le chiffre, c'est-a-dire l'etat d'AVANT la saisie. Une alerte qui denonce
+    un probleme deja corrige est aussi nuisible qu'une alerte manquante : on apprend a
+    ne plus la croire, et le jour ou elle a raison personne ne l'ecoute.
+    """
+    preparer_env.ouvrir()
+    assert [b for (n, b) in preparer_env.partagees() if n == "GEMINI_KEY_1"], \
+        "les deux bots partagent la cle au depart : le test ne prouverait rien sinon"
+
+    chemin = faux_depot / "MalenaBot" / ".env"
+    chemin.write_text(chemin.read_text(encoding="utf-8").replace(
+        "GEMINI_KEY_1=" + CLES["GEMINI_KEY_1"], "GEMINI_KEY_1=cle-neuve-a-malena"),
+        encoding="utf-8")
+
+    assert not [b for (n, b) in preparer_env.partagees() if n == "GEMINI_KEY_1"], \
+        "le partage est encore signale alors que le clair porte deux cles distinctes"

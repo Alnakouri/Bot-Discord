@@ -108,6 +108,20 @@ def lire_chiffre(dossier):
     return f.decrypt(chiffre.read_bytes()).decode("utf-8")
 
 
+def lire_env(dossier):
+    """Le contenu qui FAIT FOI pour ce bot, clair ou chiffre.
+
+    ⚠️ Meme ordre de priorite que `shared/secure_env.py` : le .env en clair l'emporte
+    des qu'il existe. Lire le chiffre pendant qu'un clair traine, c'est decrire l'etat
+    d'AVANT la saisie — l'outil a signale un partage deja corrige, ce qui est aussi
+    nuisible que de rater un vrai partage : on apprend a ne plus le croire.
+    """
+    clair = dossier / ".env"
+    if clair.exists():
+        return clair.read_text(encoding="utf-8")
+    return lire_chiffre(dossier)
+
+
 def variables(texte):
     """[(nom, valeur)] dans l'ordre du fichier, commentaires ignores."""
     trouvees = []
@@ -128,7 +142,7 @@ def partagees():
     import hashlib
     par_valeur = defaultdict(list)
     for bot in BOTS:
-        texte = lire_chiffre(RACINE / bot)
+        texte = lire_env(RACINE / bot)
         if texte is None:
             continue
         for nom, valeur in variables(texte):
@@ -232,7 +246,7 @@ def etat():
     for bot in BOTS:
         dossier = RACINE / bot
         clair = dossier / ".env"
-        texte = clair.read_text(encoding="utf-8") if clair.exists() else lire_chiffre(dossier)
+        texte = lire_env(dossier)
         if texte is None:
             print(f"{bot:<12} (!) illisible")
             continue
