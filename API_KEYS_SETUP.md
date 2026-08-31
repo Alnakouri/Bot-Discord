@@ -1,8 +1,44 @@
 # 🔑 Configuration des Clés API
 
-> [!IMPORTANT]
-> **RÈGLE D'OR : INDÉPENDANCE TOTALE**
-> Il est FORMELLEMENT INTERDIT de supprimer l'indépendance des bots au niveau de leurs clés API. Chaque bot DOIT conserver son propre système de gestion, ses propres fichiers `.env` et ses propres clés. La mutualisation des clés est bannie pour garantir la résilience et l'isolation.
+> [!CAUTION]
+> **RÈGLE D'OR : UNE CLÉ PAR BOT. PAS DE PARTAGE. JAMAIS.**
+>
+> **CHAQUE BOT A SA PROPRE CLÉ API.** Chaque bot conserve son propre système de gestion,
+> ses propres fichiers `.env` et **ses propres clés** — pour **chaque** fournisseur et
+> **chaque** variable, `GEMINI_KEY_1` à `GEMINI_KEY_4` comprises. Six bots = six jeux de
+> clés distincts. **La mutualisation des clés est bannie**, sans exception.
+>
+> Deux bots sur la même clé partagent le même quota (le 429 de l'un rend l'autre muet),
+> tombent ensemble à la moindre révocation, et faussent le suivi par bot de
+> `data/api_usage.db`.
+
+> [!CAUTION]
+> **IL MANQUE UNE CLÉ ? PRÉVENIR L'UTILISATEUR. NE PAS PIOCHER CHEZ UN AUTRE BOT.**
+>
+> Dès qu'un bot a besoin d'une clé qu'il n'a pas — nouveau fournisseur, clé révoquée,
+> quota à séparer, palier d'abonnement fermé — **le signaler à l'utilisateur et
+> s'arrêter là.** Jamais de recopie de la clé d'un autre bot pour « débloquer », même
+> temporairement, même « juste pour tester ». Le signalement précise : **quel bot**,
+> **quel fournisseur**, **quelle variable**, et **pourquoi**.
+>
+> Créer un compte ou souscrire un abonnement est une **décision de l'utilisateur**.
+> C'est ainsi qu'une clé finit partagée : personne ne décide de mutualiser, quelqu'un
+> dépanne une fois, et ça reste.
+
+> [!WARNING]
+> **Cette règle était écrite ici depuis toujours — et elle était violée.**
+> Mesure du 2026-08-30 : `JohnnyBot` et `MalenaBot` tournaient sur la **même** clé
+> Gemini. Personne ne le vérifiait. Il existe désormais un outil pour ça, à lancer
+> **après toute modification d'un `.env`** :
+>
+> ```bash
+> python tools/sonde_cles_partagees.py            # rapport lisible
+> python tools/sonde_cles_partagees.py --strict   # sortie 1 si une clé est partagée
+> ```
+>
+> Il n'affiche jamais une clé, seulement une empreinte SHA-256 tronquée. Il n'est pas
+> dans `pytest` à dessein : les clés ne sont pas dans le dépôt, la CI ne peut pas le
+> jouer.
 
 ## 🧠 Stratégie de Routage
 

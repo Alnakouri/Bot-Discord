@@ -13,12 +13,65 @@
 4. **NE JAMAIS factoriser le code "dupliqué" entre bots** — l'indépendance est VOULUE
 5. **NE JAMAIS changer le mode journal SQLite** (WAL) dans `shared_database.py`
 6. **NE JAMAIS commiter de fichiers `.env`, `.master_key`, ou `*.db`** dans Git
+7. **NE JAMAIS faire partager une clé API par deux bots** — voir la règle ci-dessous
+
+## 🔑🔑 UNE CLÉ PAR BOT. PAS DE PARTAGE. JAMAIS.
+
+> [!CAUTION]
+> **CHAQUE BOT A SA PROPRE CLÉ API.**
+> **PAS DE CLÉ PARTAGÉE ENTRE DEUX BOTS.**
+> **AUCUNE EXCEPTION — ni Gemini, ni Mistral, ni Groq, ni OpenRouter, ni Discord.**
+
+Cela vaut pour **chaque** fournisseur et **chaque** variable, `GEMINI_KEY_1` à
+`GEMINI_KEY_4` comprises. Six bots = six jeux de clés distincts, point.
+
+**Pourquoi ce n'est pas une préférence de style :**
+
+- **Quota commun** — deux bots sur la même clé se volent leur propre débit. Le 429 de
+  l'un rend l'autre muet, et rien dans les logs ne dit pourquoi.
+- **Révocation en chaîne** — une clé compromise ou expirée abat *deux* bots au lieu d'un.
+- **Traçabilité perdue** — `data/api_usage.db` enregistre l'index de clé par bot ; deux
+  bots sur la même clé rendent la mesure inexploitable, et c'est justement cette mesure
+  qui sert à trancher.
+- Elle contredit la règle mère du dépôt : **chaque bot doit pouvoir tourner seul.**
+
+**Il manque une clé ? ON PRÉVIENT L'UTILISATEUR. On ne pioche pas chez le voisin.**
+
+> [!CAUTION]
+> Dès qu'un bot a besoin d'une clé qu'il n'a pas — nouveau fournisseur, clé révoquée,
+> quota à séparer, palier d'abonnement fermé — **le dire à l'utilisateur et s'arrêter
+> là.** Ne JAMAIS recopier la clé d'un autre bot pour « débloquer » la situation, même
+> temporairement, même « juste pour tester ».
+>
+> Le message doit dire : **quel bot**, **quel fournisseur**, **quelle variable**
+> (ex. `GEMINI_KEY_1`), et **pourquoi** elle est nécessaire.
+>
+> C'est exactement comme ça qu'une clé finit partagée : personne ne décide de
+> mutualiser, quelqu'un dépanne une fois et ça reste. Un agent n'a pas à créer un compte
+> ni à choisir un abonnement — **c'est une décision de l'utilisateur, pas la sienne.**
+
+**Comment on le vérifie — la règle existait déjà, et elle était violée :**
+
+```bash
+python tools/sonde_cles_partagees.py            # rapport lisible
+python tools/sonde_cles_partagees.py --strict   # sortie 1 si une clé est partagée
+```
+
+La sonde n'affiche **jamais** une clé, seulement une empreinte SHA-256 tronquée. Elle
+n'est pas dans `pytest` à dessein : les clés ne sont pas dans le dépôt, la CI ne peut pas
+la jouer. **À lancer à la main après toute modification d'un `.env`.**
+
+> Mesure du 2026-08-30 : `JohnnyBot` et `MalenaBot` tournaient sur la **même** clé
+> Gemini. La règle était écrite dans `API_KEYS_SETUP.md` depuis toujours ; personne ne
+> la vérifiait, donc elle ne tenait pas. **Une règle qu'aucun outil ne contrôle n'est pas
+> une règle, c'est un vœu.**
 
 ## 🏗️ Règles architecturales
 
 - **Chaque bot est indépendant** : il peut tourner seul, sans les 5 autres, et sans `shared/`
 - **`shared/` est optionnel** : tous les imports `shared.*` doivent avoir un `try/except ImportError`
-- **Chaque bot a ses propres** : `.env`, `requirements.txt`, `discloud.config`
+- **Chaque bot a ses propres** : `.env`, `requirements.txt`, `discloud.config`, **et ses
+  propres clés API — aucune n'est partagée avec un autre bot** (cf. la règle ci-dessus)
 - **Le code identique entre bots est normal** — ne pas le fusionner dans un module commun
 - Si tu modifies `shared/`, ça affecte les 6 bots — teste avec prudence
 

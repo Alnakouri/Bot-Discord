@@ -153,3 +153,51 @@ def test_les_modeles_cites_dans_le_readme_existent_vraiment():
     assert not inconnus, (
         f"le README cite des modèles que le code n'utilise pas : {sorted(inconnus)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Une clé par bot : la règle doit être VISIBLE, et l'outil qui la vérifie exister
+# ---------------------------------------------------------------------------
+
+def test_la_regle_une_cle_par_bot_est_dans_le_fichier_lu_en_premier():
+    """La règle existait dans API_KEYS_SETUP.md depuis toujours, et elle était violée :
+    JohnnyBot et MalenaBot partageaient une clé Gemini (mesuré le 2026-08-30). Elle
+    manquait là où les agents lisent d'abord, AGENTS.md."""
+    contenu = (_racine / "AGENTS.md").read_text(encoding="utf-8")
+    assert "UNE CLÉ PAR BOT" in contenu, "la règle n'est pas dans AGENTS.md"
+    assert "PAS DE PARTAGE" in contenu
+    assert "sonde_cles_partagees.py" in contenu, \
+        "la règle est énoncée mais l'outil qui la vérifie n'est pas cité"
+
+
+def test_l_outil_qui_verifie_la_regle_existe_et_ne_montre_aucune_cle():
+    """Une règle qu'aucun outil ne contrôle n'est pas une règle. Et l'outil qui la
+    contrôle ne doit jamais imprimer une clé en clair."""
+    chemin = _racine / "tools" / "sonde_cles_partagees.py"
+    assert chemin.exists(), "tools/sonde_cles_partagees.py manquant"
+    src = chemin.read_text(encoding="utf-8")
+    assert "hashlib.sha256" in src, "la sonde doit comparer des empreintes, pas des clés"
+    assert "def empreinte" in src
+    # Aucune impression directe d'une valeur de .env.
+    assert "print(valeur" not in src and "print(f\"{valeur" not in src
+
+
+def test_les_deux_documents_de_cles_disent_la_meme_chose():
+    """API_KEYS_SETUP.md est le document de référence ; AGENTS.md le rappel. Les deux
+    doivent porter la règle, sinon l'un contredit l'autre en silence."""
+    for fichier in ("AGENTS.md", "API_KEYS_SETUP.md"):
+        contenu = (_racine / fichier).read_text(encoding="utf-8")
+        assert "sonde_cles_partagees.py" in contenu, f"{fichier} ne cite pas l'outil"
+        assert "PAS DE PARTAGE" in contenu.upper(), f"{fichier} n'énonce pas la règle"
+
+
+def test_la_regle_dit_de_prevenir_avant_de_partager_une_cle():
+    """Ajoutée le 2026-08-30 sur demande : quand une clé manque, on prévient
+    l'utilisateur — on ne recopie pas celle d'un autre bot pour dépanner. C'est
+    exactement comme ça qu'une clé finit mutualisée sans que personne ne l'ait décidé."""
+    for fichier in ("AGENTS.md", "API_KEYS_SETUP.md"):
+        contenu = (_racine / fichier).read_text(encoding="utf-8").upper()
+        assert "PRÉVENIR L'UTILISATEUR" in contenu or "PRÉVIENT L'UTILISATEUR" in contenu, \
+            f"{fichier} : la consigne « prévenir avant de partager » manque"
+        assert "NOUVEAU FOURNISSEUR" in contenu, \
+            f"{fichier} : les cas qui déclenchent le signalement ne sont pas listés"
