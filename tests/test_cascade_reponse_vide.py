@@ -207,3 +207,86 @@ def test_malena_inline_a_les_deux_garde_fous():
     src = open(os.path.join(_parent_dir, "MalenaBot", "bot_malena.py"), encoding="utf-8").read()
     assert "def _fuite_de_raisonnement" in src
     assert "groq_kwargs(model_name)" in src
+
+
+# ---------------------------------------------------------------------------
+# Un provider qui traîne ne doit pas retenir toute la cascade
+# ---------------------------------------------------------------------------
+
+class _FauxGroqLent:
+    """Groq sous 429 : le SDK réessaie tout seul avec backoff avant de rendre la main.
+
+    Mesuré en base (data/api_usage.db, sheo, 2026-08-29 et 08-30) : 36205, 37390 et
+    36284 ms, toutes en code 429. Pendant ces 36 s la cascade ne basculait pas et le
+    bot restait muet, alors que l'échelon suivant répond en une seconde.
+    """
+    def __init__(self, duree):
+        self.duree = duree
+        self.appels = 0
+        self.chat = self
+        self.completions = self
+
+    def create(self, **kwargs):
+        self.appels += 1
+        import time
+        time.sleep(self.duree)
+        return _FauxChat("réponse arrivée trop tard")
+
+
+def test_un_provider_qui_traine_ne_bloque_plus_la_cascade(monkeypatch):
+    """Sans borne PAR DÉFAUT, seul JohnnyBot était protégé : les 5 autres bots
+    attendaient le provider jusqu'au bout. La borne réelle (15 s) est raccourcie ici
+    pour ne pas payer l'attente dans la suite de tests."""
+    import shared.llm_cascade as cascade
+
+    monkeypatch.setattr(cascade, "_BORNE_TEXTE", 0.2)
+    lent, openrouter = _FauxGroqLent(duree=2.0), _FauxOpenRouter()
+    monkeypatch.setattr(cascade, "get_model_cascade",
+                        lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
+                                               ("openrouter", "modele/secours")])
+
+    texte = asyncio.run(cascade.generate_response(
+        routing={"type": RequestType.TEXT, "reason": "test"},
+        system_prompt="sys", transcript="", user_message="coucou",
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=None, mistral_client=None,
+        groq_client=lent, openrouter_client=openrouter,
+        bot_label="Test",
+    ))
+
+    assert lent.appels == 1, "Groq devait être tenté"
+    assert openrouter.appels == 1, "la cascade devait basculer sans attendre le lent"
+    assert texte == "Wesh ma vie !"
+
+
+def test_l_appelant_garde_la_main_sur_la_borne(monkeypatch):
+    """La valeur par défaut ne doit pas écraser un `call_timeout` explicite —
+    JohnnyBot en passe un depuis toujours."""
+    import shared.llm_cascade as cascade
+
+    monkeypatch.setattr(cascade, "_BORNE_TEXTE", 0.05)
+    lent, openrouter = _FauxGroqLent(duree=0.3), _FauxOpenRouter()
+    monkeypatch.setattr(cascade, "get_model_cascade",
+                        lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
+                                               ("openrouter", "modele/secours")])
+
+    texte = asyncio.run(cascade.generate_response(
+        routing={"type": RequestType.TEXT, "reason": "test"},
+        system_prompt="sys", transcript="", user_message="coucou",
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=None, mistral_client=None,
+        groq_client=lent, openrouter_client=openrouter,
+        bot_label="Test", call_timeout=5.0,
+    ))
+
+    assert openrouter.appels == 0, "la borne explicite a été écrasée par le défaut"
+    assert texte == "réponse arrivée trop tard"
+
+
+def test_un_media_a_droit_a_plus_de_temps_qu_un_tour_de_chat():
+    """Donner la borne du texte à une analyse d'image ferait échouer des appels qui
+    aboutissaient : Gemini met légitimement plus longtemps sur une pièce jointe."""
+    import shared.llm_cascade as cascade
+    assert cascade._BORNE_TEXTE > 0, "une borne nulle désarmerait le garde-fou"
+    assert cascade._BORNE_MEDIA > cascade._BORNE_TEXTE
+    assert cascade._BORNE_TEXTE < 36,         "un 429 Groq coûte 36 s : au-delà, la borne ne sert à rien"

@@ -52,6 +52,22 @@ def _fuite_de_raisonnement(msg):
     return len(tete) >= 20 and contenu.startswith(tete)
 
 
+# Borne par défaut d'un appel, quand l'appelant n'en fournit pas.
+#
+# Sans borne, un 429 Groq coûte 36 SECONDES : le SDK réessaie tout seul avec backoff
+# avant de rendre la main, et pendant ce temps la cascade ne bascule pas — le bot reste
+# muet alors que l'échelon suivant répondrait en une seconde. Mesuré deux fois sur sheo
+# dans data/api_usage.db (latency_ms 36205, 37390, 36284, toutes en code 429).
+# Seul JohnnyBot passait `call_timeout=15` ; son commentaire dit « comme Sheo », mais
+# Sheo ne le passait pas. D'où une valeur par défaut plutôt qu'un kwarg à recopier
+# dans les 12 appels des 6 bots.
+#
+# Un média est légitimement plus lent qu'un tour de chat : lui donner la même borne
+# ferait échouer des analyses d'image qui aboutissaient.
+_BORNE_TEXTE = 15.0
+_BORNE_MEDIA = 45.0
+
+
 async def generate_response(
     *,
     routing: dict,
@@ -70,6 +86,7 @@ async def generate_response(
     max_tokens: int = 300,
     gemini_max_tokens: int | None = None,
     call_timeout: float | None = None,   # borne par appel (s) : si un provider traîne, on bascule
+                                         # None => borne par défaut, cf. _BORNE_* ci-dessus
     cascade: list | None = None,         # force une cascade au lieu de celle de la persona
 ) -> str | None:
     """Retourne le texte de réponse, ou None si toute la cascade a échoué.
@@ -83,6 +100,8 @@ async def generate_response(
     cascade = list(cascade) if cascade else get_model_cascade(routing["type"], bot_label)
     has_image = routing.get("has_image") and media_data is not None
     has_audio = routing.get("has_audio") and media_data is not None
+    if call_timeout is None:
+        call_timeout = _BORNE_MEDIA if (has_image or has_audio) else _BORNE_TEXTE
     response_text = None
 
     async def _call(func, **kwargs):
