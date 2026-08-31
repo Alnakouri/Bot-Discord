@@ -48,8 +48,15 @@ CANDIDATS_GROQ = [
 CANDIDATS_OPENROUTER = [
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
+    # Fine-tunes « sans filtre » proposes le 2026-08-30. Sondes ici parce que le
+    # francais est leur point faible connu (base Llama, anglophone).
+    "nousresearch/hermes-3-llama-3.1-70b",
 ]
-CANDIDATS_MISTRAL = ["mistral-large-latest", "mistral-small-latest"]
+# Poids ouverts chez Mistral : small (Apache 2.0), ministral, magistral.
+# ⚠️ open-mistral-nemo N'EST PAS dans models.list(), et il repond quand meme.
+CANDIDATS_MISTRAL = ["open-mistral-nemo", "mistral-small-latest", "ministral-8b-latest",
+                     "ministral-14b-latest", "magistral-small-latest",
+                     "mistral-medium-latest", "mistral-large-latest"]
 CANDIDATS_GEMINI = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
 
 MAX_TOKENS = 300
