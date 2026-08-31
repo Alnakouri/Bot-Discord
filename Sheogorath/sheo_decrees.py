@@ -392,6 +392,37 @@ def generate_decree_image(text, title="DÉCRET DAEDRA"):
 
 
 
+async def _resoudre_membre(guild, cible):
+    """Rend un Member pour `cible`, ou None si la resolution echoue.
+
+    `discord.User` et `discord.Member` se ressemblent — meme `id`, meme
+    `display_name` — mais seul Member appartient a une guilde, donc seul Member sait
+    porter un role. Un User arrive des qu'on prend `message.author` sur un auteur
+    absent du cache des membres.
+
+    On ne devine pas : `add_roles` est la seule chose qui nous interesse, on teste sa
+    presence plutot que le type (une sous-classe, un mock de test ou une version
+    future de discord.py restent acceptes).
+    """
+    if hasattr(cible, "add_roles"):
+        return cible
+    if guild is None or not hasattr(cible, "id"):
+        logger.error("❌ [DECRET] Cible inutilisable : ni Member, ni identifiable.")
+        return None
+
+    membre = guild.get_member(cible.id)          # cache : gratuit
+    if membre is not None:
+        return membre
+    try:
+        return await guild.fetch_member(cible.id)   # sinon un appel API
+    except Exception as e:
+        logger.error(
+            f"❌ [DECRET] {getattr(cible, 'display_name', cible.id)} introuvable dans "
+            f"la guilde : {e} — aucun role cree (mieux qu'un role que personne ne porte)."
+        )
+        return None
+
+
 async def apply_decree_role(guild, member, title, duration=600):
     """
     Crée un rôle de décret, l'assigne, puis le supprime après 'duration' secondes.
@@ -400,6 +431,18 @@ async def apply_decree_role(guild, member, title, duration=600):
     périodique) garantit quand même la suppression.
     """
     try:
+        # 0. La cible DOIT être un Member : seul Member porte `add_roles`, User ne
+        #    l'a pas. Ça ne se voyait pas avec `!decret @qqun` — la signature
+        #    `target: discord.Member` convertit — mais SANS argument la cible est tirée
+        #    au sort dans l'historique du salon, et `msg.author` y est un User dès que
+        #    l'auteur n'est pas dans le cache des membres. Mesuré en test live le
+        #    2026-08-31 : « 'User' object has no attribute 'add_roles' ». Le décret
+        #    s'affichait quand même, le rôle était créé, personne ne le portait, et le
+        #    balayage l'effaçait 10 min plus tard — un échec parfaitement invisible.
+        member = await _resoudre_membre(guild, member)
+        if member is None:
+            return None
+
         role_name = f"📜 {title.upper()}"
 
         # 1. Création du rôle

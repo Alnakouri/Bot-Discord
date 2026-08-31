@@ -251,3 +251,141 @@ def test_la_mention_est_mise_en_valeur():
         generate_decree_image("Texte @Pseudo")
         calls = [c for c in mock_line.call_args_list if c[1].get('fill') == (128, 0, 128) and c[1].get('width') == 2]
         assert len(calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Le role doit atterrir sur quelqu'un — bug du test live 2026-08-31
+# ---------------------------------------------------------------------------
+
+class _FauxUser:
+    """`discord.User` : meme id et meme display_name qu'un Member, mais AUCUN
+    `add_roles` — il n'appartient a aucune guilde."""
+    def __init__(self, uid=42):
+        self.id = uid
+        self.display_name = "Ledev"
+
+
+class _FauxMember(_FauxUser):
+    def __init__(self, uid=42):
+        super().__init__(uid)
+        self.roles_ajoutes = []
+
+    async def add_roles(self, role):
+        self.roles_ajoutes.append(role)
+
+
+class _FauxRole:
+    def __init__(self, nom):
+        self.id, self.name, self.position = 999, nom, 1
+        self.supprime = False
+
+    async def edit(self, **_kw):
+        pass
+
+    async def delete(self, **_kw):
+        self.supprime = True
+
+
+class _FauxGuild:
+    """⚠️ Doit savoir CREER un role. Sans ca, un `apply_decree_role` non corrige
+    echouerait sur `create_role` manquant, le test passerait, et il ne prouverait rien
+    — c'est exactement le piege dans lequel la premiere version de ces tests est
+    tombee."""
+    def __init__(self, membre=None, via_api=None):
+        self._membre, self._via_api = membre, via_api
+        self.roles_crees = []
+        self.id = 1
+        self.me = type("Moi", (), {"top_role": type("R", (), {"position": 5})()})()
+
+    def get_member(self, _uid):
+        return self._membre
+
+    async def fetch_member(self, _uid):
+        if self._via_api is None:
+            raise RuntimeError("Unknown Member")
+        return self._via_api
+
+    async def create_role(self, name=None, **_kw):
+        role = _FauxRole(name)
+        self.roles_crees.append(role)
+        return role
+
+
+@pytest.fixture
+def store_neutralise(monkeypatch):
+    """Le store des decrets actifs est un VRAI fichier partage avec les bots en
+    service : la suite n'y touche pas."""
+    import Sheogorath.sheo_decrees as sd
+    monkeypatch.setattr(sd, "_add_decree", lambda _d: None)
+    monkeypatch.setattr(sd, "_remove_decree", lambda _i: None)
+
+
+def test_un_user_est_resolu_en_membre_avant_d_assigner_le_role():
+    """Le bug du 2026-08-31 : `!decret` SANS argument tire la cible au sort dans
+    l'historique du salon, ou `msg.author` est un User des que l'auteur n'est pas dans
+    le cache des membres. `User.add_roles` n'existe pas.
+
+    Le pire n'etait pas l'erreur, c'est qu'elle etait INVISIBLE : le decret s'affichait
+    normalement, le role etait cree, personne ne le portait, et le balayage l'effacait
+    10 minutes plus tard. Cote utilisateur, un succes.
+    """
+    import asyncio
+    from Sheogorath.sheo_decrees import _resoudre_membre
+
+    membre = _FauxMember()
+    resolu = asyncio.run(_resoudre_membre(_FauxGuild(membre=membre), _FauxUser()))
+    assert resolu is membre, "un User doit etre resolu en Member via le cache"
+    assert hasattr(resolu, "add_roles")
+
+
+def test_un_membre_deja_bon_n_est_pas_re_resolu():
+    """Le cas nominal (`!decret @qqun`, converti par discord.py) ne doit pas payer un
+    appel de plus."""
+    import asyncio
+    from Sheogorath.sheo_decrees import _resoudre_membre
+
+    membre = _FauxMember()
+    guild = _FauxGuild(membre=None)      # get_member rendrait None : on ne doit pas l'appeler
+    assert asyncio.run(_resoudre_membre(guild, membre)) is membre
+
+
+def test_hors_cache_on_demande_a_l_api():
+    import asyncio
+    from Sheogorath.sheo_decrees import _resoudre_membre
+
+    distant = _FauxMember()
+    guild = _FauxGuild(membre=None, via_api=distant)
+    assert asyncio.run(_resoudre_membre(guild, _FauxUser())) is distant
+
+
+def test_cible_introuvable_ne_cree_aucun_role(store_neutralise):
+    """Mieux vaut aucun role qu'un role 📜 que personne ne porte : c'est exactement le
+    fantome que le balayage a du nettoyer le 2026-08-31."""
+    import asyncio
+    from Sheogorath.sheo_decrees import apply_decree_role
+
+    guild = _FauxGuild(membre=None, via_api=None)
+    assert asyncio.run(apply_decree_role(guild, _FauxUser(), "AMIRAL")) is None
+    assert guild.roles_crees == [], "un role a ete cree pour une cible introuvable"
+
+
+def test_un_user_recoit_bien_le_role_de_bout_en_bout(store_neutralise, monkeypatch):
+    """LE test qui compte : `apply_decree_role` recoit un User (le cas du tirage au
+    sort) et le role doit finir SUR QUELQU'UN.
+
+    Sans la resolution, le role est cree puis `add_roles` n'existe pas : role
+    fantome, decret affiche, echec invisible."""
+    import asyncio
+    import Sheogorath.sheo_decrees as sd
+
+    membre = _FauxMember()
+    guild = _FauxGuild(membre=membre)
+    # ⚠️ `sheo_decrees` fait `import asyncio` DANS la fonction : le module n'est pas un
+    # attribut de `sd`, on patche donc le vrai asyncio. Sans ca, la tache de
+    # suppression differee (600 s) resterait pendante a la fermeture de la boucle.
+    monkeypatch.setattr(asyncio, "create_task", lambda coro: coro.close())
+
+    role = asyncio.run(sd.apply_decree_role(guild, _FauxUser(), "AMIRAL"))
+
+    assert role is not None, "aucun role rendu"
+    assert membre.roles_ajoutes == [role], "le role n'a ete porte par personne"
