@@ -239,3 +239,22 @@ def test_le_partage_est_juge_sur_le_clair_quand_il_existe(faux_depot):
 
     assert not [b for (n, b) in preparer_env.partagees() if n == "GEMINI_KEY_1"], \
         "le partage est encore signale alors que le clair porte deux cles distinctes"
+
+
+def test_on_peut_n_ouvrir_qu_un_seul_bot(faux_depot):
+    """Poser une cle chez UN bot ne doit pas ressortir les cinq autres en clair sur le
+    disque : chaque fichier ouvert est une fenetre de plus, et une occasion d'oublier
+    de refermer."""
+    preparer_env.ouvrir(["MalenaBot"])
+    assert (faux_depot / "MalenaBot" / ".env").exists()
+    assert not (faux_depot / "Sheogorath" / ".env").exists(), \
+        "un bot non demande a ete ouvert en clair"
+
+
+def test_le_partage_reste_juge_sur_les_SIX_bots_meme_en_ouvrant_un_seul(faux_depot):
+    """Restreindre la comparaison au bot traite ferait disparaitre le partage qu'on
+    cherche justement a voir : une cle n'est partagee que PAR RAPPORT aux autres."""
+    preparer_env.ouvrir(["MalenaBot"])
+    contenu = (faux_depot / "MalenaBot" / ".env").read_text(encoding="utf-8")
+    assert "PARTAGEE" in contenu, \
+        "le partage avec un bot non traite n'est plus signale"

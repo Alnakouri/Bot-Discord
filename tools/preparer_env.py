@@ -153,9 +153,9 @@ def partagees():
             if len(bots) > 1 for bot in bots}
 
 
-def ouvrir():
+def ouvrir(selection=None):
     conflits = partagees()
-    for bot in BOTS:
+    for bot in (selection or BOTS):
         dossier = RACINE / bot
         clair = dossier / ".env"
         if clair.exists():
@@ -208,13 +208,13 @@ def ouvrir():
     print("\nSaisissez les valeurs, puis : python tools/preparer_env.py --sceller")
 
 
-def sceller():
+def sceller(selection=None):
     """Rechiffre, RELIT le chiffre et le compare avant d'effacer le clair.
 
     Sans cette relecture, une erreur de chiffrement laisserait un .env.encrypted
     illisible et le clair supprime : les cles seraient perdues pour de bon.
     """
-    for bot in BOTS:
+    for bot in (selection or BOTS):
         dossier = RACINE / bot
         clair = dossier / ".env"
         if not clair.exists():
@@ -241,9 +241,9 @@ def sceller():
         print(f"[{bot}] scelle ({n} variables renseignees), .env en clair efface")
 
 
-def etat():
+def etat(selection=None):
     conflits = partagees()
-    for bot in BOTS:
+    for bot in (selection or BOTS):
         dossier = RACINE / bot
         clair = dossier / ".env"
         texte = lire_env(dossier)
@@ -268,10 +268,20 @@ if __name__ == "__main__":
     g.add_argument("--etat", action="store_true", help="qui a quoi (noms seulement)")
     g.add_argument("--ouvrir", action="store_true", help="dechiffre et prepare la saisie")
     g.add_argument("--sceller", action="store_true", help="rechiffre, verifie, efface le clair")
+    p.add_argument("--bot", help="ne traiter que ce bot (les autres restent chiffres)")
     a = p.parse_args()
-    if a.etat:
-        etat()
-    elif a.ouvrir:
-        ouvrir()
+    if a.bot:
+        correspond = [b for b in BOTS if b.lower() == a.bot.lower()]
+        if not correspond:
+            p.error(f"bot inconnu : {a.bot} (connus : {', '.join(BOTS)})")
+        # `partagees()` compare TOUJOURS les 6 : restreindre la comparaison ferait
+        # disparaitre le partage qu'on cherche justement a voir.
+        BOTS_A_TRAITER = correspond
     else:
-        sceller()
+        BOTS_A_TRAITER = list(BOTS)
+    if a.etat:
+        etat(BOTS_A_TRAITER)
+    elif a.ouvrir:
+        ouvrir(BOTS_A_TRAITER)
+    else:
+        sceller(BOTS_A_TRAITER)
