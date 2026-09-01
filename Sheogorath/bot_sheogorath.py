@@ -587,7 +587,7 @@ SHEO_TOOLS_DEFINITION = [
     }
 ]
 
-# Définition pour OpenAI/Grok/Mistral
+# Définition au format « tools » OpenAI (accepté par Mistral, Groq et OpenRouter)
 OPENAI_TOOLS_DEFINITION = [
     {
         "type": "function",
@@ -2290,8 +2290,9 @@ async def on_message(message):
 
     # ═══ SMART ROUTER — Classification du message ═══
     # Sheo est-il DIRECTEMENT interpellé ? (mention / reply / nom prononcé / continuité)
-    # Si oui et que c'est du banter court, le routeur vise la cascade REPARTEE (Grok) pour
-    # une répartie plus mordante. Sinon, comportement inchangé (cascade TEXT/REASONING).
+    # Si oui et que c'est du banter court, le routeur classe en REPARTEE.
+    # ⚠️ REPARTEE et TEXT mènent à la MÊME cascade de persona : l'étiquette ne change
+    # plus le modèle, elle documente seulement la nature du message.
     _addressed = bool(is_mentioned or is_reply or has_name or is_continuation)
     routing = classify_request(user_message, atts, addressed=_addressed)
     
@@ -2326,17 +2327,16 @@ async def on_message(message):
     cascade = get_model_cascade(routing["type"], "sheo")
     
     # Determine length adaptation
-    if routing["type"] == RequestType.REPARTEE:
-        # Ancien mode « répartie sèche » (160t/4ph) : APLATISSAIT Sheo quand on l'interpellait
-        # (banter/name-spam → one-liner plat), alors que Twitch — sans ce clamp — le laissait
-        # respirer en conteur théâtral. On aligne : mêmes plafonds que le chemin riche, et c'est le
-        # PROMPT qui décide sec-vs-théâtral (règle FACE À UNE ATTAQUE = morsure courte sur vraie
-        # insulte ; EXCEPTION DU CONTEUR = digression ravie sur banter). Le cap n'est qu'un filet.
-        max_tokens_val = 340   # marge pour qu'un conteur/double-sens ATTERRISSE (sinon coupe en plein mot)
-        max_sentences_val = sentence_budget(user_message)  # filet déterministe
-    else:
-        max_tokens_val = 340   # assez pour une tirade dense qui monte et atterrit sans clipper
-        max_sentences_val = sentence_budget(user_message)  # filet déterministe
+    # ⚠️ Il y avait ici un `if REPARTEE: ... else: ...` dont les DEUX branches étaient
+    # identiques ligne pour ligne. Historique : le mode « répartie sèche » (160t/4ph)
+    # APLATISSAIT Sheo quand on l'interpellait (banter/name-spam → one-liner plat), alors
+    # que Twitch — sans ce clamp — le laissait respirer en conteur théâtral. Les plafonds
+    # ont donc été alignés sur le chemin riche... sans retirer le test devenu inutile.
+    # C'est le PROMPT qui décide sec-vs-théâtral (FACE À UNE ATTAQUE = morsure courte sur
+    # vraie insulte ; EXCEPTION DU CONTEUR = digression ravie sur banter) ; le cap n'est
+    # qu'un filet.
+    max_tokens_val = 340   # marge pour qu'une tirade/double-sens ATTERRISSE (sinon coupe en plein mot)
+    max_sentences_val = sentence_budget(user_message)  # filet déterministe
     
     for client_type, model_name in cascade:
         try:

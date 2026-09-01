@@ -351,8 +351,9 @@ class LlmMixin:
         history_deque = self.histories[history_key]
         conversation_history = list(history_deque)
 
-        # MÊME routage que Discord : classify_request choisit le modèle selon le contenu
-        # (humour → Grok, raisonnement → Gemini, sinon cascade économique).
+        # MÊME routage que Discord : classify_request classe le message selon son contenu
+        # (humour, raisonnement, média, texte) ; la cascade correspondante est choisie
+        # par get_model_cascade, seule autorité sur les modèles.
         routing = classify_request(clean)
 
         try:

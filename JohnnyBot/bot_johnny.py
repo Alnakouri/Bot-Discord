@@ -20,7 +20,7 @@ import base64
 from core.response_memory import ResponseMemory, merge_recent_responses
 import logging
 from datetime import datetime
-from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
 from core.media_handler import process_image_ollama
 from core.llm_cascade import generate_response
 
@@ -962,12 +962,12 @@ async def on_message(message):
     _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
     routing = classify_request(user_message, atts, addressed=_addressed)
 
-    # Johnny est un perso de pure répartie → Grok en priorité pour tout texte.
-    # On garde le routage image/audio/raisonnement intact ; seul le TEXT simple
-    # est promu en REPARTEE (cascade Grok d'abord, voir get_model_cascade).
-    if routing["type"] == RequestType.TEXT:
-        routing["type"] = RequestType.REPARTEE
-        routing["reason"] = "Johnny → Grok prioritaire (répartie)"
+    # ⚠️ Il y avait ici une promotion TEXT → REPARTEE, « pour mettre Grok en priorité ».
+    # Elle ne changeait plus aucun modèle : Grok a disparu du code, et get_model_cascade
+    # rend la MÊME cascade de persona pour TEXT et pour REPARTEE. Son seul effet restant
+    # était d'écrire dans `routing["reason"]` — journalisé par llm_cascade — une phrase
+    # qui annonçait un modèle inexistant à chaque réponse de Johnny. Supprimée : le log
+    # porte désormais la raison réelle du routeur.
 
     # Télécharger le média si nécessaire
     media_data = None

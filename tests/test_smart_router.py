@@ -89,7 +89,8 @@ class TestClassifyRequest(unittest.TestCase):
 
 
 class TestAddressedBanter(unittest.TestCase):
-    """Phase 1 répartie : banter ADRESSÉ → cascade REPARTEE (Grok), coût maîtrisé."""
+    """Phase 1 répartie : banter ADRESSÉ → classé REPARTEE (le garde `addressed` évite
+    de classer en répartie une vraie question posée au bot)."""
 
     def test_addressed_banter_triggers_repartee(self):
         # Vanne courte sans mot-clé humour explicite : seulement si le bot est adressé.
@@ -108,7 +109,7 @@ class TestAddressedBanter(unittest.TestCase):
         self.assertEqual(classify_request("", addressed=True)["type"], RequestType.REPARTEE)
 
     def test_addressed_real_question_stays_serious(self):
-        # Une vraie question adressée NE doit PAS partir sur Grok (coût + sérieux).
+        # Une vraie question adressée NE doit PAS être classée en répartie.
         for q in ("comment fonctionne un moteur ?", "comment tu fais ça ?",
                   "c'est quoi le roquefort ?", "explique-moi la folie",
                   "pourquoi t'es là ?"):

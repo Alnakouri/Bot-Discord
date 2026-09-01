@@ -65,11 +65,17 @@ MAX_MEDIA_SIZE = 10 * 1024 * 1024  # 10 MB
 # ═══════════════════════════════════════════
 
 class RequestType:
-    TEXT = "text"           # → Cascade économique (Mistral/Groq/OpenRouter)
-    REPARTEE = "repartee"   # → Grok (Humor/Personality)
-    IMAGE = "image"         # → Gemini 2.0 Flash (Vision)
-    AUDIO = "audio"         # → Gemini 2.0 Flash (Audio)
-    REASONING = "reasoning" # → Gemini 2.0 Pro (Thinking)
+    """Ce qu'EST le message — pas le modèle qui le traitera.
+
+    ⚠️ La correspondance type → modèles vit dans `get_model_cascade`, seule autorité.
+    Ne recopier aucun identifiant de modèle ici : ces commentaires ont nommé « Grok »
+    et « Gemini 2.0 » des mois après leur retrait du code, et rien ne le signalait.
+    """
+    TEXT = "text"           # conversation ordinaire → cascade de la persona
+    REPARTEE = "repartee"   # banter adressé → MÊME cascade que TEXT (voir get_model_cascade)
+    IMAGE = "image"         # pièce jointe image → cascade vision
+    AUDIO = "audio"         # pièce jointe audio → cascade vision/audio
+    REASONING = "reasoning" # demande qui exige du raisonnement → cascade dédiée
 
 
 # ═══════════════════════════════════════════
@@ -103,7 +109,10 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             prononcé / continuité de conversation). Défaut False → comportement d'origine
             inchangé pour tout appelant qui ne passe pas ce signal (rétro-compatible).
             Quand True et que le message est du banter court (ni raisonnement, ni demande
-            d'info), on vise la cascade REPARTEE (Grok) pour une répartie plus mordante.
+            d'info), le message est classé REPARTEE.
+            ⚠️ Depuis la cascade par persona, REPARTEE et TEXT servent les MÊMES modèles :
+            l'étiquette ne change plus le routage. Elle reste un signal de classification
+            que l'appelant peut exploiter (ton, longueur), rien de plus.
 
     Returns:
         dict avec type, model, reason, has_image, has_audio, 
@@ -112,7 +121,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
     result = {
         "type": RequestType.TEXT,
         "model": None,
-        "reason": "Texte simple → cascade économique",
+        "reason": "Texte simple",
         "has_image": False,
         "has_audio": False,
         "image_attachment": None,
@@ -163,29 +172,31 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
     if _needs_reasoning(message_text):
         result["type"] = RequestType.REASONING
         result["model"] = GEMINI_FLASH
-        result["reason"] = "🧠 Raisonnement complexe → Gemini Pro"
+        result["reason"] = "🧠 Raisonnement complexe"
         logger.info(f"[ROUTER] {result['reason']}")
         return result
 
-    # 3. Vérifier si humour / répartie requis (Priorité Grok)
+    # 3. Vérifier si humour / répartie requis (mots-clés explicites)
     if _needs_humor(message_text):
         result["type"] = RequestType.REPARTEE
-        result["reason"] = "🎭 Humour / Répartie → Grok (xAI)"
+        result["reason"] = "🎭 Humour / Répartie détecté"
         logger.info(f"[ROUTER] {result['reason']}")
         return result
 
     # 3b. Banter ADRESSÉ : le bot est directement interpellé (mention/reply/nom/continuité)
-    # et ce n'est ni du raisonnement ni une demande d'info → on vise le meilleur modèle
-    # d'humour (cascade REPARTEE / Grok). Gardé sur `addressed` pour MAÎTRISER LE COÛT :
-    # Grok est payant, on ne l'engage que sur les vrais moments de répartie, pas sur tout.
+    # et ce n'est ni du raisonnement ni une demande d'info.
+    # ⚠️ Cette branche visait à l'origine un modèle d'humour PAYANT, d'où le garde sur
+    # `addressed` (maîtrise du coût). Ce modèle n'existe plus et REPARTEE mène désormais
+    # à la cascade de la persona, comme TEXT : il n'y a plus de coût à maîtriser ici.
+    # Le garde est conservé pour la PRÉCISION du classement, pas pour la dépense.
     if addressed and _is_banter(message_text):
         result["type"] = RequestType.REPARTEE
-        result["reason"] = "🎭 Banter adressé → Grok (xAI)"
+        result["reason"] = "🎭 Banter adressé"
         logger.info(f"[ROUTER] {result['reason']}")
         return result
 
-    # 4. Texte simple → cascade économique
-    logger.debug(f"[ROUTER] 💬 Texte simple → cascade Mistral/Groq/OpenRouter")
+    # 4. Texte simple → cascade de la persona (voir get_model_cascade)
+    logger.debug("[ROUTER] 💬 Texte simple")
     return result
 
 
@@ -261,12 +272,12 @@ def _needs_humor(text):
     # Détection par mots-clés
     has_keywords = any(re.search(pattern, text_lower) for pattern in humor_triggers)
 
-    # Grok est réservé aux cas explicites de répartie/humour
+    # On ne classe en répartie que sur des marqueurs explicites.
     return has_keywords or is_expressive
 
 
 # Marqueurs d'une VRAIE demande d'info/aide → ce n'est PAS du banter, on laisse la
-# cascade TEXT/REASONING répondre sérieusement (et on évite de payer Grok pour ça).
+# cascade TEXT/REASONING répondre sérieusement.
 _INFO_REQUEST_PATTERNS = [
     r"\bc'?est\s+quoi\b", r"\bc'?est\s+qui\b", r"\bqu'?est-?ce\b",
     r"\baide(?:-moi)?\b", r"\btuto\b", r"\btutoriel\b", r"\bdonne-?moi\b",
@@ -279,11 +290,11 @@ _INFO_REQUEST_PATTERNS = [
 
 def _is_banter(text):
     """
-    True si le message (adressé au bot) est un échange de RÉPARTIE court → on vise Grok.
+    True si le message (adressé au bot) est un échange de RÉPARTIE court.
     False quand mieux vaut une réponse sérieuse (raisonnement / demande d'info / message long).
 
-    Conservateur par dessein : on ne bascule en répartie/Grok (payant) que pour le banter
-    court. Tout ce qui ressemble à une vraie question reste sur la cascade TEXT/REASONING.
+    Conservateur par dessein : on ne bascule en répartie que pour le banter court.
+    Tout ce qui ressemble à une vraie question reste classé TEXT/REASONING.
     """
     if not text:
         # Ping nu / "(le mortel te regarde fixement)" : c'est un moment d'interaction
@@ -298,7 +309,7 @@ def _is_banter(text):
     if any(re.search(p, text_lower) for p in ALL_REASONING_PATTERNS):
         return False
 
-    # Demande d'info explicite (incl. interrogatifs) → réponse sérieuse, pas Grok.
+    # Demande d'info explicite (incl. interrogatifs) → réponse sérieuse, pas du banter.
     if any(re.search(p, text_lower) for p in _INFO_REQUEST_PATTERNS):
         return False
 

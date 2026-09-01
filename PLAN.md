@@ -1,54 +1,56 @@
-# PLAN — Sonde des clés : supprimer les deux fausses alarmes Twitch
+# Chantier — la cascade REPARTEE annonçait un modèle qui n'existe plus
 
-> État : **FAIT** (2026-09-01). Ce fichier décrit le chantier en cours ; par
-> convention il se réécrit à chaque tâche.
+Session du 2026-09-01 (2e partie). Parti d'une ligne classée « dette cosmétique »,
+le défaut s'est révélé plus large : **du code et des logs qui décrivaient un monde
+disparu**, sans qu'aucun filet ne puisse le voir.
 
-## 1. Le problème
+## Le constat
 
-`tools/sonde_cles_partagees.py --vitalite` criait au feu tous les jours, deux fois :
+`get_model_cascade` rend **exactement la même cascade** pour `TEXT` et pour `REPARTEE`
+(`shared/smart_router.py`) : depuis le passage à une cascade par persona, la distinction
+ne sélectionne plus aucun modèle. Or tout autour d'elle affirmait le contraire :
 
-1. **« plus de secours si data/ est perdu »** dès que le token d'ACCÈS du `.env`
-   rendait 401. Or ce token dure ~4 h : le trouver périmé est *normal* et ne dit rien
-   du secours. Le seul secours réel est le **refresh token**, et il était intact et
-   identique des deux côtés chez les 3 bots Twitch.
-2. **« 3 clés ne répondent plus »** (et sortie 1 en `--strict`) parce que les trois
-   fichiers `data/twitch_chat_auth_*.json` rendaient 401 — uniquement parce que Docker
-   Desktop était éteint depuis la nuit et que plus personne ne rafraîchissait.
-   `shared/twitch/auth.py::get_valid_token` les rafraîchit au démarrage suivant.
+- les logs runtime annonçaient `🎭 Banter adressé → Grok (xAI)` et
+  `🎭 Humour / Répartie → Grok (xAI)` — **Grok a disparu du code** ;
+- `🧠 Raisonnement complexe → Gemini Pro` : la cascade REASONING n'a jamais mené à un
+  « Pro » ;
+- `RequestType` documentait `IMAGE`/`AUDIO` comme « Gemini 2.0 Flash », génération
+  retirée à l'audit du 24 août ;
+- le commentaire du garde `addressed` justifiait un **coût** (« Grok est payant ») qui
+  n'existe plus ;
+- `JohnnyBot/bot_johnny.py` promouvait TEXT → REPARTEE « pour mettre Grok en priorité » :
+  aucun effet sur le modèle, mais la phrase partait dans `routing["reason"]`, **journalisé
+  par `llm_cascade`**, donc annoncée à chaque réponse de Johnny ;
+- `Sheogorath/bot_sheogorath.py` : `if REPARTEE: ... else: ...` aux **deux branches
+  identiques ligne pour ligne** (les plafonds avaient été alignés sans retirer le test).
 
-Une sonde qui alarme pour un fonctionnement nominal est une sonde qu'on apprend à
-ignorer — donc une sonde qui ne servira plus le jour où la panne est vraie.
+## Ce qui a été fait
 
-## 2. Ce qui a été fait
+1. **Textes** — plus aucun modèle nommé dans `shared/smart_router.py` ni
+   `shared/twitch/llm.py` : les commentaires renvoient à `get_model_cascade`, seule
+   autorité. Raisons de log ramenées à ce qu'elles décrivent vraiment
+   (`🎭 Banter adressé`, `🎭 Humour / Répartie détecté`, `Texte simple`).
+2. **Code inerte** — promotion no-op de Johnny supprimée (+ son import
+   `get_model_cascade`, jamais appelé) ; branches identiques de Sheo fusionnées.
+   L'historique de chaque suppression est conservé en commentaire : c'est lui qui
+   explique pourquoi le code avait cette forme.
+3. **Vendoring** — `python tools/vendor_core.py` puis `tools/sonde_core_drift.py` :
+   *No drift detected* sur les 6 copies.
 
-**`amorce_env_reutilisable(bot, valeurs)`** remplace le test en ligne du token d'accès
-du `.env`. Elle **compare par empreinte** le `TWITCH_REFRESH_TOKEN` du `.env` et celui
-de `data/` — jamais en ligne : Twitch fait *tourner* le refresh à l'usage, le tester le
-consommerait (invariant déjà tenu par
-`test_aucune_sonde_ne_consomme_le_refresh_token_twitch`). États : `ok` /
-`perimee` (le refresh a tourné, recopier celui de `data/`) / `absente` / `sans objet`.
+## Ce qui n'a PAS été fait, et pourquoi
 
-**`token_twitch_vivant`** distingue désormais `perime` de `mort`, en lisant
-`expires_at` avant de conclure :
+- **`RequestType.REPARTEE` est conservé.** Il ne choisit plus de modèle, mais il reste un
+  signal de classification correct, et le supprimer toucherait ~8 tests pour un gain nul.
+- **Aucun nouveau test de garde.** `tests/test_model_ids.py` scanne déjà les `.py` pour
+  les *identifiants* morts. Il n'a rien vu ici parce que les commentaires disaient
+  « Grok » en toutes lettres, pas `x-ai/grok`. Interdire les noms de marque en prose
+  ferait tomber les notes historiques légitimes (y compris celles de ce chantier).
+  ⚠️ **La leçon est donc à retenir, pas à outiller : un filet sur les identifiants ne
+  protège pas la prose.**
 
-| `expires_at` | validation | verdict | compté mort ? |
-|---|---|---|---|
-| — | 200 | `ok` | non |
-| dépassé, refresh présent | 401 | `perime` (se rafraîchit seul) | **non** |
-| dépassé, pas de refresh | 401 | `mort` (rejouer `twitch_authorize.py`) | oui |
-| pas encore atteint | 401 | `mort` (révoqué côté Twitch) | oui |
+## Vérifications
 
-## 3. Vérification
-
-- **9 tests neufs** dans `tests/test_sonde_cles.py`, dont un garde anti-retour qui
-  interdit à `vitalite()` de re-valider en ligne le token d'accès du `.env`.
-- **Chacun vérifié par MUTATION** : le correctif retiré, le test tombe. C'est la seule
-  preuve qu'un test prouve quelque chose.
-- Sonde relancée en réel : verdict `OK : aucune cle partagee entre bots`, plus aucune
-  ligne « ne répondent plus », les 3 amorces `.env` affichées comme intactes.
-- Suite complète **530 tests verts**.
-
-## 4. Reste à faire
-
-Rien sur ce chantier. Pistes ouvertes ailleurs : purger le fond de sac de `MEMORY.md`
-(beaucoup de fiches finissent par « Reste : test live »).
+- 6 bots : `py_compile` OK.
+- Sonde de dérive vendoring : verte.
+- Suite complète : voir la session (aucun test ne portait sur les morceaux retirés —
+  vérifié avant de toucher au code).
