@@ -6,6 +6,7 @@ l'outil du dépôt qui manipule le plus de secrets. Les tests ci-dessous ne touc
 à aucune vraie clé et ne font aucun appel réseau — ils vérifient les invariants de
 construction, seuls testables en CI (les clés ne sont pas dans le dépôt).
 """
+import json
 import os
 import sys
 
@@ -112,3 +113,122 @@ def test_le_fichier_de_token_vise_est_celui_que_le_bot_utilise(bot, attendu):
     src = open(os.path.join(_racine, "shared", "twitch", "auth.py"), encoding="utf-8").read()
     assert 'twitch_chat_auth_{bot_id}.json' in src, \
         "le nom du fichier de tokens a changé dans shared/twitch/auth.py"
+
+
+# ---------------------------------------------------------------------------
+# Le secours Twitch : c'est le REFRESH token, pas le token d'acces
+# ---------------------------------------------------------------------------
+#
+# La version precedente de la sonde annoncait « plus de secours si data/ est perdu »
+# des que le token d'ACCES du `.env` rendait 401. Or il est fait pour expirer toutes
+# les ~4 h : elle alarmait donc tous les jours pour un fonctionnement nominal, alors
+# que le refresh token — le seul qui permette de repartir — etait intact.
+
+def _pose_amorce(tmp_path, monkeypatch, refresh_data):
+    """Fabrique un faux data/twitch_chat_auth_johnny.json et y pointe la sonde."""
+    monkeypatch.setattr(sonde, "RACINE", tmp_path)
+    if refresh_data is not None:
+        d = tmp_path / "data"
+        d.mkdir(exist_ok=True)
+        (d / "twitch_chat_auth_johnny.json").write_text(
+            '{"access_token": "peu-importe", "refresh_token": "%s"}' % refresh_data,
+            encoding="utf-8")
+
+
+def test_le_secours_est_intact_quand_les_deux_refresh_sont_identiques(tmp_path, monkeypatch):
+    _pose_amorce(tmp_path, monkeypatch, "meme-refresh")
+    etat, detail = sonde.amorce_env_reutilisable(
+        "JohnnyBot", {"TWITCH_REFRESH_TOKEN": "meme-refresh"})
+    assert etat == "ok", detail
+
+
+def test_un_refresh_qui_a_tourne_est_signale(tmp_path, monkeypatch):
+    """Twitch fait tourner le refresh a l'usage : quand data/ n'a plus le meme que le
+    `.env`, l'amorce est bel et bien morte — c'est LA le vrai avertissement."""
+    _pose_amorce(tmp_path, monkeypatch, "refresh-neuf")
+    etat, detail = sonde.amorce_env_reutilisable(
+        "JohnnyBot", {"TWITCH_REFRESH_TOKEN": "refresh-vieux"})
+    assert etat == "perimee"
+    assert "recopier" in detail
+
+
+def test_un_env_sans_refresh_est_signale(tmp_path, monkeypatch):
+    _pose_amorce(tmp_path, monkeypatch, "refresh-neuf")
+    etat, _ = sonde.amorce_env_reutilisable("JohnnyBot", {"TWITCH_OAUTH_TOKEN": "x"})
+    assert etat == "absente"
+
+
+def test_le_secours_ne_montre_jamais_le_refresh_token(tmp_path, monkeypatch):
+    """Meme regle que pour les cles : une empreinte, jamais la valeur."""
+    _pose_amorce(tmp_path, monkeypatch, "SECRET-DATA")
+    for env in ("SECRET-DATA", "SECRET-ENV"):
+        _, detail = sonde.amorce_env_reutilisable(
+            "JohnnyBot", {"TWITCH_REFRESH_TOKEN": env})
+        assert "SECRET-DATA" not in detail and "SECRET-ENV" not in detail, detail
+
+
+def test_un_bot_sans_twitch_n_a_pas_d_amorce_a_verifier(tmp_path, monkeypatch):
+    _pose_amorce(tmp_path, monkeypatch, None)
+    etat, _ = sonde.amorce_env_reutilisable(
+        "MalenaBot", {"TWITCH_REFRESH_TOKEN": "x"})
+    assert etat == "sans objet"
+
+
+def test_la_vitalite_ne_teste_plus_le_token_d_acces_du_env():
+    """Garde anti-retour : re-tester TWITCH_OAUTH_TOKEN, c'est reintroduire
+    l'alarme quotidienne pour un token dont l'expiration est le fonctionnement
+    normal."""
+    src = open(os.path.join(_racine, "tools", "sonde_cles_partagees.py"),
+               encoding="utf-8").read()
+    debut = src.index("def vitalite(")
+    fin = src.index("def main(", debut)
+    assert "_valider_twitch(valeurs" not in src[debut:fin], (
+        "vitalite() valide en ligne le token d acces du .env : alarme quotidienne")
+
+
+# ---------------------------------------------------------------------------
+# Un token d'acces expire n'est pas une panne
+# ---------------------------------------------------------------------------
+#
+# Mesure du 2026-09-01 : les trois fichiers de data/ rendaient 401 uniquement parce
+# que Docker Desktop etait eteint depuis la nuit. La sonde annoncait « 3 cles ne
+# repondent plus » et sortait 1 en --strict, pour un etat parfaitement normal.
+
+def _pose_data(tmp_path, monkeypatch, contenu):
+    monkeypatch.setattr(sonde, "RACINE", tmp_path)
+    d = tmp_path / "data"
+    d.mkdir(exist_ok=True)
+    (d / "twitch_chat_auth_johnny.json").write_text(contenu, encoding="utf-8")
+    monkeypatch.setattr(sonde, "_valider_twitch", lambda jeton: (401, b"", 1))
+
+
+def test_un_token_expire_avec_refresh_n_est_pas_une_panne(tmp_path, monkeypatch):
+    """Il dure ~4 h et get_valid_token() le rafraichit au demarrage suivant."""
+    import time
+    _pose_data(tmp_path, monkeypatch, json.dumps({
+        "access_token": "vieux", "refresh_token": "r",
+        "expires_at": time.time() - 20000}))
+    etat, detail = sonde.token_twitch_vivant("JohnnyBot")
+    assert etat == "perime", detail
+    assert "rafraichi" in detail
+
+
+def test_un_401_avant_l_echeance_est_une_vraie_panne(tmp_path, monkeypatch):
+    """Refuse alors qu'il devrait etre valide : le token a ete revoque cote Twitch."""
+    import time
+    _pose_data(tmp_path, monkeypatch, json.dumps({
+        "access_token": "vivant", "refresh_token": "r",
+        "expires_at": time.time() + 3600}))
+    etat, detail = sonde.token_twitch_vivant("JohnnyBot")
+    assert etat == "mort", detail
+    assert "revoque" in detail
+
+
+def test_un_token_expire_sans_refresh_est_une_vraie_panne(tmp_path, monkeypatch):
+    """Rien ne le rattrapera tout seul : il faut rejouer twitch_authorize.py."""
+    import time
+    _pose_data(tmp_path, monkeypatch, json.dumps({
+        "access_token": "vieux", "expires_at": time.time() - 20000}))
+    etat, detail = sonde.token_twitch_vivant("JohnnyBot")
+    assert etat == "mort", detail
+    assert "twitch_authorize" in detail

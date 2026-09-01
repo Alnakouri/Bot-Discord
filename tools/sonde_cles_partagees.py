@@ -23,9 +23,11 @@ ELEVENLABS (Alfred) et HF_TOKEN (Sheo) rendaient 401 depuis que les features voi
 sont parquees.
 
 ⚠️ Le token Twitch du .env n'est qu'une AMORCE. `shared/twitch/auth.py` charge en
-priorite `data/twitch_chat_auth_<bot>.json`, qui se rafraichit tout seul. Un 401 sur le
-.env est donc normal et sans effet — c'est le fichier de data/ qui dit la verite. La
-sonde teste les deux et le distingue, sinon elle crie au feu tous les jours.
+priorite `data/twitch_chat_auth_<bot>.json`, qui se rafraichit tout seul. Le token
+d'ACCES du .env est fait pour expirer toutes les ~4 h : le trouver perime est NORMAL et
+ne dit rien. La sonde ne le teste donc pas. Elle teste le fichier de data/ (la verite du
+moment) et, pour le secours, COMPARE le refresh token des deux cotes — c'est lui, et lui
+seul, qui permet de repartir si data/ est perdu.
 
 Elle n'est pas dans la suite de tests a dessein : les cles ne sont pas dans le depot,
 donc la CI ne peut pas la jouer. Elle se lance a la main, ou apres avoir touche a un
@@ -176,10 +178,18 @@ def _valider_twitch(jeton):
 def token_twitch_vivant(bot):
     """Le token REELLEMENT utilise vit dans data/, pas dans le .env.
 
-    Rend (etat, detail), etat parmi 'ok', 'mort', 'absent'. Sans cette distinction la
-    sonde signalerait une panne Twitch tous les jours, alors que le rafraichissement
-    automatique fait son travail : mesure du 2026-08-30, les trois .env rendaient 401
-    pendant que les trois bots parlaient normalement sur le chat.
+    Rend (etat, detail), etat parmi 'ok', 'perime', 'mort', 'absent'.
+
+    ⚠️ 'perime' n'est PAS une panne. Un token d'acces Twitch dure ~4 h ; quand les
+    conteneurs sont a l'arret (Docker Desktop eteint, par exemple), plus personne ne
+    le rafraichit et il expire. `shared/twitch/auth.py::get_valid_token` le rafraichit
+    de lui-meme au demarrage suivant. Compter ca comme une cle morte, c'est annoncer
+    trois pannes Twitch chaque matin — mesure du 2026-09-01, les trois fichiers
+    rendaient 401 pour cette seule raison.
+
+    Un 401 alors que `expires_at` n'est PAS encore atteint, la oui : le token a ete
+    revoque cote Twitch. C'est cette distinction qui fait la difference entre une
+    alarme utile et une alarme qu'on apprend a ignorer.
     """
     bot_id = _ID_TWITCH.get(bot)
     if not bot_id:
@@ -188,14 +198,70 @@ def token_twitch_vivant(bot):
     if not chemin.exists():
         return "absent", chemin.name + " absent — le bot repartira de l'amorce du .env"
     try:
-        jeton = json.loads(chemin.read_text(encoding="utf-8")).get("access_token")
+        donnees = json.loads(chemin.read_text(encoding="utf-8"))
     except Exception as e:
         return "mort", chemin.name + " illisible (" + type(e).__name__ + ")"
-    code, corps, _ = _valider_twitch(jeton)
+    code, corps, _ = _valider_twitch(donnees.get("access_token"))
     if code == 200:
         d = json.loads(corps)
         return "ok", str(d.get("login")) + ", expire dans " + str(d.get("expires_in")) + " s"
-    return "mort", chemin.name + " : " + str(code)
+
+    echeance = donnees.get("expires_at") or 0
+    depuis = int(time.time() - echeance)
+    if echeance and depuis > 0:
+        if donnees.get("refresh_token"):
+            return "perime", ("expire depuis " + _duree(depuis) + " (bots a l'arret ?) "
+                              "— rafraichi tout seul au prochain demarrage")
+        return "mort", ("expire depuis " + _duree(depuis) + " et AUCUN refresh token : "
+                        "rejouer twitch_authorize.py")
+    return "mort", (chemin.name + " : " + str(code) + " alors que le token n'a pas "
+                    "encore expire — revoque cote Twitch ?")
+
+
+def _duree(secondes):
+    if secondes < 3600:
+        return str(secondes // 60) + " min"
+    if secondes < 86400:
+        return str(secondes // 3600) + " h"
+    return str(secondes // 86400) + " j"
+
+
+def amorce_env_reutilisable(bot, valeurs):
+    """L'amorce du `.env` pourrait-elle relancer le bot si `data/` etait perdu ?
+
+    Rend (etat, detail), etat parmi 'ok', 'perimee', 'absente', 'sans objet'.
+
+    ⚠️ Ce qui relance un bot n'est PAS le token d'ACCES du `.env`. Celui-la est fait
+    pour expirer toutes les ~4 h : le trouver perime est NORMAL et ne dit rien de
+    l'etat du secours. C'est le REFRESH token qui redonne un acces. La bonne question
+    est donc : le refresh du `.env` est-il encore celui que `data/` utilise ?
+
+    Twitch fait TOURNER le refresh token a l'usage : on ne le teste jamais en ligne
+    (cf. `test_aucune_sonde_ne_consomme_le_refresh_token_twitch`), on le COMPARE par
+    empreinte. Mesure du 2026-08-31 : les trois bots Twitch ont le meme refresh des
+    deux cotes — le secours est intact, et la version precedente de cette sonde
+    annoncait le contraire tous les jours.
+    """
+    bot_id = _ID_TWITCH.get(bot)
+    if not bot_id:
+        return "sans objet", "ce bot ne va pas sur Twitch"
+    amorce = (valeurs or {}).get("TWITCH_REFRESH_TOKEN")
+    if not amorce:
+        return "absente", ("aucun TWITCH_REFRESH_TOKEN dans le .env — si data/ est "
+                          "perdu, il faudra rejouer twitch_authorize.py")
+    chemin = RACINE / "data" / ("twitch_chat_auth_" + bot_id + ".json")
+    if not chemin.exists():
+        return "ok", "le .env porte un refresh token, et data/ n'existe pas encore"
+    try:
+        vivant = json.loads(chemin.read_text(encoding="utf-8")).get("refresh_token")
+    except Exception as e:
+        return "absente", chemin.name + " illisible (" + type(e).__name__ + ")"
+    if not vivant:
+        return "ok", "seul le .env porte un refresh token"
+    if empreinte(vivant) == empreinte(amorce):
+        return "ok", "refresh identique des deux cotes (" + empreinte(amorce) + ")"
+    return "perimee", ("le refresh a tourne : data/ " + empreinte(vivant) + " != .env "
+                       + empreinte(amorce) + " — recopier celui de data/ dans le .env")
 
 
 def _detail(nom, code, corps):
@@ -230,17 +296,21 @@ def vitalite():
 
         if valeurs.get("TWITCH_OAUTH_TOKEN"):
             etat, detail = token_twitch_vivant(bot)
-            if etat == "ok":
-                print("    {:22} OK    live            {}".format("TWITCH (data/)", detail))
-            else:
-                morts += 1
-                print("    {:22} MORT                  {}".format("TWITCH (data/)", detail))
-            # L'amorce du .env : informatif seulement. Un 401 ici est SANS EFFET tant
-            # que le fichier de data/ repond — mais il ne reste plus de secours.
-            code, _, ms = _valider_twitch(valeurs["TWITCH_OAUTH_TOKEN"])
-            if code != 200:
-                print("    {:22} perimee {:>6} ms  sans effet aujourd'hui, mais plus "
-                      "de secours si data/ est perdu".format("  .env (amorce)", ms))
+            # Seul 'mort' compte : 'perime' est le fonctionnement normal d'un token de
+            # 4 h que le bot rafraichira lui-meme (cf. token_twitch_vivant).
+            morts += 1 if etat == "mort" else 0
+            print("    {:22} {:9} {:11} {}".format(
+                "TWITCH (data/)",
+                {"ok": "OK  ", "perime": "perime", "mort": "MORT", "absent": "-"}[etat],
+                "live" if etat == "ok" else "", detail))
+            # Le secours, c'est le REFRESH token du .env, pas son token d'acces.
+            # On ne teste donc PAS TWITCH_OAUTH_TOKEN : perime toutes les ~4 h, il
+            # ferait crier au feu pour un fonctionnement nominal.
+            etat_a, detail_a = amorce_env_reutilisable(bot, valeurs)
+            marque = {"ok": "OK  ", "perimee": "A REFAIRE", "absente": "ABSENTE"}
+            if etat_a != "sans objet":
+                print("    {:22} {:9} secours      {}".format(
+                    "  .env (amorce)", marque[etat_a], detail_a))
     return morts
 
 
