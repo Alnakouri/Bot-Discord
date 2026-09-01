@@ -54,3 +54,19 @@ ne sélectionne plus aucun modèle. Or tout autour d'elle affirmait le contraire
 - Sonde de dérive vendoring : verte.
 - Suite complète : voir la session (aucun test ne portait sur les morceaux retirés —
   vérifié avant de toucher au code).
+
+---
+
+# Suite — CI : sortir de Node 20 avant que ça casse
+
+Relevé dans les annotations du run `33527961612` : `actions/checkout@v4` et
+`actions/setup-python@v5` ciblent Node 20, **déjà forcées sur Node 24** par le runner,
+avec un avertissement à chaque exécution. C'est une panne programmée, pas un détail.
+
+Montées en `v7` toutes les deux (vérifié : `runs.using = node24` dès v5/v6
+respectivement, et v7 pour les deux). Aucun changement cassant pour cet usage — la seule
+rupture des notes de version est l'exigence d'un runner ≥ v2.327.1 (largement dépassée
+sur les runners hébergés) et le retrait de l'entrée `pip-install` en v7, que ce workflow
+n'utilise pas. `python-version: "3.12"` et `cache: pip` sont inchangés.
+
+Aucun test ni document ne référence ces versions — la CI elle-même est la vérification.

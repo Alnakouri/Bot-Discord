@@ -18,10 +18,14 @@ jobs:
     timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v4
+    # ⚠️ Ces actions tournaient sur Node 20, dont GitHub a annonce la fin : le runner les
+    # forcait deja sur Node 24 en emettant un avertissement a chaque execution. Montees
+    # avant que l'avertissement devienne une panne. checkout v6+ et setup-python v6+
+    # exigent un runner >= v2.327.1 (largement depasse sur les runners heberges).
+    - uses: actions/checkout@v7
 
     - name: Python 3.12
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         # 3.12 comme en local : c'est la version qui fait foi pour la suite de tests.
         python-version: "3.12"
