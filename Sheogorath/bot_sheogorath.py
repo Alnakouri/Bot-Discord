@@ -372,6 +372,10 @@ async def on_command_error(ctx, error):
     """
     if isinstance(error, commands.CommandNotFound):
         return
+    if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+        logger.warning(f"[COMMANDE] usage incorrect : {ctx.command} — {error}")
+        await ctx.send(f"🧀 Tu me parles à moitié ?! C'est pas une devinette, mortel ! Fais ça : `{ctx.command.name} {ctx.command.signature}` ! 🧀")
+        return
     logger.error(f"❌ [COMMANDE] {ctx.command} : {error}", exc_info=error)
 
 
@@ -1544,7 +1548,7 @@ async def leave_voice_cmd(ctx):
         return
     await cmd_leave_voice(ctx)
 
-@bot.command(name="voix", aliases=["parle", "speak", "dis"])
+@bot.command(name="voix", aliases=["speak", "dis"])
 async def speak_cmd(ctx, *, text: str = None):
     """Sheogorath parle dans le vocal !
     Usage: !voix [texte]
@@ -1767,6 +1771,12 @@ async def on_message(message):
 
     # Handle Commands
     await bot.process_commands(message)
+
+    # Un message qui est une commande de CE bot a deja produit sa reponse :
+    # il ne doit pas repartir dans le chemin LLM (bavardage aleatoire compris).
+    ctx = await bot.get_context(message)
+    if ctx.valid:
+        return
 
     # 1. AUTO-REACTIONS (Ajoute des emojis selon les mots-clés)
     reactions_map = {

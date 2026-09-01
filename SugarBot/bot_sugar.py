@@ -358,6 +358,10 @@ async def on_command_error(ctx, error):
     """
     if isinstance(error, commands.CommandNotFound):
         return
+    if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+        logger.warning(f"[COMMANDE] usage incorrect : {ctx.command} — {error}")
+        await ctx.send(f"💎 Chéri... Tu veux quoi exactement ? La commande c'est : `{ctx.command.name} {ctx.command.signature}`. 💅")
+        return
     logger.error(f"❌ [COMMANDE] {ctx.command} : {error}", exc_info=error)
 
 
@@ -726,6 +730,12 @@ async def on_message(message):
     
     # Traiter les commandes
     await bot.process_commands(message)
+
+    # Un message qui est une commande de CE bot a deja produit sa reponse :
+    # il ne doit pas repartir dans le chemin LLM (bavardage aleatoire compris).
+    ctx = await bot.get_context(message)
+    if ctx.valid:
+        return
 
     # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
     if message.author.bot:

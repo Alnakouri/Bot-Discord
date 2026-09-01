@@ -302,6 +302,10 @@ async def on_command_error(ctx, error):
     """
     if isinstance(error, commands.CommandNotFound):
         return
+    if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+        logger.warning(f"[COMMANDE] usage incorrect : {ctx.command} — {error}")
+        await ctx.send(f"🤵 Il me faudrait un ordre complet, Monsieur : `{ctx.command.name} {ctx.command.signature}`. ☕")
+        return
     logger.error(f"❌ [COMMANDE] {ctx.command} : {error}", exc_info=error)
 
 
@@ -1309,13 +1313,18 @@ async def on_message(message):
     if is_ignored_channel(message.channel):
         return
     
-    # Vérification mode maintenance AVANT toute logique
-    if DATABASE_AVAILABLE and is_maintenance_mode():
-        await bot.process_commands(message)  # Permet les commandes admin même en maintenance
-        return
-    
-    # PROCESS STANDARD COMMANDS
+    # PROCESS STANDARD COMMANDS (1 seul appel pour tout on_message)
     await bot.process_commands(message)
+
+    # Un message qui est une commande de CE bot a deja produit sa reponse :
+    # il ne doit pas repartir dans le chemin LLM (bavardage aleatoire compris).
+    ctx = await bot.get_context(message)
+    if ctx.valid:
+        return
+
+    # Vérification mode maintenance AVANT toute logique LLM
+    if DATABASE_AVAILABLE and is_maintenance_mode():
+        return
 
     # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
     if message.author.bot:
@@ -1506,7 +1515,6 @@ async def on_message(message):
                     except Exception as e:
                         logger.error(f"❌ [TIMEOUT] Erreur: {e}")
                 
-                await bot.process_commands(message)
                 return  # On a déjà répondu, pas besoin de passer au LLM
 
     # D. Si mot-clé service (Oreille indiscrète - 30%)
@@ -1558,7 +1566,6 @@ async def on_message(message):
                              break
 
     if not should_respond:
-        await bot.process_commands(message) # Important pour !servir
         return
 
     # SAVE INTERACTION
