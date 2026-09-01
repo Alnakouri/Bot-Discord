@@ -40,6 +40,31 @@
 > dans `pytest` à dessein : les clés ne sont pas dans le dépôt, la CI ne peut pas le
 > jouer.
 
+### Lire le verdict Twitch de la sonde
+
+`--vitalite` interroge en plus chaque fournisseur. Les trois lignes Twitch demandent une
+lecture particulière, parce qu'un `401` n'y signifie **pas** forcément une panne :
+
+```bash
+python tools/sonde_cles_partagees.py --vitalite   # ~25 appels, tous en lecture seule
+```
+
+| Ligne | Verdict | Ce que ça veut dire |
+|---|---|---|
+| `TWITCH (data/)` | `OK` | le bot est authentifié, tout va bien |
+| `TWITCH (data/)` | `perime` | **normal.** Le token d'accès dure ~4 h ; quand les conteneurs sont à l'arrêt, plus personne ne le rafraîchit. `shared/twitch/auth.py` le renouvelle seul au prochain démarrage. **Ne compte pas comme une clé morte.** |
+| `TWITCH (data/)` | `MORT` | **vraie alarme.** Soit un `401` *avant* l'échéance (token révoqué côté Twitch), soit un token expiré *sans* refresh token (rejouer `twitch_authorize.py`). |
+| `.env (amorce)` | `OK` | le `TWITCH_REFRESH_TOKEN` du `.env` est encore celui de `data/` : le secours peut relancer le bot |
+| `.env (amorce)` | `A REFAIRE` | le refresh a tourné ; recopier celui de `data/` dans le `.env` |
+
+> [!NOTE]
+> Le token du `.env` n'est qu'une **amorce**. L'autorité, c'est
+> `data/twitch_chat_auth_<bot>.json`. Et le seul secours réel est le **refresh token**,
+> jamais le token d'accès : ce dernier est *fait* pour expirer.
+>
+> La sonde ne teste **jamais** un refresh token en ligne — Twitch le fait tourner à
+> l'usage, le tester le consommerait. Elle le compare par empreinte, c'est tout.
+
 ## 🧠 Stratégie de Routage
 
 > [!IMPORTANT]
