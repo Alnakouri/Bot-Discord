@@ -3,6 +3,7 @@ import asyncio
 import threading
 import sqlite3
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 import queue
 import time
@@ -191,7 +192,10 @@ def test_8_synchronous_survit_a_un_echec_de_journal(monkeypatch):
 
 
 def test_9_malena_utilise_meme_fonction():
-    with open("MalenaBot/bot_malena.py", "r", encoding="utf-8") as f:
+    # Ancre sur la racine du depot : lance depuis tests/, un chemin relatif au CWD
+    # faisait tomber ce test sur un FileNotFoundError (convention test_documentation.py:25).
+    malena = Path(__file__).resolve().parent.parent / "MalenaBot" / "bot_malena.py"
+    with open(malena, "r", encoding="utf-8") as f:
         content = f.read()
     assert "from core.api_tracking import tracer_appel" in content
     assert "sqlite3" not in content

@@ -14,26 +14,38 @@ def load_bot_module(filepath):
     try:
         spec.loader.exec_module(module)
     except Exception as e:
-        print(f"Could not load {filepath}: {e}")
-        return None
-    return module
+        return None, f"Could not load {filepath}: {e}"
+    return module, None
 
 def test_erreurs_commandes(caplog):
     import asyncio
     asyncio.run(_test_erreurs_commandes_async(caplog))
 
 async def _test_erreurs_commandes_async(caplog):
-    bot_files = glob.glob("*Bot/bot_*.py") + ["Alfred/bot_alfred.py", "Sheogorath/bot_sheogorath.py"]
+    from .conftest import BOT_FILES
+    bot_files = BOT_FILES
+    assert len(bot_files) == 6, f"Bots manquants, trouves: {bot_files}"
     
+    tested_bots = []
+    failed_bots = []
+
     for bot_file in bot_files:
         bot_dir = Path(bot_file).parent.resolve()
         sys.path.insert(0, str(bot_dir))
-        module = load_bot_module(bot_file)
+        module, err = load_bot_module(bot_file)
         sys.path.pop(0)
             
-        if module is None or not hasattr(module, 'on_command_error'):
+        # Deux causes distinctes, qui ne se reparent pas pareil : le bot ne
+        # s'importe plus / le bot n'a plus de gestionnaire d'erreur.
+        if module is None:
+            failed_bots.append((bot_file, err))
             continue
-            
+
+        if not hasattr(module, 'on_command_error'):
+            failed_bots.append((bot_file, "pas de on_command_error"))
+            continue
+
+        tested_bots.append(bot_file)
         on_command_error = module.on_command_error
         
         ctx = MagicMock()
@@ -64,3 +76,11 @@ async def _test_erreurs_commandes_async(caplog):
         ctx.send.assert_not_called()
         # Verify nothing logged
         assert len(caplog.records) == 0
+
+    # Les manquants sont derives de la liste de depart, pas de ce que la boucle a
+    # pense a enregistrer : un `continue` ajoute demain sera nomme sans qu'on y pense.
+    manquants = [f for f in bot_files if f not in tested_bots]
+    assert not manquants, (
+        f"Seulement {len(tested_bots)}/6 bots testes. "
+        f"Manquants: {manquants}. Motifs: {failed_bots}"
+    )

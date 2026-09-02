@@ -3,7 +3,8 @@ import glob
 from pathlib import Path
 
 def test_commandes_une_seule_fois_et_ctx():
-    bot_files = glob.glob("*Bot/bot_*.py") + ["Alfred/bot_alfred.py", "Sheogorath/bot_sheogorath.py"]
+    from .conftest import BOT_FILES
+    bot_files = BOT_FILES
     assert len(bot_files) == 6, f"Bots manquants, trouves: {bot_files}"
     
     for bot_file in bot_files:
@@ -35,7 +36,9 @@ def test_commandes_une_seule_fois_et_ctx():
         assert on_message_found, f"Fonction on_message introuvable dans {bot_file}"
 
 def test_anti_collision():
-    bot_files = glob.glob("*Bot/bot_*.py") + ["Alfred/bot_alfred.py", "Sheogorath/bot_sheogorath.py"]
+    from .conftest import BOT_FILES
+    bot_files = BOT_FILES
+    assert len(bot_files) == 6, f"Bots manquants, trouves: {bot_files}"
     all_commands = {}
     collisions = []
     
