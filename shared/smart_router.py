@@ -54,7 +54,13 @@ AUDIO_MIME_TYPES = [
 ]
 IMAGE_MIME_TYPES = [
     "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
+    "image/heic", "image/heif", "image/avif",
 ]
+
+IMAGE_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+    ".heic", ".heif", ".avif",
+)
 
 # Taille max des médias (sécurité)
 MAX_MEDIA_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -149,7 +155,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
                 return result
 
             # Image détectée
-            if any(ct.startswith(mime) for mime in IMAGE_MIME_TYPES):
+            if ct.startswith("image/") or any(ct.startswith(mime) for mime in IMAGE_MIME_TYPES) or filename.endswith(IMAGE_EXTENSIONS):
                 result["type"] = RequestType.IMAGE
                 result["model"] = GEMINI_FLASH
                 result["reason"] = f"🖼️ Image ({ct}) → Gemini Vision"

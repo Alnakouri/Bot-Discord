@@ -1196,7 +1196,7 @@ async def on_message(message):
     is_eavesdropping = False
     
     # Détection d'images
-    has_attachment_image = any(a.content_type and a.content_type.startswith('image/') for a in message.attachments) if message.attachments else False
+    has_attachment_image = classify_request(message.content, message.attachments)["has_image"]
     
     # "L'Oreille qui traîne" (Si mot-clé + pas de mention + random 20%)
     if has_keyword and not is_mentioned and not is_reply and not has_attachment_image:

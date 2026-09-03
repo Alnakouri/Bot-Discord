@@ -1841,9 +1841,7 @@ async def on_message(message):
              await message.channel.send("Il n'y a pas d'énigme, espèce de fou ! Tu entends des voix ? 🤪")
              return
     
-    has_image = any((a.content_type and a.content_type.startswith('image/')) or 
-                    (a.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))) 
-                    for a in message.attachments)
+    has_image = classify_request(message.content, message.attachments)["has_image"]
     if has_image:
         logger.info(f"📸 [DEBUG] Image détectée de {message.author.name} ({len(message.attachments)} attachments)")
     
@@ -2217,17 +2215,10 @@ async def on_message(message):
     if is_proactive:
         system_instruction += "NOTE: Tu interviens sans être appelé. Sois surprenant et chaotique, mais pertinent par rapport à la discussion en cours.\n"
     
-    if has_image:
-        system_instruction += "NOTE: L'utilisateur a envoyé une IMAGE. Commente-la avec ton style fou (Dément ou Maniaque). Si c'est de la nourriture, compare-la à du fromage ou des entrailles !\n"
-    
+
     if memory_context:
         system_instruction += f"{memory_context}\n"
 
-    # Context Injection for Empty Pings - SYSTEM-LEVEL ONLY (No leakage!)
-    if is_mentioned and not user_message and not has_image:
-         user_message = "(Le mortel vous regarde fixement sans rien dire.)"
-    elif has_image and not user_message:
-         user_message = "(Le mortel vous montre une image. [INSTRUCTION VISUELLE] : Regarde attentivement l'image. Décris brièvement ce que tu vois (un mème, un chat, du fromage ?) et réagis-y directement selon ton humeur. Ne fais pas de commentaire générique, prouve que tu as vu l'image !)"
 
     # MEMORY INJECTION (Persistent Facts)
     user_facts = fact_brain.get_facts(message.author.id)
@@ -2265,12 +2256,6 @@ async def on_message(message):
     channel_id = message.channel.id
     if channel_id not in conversation_history: conversation_history[channel_id] = []
     
-    # Add to temporary convo history
-    # IMPORTANT: Include Author Name so LLM knows who said what in history
-    conversation_history[channel_id].append({"role": "user", "parts": [f"{message.author.name}: {user_message}"]})
-    if len(conversation_history[channel_id]) > MAX_HISTORY:
-        conversation_history[channel_id] = conversation_history[channel_id][-MAX_HISTORY:]
-
     # Build View Transcript (last 10 msgs) & Collect Active Users
     transcript = "TRANSCRIPTION RÉCENTE (ID des mortels inclus) :\n"
     active_mortals = set()
@@ -2321,6 +2306,23 @@ async def on_message(message):
     has_image = routing["has_image"] and media_data is not None
     has_audio = routing["has_audio"] and media_data is not None
     
+    if has_image:
+        system_instruction += "NOTE: L'utilisateur a envoyé une IMAGE. Commente-la avec ton style fou (Dément ou Maniaque). Si c'est de la nourriture, compare-la à du fromage ou des entrailles !\n"
+
+    # Context Injection for Empty Pings - SYSTEM-LEVEL ONLY (No leakage!)
+    if is_mentioned and not user_message and not has_image:
+         user_message = "(Le mortel vous regarde fixement sans rien dire.)"
+    elif has_image and not user_message:
+         user_message = "(Le mortel vous montre une image. [INSTRUCTION VISUELLE] : Regarde attentivement l'image. Décris brièvement ce que tu vois (un mème, un chat, du fromage ?) et réagis-y directement selon ton humeur. Ne fais pas de commentaire générique, prouve que tu as vu l'image !)"
+
+    # Add to temporary convo history
+    # IMPORTANT: Include Author Name so LLM knows who said what in history
+    # ⚠️ APRÈS l'injection ci-dessus : un ping vide s'enregistrait sinon comme
+    # « TestUser:  » dans l'historique des tours suivants.
+    conversation_history[channel_id].append({"role": "user", "parts": [f"{message.author.name}: {user_message}"]})
+    if len(conversation_history[channel_id]) > MAX_HISTORY:
+        conversation_history[channel_id] = conversation_history[channel_id][-MAX_HISTORY:]
+
     # LLM CALL
     response_text = None
     
@@ -2436,7 +2438,18 @@ async def on_message(message):
                 for msg in conversation_history[channel_id]:
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
-                msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
+                if has_image and media_data:
+                    b64_image = base64.b64encode(media_data).decode('utf-8')
+                    user_content = [
+                        {"type": "text", "text": f"{message.author.name}: {user_message}"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
+                        }
+                    ]
+                    msgs.append({"role": "user", "content": user_content})
+                else:
+                    msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
                 
                 try:
                     chat = await asyncio.wait_for(
@@ -2447,7 +2460,8 @@ async def on_message(message):
                             temperature=1.0,
                             max_tokens=max_tokens_val,
                             tools=OPENAI_TOOLS_DEFINITION,
-                            tool_choice="auto"
+                            tool_choice="auto",
+                            extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
                         ),
                         timeout=15
                     )
@@ -2462,7 +2476,8 @@ async def on_message(message):
                             model=model_name,
                             messages=msgs,
                             temperature=1.0,
-                            max_tokens=max_tokens_val
+                            max_tokens=max_tokens_val,
+                            extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
                         ),
                         timeout=15
                     )
@@ -2498,7 +2513,7 @@ async def on_message(message):
                     # Seconde passe
                     chat = await asyncio.wait_for(
                         asyncio.to_thread(
-                            openrouter_client.chat.completions.create, model=model_name, messages=msgs, max_tokens=max_tokens_val
+                            openrouter_client.chat.completions.create, model=model_name, messages=msgs, max_tokens=max_tokens_val, extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
                         ),
                         timeout=15
                     )
@@ -2517,6 +2532,8 @@ async def on_message(message):
 
             # 3. MISTRAL
             elif client_type == "mistral" and mistral_client:
+                if media_data is not None:
+                    logger.warning(f"⚠️ [MISTRAL] Média reçu mais ignoré par Mistral {model_name}. Perte silencieuse évitée.")
                 chat = await asyncio.wait_for(
                     asyncio.to_thread(
                         mistral_client.chat.complete,
@@ -2533,6 +2550,8 @@ async def on_message(message):
 
             # 4. GROQ
             elif client_type == "groq" and groq_client:
+                if media_data is not None:
+                    logger.warning(f"⚠️ [GROQ] Média reçu mais ignoré par Groq {model_name}. Perte silencieuse évitée.")
                 chat = await asyncio.wait_for(
                     asyncio.to_thread(
                         groq_client.chat.completions.create,
@@ -2547,39 +2566,7 @@ async def on_message(message):
                 logger.info(f"⚡ [GROQ {model_name}] Sheogorath a répondu !")
                 break
 
-            # 5. OPENROUTER
-            elif client_type == "openrouter" and openrouter_client:
-                msgs = [{"role": "system", "content": f"{system_instruction}\nCONTEXT: {transcript}"}]
-                for msg in conversation_history[channel_id]:
-                    r = "user" if msg["role"] == "user" else "assistant"
-                    msgs.append({"role": r, "content": msg["parts"][0]})
-                
-                # Payload Multimodal si image présente
-                if has_image and media_data:
-                    b64_image = base64.b64encode(media_data).decode('utf-8')
-                    user_content = [
-                        {"type": "text", "text": f"{message.author.name}: {user_message}"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
-                        }
-                    ]
-                    msgs.append({"role": "user", "content": user_content})
-                else:
-                    msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
-                
-                chat = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        openrouter_client.chat.completions.create,
-                        model=model_name, messages=msgs,
-                        temperature=0.9, max_tokens=max_tokens_val,
-                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
-                    ),
-                    timeout=15
-                )
-                response_text = chat.choices[0].message.content
-                logger.info(f"🌌 [OPENROUTER {model_name}] Sheogorath a utilisé un secours visuel !")
-                break
+
 
         except Exception as e:
             logger.warning(f"⚠️ [{client_type.upper()} FAIL] {e}")

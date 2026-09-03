@@ -1361,7 +1361,7 @@ async def on_message(message):
     is_shouting = message.content.isupper() and len(message.content) > 10
     
     # EARLY IMAGE DETECTION (for priority trigger)
-    has_image_early = any(a.content_type and a.content_type.startswith('image/') for a in message.attachments) if message.attachments else False
+    has_image_early = classify_request(message.content, message.attachments)["has_image"]
     
     # 2. LOGIQUE DE REACTION
     should_respond = False

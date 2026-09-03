@@ -1,105 +1,148 @@
-# PLAN — finir la fiabilisation des tests de commandes (2 points)
+# PLAN — Sheo bluffe sur les images
 
-Suite du plan précédent, **exécuté et relu le 02/09**. Le travail livré est bon :
+Diagnostic du **2026-09-02** (Claude, lecture seule). Symptôme observé au test live du
+01/09 : Sheo répond aux images par « une danse de pixels », « une lame qui claque ».
+**Ce n'est pas un effet de prompt à retoucher : le modèle ne reçoit pas l'image, et on lui
+ordonne de prouver qu'il l'a vue.** Il obéit.
 
-| Vérification | Résultat |
-|---|---|
-| `git diff --stat` | `tests/` + `PLAN.md` seuls, **aucun fichier de bot** ✅ |
-| Les 3 tests branchés sur `conftest.BOT_FILES` | ✅ (ancré sur `Path(__file__)`) |
-| Les 3 portent `assert len(bot_files) == 6` | ✅ |
-| Mutation : `raise ImportError` en tête de `bot_sugar.py` | ✅ ROUGE, **nomme Sugar + l'erreur** |
-| Mutation : `MalenaBot/` renommé | ✅ les 3 ROUGE |
-| Suite complète depuis la racine | ✅ **533 passed**, exit 0 |
-
-**Ne rien défaire de tout ça.** Il reste deux finitions, toutes deux **prouvées par
-mutation ou par exécution réelle**, toutes deux **dans `tests/` uniquement**.
-
+Trois défauts réels, vérifiés dans le code (lignes relues le 02/09, après `4c8b83d`).
 Exécution : Antigravity. Rédaction : Claude.
 
 ---
 
-## Point 1 — le bot sauté faute de `on_command_error` est encore **anonyme**  🟠
+## Défaut 1 — « y a-t-il une image ? » est posée DEUX fois, avec deux règles  🔴
 
-### Preuve (mutation faite le 02/09, pas supposée)
-`on_command_error` renommé en `on_command_error_MUT` dans `JohnnyBot/bot_johnny.py:199`.
-Le test tombe bien au ROUGE — le compte fait son travail — mais il dit :
+C'est la cause racine. Le bluff est fabriqué mécaniquement.
 
-```
-AssertionError: Seulement 5 bots testes. Echecs: []
-```
+| Où | Règle appliquée |
+|---|---|
+| `Sheogorath/bot_sheogorath.py:1844` | `content_type` commence par `image/` **OU** extension dans `.png .jpg .jpeg .webp .gif` |
+| `Sheogorath/core/smart_router.py:157` | `content_type` **seul**, et seulement s'il est dans `IMAGE_MIME_TYPES` |
 
-**« Echecs: [] » alors qu'un bot manque.** On apprend qu'il en manque un, jamais **lequel**
-ni **pourquoi**. C'est précisément ce que le plan précédent demandait d'éviter (« le message
-d'erreur compte »). La raison : `tests/test_erreurs_commandes.py:41`
+`IMAGE_MIME_TYPES` (`smart_router.py:60`) = `jpeg, png, gif, webp, bmp`. Donc une pièce
+jointe `photo.jpeg` servie **sans `content_type`**, ou en `image/heic`, `image/avif`,
+`image/svg+xml` : **le bot croit qu'il y a une image, le routeur non.**
 
-```python
-if not hasattr(module, 'on_command_error'):
-    continue
-```
+### La chaîne de conséquences, dans l'ordre du fichier
 
-est un `continue` **muet** — il ne nourrit ni `tested_bots` ni `failed_bots`. Le chemin
-« import cassé » a été instrumenté, celui-ci non.
+1. `:1844` → `has_image = True`.
+2. `:2220` → le prompt système reçoit « **NOTE: L'utilisateur a envoyé une IMAGE.
+   Commente-la…** ».
+3. `:2229` → si le message est vide, le message utilisateur devient « *Regarde
+   attentivement l'image… **prouve que tu as vu l'image !*** ».
+4. `:2307` → **seulement maintenant** le routage tranche : `has_image = False`,
+   `type = TEXT/REPARTEE`.
+5. `:2312` → le téléchargement est gaté sur `routing["has_image"]` → **pas de
+   `download_media`**, `media_data` reste `None`.
+6. `:2321` → `has_image = routing["has_image"] and media_data is not None` : la variable
+   est bien corrigée… **mais le prompt est déjà écrit, et personne ne le retire.**
+7. `get_model_cascade(TEXT)` rend la cascade de persona (**Groq `gpt-oss-120b`**), pas la
+   cascade IMAGE, qui est Gemini-only (`smart_router.py:226`).
+
+⚠️ Un modèle **sans yeux** reçoit l'ordre explicite de prouver qu'il a vu une image. Le
+garde-fou « vision = Gemini uniquement » est contourné par le haut.
 
 ### Correction demandée
-1. Nourrir `failed_bots` sur ce chemin aussi, avec un motif distinct de l'échec d'import —
-   p. ex. `"pas de on_command_error"` vs le message d'exception. Les deux causes doivent
-   rester **distinguables** dans le message final : « il n'a pas la fonction » et « il ne
-   s'importe plus » ne se réparent pas pareil.
-2. Ne pas se contenter du compte dans le message final : lister **les bots manquants
-   nommément**, en dérivant `set(bot_files) - set(tested_bots)` plutôt qu'en se fiant à ce
-   que la boucle a bien pensé à enregistrer. Un bot perdu par un `continue` ajouté demain
-   sera nommé sans qu'on ait à y penser.
 
-⚠️ Garder le parcours tolérant *pendant* la boucle (bilan complet des 6) et l'échec **à la
-fin** : c'est ce qui marche aujourd'hui.
+**Une seule autorité sur la question.** Le routeur décide, le bot obéit.
+
+1. **Aligner le routeur sur la règle la plus large**, pas l'inverse : dans
+   `classify_request`, accepter aussi l'**extension** du fichier quand le `content_type`
+   est absent ou inconnu. Le routeur lit **déjà** `filename` juste au-dessus
+   (`smart_router.py:139`, il s'en sert pour le vocal `.ogg`) : la matière est là.
+   Élargir `IMAGE_MIME_TYPES` aux formats que Gemini accepte réellement plutôt que de
+   laisser tomber `heic`/`avif` en silence.
+2. **Supprimer la détection locale `:1844`** et faire descendre `routing["has_image"]`.
+   Deux endroits qui répondent à la même question finiront toujours par diverger — c'est
+   la leçon de `bug-is-voice-message-methode`, déjà la détection de média qui mentait.
+3. Si l'ordre du code rend (1)+(2) trop lourd d'un coup, le **minimum non négociable** est
+   de **déplacer le montage du prompt image APRÈS `:2321`** : un prompt qui affirme un
+   fait ne doit jamais être écrit avant la vérification de ce fait.
+
+⚠️ **Ne pas se contenter de retoucher la formulation du prompt.** « Prouve que tu as vu
+l'image » n'est pas le bug, c'est le révélateur : la consigne est juste quand l'image est
+là. Le bug, c'est qu'elle parte quand l'image n'est pas là.
 
 ### Vérification par mutation (obligatoire)
-Renommer `on_command_error` chez Johnny (`bot_johnny.py:199`) → le test doit être **ROUGE**
-et **nommer Johnny** *et* la raison. Puis remettre le fichier en état
-(`git diff --stat JohnnyBot/` doit être vide).
+Test neuf, sans réseau : une pièce jointe factice `photo.jpeg` avec `content_type = None`
+(puis `image/heic`) doit donner `classify_request(...)["has_image"] is True`. Retirer le
+correctif → **ROUGE**. Plus un test garantissant qu'avec `has_image = False`, **aucune**
+des deux chaînes « a envoyé une IMAGE » / « prouve que tu as vu l'image » n'apparaît dans
+le prompt monté.
 
 ---
 
-## Point 2 — la DoD « suite verte depuis `tests/` » n'est **pas** tenue  🔴
+## Défaut 2 — la branche multimodale OpenRouter est du CODE MORT  🟠
 
-### Preuve (exécution réelle, pas une supposition)
-`python -m pytest .` lancé **depuis `tests/`** :
+Dans la même cascade `if/elif` de `bot_sheogorath.py`, la condition
+`elif client_type == "openrouter" and openrouter_client:` apparaît **deux fois** :
 
-```
-1 failed, 526 passed, 6 skipped, 46 subtests passed
-FAILED test_suivi_api.py::test_9_malena_utilise_meme_fonction
-E   FileNotFoundError: [Errno 2] No such file or directory: 'MalenaBot/bot_malena.py'
-```
+- `:2434` — texte seul (+ tool-calling) ;
+- `:2551` — **payload base64 de l'image**.
 
-⚠️ **Ce n'est PAS une régression du plan précédent.** `tests/test_suivi_api.py:194` est
-**antérieur** et porte la même maladie que les tests qu'on vient de soigner :
-
-```python
-with open("MalenaBot/bot_malena.py", "r", encoding="utf-8") as f:
-```
-
-Chemin relatif au CWD. Vérifié par grep : c'est le **seul** autre cas de tout `tests/`.
+La première capture toujours. **La seconde est inatteignable** : le seul secours visuel
+non-Gemini du bot n'a jamais tourné une seule fois.
 
 ### Correction demandée
-Ancrer ce `open()` sur la racine du dépôt. Deux façons acceptables, au choix :
-- réutiliser `BOT_FILES` de `conftest.py` en y sélectionnant Malena ; ou
-- ancrer localement sur `Path(__file__).resolve().parent.parent`, comme
-  `tests/test_documentation.py:25`.
+Fusionner les deux branches en une seule qui **teste la présence de `media_data`** pour
+choisir le payload (multimodal si image, texte sinon). Supprimer la branche morte.
 
-⚠️ Ne toucher **que** ce test : le reste de `test_suivi_api.py` est vert et hors sujet.
-Ne pas modifier `MalenaBot/`.
+⚠️ Vérifier avant de supprimer que `:2551` n'a rien que `:2434` n'ait pas (gestion
+d'erreur, en-têtes, modèle) : c'est une fusion, pas une suppression.
 
-### Vérification (obligatoire)
-Relancer la suite **depuis `tests/`** : **0 failed**. Puis depuis la racine : toujours vert.
+### Vérification par mutation (obligatoire)
+Un test qui atteint la branche OpenRouter **avec** `media_data` et vérifie que le payload
+contient bien l'image. Sur le code d'aujourd'hui il doit être **ROUGE** — s'il est vert
+d'emblée, il ne teste pas ce qu'on croit.
+
+---
+
+## Défaut 3 — Groq et Mistral jettent `media_data` en silence  🟠
+
+`:2519` (mistral) et `:2535` (groq) ne construisent **aucun** payload multimodal, et
+**rien ne signale** que l'image a été perdue. Masqué aujourd'hui parce que la cascade
+IMAGE est Gemini-only — mais c'est exactement le défaut 1 qui contourne ce garde-fou.
+
+### Correction demandée
+Ne pas rendre ces clients multimodaux (ils ne le sont pas). Poser un **`logger.warning`
+explicite** quand un échelon reçoit un `media_data` non nul sans savoir le transporter, en
+nommant le client et le modèle. Une perte silencieuse de média est ce qui a rendu ce bug
+invisible pendant des mois.
+
+---
+
+## Ce qui, lui, marche — ne pas y toucher
+
+Le repli `:2592` (« J'arrive pas à voir ! Des nuages de chaos… ») sort correctement quand
+Gemini échoue sur une **vraie** image. Le bluff ne vient pas de là.
+
+---
+
+## Les 5 autres bots : vérifié, plus léger mais **pas sain**
+
+Vérifié le 02/09 : la double règle par *extension* est **propre à Sheo**. Les 5 autres
+testent `content_type.startswith('image/')` — `bot_sugar.py:759`, `bot_johnny.py:847`,
+`bot_maiq.py:1199`, `bot_alfred.py:1364`. Malena n'a aucune détection locale.
+
+⚠️ **Mais `startswith('image/')` reste plus large que `IMAGE_MIME_TYPES`** : sur un
+`image/heic`, ces 4 bots portent la même asymétrie que Sheo, en moins visible. Le
+correctif (1) du défaut 1, appliqué aux **7 copies** de `smart_router.py`, les couvre tous.
+
+⚠️ Les 7 copies doivent rester **identiques** (`shared/` + 6 × `<Bot>/core/`) : c'est la
+dette assumée du vendoring. Ne pas corriger `shared/` seul.
 
 ---
 
 ## Definition of done
 
-- [ ] `python -m pytest` vert **depuis la racine**, lancé **SEUL** — ⚠️ deux pytest en
-      parallèle font échouer `tests/test_dashboard_restart.py` (port fixe **8599**) ;
-      ce n'est pas une régression.
-- [ ] `python -m pytest .` vert **depuis `tests/`** — c'est le point qui échoue aujourd'hui.
-- [ ] Mutation du point 1 rejouée, et **le dire explicitement** (message obtenu recopié).
-- [ ] Aucun fichier de bot modifié : `git diff --stat` ne montre que `tests/` (+ `PLAN.md`).
+- [ ] Les tests neufs sont **vérifiés par mutation**, et le dire explicitement (message
+      d'échec obtenu recopié) — un test qui n'a jamais été rouge ne prouve rien.
+- [ ] Chaque test neuf prouve qu'il a trouvé sa matière (`assert len(...) == 7` sur les
+      copies du routeur, jamais une boucle qui peut être vide).
+- [ ] `python -m pytest` vert **depuis la racine** ET **depuis `tests/`**, lancé **SEUL**
+      (⚠️ deux pytest en parallèle font échouer `tests/test_dashboard_restart.py`, port
+      fixe **8599** ; ce n'est pas une régression).
+- [ ] Les 7 `smart_router.py` restent identiques sur la détection d'image.
 - [ ] **CI verte** après push. ⚠️ Ne jamais annoncer « c'est bon » avant de l'avoir vue verte.
+- [ ] **Test live requis** : envoyer à Sheo une vraie image, puis un message sans image.
+      Aucune réponse ne doit décrire une image absente.

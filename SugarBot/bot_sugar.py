@@ -755,10 +755,7 @@ async def on_message(message):
     is_bot_talking = False
 
     # Détection image très tôt (pour priorité)
-    has_image_early = any(
-        att.content_type and att.content_type.startswith('image/') 
-        for att in message.attachments
-    )
+    has_image_early = classify_request(message.content, message.attachments)["has_image"]
     
     should_respond = False
     keyword_boost = ""
