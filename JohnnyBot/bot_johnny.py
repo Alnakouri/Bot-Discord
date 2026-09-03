@@ -843,7 +843,7 @@ async def on_message(message):
     is_bot_talking = False
 
     # Détection image très tôt (pour priorité)
-    has_image_early = classify_request(message.content, message.attachments)["has_image"]
+    has_image_early = classify_request(message.content, message.attachments, silent=True)["has_image"]
     
     should_respond = False
     keyword_boost = ""
@@ -1027,7 +1027,6 @@ async def on_message(message):
             groq_client=groq_client,
             openrouter_client=openrouter_client,
             bot_label="Johnny",
-            call_timeout=15,   # si un provider traîne (~47s), bascule vers l'échelon suivant (comme Sheo)
         )
 
         # Cas d'échec multimodal (Image/Audio)

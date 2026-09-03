@@ -12,6 +12,10 @@ class MultiAPIKeyManager:
     def __init__(self):
         self.apis = {}
         # Cooldowns selon les codes d'erreur (en secondes)
+        # ⚠️ Seule la duree du 429 sert encore : depuis le 2026-09-03, les autres codes
+        # n'ecartent plus la cle (ils parlent du MODELE ou de la REQUETE, pas d'elle).
+        # Ils restent listes ici pour que `report_error` les reconnaisse comme des
+        # incidents connus et les journalise au lieu de les avaler.
         self.cooldown_times = {429: 3600, 503: 120, 500: 30, 408: 15, 529: 300, 400: 5}
         
         self._round_robin_index = {}   # {api_name: int}
@@ -78,12 +82,16 @@ class MultiAPIKeyManager:
             
         # Erreurs temporaires (Quotas, surcharges)
         elif error_code in self.cooldown_times:
-            cooldown_duration = self.cooldown_times[error_code]
-            status["cooldown"] = now + cooldown_duration
-            logger.warning(f"⚠️ [KEY MANAGER] {api_name.upper()} : Clé mise en QUARANTAINE pour {cooldown_duration}s (Erreur {error_code}).")
-            
-            # Log instructif pour montrer à l'admin qu'il bascule
-            self._log_remaining_keys(api_name)
+            if error_code == 429:
+                cooldown_duration = self.cooldown_times[error_code]
+                status["cooldown"] = now + cooldown_duration
+                logger.warning(f"⚠️ [KEY MANAGER] {api_name.upper()} : Clé mise en QUARANTAINE pour {cooldown_duration}s (Erreur {error_code}).")
+                
+                # Log instructif pour montrer à l'admin qu'il bascule
+                self._log_remaining_keys(api_name)
+            else:
+                logger.warning(f"⚠️ [API FAIL] {api_name.upper()} : Incident modèle/requête signalé (Erreur {error_code}). La santé de la clé n'est pas affectée.")
+
             
         try:
             key_index = self.apis[api_name]["keys"].index(key)

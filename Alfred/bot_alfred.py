@@ -1361,7 +1361,7 @@ async def on_message(message):
     is_shouting = message.content.isupper() and len(message.content) > 10
     
     # EARLY IMAGE DETECTION (for priority trigger)
-    has_image_early = classify_request(message.content, message.attachments)["has_image"]
+    has_image_early = classify_request(message.content, message.attachments, silent=True)["has_image"]
     
     # 2. LOGIQUE DE REACTION
     should_respond = False
@@ -1682,7 +1682,7 @@ async def on_message(message):
                                 tools=ALFRED_TOOLS_DEFINITION
                             )
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
                     
                     # Handling Tool Calls
@@ -1715,7 +1715,7 @@ async def on_message(message):
                                     tools=ALFRED_TOOLS_DEFINITION
                                 )
                             ),
-                            timeout=15
+                            timeout=45 if media_data else 15
                         )
 
                     response_text = resp.text
@@ -1748,7 +1748,7 @@ async def on_message(message):
                                 {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}
                             ]
                         ),
-                        timeout=15
+                        timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
                     response_text = chat.choices[0].message.content
                     logger.info(f"🎩 [MISTRAL {model_name}] Alfred a servi une réponse.")
@@ -1768,7 +1768,7 @@ async def on_message(message):
                             messages=msgs, model=model_name, temperature=0.6,
                             **groq_kwargs(model_name),
                         ),
-                        timeout=15
+                        timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
                     response_text = chat.choices[0].message.content
                     logger.info(f"⚡ [GROQ {model_name}] Alfred a répondu.")
@@ -1801,14 +1801,17 @@ async def on_message(message):
                             messages=msgs, model=model_name, temperature=0.6, max_tokens=300,
                             extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Alfred Bot"}
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
                     response_text = chat.choices[0].message.content
                     logger.info(f"🌌 [OPENROUTER {model_name}] Alfred a utilisé un secours visuel.")
                     break
 
             except Exception as e:
-                logger.warning(f"⚠️ [{client_type.upper()} FAIL] {e}")
+                error_msg = str(e)
+                if not error_msg:
+                    error_msg = type(e).__name__
+                logger.warning(f"⚠️ [{client_type.upper()} FAIL] {model_name} : {error_msg}")
                 if client_type == "gemini" and api_key:
                     error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
                     key_manager.report_error("gemini", api_key, error_code)

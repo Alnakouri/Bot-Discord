@@ -1196,7 +1196,7 @@ async def on_message(message):
     is_eavesdropping = False
     
     # Détection d'images
-    has_attachment_image = classify_request(message.content, message.attachments)["has_image"]
+    has_attachment_image = classify_request(message.content, message.attachments, silent=True)["has_image"]
     
     # "L'Oreille qui traîne" (Si mot-clé + pas de mention + random 20%)
     if has_keyword and not is_mentioned and not is_reply and not has_attachment_image:
@@ -1402,7 +1402,7 @@ async def on_message(message):
                             tools=MAIQ_TOOLS_DEFINITION
                         )
                     ),
-                    timeout=15
+                    timeout=45 if media_data else 15
                 )
                 
                 # Handling Tool Calls
@@ -1433,7 +1433,7 @@ async def on_message(message):
                                 tools=MAIQ_TOOLS_DEFINITION
                             )
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
 
                 response_text = resp.text
@@ -1468,7 +1468,7 @@ async def on_message(message):
                         messages=[{"role": "system", "content": f"{current_personality_prompt}\n{transcript}"},
                                   {"role": "user", "content": user_message}]
                     ),
-                    timeout=15
+                    timeout=15  # borne TEXTE : ce client ne transporte pas le media
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"🌪️ [MISTRAL {model_name}] M'aiq a répondu.")
@@ -1488,7 +1488,7 @@ async def on_message(message):
                         messages=msgs, model=model_name, temperature=0.7,
                         **groq_kwargs(model_name),
                     ),
-                    timeout=15
+                    timeout=15  # borne TEXTE : ce client ne transporte pas le media
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"⚡ [GROQ {model_name}] M'aiq a répondu.")
@@ -1521,14 +1521,17 @@ async def on_message(message):
                         model=model_name, messages=msgs, temperature=0.8, max_tokens=300,
                         extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Maiq Bot"}
                     ),
-                    timeout=15
+                    timeout=45 if media_data else 15
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"🌌 [OPENROUTER {model_name}] M'aiq a utilisé un secours visuel.")
                 break
 
         except Exception as e:
-            logger.warning(f"⚠️ [{client_type.upper()} FAIL] {e}")
+            error_msg = str(e)
+            if not error_msg:
+                error_msg = type(e).__name__
+            logger.warning(f"⚠️ [{client_type.upper()} FAIL] {model_name} : {error_msg}")
             if client_type == "gemini" and api_key:
                 error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
                 key_manager.report_error("gemini", api_key, error_code)

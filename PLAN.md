@@ -1,148 +1,160 @@
-# PLAN — Sheo bluffe sur les images
+# PLAN — Sheo et M'aiq sont aveugles pour de mauvaises raisons
 
-Diagnostic du **2026-09-02** (Claude, lecture seule). Symptôme observé au test live du
-01/09 : Sheo répond aux images par « une danse de pixels », « une lame qui claque ».
-**Ce n'est pas un effet de prompt à retoucher : le modèle ne reçoit pas l'image, et on lui
-ordonne de prouver qu'il l'a vue.** Il obéit.
+Suite du test live du **2026-09-03** (09:43-09:45), qui **valide** le correctif
+`534d54f`+`fa38515` : **aucun bot n'a decrit une image absente.** Malena, Sugar, Johnny et
+Alfred ont decrit la vraie image (« chevalier en armure noire »). Sheo et M'aiq ont sorti
+leur repli honnete (« J'arrive pas a voir », « les lunes sont mal alignees »).
 
-Trois défauts réels, vérifiés dans le code (lignes relues le 02/09, après `4c8b83d`).
-Exécution : Antigravity. Rédaction : Claude.
+**Le bluff est mort. Ce plan traite ce que le test live a mis a nu ENSUITE** : les deux
+bots qui ont echoue n'ont pas echoue pour la meme raison, et aucune des deux n'est une
+fatalite.
 
----
-
-## Défaut 1 — « y a-t-il une image ? » est posée DEUX fois, avec deux règles  🔴
-
-C'est la cause racine. Le bluff est fabriqué mécaniquement.
-
-| Où | Règle appliquée |
-|---|---|
-| `Sheogorath/bot_sheogorath.py:1844` | `content_type` commence par `image/` **OU** extension dans `.png .jpg .jpeg .webp .gif` |
-| `Sheogorath/core/smart_router.py:157` | `content_type` **seul**, et seulement s'il est dans `IMAGE_MIME_TYPES` |
-
-`IMAGE_MIME_TYPES` (`smart_router.py:60`) = `jpeg, png, gif, webp, bmp`. Donc une pièce
-jointe `photo.jpeg` servie **sans `content_type`**, ou en `image/heic`, `image/avif`,
-`image/svg+xml` : **le bot croit qu'il y a une image, le routeur non.**
-
-### La chaîne de conséquences, dans l'ordre du fichier
-
-1. `:1844` → `has_image = True`.
-2. `:2220` → le prompt système reçoit « **NOTE: L'utilisateur a envoyé une IMAGE.
-   Commente-la…** ».
-3. `:2229` → si le message est vide, le message utilisateur devient « *Regarde
-   attentivement l'image… **prouve que tu as vu l'image !*** ».
-4. `:2307` → **seulement maintenant** le routage tranche : `has_image = False`,
-   `type = TEXT/REPARTEE`.
-5. `:2312` → le téléchargement est gaté sur `routing["has_image"]` → **pas de
-   `download_media`**, `media_data` reste `None`.
-6. `:2321` → `has_image = routing["has_image"] and media_data is not None` : la variable
-   est bien corrigée… **mais le prompt est déjà écrit, et personne ne le retire.**
-7. `get_model_cascade(TEXT)` rend la cascade de persona (**Groq `gpt-oss-120b`**), pas la
-   cascade IMAGE, qui est Gemini-only (`smart_router.py:226`).
-
-⚠️ Un modèle **sans yeux** reçoit l'ordre explicite de prouver qu'il a vu une image. Le
-garde-fou « vision = Gemini uniquement » est contourné par le haut.
-
-### Correction demandée
-
-**Une seule autorité sur la question.** Le routeur décide, le bot obéit.
-
-1. **Aligner le routeur sur la règle la plus large**, pas l'inverse : dans
-   `classify_request`, accepter aussi l'**extension** du fichier quand le `content_type`
-   est absent ou inconnu. Le routeur lit **déjà** `filename` juste au-dessus
-   (`smart_router.py:139`, il s'en sert pour le vocal `.ogg`) : la matière est là.
-   Élargir `IMAGE_MIME_TYPES` aux formats que Gemini accepte réellement plutôt que de
-   laisser tomber `heic`/`avif` en silence.
-2. **Supprimer la détection locale `:1844`** et faire descendre `routing["has_image"]`.
-   Deux endroits qui répondent à la même question finiront toujours par diverger — c'est
-   la leçon de `bug-is-voice-message-methode`, déjà la détection de média qui mentait.
-3. Si l'ordre du code rend (1)+(2) trop lourd d'un coup, le **minimum non négociable** est
-   de **déplacer le montage du prompt image APRÈS `:2321`** : un prompt qui affirme un
-   fait ne doit jamais être écrit avant la vérification de ce fait.
-
-⚠️ **Ne pas se contenter de retoucher la formulation du prompt.** « Prouve que tu as vu
-l'image » n'est pas le bug, c'est le révélateur : la consigne est juste quand l'image est
-là. Le bug, c'est qu'elle parte quand l'image n'est pas là.
-
-### Vérification par mutation (obligatoire)
-Test neuf, sans réseau : une pièce jointe factice `photo.jpeg` avec `content_type = None`
-(puis `image/heic`) doit donner `classify_request(...)["has_image"] is True`. Retirer le
-correctif → **ROUGE**. Plus un test garantissant qu'avec `has_image = False`, **aucune**
-des deux chaînes « a envoyé une IMAGE » / « prouve que tu as vu l'image » n'apparaît dans
-le prompt monté.
+Redaction : Claude. Execution : Antigravity.
 
 ---
 
-## Défaut 2 — la branche multimodale OpenRouter est du CODE MORT  🟠
+## Defaut 1 — un 503 du MODELE met la CLE en quarantaine 120s  🔴
 
-Dans la même cascade `if/elif` de `bot_sheogorath.py`, la condition
-`elif client_type == "openrouter" and openrouter_client:` apparaît **deux fois** :
+Logs Sheo, horodatage conteneur (2h de moins que l'horloge locale) :
 
-- `:2434` — texte seul (+ tool-calling) ;
-- `:2551` — **payload base64 de l'image**.
+```
+07:43:54 | ✅ [ROUTER] Média téléchargé: 142009 bytes (image/webp)
+07:43:55 | ⚠️ [GEMINI FAIL] 503 UNAVAILABLE. {'message': 'This model is currently
+                                              experiencing high demand...'}
+          ⚠️ [KEY MANAGER] GEMINI : Clé mise en QUARANTAINE pour 120s (Erreur 503).
+          🚨 [KEY MANAGER] ZÉRO clé saine restante pour GEMINI !!
+          🚨 [CRITIQUE] GEMINI : TOUTES LES CLÉS SONT ÉPUISÉES OU EN COOLDOWN !
+```
 
-La première capture toujours. **La seconde est inatteignable** : le seul secours visuel
-non-Gemini du bot n'a jamais tourné une seule fois.
+`shared/api_manager.py:15` — `cooldown_times = {429: 3600, 503: 120, 500: 30, 408: 15,
+529: 300, 400: 5}` — et `report_error` (`:80`) met la **cle** en cooldown pour **tous**
+ces codes.
 
-### Correction demandée
-Fusionner les deux branches en une seule qui **teste la présence de `media_data`** pour
-choisir le payload (multimodal si image, texte sinon). Supprimer la branche morte.
+Or un **503 « high demand » parle du MODELE, pas de la cle**. Un **500** non plus. Un
+**400** est une erreur de **requete** (payload malforme) : la cle n'y est pour rien.
 
-⚠️ Vérifier avant de supprimer que `:2551` n'a rien que `:2434` n'ait pas (gestion
-d'erreur, en-têtes, modèle) : c'est une fusion, pas une suppression.
+### La consequence exacte, mesuree en live
+La cascade IMAGE est `[(gemini, FLASH), (gemini, FLASH_LITE)]`
+(`smart_router.py:226`). Le 503 tombe sur FLASH ; la cle part en quarantaine ; le
+**second echelon utilise la MEME cle** et ne peut plus demarrer. Un incident transitoire
+cote Google devient **2 minutes d'aveuglement total** — et, par la regle
+[[regle-une-cle-api-par-bot]], chaque bot n'a **qu'une** cle : il n'y a personne pour
+prendre le relais.
 
-### Vérification par mutation (obligatoire)
-Un test qui atteint la branche OpenRouter **avec** `media_data` et vérifie que le payload
-contient bien l'image. Sur le code d'aujourd'hui il doit être **ROUGE** — s'il est vert
-d'emblée, il ne teste pas ce qu'on croit.
+⚠️ **Punir la cle pour la charge du modele, c'est transformer une panne d'une seconde en
+panne de deux minutes.**
+
+### Correction demandee
+Dans `report_error`, separer **erreurs de CLE** et **erreurs de MODELE/REQUETE** :
+
+- **cle** : `401`/`403` (desactivation definitive, inchange) et `429` (quota → cooldown,
+  inchange) ;
+- **modele / requete** : `503`, `500`, `408`, `529`, `400` ne doivent **plus toucher a la
+  sante de la cle**. La cascade descend d'un echelon, c'est son role. Journaliser
+  l'incident (le nom du modele, pas la cle) pour qu'il reste visible.
+
+⚠️ Ne pas se contenter de raccourcir le cooldown de 120s a 5s : le probleme n'est pas la
+duree, c'est qu'on accuse la mauvaise piece.
+
+⚠️ `report_error` existe en **2 copies** (`shared/api_manager.py` et
+`Sheogorath/core/api_manager.py`). Verifier s'il en existe d'autres avant de conclure, et
+passer par `python tools/vendor_core.py` plutot que d'editer une copie a la main.
+
+### Verification par mutation (obligatoire)
+Test neuf, sans reseau : apres `report_error(api, key, 503)`, `is_api_available(api)` doit
+rester **True** avec une seule cle enregistree ; apres `report_error(api, key, 429)` elle
+doit passer **False**. Retirer le correctif → **ROUGE** sur le premier cas.
+
+---
+
+## Defaut 2 — 15 secondes, c'est trop court pour une image  🟠
+
+Logs M'aiq, meme test, meme image (142 Ko webp) :
+
+```
+07:44:52 | ✅ [ROUTER] Média téléchargé: 142009 bytes (image/webp)
+07:45:07 | ⚠️ [GEMINI FAIL] 
+07:45:22 | ⚠️ [GEMINI FAIL] 
+```
+
+Deux echecs a **exactement 15 secondes d'intervalle** : ce sont les deux echelons Gemini
+de la cascade IMAGE, tues par `timeout=15` — la meme valeur que pour un appel **texte**.
+
+⚠️ Un appel vision transporte l'image en base64 dans la requete : il n'a aucune raison de
+tenir dans le meme budget qu'un « bonjour ».
+
+### Correction demandee
+Le timeout doit dependre de ce qu'on envoie, pas etre une constante recopiee : quand
+`media_data` est present, viser **45 s** (texte : on ne touche a rien, 15 s reste bon).
+Les 6 bots portent leur cascade en ligne — verifier chacun, ne pas en corriger un seul.
+
+### Verification par mutation (obligatoire)
+Un test qui atteint la branche Gemini avec `media_data` et verifie le `timeout` passe a
+`asyncio.wait_for`. Remettre 15 → **ROUGE**. Prouver la matiere : `assert` sur le nombre
+de bots inspectes, jamais une boucle qui peut etre vide.
 
 ---
 
-## Défaut 3 — Groq et Mistral jettent `media_data` en silence  🟠
+## Defaut 3 — « ⚠️ [GEMINI FAIL] » et rien d'autre  🟠
 
-`:2519` (mistral) et `:2535` (groq) ne construisent **aucun** payload multimodal, et
-**rien ne signale** que l'image a été perdue. Masqué aujourd'hui parce que la cascade
-IMAGE est Gemini-only — mais c'est exactement le défaut 1 qui contourne ce garde-fou.
+Les deux lignes ci-dessus sont **vides apres le prefixe**. C'est le gotcha connu
+([[bug-cascade-reponse-vide]]) : `str(TimeoutError())` rend `""`. Le log ne dit alors ni
+ce qui a echoue, ni pourquoi — il a fallu compter les 15 secondes d'ecart pour deviner.
 
-### Correction demandée
-Ne pas rendre ces clients multimodaux (ils ne le sont pas). Poser un **`logger.warning`
-explicite** quand un échelon reçoit un `media_data` non nul sans savoir le transporter, en
-nommant le client et le modèle. Une perte silencieuse de média est ce qui a rendu ce bug
-invisible pendant des mois.
+### Correction demandee
+Dans le `except` des cascades en ligne des 6 bots : si `str(e)` est vide, journaliser
+`type(e).__name__` (et le modele concerne). `shared/llm_cascade.py` sait deja le faire —
+s'en inspirer, ne pas reinventer.
 
----
-
-## Ce qui, lui, marche — ne pas y toucher
-
-Le repli `:2592` (« J'arrive pas à voir ! Des nuages de chaos… ») sort correctement quand
-Gemini échoue sur une **vraie** image. Le bluff ne vient pas de là.
+⚠️ **Un log d'echec qui ne nomme pas l'echec ne sert a rien.**
 
 ---
 
-## Les 5 autres bots : vérifié, plus léger mais **pas sain**
+## Finition — le routeur est appele DEUX fois par message  🔵
 
-Vérifié le 02/09 : la double règle par *extension* est **propre à Sheo**. Les 5 autres
-testent `content_type.startswith('image/')` — `bot_sugar.py:759`, `bot_johnny.py:847`,
-`bot_maiq.py:1199`, `bot_alfred.py:1364`. Malena n'a aucune détection locale.
+Consequence assumee du correctif precedent : la detection precoce appelle
+`classify_request`, puis le routage l'appelle de nouveau. Visible en clair dans les logs
+live :
 
-⚠️ **Mais `startswith('image/')` reste plus large que `IMAGE_MIME_TYPES`** : sur un
-`image/heic`, ces 4 bots portent la même asymétrie que Sheo, en moins visible. Le
-correctif (1) du défaut 1, appliqué aux **7 copies** de `smart_router.py`, les couvre tous.
+```
+07:43:53 | [ROUTER] 🖼️ Image (image/webp) → Gemini Vision
+07:43:53 | 📸 [DEBUG] Image détectée de ledev
+07:43:54 | [ROUTER] 🖼️ Image (image/webp) → Gemini Vision
+```
 
-⚠️ Les 7 copies doivent rester **identiques** (`shared/` + 6 × `<Bot>/core/`) : c'est la
-dette assumée du vendoring. Ne pas corriger `shared/` seul.
+Ce n'est **pas** un bug — les deux appels rendent forcement le meme verdict, c'etait tout
+le but — mais deux lignes `[ROUTER]` identiques par message rendent les journaux
+trompeurs pour la prochaine enquete.
+
+⚠️ **Attention au piege** : le premier appel recoit `message.attachments`, le second
+recoit `atts` (issu de `resolve_media_attachments`, qui **ajoute les pieces jointes du
+message cite**). Les deux ne voient donc PAS toujours la meme chose : garder deux appels
+est acceptable, **fusionner naivement casserait la lecture des images en reply**
+([[plan-vision-reply-et-decret-gemini]]).
+
+### Correction demandee
+Le minimum : que la **detection precoce** n'emette pas la ligne `[ROUTER] ...` (niveau
+`debug`, ou un appel silencieux), pour qu'une ligne `[ROUTER]` dans le journal corresponde
+a **une** decision de routage. Ne pas supprimer le second appel.
 
 ---
+
+## Ce qui est valide et ne doit pas bouger
+
+- **Le repli honnete de Sheo** (« J'arrive pas a voir ! Des nuages de chaos... ») a sorti
+  exactement quand il fallait. C'est le comportement voulu ; ne pas le maquiller.
+- **La detection d'image cote routeur** : `image/webp` vu, telecharge, 142009 octets, chez
+  les 6 bots. Ne pas y toucher.
 
 ## Definition of done
 
-- [ ] Les tests neufs sont **vérifiés par mutation**, et le dire explicitement (message
-      d'échec obtenu recopié) — un test qui n'a jamais été rouge ne prouve rien.
-- [ ] Chaque test neuf prouve qu'il a trouvé sa matière (`assert len(...) == 7` sur les
-      copies du routeur, jamais une boucle qui peut être vide).
-- [ ] `python -m pytest` vert **depuis la racine** ET **depuis `tests/`**, lancé **SEUL**
-      (⚠️ deux pytest en parallèle font échouer `tests/test_dashboard_restart.py`, port
-      fixe **8599** ; ce n'est pas une régression).
-- [ ] Les 7 `smart_router.py` restent identiques sur la détection d'image.
-- [ ] **CI verte** après push. ⚠️ Ne jamais annoncer « c'est bon » avant de l'avoir vue verte.
-- [ ] **Test live requis** : envoyer à Sheo une vraie image, puis un message sans image.
-      Aucune réponse ne doit décrire une image absente.
+- [ ] Tests neufs **verifies par mutation**, message d'echec obtenu **recopie**.
+- [ ] Chaque test neuf prouve qu'il a trouve sa matiere (`assert len(...) == N`).
+- [ ] Les copies vendorisees regenerees par `python tools/vendor_core.py`, pas a la main.
+- [ ] `python -m pytest` vert **depuis la racine** ET **depuis `tests/`**, lance **SEUL**
+      (⚠️ deux pytest en parallele font echouer `tests/test_dashboard_restart.py`, port
+      fixe **8599** ; ce n'est pas une regression).
+- [ ] **CI verte** apres push. ⚠️ Ne jamais annoncer « c'est bon » avant de l'avoir vue verte.
+- [ ] **Test live** : renvoyer la meme image aux 6 bots. Sheo et M'aiq doivent la decrire.
+      Si Gemini renvoie un 503, le bot doit **descendre d'un echelon** au lieu de perdre
+      sa cle.

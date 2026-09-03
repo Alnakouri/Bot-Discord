@@ -1841,7 +1841,7 @@ async def on_message(message):
              await message.channel.send("Il n'y a pas d'énigme, espèce de fou ! Tu entends des voix ? 🤪")
              return
     
-    has_image = classify_request(message.content, message.attachments)["has_image"]
+    has_image = classify_request(message.content, message.attachments, silent=True)["has_image"]
     if has_image:
         logger.info(f"📸 [DEBUG] Image détectée de {message.author.name} ({len(message.attachments)} attachments)")
     
@@ -2368,7 +2368,7 @@ async def on_message(message):
                             tools=SHEO_TOOLS_DEFINITION
                         )
                     ),
-                    timeout=15
+                    timeout=45 if media_data else 15
                 )
                 
                 # Handling Tool Calls (IA Agentique)
@@ -2406,7 +2406,7 @@ async def on_message(message):
                                 tools=SHEO_TOOLS_DEFINITION # Redonner les tools peut aider à la stabilité
                             )
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
                 
                 response_text = resp.text
@@ -2463,7 +2463,7 @@ async def on_message(message):
                             tool_choice="auto",
                             extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
                 except Exception as _tool_err:
                     # Modèle sans support tool-use (ex. Dolphin-Venice:free → 404 "No endpoints
@@ -2479,7 +2479,7 @@ async def on_message(message):
                             max_tokens=max_tokens_val,
                             extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
 
                 resp_msg = chat.choices[0].message
@@ -2515,7 +2515,7 @@ async def on_message(message):
                         asyncio.to_thread(
                             openrouter_client.chat.completions.create, model=model_name, messages=msgs, max_tokens=max_tokens_val, extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
                     response_text = chat.choices[0].message.content
                 else:
@@ -2542,7 +2542,7 @@ async def on_message(message):
                                   {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}],
                         max_tokens=max_tokens_val
                     ),
-                    timeout=15
+                    timeout=15  # borne TEXTE : ce client ne transporte pas le media
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"🌪️ [MISTRAL {model_name}] Sheogorath souffle des vents de folie !")
@@ -2560,7 +2560,7 @@ async def on_message(message):
                         model=model_name, temperature=0.9, max_tokens=max_tokens_val,
                         **groq_kwargs(model_name),
                     ),
-                    timeout=15
+                    timeout=15  # borne TEXTE : ce client ne transporte pas le media
                 )
                 response_text = chat.choices[0].message.content
                 logger.info(f"⚡ [GROQ {model_name}] Sheogorath a répondu !")
@@ -2569,7 +2569,10 @@ async def on_message(message):
 
 
         except Exception as e:
-            logger.warning(f"⚠️ [{client_type.upper()} FAIL] {e}")
+            error_msg = str(e)
+            if not error_msg:
+                error_msg = type(e).__name__
+            logger.warning(f"⚠️ [{client_type.upper()} FAIL] {model_name} : {error_msg}")
             if client_type == "gemini" and api_key:
                 error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
                 key_manager.report_error("gemini", api_key, error_code)

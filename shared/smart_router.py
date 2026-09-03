@@ -104,7 +104,7 @@ def _is_voice_message(attachment) -> bool:
         return False
 
 
-def classify_request(message_text, attachments=None, *, addressed: bool = False):
+def classify_request(message_text, attachments=None, *, addressed: bool = False, silent: bool = False):
     """
     Classifie un message Discord pour déterminer le modèle optimal.
 
@@ -119,6 +119,10 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
             ⚠️ Depuis la cascade par persona, REPARTEE et TEXT servent les MÊMES modèles :
             l'étiquette ne change plus le routage. Elle reste un signal de classification
             que l'appelant peut exploiter (ton, longueur), rien de plus.
+        silent: N'émet aucun log. Réservé à la détection PRÉCOCE des bots, qui appelle
+            `classify_request` uniquement pour savoir s'il faut répondre : sans lui, une
+            ligne `[ROUTER]` apparaît DEUX fois par message et laisse croire à deux
+            routages. Le routage réel, lui, doit rester bruyant.
 
     Returns:
         dict avec type, model, reason, has_image, has_audio, 
@@ -151,7 +155,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
                 result["reason"] = "🎤 Message vocal Discord → Gemini Audio"
                 result["has_audio"] = True
                 result["audio_attachment"] = att
-                logger.info(f"[ROUTER] {result['reason']}")
+                if not silent: logger.info(f"[ROUTER] {result['reason']}")
                 return result
 
             # Image détectée
@@ -161,7 +165,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
                 result["reason"] = f"🖼️ Image ({ct}) → Gemini Vision"
                 result["has_image"] = True
                 result["image_attachment"] = att
-                logger.info(f"[ROUTER] {result['reason']}")
+                if not silent: logger.info(f"[ROUTER] {result['reason']}")
                 return result  # Image est prioritaire
             
             # Audio standard détecté
@@ -171,7 +175,7 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
                 result["reason"] = f"🎵 Fichier Audio ({ct}) → Gemini Audio"
                 result["has_audio"] = True
                 result["audio_attachment"] = att
-                logger.info(f"[ROUTER] {result['reason']}")
+                if not silent: logger.info(f"[ROUTER] {result['reason']}")
                 return result
     
     # 2. Vérifier si raisonnement complexe requis
@@ -179,14 +183,14 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
         result["type"] = RequestType.REASONING
         result["model"] = GEMINI_FLASH
         result["reason"] = "🧠 Raisonnement complexe"
-        logger.info(f"[ROUTER] {result['reason']}")
+        if not silent: logger.info(f"[ROUTER] {result['reason']}")
         return result
 
     # 3. Vérifier si humour / répartie requis (mots-clés explicites)
     if _needs_humor(message_text):
         result["type"] = RequestType.REPARTEE
         result["reason"] = "🎭 Humour / Répartie détecté"
-        logger.info(f"[ROUTER] {result['reason']}")
+        if not silent: logger.info(f"[ROUTER] {result['reason']}")
         return result
 
     # 3b. Banter ADRESSÉ : le bot est directement interpellé (mention/reply/nom/continuité)
@@ -198,11 +202,11 @@ def classify_request(message_text, attachments=None, *, addressed: bool = False)
     if addressed and _is_banter(message_text):
         result["type"] = RequestType.REPARTEE
         result["reason"] = "🎭 Banter adressé"
-        logger.info(f"[ROUTER] {result['reason']}")
+        if not silent: logger.info(f"[ROUTER] {result['reason']}")
         return result
 
     # 4. Texte simple → cascade de la persona (voir get_model_cascade)
-    logger.debug("[ROUTER] 💬 Texte simple")
+    if not silent: logger.debug("[ROUTER] 💬 Texte simple")
     return result
 
 

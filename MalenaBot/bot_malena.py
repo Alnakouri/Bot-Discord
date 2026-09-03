@@ -237,7 +237,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                                 thinking_config=types.ThinkingConfig(thinking_level="minimal")
                             )
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
                     if _est_vide(response.text):
                         logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
@@ -274,7 +274,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                             temperature=0.9,
                             max_tokens=300
                         ),
-                        timeout=15
+                        timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
                     texte = response.choices[0].message.content
                     if _est_vide(texte):
@@ -297,7 +297,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                             temperature=1.1,
                             max_tokens=300
                         ),
-                        timeout=15
+                        timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
                     if _fuite_de_raisonnement(chat.choices[0].message):
                         logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
@@ -337,7 +337,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                             max_tokens=300,
                             extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Malena Bot"}
                         ),
-                        timeout=15
+                        timeout=45 if media_data else 15
                     )
                     if _fuite_de_raisonnement(chat.choices[0].message):
                         logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
@@ -352,9 +352,12 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     return _texte_branche
 
             except Exception as e:
+                error_msg = str(e)
+                if not error_msg:
+                    error_msg = type(e).__name__
                 _raison = type(e).__name__
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
-                logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {type(e).__name__}: {e}")
+                logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {type(e).__name__}: {error_msg}")
                 continue
         finally:
             _latence = int((time.perf_counter() - _depart) * 1000)

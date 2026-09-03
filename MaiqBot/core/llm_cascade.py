@@ -240,9 +240,12 @@ async def generate_response(
                     break
     
             except Exception as e:
+                error_msg = str(e)
+                if not error_msg:
+                    error_msg = type(e).__name__
                 _raison = type(e).__name__
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
-                logger.warning(f"⚠️ [{client_type.upper()} FAIL] {type(e).__name__}: {e}")
+                logger.warning(f"⚠️ [{client_type.upper()} FAIL] {model_name} - {type(e).__name__}: {error_msg}")
                 if client_type == "gemini" and api_key:
                     key_manager.report_error("gemini", api_key, _code_erreur)
                 continue
