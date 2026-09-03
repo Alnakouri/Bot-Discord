@@ -92,7 +92,12 @@ class TestSheoImages(unittest.IsolatedAsyncioTestCase):
             with patch("bot_sheogorath.get_model_cascade") as mock_cascade:
                 mock_cascade.return_value = [("gemini", "test-model")]
     
-                with patch("bot_sheogorath.get_safe_genai_client") as mock_get_client:
+                # ⚠️ Sans clé, la branche Gemini fait `continue` : le test passait en
+                # local (clés présentes) et tombait en CI (aucune clé).
+                with (
+                    patch("bot_sheogorath.key_manager.get_key", return_value="FAKE_KEY"),
+                    patch("bot_sheogorath.get_safe_genai_client") as mock_get_client,
+                ):
                     mock_client = MagicMock()
                     mock_resp = MagicMock()
                     mock_resp.text = "Mock response"
@@ -109,7 +114,12 @@ class TestSheoImages(unittest.IsolatedAsyncioTestCase):
     
                                 # Vérifier le prompt généré
                                 call_args = mock_client.models.generate_content.call_args
-                                self.assertIsNotNone(call_args)
+                                self.assertIsNotNone(
+                                    call_args,
+                                    "La branche Gemini n'a jamais été atteinte : le prompt "
+                                    "n'a pas pu être inspecté, ce test ne prouve rien tant "
+                                    "qu'il ne passe pas par là.",
+                                )
                                 
                                 contents = call_args.kwargs.get('contents') or call_args.args[1]
                                 # Parcourir les parts
