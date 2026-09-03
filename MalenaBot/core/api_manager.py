@@ -21,7 +21,7 @@ class MultiAPIKeyManager:
         # n'ecartent plus la cle (ils parlent du MODELE ou de la REQUETE, pas d'elle).
         # Ils restent listes ici pour que `report_error` les reconnaisse comme des
         # incidents connus et les journalise au lieu de les avaler.
-        self.cooldown_times = {429: 3600, 503: 120, 500: 30, 408: 15, 529: 300, 400: 5}
+        self.cooldown_times = {503: 120, 500: 30, 408: 15, 529: 300, 400: 5}
         
         self._round_robin_index = {}   # {api_name: int}
         
@@ -72,7 +72,7 @@ class MultiAPIKeyManager:
                 return True
         return False
     
-    def report_error(self, api_name, key, error_code):
+    def report_error(self, api_name, key, error_code, retry_delay_s=None):
         """Signale une erreur sur une clé pour qu'elle soit écartée ou mise en quarantaine."""
         if api_name not in self.apis or key not in self.apis[api_name]["status"]:
             return
@@ -84,18 +84,24 @@ class MultiAPIKeyManager:
         if error_code in [401, 403]:
             logger.error(f"❌ [KEY MANAGER] {api_name.upper()} : Clé DÉSACTIVÉE PERMANEMMENT (Erreur {error_code}).")
             status["valid"] = False
-            
+
         # Erreurs temporaires (Quotas, surcharges)
-        elif error_code in self.cooldown_times:
-            if error_code == 429:
-                cooldown_duration = self.cooldown_times[error_code]
-                status["cooldown"] = now + cooldown_duration
-                logger.warning(f"⚠️ [KEY MANAGER] {api_name.upper()} : Clé mise en QUARANTAINE pour {cooldown_duration}s (Erreur {error_code}).")
-                
-                # Log instructif pour montrer à l'admin qu'il bascule
-                self._log_remaining_keys(api_name)
+        elif error_code == 429:
+            if retry_delay_s is not None:
+                try:
+                    delay = float(retry_delay_s)
+                    cooldown_duration = max(5, min(900, int(delay)))
+                except (ValueError, TypeError):
+                    cooldown_duration = 60
             else:
-                logger.warning(f"⚠️ [API FAIL] {api_name.upper()} : Incident modèle/requête signalé (Erreur {error_code}). La santé de la clé n'est pas affectée.")
+                cooldown_duration = 60
+            status["cooldown"] = now + cooldown_duration
+            logger.warning(f"⚠️ [KEY MANAGER] {api_name.upper()} : Clé mise en QUARANTAINE pour {cooldown_duration}s (Erreur {error_code}).")
+
+            # Log instructif pour montrer à l'admin qu'il bascule
+            self._log_remaining_keys(api_name)
+        elif error_code in self.cooldown_times:
+            logger.warning(f"⚠️ [API FAIL] {api_name.upper()} : Incident modèle/requête signalé (Erreur {error_code}). La santé de la clé n'est pas affectée.")
 
             
         try:

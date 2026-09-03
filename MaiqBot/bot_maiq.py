@@ -323,14 +323,18 @@ async def on_ready():
     logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
     logger.info('--------------------------------------------------')
     
-    status_loop_maiq.start()
-    daily_rumor_check.start()  # Rumeur quotidienne (jours pairs)
+    if not status_loop_maiq.is_running():
+        status_loop_maiq.start()
+    if not daily_rumor_check.is_running():
+        daily_rumor_check.start()  # Rumeur quotidienne (jours pairs)
     # auto_riddle_loop_maiq.start() # Énigmes de M'aiq - DEACTIVATED (ON COMMAND ONLY)
-    riddle_passive_hint_loop.start() # Relance des indices
+    if not riddle_passive_hint_loop.is_running():
+        riddle_passive_hint_loop.start()  # Relance des indices
 
     
     # NOUVELLES TÂCHES
-    birthday_check_maiq.start()  # Vérification anniversaires
+    if not birthday_check_maiq.is_running():
+        birthday_check_maiq.start()  # Vérification anniversaires
     if daily_bio and not daily_bio_loop_maiq.is_running():
         daily_bio_loop_maiq.start()
 
@@ -343,7 +347,8 @@ async def on_ready():
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="M'aiq")
         if twitch_announcer:
-            twitch_poll_loop.start()
+            if not twitch_poll_loop.is_running():
+                twitch_poll_loop.start()
 
     # Rétroactif Riddle Check
     try:

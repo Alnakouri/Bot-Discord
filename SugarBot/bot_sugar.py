@@ -496,7 +496,8 @@ async def on_ready():
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Sugar Bot")
         if twitch_announcer:
-            twitch_poll_loop.start()
+            if not twitch_poll_loop.is_running():
+                twitch_poll_loop.start()
 
     # Présence permanente dans le chat Twitch (persona identique à Discord).
     # Idempotent (on_ready peut refire au RESUME → garde twitch_chat is None).

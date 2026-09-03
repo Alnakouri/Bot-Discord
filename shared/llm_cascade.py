@@ -47,6 +47,66 @@ def _fuite_de_raisonnement(msg):
     return len(tete) >= 20 and contenu.startswith(tete)
 
 
+def _blocs_de_details(details):
+    """Rend les dictionnaires où un `retryDelay` peut se trouver, quelle que soit la forme.
+
+    ⚠️ `google.genai.errors.APIError.details` n'est PAS la liste des détails RPC : c'est
+    le JSON **complet** de la réponse. Pour un 429, le `google.rpc.RetryInfo` est donc au
+    troisième niveau, jamais au premier :
+
+        {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "details": [
+            {"@type": ".../QuotaFailure", ...},
+            {"@type": ".../RetryInfo", "retryDelay": "24s"}]}}
+
+    Un extracteur qui ne lit que le premier niveau ne trouve jamais rien et retombe
+    silencieusement sur le délai par défaut. La forme aplatie (une liste de blocs RPC)
+    est acceptée aussi : c'est celle que rendent d'autres SDK.
+    """
+    if isinstance(details, dict):
+        blocs = [details]
+        erreur = details.get("error")
+        if isinstance(erreur, dict):
+            blocs.append(erreur)
+            imbriques = erreur.get("details")
+            if isinstance(imbriques, list):
+                blocs.extend(b for b in imbriques if isinstance(b, dict))
+        return blocs
+    if isinstance(details, list):
+        return [b for b in details if isinstance(b, dict)]
+    return []
+
+
+def delai_de_reprise(exc):
+    """Délai (en secondes) que le fournisseur lui-même annonce, ou None s'il n'en donne pas.
+
+    Sur un 429, deviner la durée du cooldown est un pari : « trop de requêtes cette
+    MINUTE » et « quota du JOUR épuisé » rendent le même code. Google, lui, dit combien
+    de temps attendre — autant l'écouter plutôt que d'inventer une heure.
+
+    ⚠️ Cet extracteur tourne DÉJÀ à l'intérieur d'un `except` : il ne doit jamais lever,
+    quelle que soit la forme de l'exception reçue. En cas de doute il rend None, et
+    l'appelant retombe sur sa valeur par défaut.
+    """
+    try:
+        for bloc in _blocs_de_details(getattr(exc, "details", None)):
+            if "retryDelay" not in bloc:
+                continue
+            valeur = bloc["retryDelay"]
+            if isinstance(valeur, str):
+                valeur = valeur.strip()
+                if valeur.endswith("s"):
+                    valeur = valeur[:-1]
+                return float(valeur)
+            if isinstance(valeur, bool):
+                return None
+            if isinstance(valeur, (int, float)):
+                return float(valeur)
+            return None
+    except Exception:
+        return None
+    return None
+
+
 # Borne par défaut d'un appel, quand l'appelant n'en fournit pas.
 #
 # Sans borne, un 429 Groq coûte 36 SECONDES : le SDK réessaie tout seul avec backoff
@@ -242,7 +302,10 @@ async def generate_response(
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
                 logger.warning(f"⚠️ [{client_type.upper()} FAIL] {model_name} - {type(e).__name__}: {error_msg}")
                 if client_type == "gemini" and api_key:
-                    key_manager.report_error("gemini", api_key, _code_erreur)
+                    key_manager.report_error(
+                        "gemini", api_key, _code_erreur,
+                        retry_delay_s=delai_de_reprise(e),
+                    )
                 continue
         finally:
             _latence = int((time.perf_counter() - _depart) * 1000)

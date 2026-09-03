@@ -390,9 +390,12 @@ async def on_ready():
     logger.info('--------------------------------------------------')
     
     
-    status_loop_alfred.start()
-    weekly_protip_alfred.start() # Conseil Hebdomadaire (Vendredi)
-    birthday_check_alfred.start() # Anniversaires
+    if not status_loop_alfred.is_running():
+        status_loop_alfred.start()
+    if not weekly_protip_alfred.is_running():
+        weekly_protip_alfred.start()  # Conseil Hebdomadaire (Vendredi)
+    if not birthday_check_alfred.is_running():
+        birthday_check_alfred.start()  # Anniversaires
     if daily_bio and not daily_bio_loop_alfred.is_running():
         daily_bio_loop_alfred.start()
 
@@ -405,7 +408,8 @@ async def on_ready():
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Alfred")
         if twitch_announcer:
-            twitch_poll_loop.start()
+            if not twitch_poll_loop.is_running():
+                twitch_poll_loop.start()
 
     # INITIALISATION DES COMMANDES SLASH
     if DATABASE_AVAILABLE:

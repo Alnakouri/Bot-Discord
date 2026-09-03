@@ -416,7 +416,8 @@ async def on_ready():
 
     # Tâches périodiques
     if DATABASE_AVAILABLE:
-        daily_birthday_check.start()
+        if not daily_birthday_check.is_running():
+            daily_birthday_check.start()
     if daily_bio and not daily_bio_loop_johnny.is_running():
         daily_bio_loop_johnny.start()
 
@@ -429,7 +430,8 @@ async def on_ready():
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Johnny")
         if twitch_announcer:
-            twitch_poll_loop.start()
+            if not twitch_poll_loop.is_running():
+                twitch_poll_loop.start()
 
     if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
         # Initialisation du système de Street Cred cloisonné pour Twitch

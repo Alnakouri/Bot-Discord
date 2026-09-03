@@ -664,10 +664,14 @@ async def on_ready():
     logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
     logger.info(f'--------------------------------------------------')
     
-    status_loop_sheo.start()
-    mood_changer.start()  # Démarrage du changeur d'humeur
-    daily_rumor_check_sheo.start()  # Rumeur quotidienne (jours impairs)
-    birthday_check_sheo.start()  # Vérification anniversaires
+    if not status_loop_sheo.is_running():
+        status_loop_sheo.start()
+    if not mood_changer.is_running():
+        mood_changer.start()  # Démarrage du changeur d'humeur
+    if not daily_rumor_check_sheo.is_running():
+        daily_rumor_check_sheo.start()  # Rumeur quotidienne (jours impairs)
+    if not birthday_check_sheo.is_running():
+        birthday_check_sheo.start()  # Vérification anniversaires
     if daily_bio and not daily_bio_loop_sheo.is_running():
         daily_bio_loop_sheo.start()
 
@@ -680,7 +684,8 @@ async def on_ready():
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Sheogorath")
         if twitch_announcer:
-            twitch_poll_loop.start()
+            if not twitch_poll_loop.is_running():
+                twitch_poll_loop.start()
 
     if TWITCH_CHAT_AVAILABLE and twitch_chat is None:
         profile_bio = getattr(sheo_data, "TWITCH_BIO", None)
@@ -857,15 +862,18 @@ async def on_ready():
             twitch_chat.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]
             twitch_chat_task = asyncio.create_task(twitch_chat.run())
 
-    daily_backup_check.start()  # Backup automatique
-    check_missed_mentions_sheo.start()  # Détection mentions manquées
+    if not daily_backup_check.is_running():
+        daily_backup_check.start()  # Backup automatique
+    if not check_missed_mentions_sheo.is_running():
+        check_missed_mentions_sheo.start()  # Détection mentions manquées
     if not decree_cleanup_loop.is_running():
         decree_cleanup_loop.start()  # Nettoyage des rôles de décret expirés/orphelins
     # auto_riddle_loop_sheo.start()  # Transféré à M'aiq
     
     # VOICE TTS — Démarrage du check d'inactivité
     if VOICE_AVAILABLE:
-        voice_idle_check.start()
+        if not voice_idle_check.is_running():
+            voice_idle_check.start()
         logger.info(f"🎤 [VOICE] Système TTS Piper activé (auto-voice: {VOICE_AUTO_CHANCE*100:.0f}%)")
     else:
         logger.info("🔇 [VOICE] TTS désactivé (Piper non configuré)")

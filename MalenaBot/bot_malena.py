@@ -497,7 +497,8 @@ async def on_ready():
             mistral_client=mistral_client, groq_client=groq_client,
             openrouter_client=openrouter_client, bot_label="Malena")
         if twitch_announcer:
-            twitch_poll_loop.start()
+            if not twitch_poll_loop.is_running():
+                twitch_poll_loop.start()
 
 # Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, on ne s'incruste
 # PAS lors d'une intervention ALÉATOIRE (les mentions/nom direct du bot restent prioritaires).
