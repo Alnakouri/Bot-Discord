@@ -16,7 +16,7 @@ from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
 from core.media_handler import process_image_ollama
 from core.smart_router import get_model_cascade, RequestType
-from core.models import groq_kwargs, bot_id_depuis_label
+from core.models import groq_kwargs, bot_id_depuis_label, details_de_quota
 from core.api_tracking import tracer_appel
 
 logger = logging.getLogger("llm_cascade")
@@ -305,7 +305,13 @@ async def generate_response(
                     error_msg = type(e).__name__
                 _raison = type(e).__name__
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
-                logger.warning(f"⚠️ [{client_type.upper()} FAIL] {model_name} - {type(e).__name__}: {error_msg}")
+                # ⚠️ Un 429 dit POURQUOI dans ses en-tetes : sans ca on ne voit qu'un
+                # echec de plus, alors que la cause est un quota par minute depasse.
+                _quota = details_de_quota(e)
+                logger.warning(
+                    f"⚠️ [{client_type.upper()} FAIL] {model_name} - {type(e).__name__}: {error_msg}"
+                    + (f"  [QUOTA] {_quota}" if _quota else "")
+                )
                 if client_type == "gemini" and api_key:
                     key_manager.report_error(
                         "gemini", api_key, _code_erreur,

@@ -3,6 +3,7 @@
 # INJECTION SHARED FOLDER
 import sys
 import os
+import time
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
@@ -35,8 +36,10 @@ import json
 import logging
 from datetime import datetime, timedelta
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from core.transcript import ligne_de_contexte
+from core.chrono import Chrono
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -314,7 +317,7 @@ async def on_command_error(ctx, error):
 groq_client = None
 mistral_client = None
 
-try: groq_client = Groq(api_key=GROQ_API_KEY)
+try: groq_client = Groq(api_key=GROQ_API_KEY, max_retries=0)
 except Exception as e: logger.warning(f"[INIT] Groq indisponible : {e}")
 
 try: mistral_client = Mistral(api_key=MISTRAL_API_KEY)
@@ -324,7 +327,7 @@ openrouter_client = None
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 try:
     if OPENROUTER_API_KEY:
-        openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+        openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
 except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
 ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
@@ -414,9 +417,14 @@ async def on_ready():
 
     # INITIALISATION DES COMMANDES SLASH
     if DATABASE_AVAILABLE:
-        setup_slash_commands(bot, "Alfred")
-        await sync_slash_commands(bot)
-        logger.info("[SLASH] Commandes slash initialisées")
+        try:
+            setup_slash_commands(bot, "Alfred")
+            await sync_slash_commands(bot)
+            logger.info("[SLASH] Commandes slash initialisées")
+        except Exception as e:
+            # on_ready rejoue a chaque reconnexion : la 2e pose leve
+            # CommandAlreadyRegistered et avortait tout le reste de on_ready.
+            logger.error(f"[SLASH] Erreur: {e}")
         
     # INITIALISATION DES MINI-JEUX
     if DATABASE_AVAILABLE and GAMES_AVAILABLE:
@@ -1598,6 +1606,7 @@ async def on_message(message):
     # TRANSCRIPT AVANCÉ
     transcript = "CONTEXTE DU SALON (Ordre Chronologique) :\n"
     active_mortals = set()
+    _chrono = Chrono("alfred", message.channel.id)
     messages_list = []
     async for hist_msg in message.channel.history(limit=10):
         messages_list.append(hist_msg)
@@ -1660,9 +1669,14 @@ async def on_message(message):
     response_text = None
     
     async with message.channel.typing():
+        _chrono.etape("contexte")
         cascade = get_model_cascade(routing["type"], "alfred")
         
         for client_type, model_name in cascade:
+            _depart = time.perf_counter()
+            _code_erreur = None
+            _raison = None
+            api_key = None
             try:
                 # 1. GEMINI
                 if client_type == "gemini":
@@ -1819,7 +1833,33 @@ async def on_message(message):
                 if client_type == "gemini" and api_key:
                     error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
                     key_manager.report_error("gemini", api_key, error_code)
+                _raison = type(e).__name__
+                _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
                 continue
+            finally:
+                # ⚠️ Cette cascade est une COPIE inline de shared/llm_cascade.py : elle
+                # n'heritait pas de son tracage, et alfred etait donc invisible dans
+                # data/api_usage.db. Aucune ligne pendant le test live du 04/09.
+                _latence = int((time.perf_counter() - _depart) * 1000)
+                _succes = bool(response_text)
+                if not _succes and _raison is None:
+                    _raison = "non_tentee"
+                _index_cle = None
+                if client_type == "gemini" and api_key and hasattr(key_manager, "apis"):
+                    try:
+                        _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
+                    except (ValueError, KeyError, AttributeError):
+                        pass
+                try:
+                    tracer_appel(
+                        bot="alfred", api=client_type, modele=model_name,
+                        index_cle=_index_cle, succes=_succes, code_erreur=_code_erreur,
+                        latence_ms=_latence, raison=_raison,
+                    )
+                except Exception:
+                    pass  # le tracage ne doit JAMAIS casser une reponse
+
+    _chrono.etape("llm")
 
     # ENVOI
     if response_text:
@@ -1887,6 +1927,7 @@ async def on_message(message):
             response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
 
             await message.channel.send(response_text)
+            _chrono.fin(envoye=True)
             conversation_history[channel_id].append({"role": "model", "parts": [response_text]})
             # Track for Anti-Repetition (NEW!)
             response_memory.add(message.guild.id, response_text)

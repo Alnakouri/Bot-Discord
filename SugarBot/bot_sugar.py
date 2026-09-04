@@ -191,6 +191,7 @@ load_secure_env(Path(__file__).parent)
 # IMPORT LLM CASCADE
 from core.llm_cascade import generate_response
 from core.transcript import ligne_de_contexte
+from core.chrono import Chrono
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
 
@@ -370,7 +371,7 @@ async def on_command_error(ctx, error):
 
 groq_client = None
 if GROQ_API_KEY:
-    try: groq_client = Groq(api_key=GROQ_API_KEY)
+    try: groq_client = Groq(api_key=GROQ_API_KEY, max_retries=0)
     except Exception as e: logger.warning(f"[INIT] Groq indisponible : {e}")
 
 mistral_client = None
@@ -380,7 +381,7 @@ if MISTRAL_API_KEY:
 
 openrouter_client = None
 if OPENROUTER_API_KEY:
-    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
     except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
 ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
@@ -868,6 +869,7 @@ async def on_message(message):
     
     # TRANSCRIPT
     transcript = "CONTEXTE DU SALON (Chronologique) :\n"
+    _chrono = Chrono("sugar", message.channel.id)
     messages_list = []
     async for hist_msg in message.channel.history(limit=10):
         messages_list.append(hist_msg)
@@ -928,6 +930,7 @@ async def on_message(message):
     
     async with message.channel.typing():
         
+        _chrono.etape("contexte")
         response_text = await generate_response(
             routing=routing,
             system_prompt=system_prompt,
@@ -1001,8 +1004,11 @@ async def on_message(message):
     if DATABASE_AVAILABLE and not is_dm and not is_bot_talking:
         add_reputation(message.author.id, points=2, reason="Conversation avec Sugar Bot")
     
+    _chrono.etape("llm")
+
     # ENVOI
     await message.reply(response_text)
+    _chrono.fin(envoye=True)
 
 # LANCEMENT
 

@@ -34,6 +34,32 @@ MISTRAL_MAIN      = MISTRAL_SMALL
 GROQ_REASONING_MODELS = ("gpt-oss",)
 
 
+def details_de_quota(exception):
+    """Rend un resume lisible des en-tetes de quota d'un 429, ou "" s'il n'y en a pas.
+
+    ⚠️ Un 429 Groq est INVISIBLE par defaut : le SDK dort `retry-after` secondes et
+    re-essaie tout seul. Mesure du 2026-09-04 sur le prompt de Sheogorath (4 505 tokens,
+    quota 8 000/min) : 271 ms avec `max_retries=0`, mais **9,8 s puis 34,7 s** avec les
+    reglages par defaut. Le bot avait l'air lent ; il dormait. Tous les clients sont
+    desormais construits avec `max_retries=0` pour que la cascade prenne le relais, et ce
+    helper sert a dire dans les logs POURQUOI l'echelon a ete refuse.
+    """
+    entetes = getattr(getattr(exception, "response", None), "headers", None) or {}
+    if not entetes:
+        return ""
+    morceaux = []
+    for nom, etiquette in (
+        ("retry-after", "reprise dans"),
+        ("x-ratelimit-remaining-tokens", "tokens restants"),
+        ("x-ratelimit-limit-tokens", "quota"),
+        ("x-ratelimit-reset-tokens", "remise a zero"),
+    ):
+        valeur = entetes.get(nom)
+        if valeur is not None:
+            morceaux.append(f"{etiquette}={valeur}")
+    return " | ".join(morceaux)
+
+
 def groq_kwargs(model_name):
     """Arguments a ajouter a un appel Groq selon que le modele raisonne ou non.
 

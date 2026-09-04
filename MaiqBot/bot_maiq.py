@@ -2,6 +2,7 @@
 # INJECTION SHARED FOLDER
 import sys
 import os
+import time
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
@@ -26,8 +27,10 @@ import base64
 
 from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from core.transcript import ligne_de_contexte
+from core.chrono import Chrono
 try:
     from shared.games import setup_games
     from games_persona import PERSONA
@@ -247,7 +250,7 @@ openrouter_client = None
 
 try:
     if GROQ_API_KEY:
-        groq_client = Groq(api_key=GROQ_API_KEY)
+        groq_client = Groq(api_key=GROQ_API_KEY, max_retries=0)
 except Exception as e:
     logger.warning(f"[INIT] Groq: {e}")
 
@@ -259,7 +262,7 @@ except Exception as e:
 
 try:
     if OPENROUTER_API_KEY:
-        openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+        openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
 except Exception as e:
     logger.warning(f"[INIT] OpenRouter: {e}")
 
@@ -359,13 +362,21 @@ async def on_ready():
 
     # INITIALISATION DES COMMANDES SLASH
     if DATABASE_AVAILABLE:
-        setup_slash_commands(bot, "M'aiq")
-        await sync_slash_commands(bot)
-        logger.info("[SLASH] Commandes slash initialisées")
+        try:
+            setup_slash_commands(bot, "M'aiq")
+            await sync_slash_commands(bot)
+            logger.info("[SLASH] Commandes slash initialisées")
+        except Exception as e:
+            # on_ready rejoue a chaque reconnexion : la 2e pose leve
+            # CommandAlreadyRegistered et avortait le rattrapage des enigmes.
+            logger.error(f"[SLASH] Erreur: {e}")
 
     # INITIALISATION DES MINI-JEUX
     if GAMES_AVAILABLE:
-        setup_games(bot, logger, PERSONA)
+        try:
+            setup_games(bot, logger, PERSONA)
+        except Exception as e:
+            logger.error(f"[GAMES] Erreur d'initialisation des mini-jeux: {e}")
 
 async def check_missed_riddle_answers():
     """
@@ -1286,6 +1297,7 @@ async def on_message(message):
     # Contexte visuel (Transcript) & Active Users
     transcript = "CONTEXTE :\n"
     active_mortals = set()
+    _chrono = Chrono("maiq", message.channel.id)
     messages_list = []
     async for hist_msg in message.channel.history(limit=10):
         messages_list.append(hist_msg)
@@ -1387,9 +1399,14 @@ async def on_message(message):
         last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
     gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
 
+    _chrono.etape("contexte")
     cascade = get_model_cascade(routing["type"], "maiq")
     
     for client_type, model_name in cascade:
+        _depart = time.perf_counter()
+        _code_erreur = None
+        _raison = None
+        api_key = None
         try:
             # 1. GEMINI
             if client_type == "gemini":
@@ -1540,7 +1557,31 @@ async def on_message(message):
             if client_type == "gemini" and api_key:
                 error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
                 key_manager.report_error("gemini", api_key, error_code)
+            _raison = type(e).__name__
+            _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
             continue
+        finally:
+            # ⚠️ Cette cascade est une COPIE inline de shared/llm_cascade.py : elle
+            # n'heritait pas de son tracage, et maiq etait donc invisible dans
+            # data/api_usage.db. Aucune ligne pendant le test live du 04/09.
+            _latence = int((time.perf_counter() - _depart) * 1000)
+            _succes = bool(response_text)
+            if not _succes and _raison is None:
+                _raison = "non_tentee"
+            _index_cle = None
+            if client_type == "gemini" and api_key and hasattr(key_manager, "apis"):
+                try:
+                    _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
+                except (ValueError, KeyError, AttributeError):
+                    pass
+            try:
+                tracer_appel(
+                    bot="maiq", api=client_type, modele=model_name,
+                    index_cle=_index_cle, succes=_succes, code_erreur=_code_erreur,
+                    latence_ms=_latence, raison=_raison,
+                )
+            except Exception:
+                pass  # le tracage ne doit JAMAIS casser une reponse
 
     if not response_text and (has_image or has_audio):
         media_name = "l'image" if has_image else "le message vocal"
@@ -1561,7 +1602,9 @@ async def on_message(message):
         response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
         response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
 
+        _chrono.etape("llm")
         await message.channel.send(response_text)
+        _chrono.fin(envoye=True)
         
         conversation_history[channel_id].append({"role": "model", "parts": [response_text]})
         if message.guild:

@@ -21,6 +21,7 @@ from openai import OpenAI
 from datetime import datetime
 import base64
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.chrono import Chrono
 from core.models import groq_kwargs
 from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
@@ -121,7 +122,7 @@ if GEMINI_API_KEY:
 
 groq_client = None
 if GROQ_API_KEY:
-    try: groq_client = Groq(api_key=GROQ_API_KEY)
+    try: groq_client = Groq(api_key=GROQ_API_KEY, max_retries=0)
     except Exception as e: logger.error(f"❌ Erreur Init Groq : {e}")
 
 mistral_client = None
@@ -131,7 +132,7 @@ if MISTRAL_API_KEY:
 
 openrouter_client = None
 if OPENROUTER_API_KEY:
-    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
     except Exception as e: logger.warning(f"⚠️ OpenRouter indisponible : {e}")
 
 # KEY MANAGER (Standardisé)
@@ -673,7 +674,9 @@ async def on_message(message):
                             meme_recent[chan_id].append(m.group(1))
                     return consigne
 
+                _chrono = Chrono("malena", message.channel.id)
                 reply_text = await generate_response_hybrid(prompt, current_mood, routing, media_data, mime_type, meme_consigne=_get_meme_addition())
+                _chrono.etape("llm")
                 
                 if not reply_text and (has_image or has_audio):
                     media_type_str = "l'image" if has_image else "le message vocal"
@@ -694,6 +697,7 @@ async def on_message(message):
                         logger.error(f"DB Error: {db_err}")
 
                 await message.reply(reply_text)
+                _chrono.fin(envoye=True)
                 logger.info(f"✅ Répondu à {message.author.name}")
                 
                 # ENREGISTRER L'INTERACTION DANS LA MÉMOIRE
@@ -701,6 +705,10 @@ async def on_message(message):
                 asyncio.create_task(malena_brain.refresh_daily_read(message.author.id, _daily_llm_call))
 
             except Exception as e:
+                try:
+                    _chrono.fin(envoye=False)
+                except (NameError, AttributeError):
+                    pass  # la panne est survenue avant meme le demarrage du chrono
                 logger.error(f"❌ Erreur de génération : {e}")
                 logger.error(f"❌ [API ERROR] : {e}")
                 await message.reply("Ay caramba ! J'ai mal à la tête, laissez-moi tranquille ! (Erreur API)")

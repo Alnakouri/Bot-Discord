@@ -14,7 +14,7 @@ import logging
 import aiohttp
 
 try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, cascade_persona
+    from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, cascade_persona
 except ImportError:  # bot déployé seul, sans shared/
     GEMINI_FLASH      = "gemini-3.5-flash"
     GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"

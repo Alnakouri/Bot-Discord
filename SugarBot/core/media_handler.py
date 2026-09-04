@@ -17,7 +17,7 @@ from google.genai import types
 import PIL.Image
 
 try:
-    from shared.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
+    from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
 except ImportError:  # bot déployé seul, sans shared/
     GEMINI_FLASH      = "gemini-3.5-flash"
     GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"

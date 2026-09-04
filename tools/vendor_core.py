@@ -15,7 +15,8 @@ MODULES = [
     "response_memory.py",
     "models.py",
     "api_tracking.py",
-    "transcript.py"
+    "transcript.py",
+    "chrono.py"
 ]
 
 MODULE_NAMES = [m[:-3] for m in MODULES]
@@ -49,8 +50,14 @@ def vendor_core():
             
             # Rewrite imports
             for mod_name in MODULE_NAMES:
-                content = re.sub(fr'^from shared\.{mod_name}\b', f'from core.{mod_name}', content, flags=re.MULTILINE)
-                content = re.sub(fr'^import shared\.{mod_name}\b', f'import core.{mod_name}', content, flags=re.MULTILINE)
+                # ⚠️ `(\s*)` : les imports du noyau sont souvent INDENTES, dans un
+                # `try/except ImportError` avec repli code en dur (bots-independants).
+                # Ancree en debut de ligne stricte, la reecriture les laissait passer : la
+                # copie vendorisee gardait `from shared.models`, donc un bot deploye sans
+                # `shared/` retombait sur le repli au lieu d'utiliser sa propre copie —
+                # c'est ce qui ressuscitait `mistral-large` (403 hors abonnement).
+                content = re.sub(fr'^(\s*)from shared\.{mod_name}\b', fr'\1from core.{mod_name}', content, flags=re.MULTILINE)
+                content = re.sub(fr'^(\s*)import shared\.{mod_name}\b', fr'\1import core.{mod_name}', content, flags=re.MULTILINE)
                 
             header = HEADER_TEMPLATE.format(module=module)
             final_content = header + content

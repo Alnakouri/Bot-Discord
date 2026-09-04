@@ -53,6 +53,21 @@ def _get_connection():
         )
     """)
     
+    # Temps REELLEMENT percu par l'utilisateur : message recu -> reponse postee.
+    # `api_calls.latency_ms` ne mesure qu'un appel de modele ; il ne dit rien de la somme
+    # des echelons rates, ni du montage du prompt, ni de l'envoi.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reponses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            bot_name TEXT NOT NULL,
+            total_ms REAL NOT NULL,
+            llm_ms REAL,
+            envoye INTEGER NOT NULL,
+            canal TEXT
+        )
+    """)
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS api_key_status (
             api_name TEXT NOT NULL,
@@ -106,6 +121,15 @@ def _writer_loop():
                         """, (
                             task["timestamp"], task["bot_name"], task["api_name"], task["model"],
                             task["key_index"], task["success"], task["error_code"], task["latency_ms"], task["raison"]
+                        ))
+                    elif type_tache == "reponse":
+                        conn.execute("""
+                            INSERT INTO reponses
+                            (timestamp, bot_name, total_ms, llm_ms, envoye, canal)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (
+                            task["timestamp"], task["bot_name"], task["total_ms"],
+                            task["llm_ms"], task["envoye"], task["canal"]
                         ))
                     elif type_tache == "etat_cle":
                         conn.execute("""
@@ -167,6 +191,26 @@ def tracer_appel(bot, api, modele, index_cle, succes, code_erreur=None, latence_
         "raison": raison
     }
     _empiler(tache)
+
+def tracer_reponse(bot, total_ms, llm_ms=None, envoye=True, canal=None):
+    """Enregistre le temps percu d'une reponse. Meme ecrivain unique hors boucle.
+
+    ⚠️ Surtout PAS une deuxieme connexion SQLite depuis `on_message` : 6 conteneurs sur un
+    bind mount Windows, c'est le montage exact du `disk I/O error` de la memoire.
+    """
+    if _ECRIVAIN_HS:
+        return
+    _ensure_thread()
+    _empiler({
+        "type": "reponse",
+        "timestamp": datetime.now().isoformat(),
+        "bot_name": bot,
+        "total_ms": total_ms,
+        "llm_ms": llm_ms,
+        "envoye": 1 if envoye else 0,
+        "canal": canal,
+    })
+
 
 def tracer_etat_cle(api, index_cle, valide, cooldown_iso, erreur):
     if _ECRIVAIN_HS:

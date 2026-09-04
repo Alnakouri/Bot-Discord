@@ -24,6 +24,7 @@ from core.smart_router import classify_request, RequestType, download_media, res
 from core.media_handler import process_image_ollama
 from core.llm_cascade import generate_response
 from core.transcript import ligne_de_contexte
+from core.chrono import Chrono
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -220,7 +221,7 @@ async def on_command_error(ctx, error):
 
 groq_client = None
 if GROQ_API_KEY:
-    try: groq_client = Groq(api_key=GROQ_API_KEY)
+    try: groq_client = Groq(api_key=GROQ_API_KEY, max_retries=0)
     except Exception as e: logger.warning(f"[INIT] Groq indisponible : {e}")
 
 mistral_client = None
@@ -230,7 +231,7 @@ if MISTRAL_API_KEY:
 
 openrouter_client = None
 if OPENROUTER_API_KEY:
-    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
     except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
 ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
@@ -943,6 +944,7 @@ async def on_message(message):
     
     # TRANSCRIPT
     transcript = "CONTEXTE DU SALON (Chronologique) :\n"
+    _chrono = Chrono("johnny", message.channel.id)
     messages_list = []
     async for hist_msg in message.channel.history(limit=10):
         messages_list.append(hist_msg)
@@ -1015,6 +1017,7 @@ async def on_message(message):
     response_text = None
     system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}{_get_meme_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
     
+    _chrono.etape("contexte")
     async with message.channel.typing():
         response_text = await generate_response(
             routing=routing,
@@ -1076,8 +1079,11 @@ async def on_message(message):
     daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
     asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
     
+    _chrono.etape("llm")
+
     # ENVOI
     await message.reply(response_text)
+    _chrono.fin(envoye=True)
 
 # LANCEMENT
 
