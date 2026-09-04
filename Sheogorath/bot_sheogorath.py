@@ -674,6 +674,7 @@ async def on_ready():
     logger.info(f'   {"✅" if groq_client else "❌"} Groq')
     logger.info(f'   {"✅" if mistral_client else "❌"} Mistral')
     logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
+    logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
     logger.info(f'--------------------------------------------------')
     
     if not status_loop_sheo.is_running():

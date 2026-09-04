@@ -479,6 +479,15 @@ async def on_ready():
 
     logger.info(f'✅ Connectée en tant que {bot.user} (Gitana Mode)')
     logger.info(f'✅ {bot.user} est là ! (Gemini + Groq Hybrid)')
+
+    # ⚠️ Malena etait le SEUL bot sans health check : impossible de voir au demarrage
+    # quelles cles etaient en place chez elle. Meme information que chez les 5 autres.
+    logger.info("📊 [HEALTH CHECK] APIs disponibles :")
+    logger.info(f'   {"✅" if GEMINI_API_KEY else "❌"} Gemini')
+    logger.info(f'   {"✅" if mistral_client else "❌"} Mistral')
+    logger.info(f'   {"✅" if groq_client else "❌"} Groq')
+    logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
+    logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
     # Lancer les tâches périodiques
     if not check_missed_mentions_malena.is_running():
         check_missed_mentions_malena.start()

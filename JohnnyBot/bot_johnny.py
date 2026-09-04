@@ -411,6 +411,7 @@ async def on_ready():
     logger.info(f'   ✅ Groq : {"Oui" if GROQ_API_KEY else "Non"}')
     logger.info(f'   ✅ Mistral : {"Oui" if MISTRAL_API_KEY else "Non"}')
     logger.info(f'   ✅ OpenRouter : {"Oui" if OPENROUTER_API_KEY else "Non"}')
+    logger.info(f'   ✅ NVIDIA : {"Oui" if NVIDIA_API_KEY else "Non"}')
     
     logger.info("🎖️ STATISTIQUES DE JOHNNY:")
     logger.info(f'   🎸 Gigs terminés : {johnny_data.get("missions_completed", 0)}')

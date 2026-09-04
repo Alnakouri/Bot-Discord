@@ -398,6 +398,7 @@ async def on_ready():
     logger.info(f'   {"✅" if mistral_client else "❌"} Mistral (prioritaire)')
     logger.info(f'   {"✅" if groq_client else "❌"} Groq')
     logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
+    logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
     if elevenlabs_client:
         logger.info('   ✅ ElevenLabs (Vocal)')
     logger.info('--------------------------------------------------')

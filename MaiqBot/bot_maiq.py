@@ -334,6 +334,7 @@ async def on_ready():
     logger.info(f'   {"✅" if groq_client else "❌"} Groq (prioritaire)')
     logger.info(f'   {"✅" if mistral_client else "❌"} Mistral')
     logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
+    logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
     logger.info('--------------------------------------------------')
     
     if not status_loop_maiq.is_running():

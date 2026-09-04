@@ -480,6 +480,7 @@ async def on_ready():
     logger.info(f'   ✅ Groq : {"Oui" if GROQ_API_KEY else "Non"}')
     logger.info(f'   ✅ Mistral : {"Oui" if MISTRAL_API_KEY else "Non"}')
     logger.info(f'   ✅ OpenRouter : {"Oui" if OPENROUTER_API_KEY else "Non"}')
+    logger.info(f'   ✅ NVIDIA : {"Oui" if NVIDIA_API_KEY else "Non"}')
     
     logger.info("📊 STATISTIQUES SUGAR BOT:")
     logger.info(f'   📖 Exploits racontés : {sugar_stats.get("tales_told", 0)}')

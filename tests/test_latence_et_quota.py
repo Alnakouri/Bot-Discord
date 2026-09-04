@@ -416,3 +416,60 @@ def test_les_clients_sont_definis_meme_sans_aucune_cle():
         "sans la cle correspondante, le bot leve NameError au demarrage.\n  "
         + "\n  ".join(fautifs)
     )
+
+
+def test_le_health_check_annonce_les_4_fournisseurs():
+    """Le demarrage doit dire si NVIDIA est en place, comme pour les trois autres.
+
+    ⚠️ Malena etait le SEUL bot sans aucun health check : chez elle, rien ne disait
+    quelles cles etaient chargees. Elle en a un desormais.
+    """
+    manquants = []
+    for dossier, fichier in BOTS.items():
+        src = _source(dossier, fichier)
+        lignes = src.split("\n")
+        # ⚠️ Reperer la LIGNE du health check, pas la 1re occurrence du mot « APIs » :
+        # il apparait ailleurs dans ces fichiers, et le decoupage tombait a cote.
+        depart = [n for n, l in enumerate(lignes)
+                  if "HEALTH CHECK" in l or "ARSENAL D'APIs" in l]
+        if not depart:
+            manquants.append(f"{fichier} : aucun health check")
+            continue
+        bloc = "\n".join(lignes[depart[0]:depart[0] + 15])
+        if "NVIDIA" not in bloc:
+            manquants.append(f"{fichier} : health check sans NVIDIA")
+    assert not manquants, "\n  " + "\n  ".join(manquants)
+
+
+def test_le_health_check_ne_nomme_que_des_variables_qui_existent():
+    """⚠️ Meme piege qu'en CI : un nom absent ne se voit qu'a l'execution.
+
+    En ecrivant le health check de Malena, `GEMINI_API_KEYS` (pluriel, le nom des autres
+    bots) a ete utilise — elle n'a qu'un `GEMINI_API_KEY`. Le fichier COMPILAIT ; le bot
+    aurait leve NameError au demarrage, exactement comme le 04/09 avec `nvidia_client`.
+    """
+    import ast
+    import re
+
+    fautifs = []
+    inspectes = 0
+    for dossier, fichier in BOTS.items():
+        src = _source(dossier, fichier)
+        arbre = ast.parse(src)
+        definis = set()
+        for noeud in ast.walk(arbre):
+            if isinstance(noeud, ast.Assign):
+                definis |= {c.id for c in noeud.targets if isinstance(c, ast.Name)}
+            elif isinstance(noeud, (ast.Import, ast.ImportFrom)):
+                definis |= {(a.asname or a.name).split(".")[0] for a in noeud.names}
+        for numero, ligne in enumerate(src.split("\n"), 1):
+            if "logger.info" not in ligne or "HEALTH CHECK" in ligne:
+                continue
+            if not any(m in ligne for m in ("NVIDIA", "Gemini", "Mistral", "Groq", "OpenRouter")):
+                continue
+            inspectes += 1
+            for nom in re.findall(r"\b(GEMINI_\w+|\w+_client|NVIDIA_API_KEY|OPENROUTER_API_KEY)\b", ligne):
+                if nom not in definis:
+                    fautifs.append(f"{fichier}:{numero} nomme {nom}, jamais defini")
+    assert inspectes >= 20, f"Trop peu de lignes inspectees : {inspectes}"
+    assert not fautifs, "\n  " + "\n  ".join(fautifs)
