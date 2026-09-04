@@ -10,7 +10,7 @@ MAX_BIO_LEN = 400  # limite Discord pour la description d'application
 class DiscordDailyBio:
     def __init__(self, bot, bot_id, bot_label, personality_prompt,
                  key_manager=None, mistral_client=None, groq_client=None,
-                 openrouter_client=None, system_prompt_provider=None,
+                 openrouter_client=None, nvidia_client=None, system_prompt_provider=None,
                  logger=None, enabled=True):
         self.bot = bot
         self.bot_id = bot_id
@@ -20,6 +20,7 @@ class DiscordDailyBio:
         self.mistral_client = mistral_client
         self.groq_client = groq_client
         self.openrouter_client = openrouter_client
+        self.nvidia_client = nvidia_client
         self.system_prompt_provider = system_prompt_provider  # optionnel: lambda -> prompt du moment
         self.logger = logger or logging.getLogger(bot_id)
         self.enabled = enabled
@@ -92,7 +93,7 @@ class DiscordDailyBio:
                 routing=routing, system_prompt=system_prompt, transcript="",
                 user_message=prompt, conversation_history=[], media_data=None, mime_type="",
                 key_manager=self.key_manager, mistral_client=self.mistral_client,
-                groq_client=self.groq_client, openrouter_client=self.openrouter_client,
+                groq_client=self.groq_client, openrouter_client=self.openrouter_client, nvidia_client=getattr(self, "nvidia_client", None),
                 bot_label=persona, temperature=0.9, max_tokens=160)
         except Exception as e:
             self.logger.error(f"❌ [DISCORD_BIO:{self.bot_id}] appel LLM: {e}")

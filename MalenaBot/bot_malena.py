@@ -22,7 +22,7 @@ from datetime import datetime
 import base64
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.chrono import Chrono
-from core.models import groq_kwargs
+from core.models import groq_kwargs, NVIDIA_BASE_URL
 from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from google.genai import types
@@ -108,6 +108,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY_1")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 if not DISCORD_TOKEN:
@@ -135,6 +136,13 @@ if OPENROUTER_API_KEY:
     try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
     except Exception as e: logger.warning(f"⚠️ OpenRouter indisponible : {e}")
 
+# 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
+# cascade prenne le relais au lieu que le SDK dorme sur un 429.
+nvidia_client = None
+if NVIDIA_API_KEY:
+    try: nvidia_client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, max_retries=0)
+    except Exception as e: logger.warning(f'[NVIDIA] client indisponible: {e}')
+
 # KEY MANAGER (Standardisé)
 from core.api_manager import MultiAPIKeyManager
 key_manager = MultiAPIKeyManager()
@@ -150,7 +158,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client,
+        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
         bot_label="Malena", temperature=0.5, max_tokens=60)
 
 # CONSTRUCTION DYNAMIQUE DU HINT D'EXPRESSIONS
@@ -411,7 +419,7 @@ daily_bio = DiscordDailyBio(
     bot=bot, bot_id="malena", bot_label="Malena",
     personality_prompt=data.PERSONALITY_PROMPT,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
@@ -434,7 +442,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="malena", bot_label="Malena",
     personality_prompt=data.PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
 
@@ -496,7 +504,7 @@ async def on_ready():
             bot, "malena", logger,
             personality_prompt=data.PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="Malena")
+            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Malena")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()

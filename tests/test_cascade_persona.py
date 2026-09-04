@@ -358,11 +358,22 @@ def test_aucun_bot_n_appelle_le_modele_qui_fuit_hors_cascade(bot):
     #   1. le litteral passe a un appel ;
     #   2. le NOM historique, qui signifiait « en service » ;
     #   3. une constante redefinie avec cet id — sauf *_ECARTE, qui dit son statut :
+    #
+    # ⚠️ EXCEPTION du 2026-09-04 : `NVIDIA_FAST`. nemotron est REMIS EN SERVICE, mais
+    # avec le correctif qui manquait a l'epoque du bannissement. Le bannissement
+    # portait sur `nemotron:free` chez OPENROUTER, ou `reasoning:{exclude:true}` ne
+    # corrigeait RIEN. Chez NVIDIA le parametre s'appelle autrement et il MARCHE :
+    #
+    #     sans rien      6 779 ms   « L'utilisateur m'envoie un message simple : ... »
+    #     effort=none    1 001 ms   « Et toi t'as un clavier et une connexion. choom. »
+    #
+    # L'exception ne vaut donc QUE tant que le correctif existe : le test ci-dessous
+    # l'exige. Sans lui, l'exception se referme.
     #      c'est la memoire du refus, pas une remise en service.
     dangereux = re.compile(
         r"""model\s*=.*nemotron"""
         r"""|OPENROUTER_FREE"""
-        r"""|^\s*(?!\w*ECARTE)[A-Z_]+\s*=\s*["']nvidia/nemotron""")
+        r"""|^\s*(?!\w*ECARTE|NVIDIA_FAST)[A-Z_]+\s*=\s*["']nvidia/nemotron""")
     sources = (list((_parent_dir_path / bot).glob("*.py"))
                + list((_parent_dir_path / bot / "core").glob("*.py")))
     assert sources, f"{bot} : aucune source lue, le test ne prouverait rien"
@@ -375,3 +386,22 @@ def test_aucun_bot_n_appelle_le_modele_qui_fuit_hors_cascade(bot):
             assert not dangereux.search(code), (
                 f"{source.name}:{numero} remet en service un modele ecarte pour "
                 f"fuite de raisonnement")
+
+
+
+def test_l_exception_nemotron_ne_vaut_que_par_son_correctif():
+    """⚠️ `NVIDIA_FAST` est la SEULE constante nemotron toleree, et seulement parce que
+    `nvidia_kwargs()` coupe le raisonnement a la source. Si ce correctif disparait,
+    l'exception n'a plus de raison d'etre et ce test le dit.
+
+    Sans cela, on aurait desserre un garde-fou pour faire passer son propre changement —
+    et un garde-fou qu'on desserre ainsi ne garde plus rien."""
+    from shared.models import NVIDIA_FAST, nvidia_kwargs
+
+    assert "nemotron" in NVIDIA_FAST, (
+        "NVIDIA_FAST ne pointe plus sur nemotron : retirer l'exception du test ci-dessus"
+    )
+    kw = nvidia_kwargs(NVIDIA_FAST)
+    assert kw.get("extra_body", {}).get("reasoning_effort") == "none", (
+        "le correctif qui justifie l'exception a disparu : nemotron va reciter sa pensee"
+    )

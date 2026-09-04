@@ -25,7 +25,7 @@ import logging
 from datetime import datetime
 import base64
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, NVIDIA_BASE_URL
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
@@ -132,6 +132,7 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 
 # FALLBACK API KEYS
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -182,7 +183,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client,
+        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
         bot_label="Maiq", temperature=0.5, max_tokens=60)
 
 
@@ -263,6 +264,12 @@ except Exception as e:
 try:
     if OPENROUTER_API_KEY:
         openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
+        # 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
+        # cascade prenne le relais au lieu que le SDK dorme sur un 429.
+        nvidia_client = None
+        if NVIDIA_API_KEY:
+            try: nvidia_client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, max_retries=0)
+            except Exception as e: logger.warning(f'[NVIDIA] client indisponible: {e}')
 except Exception as e:
     logger.warning(f"[INIT] OpenRouter: {e}")
 
@@ -271,7 +278,7 @@ daily_bio = DiscordDailyBio(
     bot=bot, bot_id="maiq", bot_label="M'aiq le Menteur",
     personality_prompt=PERSONALITY_PROMPT,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
@@ -294,7 +301,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="maiq", bot_label="M'aiq le Menteur",
     personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
 
@@ -349,7 +356,7 @@ async def on_ready():
             bot, "maiq", logger,
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="M'aiq")
+            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="M'aiq")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()

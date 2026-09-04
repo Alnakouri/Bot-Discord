@@ -16,7 +16,7 @@ from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
 from core.media_handler import process_image_ollama
 from core.smart_router import get_model_cascade, RequestType
-from core.models import groq_kwargs, bot_id_depuis_label, details_de_quota
+from core.models import groq_kwargs, nvidia_kwargs, bot_id_depuis_label, details_de_quota
 from core.api_tracking import tracer_appel
 
 logger = logging.getLogger("llm_cascade")
@@ -141,6 +141,7 @@ async def generate_response(
     mistral_client=None,
     groq_client=None,
     openrouter_client=None,
+    nvidia_client=None,
     bot_label: str = "Bot",
     temperature: float = 0.8,
     max_tokens: int = 300,
@@ -266,6 +267,36 @@ async def generate_response(
                         _raison = "vide"
                         continue
                     logger.info(f"⚡ [GROQ {model_name}] {bot_label}")
+                    break
+    
+                # 4. NVIDIA (nemotron) — 4e fournisseur, quota independant des 3 autres.
+                elif client_type == "nvidia" and nvidia_client:
+                    if media_data is not None:
+                        logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
+                    chat = await _call(
+                        nvidia_client.chat.completions.create,
+                        model=model_name,
+                        messages=[{"role": "system", "content": system_prompt},
+                                  {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}],
+                        temperature=temperature, max_tokens=max_tokens,
+                        # ⚠️ SANS ceci, nemotron RECOPIE sa pensée dans `content` (mesuré :
+                        # 6 779 ms de méta-discours au lieu d'une réplique). Le paramètre
+                        # divise aussi la latence par six.
+                        **nvidia_kwargs(model_name),
+                    )
+                    # Filet malgré tout : le paramètre pourrait cesser d'être honoré.
+                    if _fuite_de_raisonnement(chat.choices[0].message):
+                        logger.warning(f"⚠️ [NVIDIA {model_name}] le modèle a recopié son raisonnement dans la réponse → échelon suivant")
+                        response_text = None
+                        _raison = "fuite_raisonnement"
+                        continue
+                    response_text = chat.choices[0].message.content
+                    if _est_vide(response_text):
+                        logger.warning(f"⚠️ [NVIDIA {model_name}] réponse vide → échelon suivant")
+                        response_text = None
+                        _raison = "vide"
+                        continue
+                    logger.info(f"🟩 [NVIDIA {model_name}] {bot_label}")
                     break
     
                 # 4. OPENROUTER (texte + secours multimodal)

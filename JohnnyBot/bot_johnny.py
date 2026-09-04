@@ -170,6 +170,7 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 
 # FALLBACK API KEYS
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -234,12 +235,19 @@ if OPENROUTER_API_KEY:
     try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
     except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
+# 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
+# cascade prenne le relais au lieu que le SDK dorme sur un 429.
+nvidia_client = None
+if NVIDIA_API_KEY:
+    try: nvidia_client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, max_retries=0)
+    except Exception as e: logger.warning(f'[NVIDIA] client indisponible: {e}')
+
 ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
 daily_bio = DiscordDailyBio(
     bot=bot, bot_id="johnny", bot_label="Johnny Silverhand",
     personality_prompt=PERSONALITY_PROMPT,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
@@ -264,7 +272,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="johnny", bot_label="Johnny Silverhand",
     personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
 
@@ -333,7 +341,7 @@ async def consolidate_daily_memory(memory_dict):
                 key_manager=key_manager,
                 mistral_client=mistral_client,
                 groq_client=groq_client,
-                openrouter_client=openrouter_client,
+                openrouter_client=openrouter_client, nvidia_client=nvidia_client,
                 bot_label="Johnny",
                 temperature=0.4
             )
@@ -356,7 +364,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client,
+        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
         bot_label="Johnny", temperature=0.5, max_tokens=60)
 
 @bot.event
@@ -430,7 +438,7 @@ async def on_ready():
             bot, "johnny", logger,
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="Johnny")
+            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Johnny")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()
@@ -479,7 +487,7 @@ async def on_ready():
                     key_manager=key_manager,
                     mistral_client=mistral_client,
                     groq_client=groq_client,
-                    openrouter_client=openrouter_client,
+                    openrouter_client=openrouter_client, nvidia_client=nvidia_client,
                     bot_label="Johnny",
                     temperature=0.9,
                     max_tokens=60
@@ -567,7 +575,7 @@ async def on_ready():
             "johnny", logger,
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="Johnny Silverhand",
+            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Johnny Silverhand",
             system_prompt_provider=lambda: PERSONALITY_PROMPT,
             profile_bio=TWITCH_BIO,
             enable_events=True,
@@ -1030,7 +1038,7 @@ async def on_message(message):
             key_manager=key_manager,
             mistral_client=mistral_client,
             groq_client=groq_client,
-            openrouter_client=openrouter_client,
+            openrouter_client=openrouter_client, nvidia_client=nvidia_client,
             bot_label="Johnny",
         )
 

@@ -57,6 +57,46 @@ MISTRAL_MAIN      = "ministral-14b-latest"
 GROQ_REASONING_MODELS = ("gpt-oss",)
 
 
+# ---------------------------------------------------------------------------
+# NVIDIA (build.nvidia.com) — 4e fournisseur, ajoute le 2026-09-04.
+# Point d'entree compatible OpenAI : https://integrate.api.nvidia.com/v1
+#
+# Motif : la famille `mistral-*` est plafonnee (429 permanent) et OpenRouter a ete
+# retire des cascades. Il ne restait que 3 fournisseurs reellement joignables.
+#
+# Choisi sur sonde reelle (tools/sonde_fuite_raisonnement.py, prompt de persona reel) :
+#   nemotron-3.5-lightning-30b-a3b  1 001 ms  propre, ni prefixe ni guillemets  <- retenu
+#   nemotron-3-super-120b-a12b      1 448 ms  prefixe ses reponses par « Johnny: »
+#   mistralai/mistral-nemotron      1 899 ms  entoure sa reponse de guillemets
+#
+# ⚠️ `models.list()` MENT une fois de plus : `nemotron-nano-3-30b-a3b`,
+# `llama-3.1-nemotron-70b-instruct` et `-51b-instruct` sont au catalogue et rendent 404.
+NVIDIA_FAST = "nvidia/nemotron-3.5-lightning-30b-a3b"
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+
+def nvidia_kwargs(model_name=None):
+    """Arguments a ajouter a un appel NVIDIA pour qu'il ne RECITE PAS son raisonnement.
+
+    ⚠️ Sans cela, nemotron recopie sa pensee dans `content` — mesure du 2026-09-04 :
+
+        sans rien        6 779 ms  « L'utilisateur m'envoie un message simple : ... »
+        effort=none      1 001 ms  « Et toi t'as un clavier et une connexion. choom. »
+
+    Le parametre ne supprime pas seulement la fuite : il divise la latence par SIX, le
+    modele cessant de depenser ses tokens en pensee. C'est exactement ce que fait
+    `groq_kwargs()` chez Groq (1 623 -> 315 ms) et `thinking_level="minimal"` chez Gemini.
+
+    ⚠️ `reasoning_effort` n'est pas un parametre du client OpenAI : il DOIT passer par
+    `extra_body`, sinon l'appel leve avant meme de partir sur le reseau.
+
+    ⚠️ Ne pas confondre avec OpenRouter, ou `reasoning:{exclude:true}` ne corrige RIEN
+    (mesure du 2026-08-30). Le nom du parametre ET son efficacite changent d'un
+    fournisseur a l'autre : chacun doit etre sonde separement.
+    """
+    return {"extra_body": {"reasoning_effort": "none"}}
+
+
 def details_de_quota(exception):
     """Rend un resume lisible des en-tetes de quota d'un 429, ou "" s'il n'y en a pas.
 
@@ -168,6 +208,9 @@ OPENROUTER_ECARTE = "nvidia/nemotron-3-super-120b-a12b:free"
 # contrainte par le plafond du free tier OpenRouter (1864 tokens). Son classement ne se
 # transpose pas tel quel a Alfred ou M'aiq : re-mesurer avant de deplacer leur cascade.
 # ---------------------------------------------------------------------------
+# ⚠️ NVIDIA est le DERNIER echelon de chaque cascade depuis le 2026-09-04 : c'est le seul
+# 4e fournisseur reellement joignable. Mistral est plafonne, OpenRouter a ete retire, il
+# ne restait que Gemini + Groq + un Mistral mourant. Un quota de plus, independant.
 CASCADES_PERSONA = {
     # Majordome : ironie seche, formulation soignee. Mistral Large tenait ce registre,
     # mais il est passe hors abonnement (cf. MISTRAL_HORS_TIER). Re-sonde du 2026-08-30
@@ -181,30 +224,30 @@ CASCADES_PERSONA = {
     #   flash-lite     le plus court, mais ton fade et tic « helas » 2 fois sur 3.
     # Il partage le modele de Johnny et Malena : la voix vient du prompt de persona,
     # et les trois sorties restent nettement distinctes a la sonde.
-    "alfred": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
+    "alfred": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Rockerboy de Night City : argot cru, phrases qui cognent. Mistral Small est le seul
     # a sortir le vocabulaire de la rue sans l'edulcorer (« t'es un gonk avec un clavier »).
-    "johnny": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
+    "johnny": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
     # Wabbajack, Haskill et le fromage de lui-meme, en francais correct. Il ouvre
     # souvent par « Ah, » — le filet anti-tics de Sheo est justement la pour ca.
-    "sheo": [("groq", GROQ_FAST), ("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE)],
+    "sheo": [("groq", GROQ_FAST), ("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Piques courtes et sechees. gemini-flash-lite tranche sans meubler et garde le
     # vocabulaire maison (« aussi fragile qu'un sucre glace un jour de pluie, peteur »).
     # gpt-oss a ete ecarte ici : francais correct mais ton fade, l'acidite disparait.
-    "sugar": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST)],
+    "sugar": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("nvidia", NVIDIA_FAST)],
 
     # Menteur cryptique d'Elder Scrolls : absurde bref a la 3e personne. Gemini Flash-Lite
     # invente les meilleures faussetes (« La troisieme lune existe. Elle est juste
     # invisible pour les imbeciles. »)
-    "maiq": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN), ("groq", GROQ_SMALL)],
+    "maiq": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN), ("groq", GROQ_SMALL), ("nvidia", NVIDIA_FAST)],
 
     # Diva gitane marseillaise : l'argot local doit sonner juste. Mistral Small sort
     # « chanklette », « bonne mere », « gatee va » sans qu'on le lui souffle.
-    "malena": [("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("groq", GROQ_FAST)],
+    "malena": [("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("groq", GROQ_FAST), ("nvidia", NVIDIA_FAST)],
 }
 
 _MARQUEURS_BOT = {
@@ -261,4 +304,5 @@ CASCADE_ANNONCE = [
     ("gemini", GEMINI_FLASH_LITE),
     ("mistral", MISTRAL_MAIN),
     ("groq", GROQ_FAST),
+    ("nvidia", NVIDIA_FAST),
 ]

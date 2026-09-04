@@ -54,6 +54,9 @@ BOTS = ["Alfred", "JohnnyBot", "MaiqBot", "MalenaBot", "Sheogorath", "SugarBot"]
 CLES_SURVEILLEES = [
     "MISTRAL_API_KEY",
     "GROQ_API_KEY",
+    # Ajoutee le 2026-09-04 : sans elle, une cle NVIDIA recopiee d'un bot a l'autre
+    # passerait inapercue — exactement ce que cette sonde existe pour empecher.
+    "NVIDIA_API_KEY",
     "OPENROUTER_API_KEY",
     "GEMINI_API_KEY",
     "GEMINI_KEY_1", "GEMINI_KEY_2", "GEMINI_KEY_3", "GEMINI_KEY_4",
@@ -151,6 +154,7 @@ def _sondes(valeurs):
                           + urllib.parse.quote(v(n)), {}, None))
     for n, url in (("MISTRAL_API_KEY", "https://api.mistral.ai/v1/models"),
                    ("GROQ_API_KEY", "https://api.groq.com/openai/v1/models"),
+                   ("NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1/models"),
                    ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/key")):
         if v(n):
             liste.append((n, url, {"Authorization": "Bearer " + v(n)}, None))

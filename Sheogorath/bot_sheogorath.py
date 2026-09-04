@@ -29,7 +29,7 @@ from core.media_handler import process_image_ollama
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, details_de_quota
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, details_de_quota, NVIDIA_BASE_URL
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -199,6 +199,7 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 
 # FALLBACK API KEYS
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -347,7 +348,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client,
+        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
         bot_label="Sheogorath", temperature=0.5, max_tokens=60)
 fact_brain = FactMemory()
 
@@ -390,6 +391,12 @@ openrouter_client = None
 try:
     if OPENROUTER_API_KEY:
         openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
+        # 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
+        # cascade prenne le relais au lieu que le SDK dorme sur un 429.
+        nvidia_client = None
+        if NVIDIA_API_KEY:
+            try: nvidia_client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, max_retries=0)
+            except Exception as e: logger.warning(f'[NVIDIA] client indisponible: {e}')
         logger.info("✅ [SYSTEM] Cerveau OpenRouter connecté.")
 except Exception as e:
     logger.warning(f"⚠️ [SYSTEM] OpenRouter absent : {e}")
@@ -421,7 +428,7 @@ daily_bio = DiscordDailyBio(
     bot=bot, bot_id="sheogorath", bot_label="Sheogorath",
     personality_prompt=sheo_data.PERSONALITY_BASE,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     system_prompt_provider=get_current_system_prompt,  # suit l'humeur du jour
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
@@ -461,7 +468,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="sheogorath", bot_label="Sheogorath",
     personality_prompt=sheo_data.PERSONALITY_BASE, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client,
+    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
     system_prompt_provider=get_current_system_prompt,  # suit l'humeur du jour
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
@@ -685,7 +692,7 @@ async def on_ready():
             bot, "sheogorath", logger,
             personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="Sheogorath")
+            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Sheogorath")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()
@@ -770,7 +777,7 @@ async def on_ready():
                     key_manager=key_manager,
                     mistral_client=mistral_client,
                     groq_client=groq_client,
-                    openrouter_client=openrouter_client,
+                    openrouter_client=openrouter_client, nvidia_client=nvidia_client,
                     bot_label="Sheogorath",
                     temperature=1.0,
                     max_tokens=80
@@ -840,7 +847,7 @@ async def on_ready():
             "sheogorath", logger,
             personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, bot_label="Sheogorath",
+            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Sheogorath",
             system_prompt_provider=get_current_system_prompt,
             profile_bio=profile_bio,
             enable_events=True,

@@ -298,3 +298,80 @@ def test_les_copies_vendorisees_n_importent_plus_shared():
         "en conteneur. Mettre l'import en DEBUT DE LIGNE pour que le vendoring le "
         "reecrive.\n  " + "\n  ".join(fautifs)
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NVIDIA : 4e fournisseur, et la fuite de raisonnement
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_nvidia_coupe_le_raisonnement_a_la_source():
+    """⚠️ Sans ce parametre, nemotron RECOPIE sa pensee dans `content`.
+
+    Mesure du 2026-09-04 (tools/sonde_fuite_raisonnement.py, prompt de persona reel) :
+
+        sans rien      6 779 ms   « L'utilisateur m'envoie un message simple : ... »
+        effort=none    1 001 ms   « Et toi t'as un clavier et une connexion. choom. »
+
+    Le parametre ne supprime pas seulement la fuite : il divise la latence par SIX.
+
+    ⚠️ `reasoning_effort` n'est PAS un parametre du client OpenAI : il doit passer par
+    `extra_body`, sinon l'appel leve avant meme de partir sur le reseau.
+    """
+    import sys
+
+    sys.path.insert(0, str(RACINE))
+    from shared.models import nvidia_kwargs
+
+    kw = nvidia_kwargs("nvidia/nemotron-3.5-lightning-30b-a3b")
+    assert "extra_body" in kw, "le parametre doit passer par extra_body, pas en direct"
+    assert kw["extra_body"].get("reasoning_effort") == "none"
+
+
+def test_la_cascade_appelle_nvidia_avec_le_garde_fou():
+    """Le noyau doit poser le parametre ET garder le filet de sortie."""
+    src = (RACINE / "shared" / "llm_cascade.py").read_text(encoding="utf-8")
+    assert 'elif client_type == "nvidia"' in src, "aucune branche NVIDIA dans la cascade"
+    branche = src.split('elif client_type == "nvidia"')[1].split("elif client_type ==")[0]
+    assert "nvidia_kwargs(" in branche, (
+        "la branche NVIDIA n'applique pas nvidia_kwargs : nemotron recitera sa pensee"
+    )
+    # ⚠️ Ceinture ET bretelles : le parametre pourrait cesser d'etre honore par le
+    # fournisseur. Le filet de sortie doit rester.
+    assert "_fuite_de_raisonnement(" in branche, (
+        "la branche NVIDIA n'a pas le filet _fuite_de_raisonnement"
+    )
+
+
+def test_les_6_bots_construisent_le_client_nvidia():
+    """⚠️ Un client absent = un echelon silencieusement saute, sans erreur."""
+    trouves = 0
+    for dossier, fichier in BOTS.items():
+        src = _source(dossier, fichier)
+        assert 'NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")' in src, f"{fichier} ne lit pas la cle"
+        assert "nvidia_client = OpenAI(" in src, f"{fichier} ne construit pas le client"
+        assert "max_retries=0" in src.split("nvidia_client = OpenAI(")[1][:160], (
+            f"{fichier} : client NVIDIA sans max_retries=0"
+        )
+        assert "nvidia_client=nvidia_client" in src, f"{fichier} ne le passe pas a la cascade"
+        trouves += 1
+    assert trouves == 6, f"On attendait 6 bots, on en a eu {trouves}"
+
+
+def test_chaque_cascade_porte_un_4e_fournisseur():
+    """Mistral plafonne + OpenRouter retire : il ne restait que 3 fournisseurs.
+
+    ⚠️ Deriver le compte de la liste des cascades, pas de ce que la boucle a trouve.
+    """
+    import sys
+
+    sys.path.insert(0, str(RACINE))
+    from shared.models import CASCADES_PERSONA
+
+    assert len(CASCADES_PERSONA) == 6, f"{len(CASCADES_PERSONA)} cascades, on en attend 6"
+    for bot, cascade in CASCADES_PERSONA.items():
+        fournisseurs = [f for f, _ in cascade]
+        assert "nvidia" in fournisseurs, f"{bot} n'a pas d'echelon NVIDIA"
+        assert len(set(fournisseurs)) >= 4, (
+            f"{bot} n'a que {len(set(fournisseurs))} fournisseurs distincts : "
+            "si l'un plafonne, il ne reste presque rien."
+        )
