@@ -69,7 +69,6 @@ sys.meta_path.insert(0, BlockSharedImporter())
 # Mock environment variables
 os.environ['DISCORD_TOKEN'] = 'dummy'
 os.environ['GROQ_API_KEY'] = 'dummy'
-os.environ['OPENROUTER_API_KEY'] = 'dummy'
 os.environ['MISTRAL_API_KEY'] = 'dummy'
 os.environ['GEMINI_API_KEY'] = 'dummy'
 os.environ['ELEVENLABS_API_KEY'] = 'dummy'

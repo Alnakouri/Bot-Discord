@@ -37,7 +37,7 @@ class TestCryptoRoundTrip(unittest.TestCase):
         self.assertIsNone(crypto_utils.get_bot_key(self.dir, create=False))
 
     def test_encrypt_then_decrypt_restores_content(self):
-        secret = b"DISCORD_TOKEN=abc123\nOPENROUTER_API_KEY=sk-or-v1-xyz\n"
+        secret = b"DISCORD_TOKEN=abc123\nGROQ_API_KEY=gsk-xyz\n"
         env_path = self.dir / ".env"
         env_path.write_bytes(secret)
 

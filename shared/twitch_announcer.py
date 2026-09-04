@@ -159,7 +159,7 @@ class TwitchAnnouncer:
     """
     def __init__(self, bot, bot_id: str, logger, client_id: str, client_secret: str,
                  personality_prompt: str | None = None, key_manager=None,
-                 mistral_client=None, groq_client=None, openrouter_client=None, nvidia_client=None,
+                 mistral_client=None, groq_client=None,  nvidia_client=None,
                  bot_label: str | None = None):
         self.bot = bot
         self.bot_id = bot_id
@@ -171,7 +171,6 @@ class TwitchAnnouncer:
         self.key_manager = key_manager
         self.mistral_client = mistral_client
         self.groq_client = groq_client
-        self.openrouter_client = openrouter_client
         self.nvidia_client = nvidia_client
         self.bot_label = bot_label or bot_id
 
@@ -336,7 +335,7 @@ class TwitchAnnouncer:
                 user_message="Annonce ce live à ta communauté.",
                 conversation_history=[], media_data=None, mime_type="",
                 key_manager=self.key_manager, mistral_client=self.mistral_client,
-                groq_client=self.groq_client, openrouter_client=self.openrouter_client, nvidia_client=getattr(self, "nvidia_client", None),
+                groq_client=self.groq_client,  nvidia_client=getattr(self, "nvidia_client", None),
                 bot_label=self.bot_label, temperature=0.95,
                 # 120 tokens coupaient l'annonce en plein mot (mesuré : mistral-large
                 # tronqué sur 2 tirages sur 4). Une accroche fait 1 à 2 phrases, la
@@ -416,7 +415,7 @@ class TwitchAnnouncer:
 
 def setup_twitch_announcer(bot, bot_id: str, logger, *, personality_prompt: str | None = None,
                            key_manager=None, mistral_client=None, groq_client=None,
-                           openrouter_client=None, nvidia_client=None, bot_label: str | None = None) -> TwitchAnnouncer | None:
+                            nvidia_client=None, bot_label: str | None = None) -> TwitchAnnouncer | None:
     """
     Initializes TwitchAnnouncer if environmental credentials are set.
     Les paramètres optionnels (personality_prompt + cascade LLM) permettent de
@@ -434,5 +433,5 @@ def setup_twitch_announcer(bot, bot_id: str, logger, *, personality_prompt: str 
         bot, bot_id, logger, client_id, client_secret,
         personality_prompt=personality_prompt, key_manager=key_manager,
         mistral_client=mistral_client, groq_client=groq_client,
-        openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label=bot_label,
+         nvidia_client=nvidia_client, bot_label=bot_label,
     )

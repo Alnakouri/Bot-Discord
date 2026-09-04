@@ -35,21 +35,15 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Clients
 key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", GEMINI_API_KEYS)
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
-key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 mistral_client = Mistral(api_key=MISTRAL_API_KEY) if MISTRAL_API_KEY else None
-openrouter_client = OpenAI(
-    api_key=OPENROUTER_API_KEY,
-    base_url="https://openrouter.ai/api/v1"
-) if OPENROUTER_API_KEY else None
 
 async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
     """
@@ -97,7 +91,6 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
             key_manager=key_manager,
             mistral_client=mistral_client,
             groq_client=groq_client,
-            openrouter_client=openrouter_client,
             bot_label=bot_label,
             temperature=0.8,
             max_tokens=300

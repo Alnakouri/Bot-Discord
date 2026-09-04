@@ -4,7 +4,7 @@ Le 2026-09-03, M'aiq a echoue DEUX fois a 15 secondes d'intervalle sur une image
 142 Ko : `timeout=15`, la valeur du TEXTE, avait ete recopiee telle quelle sur les appels
 vision. Ces tests fixent les deux moities de la regle :
 
-* les echelons qui **transportent** le media (Gemini, OpenRouter) prennent la borne media ;
+* les echelons qui **transportent** le media (Gemini seul, depuis le retrait d'OpenRouter le 2026-09-05) prennent la borne media ;
 * ceux qui le **jettent** (Mistral, Groq) gardent la borne texte — sans quoi on annule le
   garde-fou pose contre le 429 Groq, qui coute 36 secondes avant de rendre la main.
 """
@@ -29,7 +29,7 @@ BOTS_CASCADE_INLINE = {
 
 BORNE_MEDIA = "45 if media_data else 15"
 _CLIENT = re.compile(r'client_type == "(\w+)"')
-TRANSPORTENT_LE_MEDIA = {"gemini", "openrouter"}
+TRANSPORTENT_LE_MEDIA = {"gemini"}
 
 
 def _timeouts_par_client(chemin):

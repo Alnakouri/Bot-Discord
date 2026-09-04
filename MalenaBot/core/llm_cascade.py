@@ -140,7 +140,6 @@ async def generate_response(
     key_manager,                       # MultiAPIKeyManager (clés gemini)
     mistral_client=None,
     groq_client=None,
-    openrouter_client=None,
     nvidia_client=None,
     bot_label: str = "Bot",
     temperature: float = 0.8,
@@ -299,37 +298,10 @@ async def generate_response(
                     logger.info(f"🟩 [NVIDIA {model_name}] {bot_label}")
                     break
     
-                # 4. OPENROUTER (texte + secours multimodal)
-                elif client_type == "openrouter" and openrouter_client:
-                    user_content = f"{transcript}\n{user_message}"
-                    if has_image and media_data:
-                        b64_image = base64.b64encode(media_data).decode('utf-8')
-                        user_content = [
-                            {"type": "text", "text": f"{transcript}\n{user_message}"},
-                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}},
-                        ]
-                    chat = await _call(
-                        openrouter_client.chat.completions.create,
-                        model=model_name,
-                        messages=[{"role": "system", "content": system_prompt},
-                                  {"role": "user", "content": user_content}],
-                        temperature=temperature, max_tokens=max_tokens,
-                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": bot_label},
-                    )
-                    if _fuite_de_raisonnement(chat.choices[0].message):
-                        logger.warning(f"⚠️ [OPENROUTER {model_name}] le modèle a recopié son raisonnement dans la réponse → échelon suivant")
-                        response_text = None
-                        _raison = "fuite_raisonnement"
-                        continue
-                    response_text = chat.choices[0].message.content
-                    if _est_vide(response_text):
-                        logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")
-                        response_text = None
-                        _raison = "vide"
-                        continue
-                    logger.info(f"🌌 [OPENROUTER {model_name}] {bot_label}")
-                    break
-    
+                # L'echelon OpenRouter etait ici. Retire le 2026-09-05 :
+                # free tier a 12 echecs sur 12, et sa branche etait le SEUL
+                # appelant de _fuite_de_raisonnement(). Cf.
+                # tests/test_openrouter_est_retire.py
             except Exception as e:
                 error_msg = str(e)
                 if not error_msg:

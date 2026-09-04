@@ -46,7 +46,7 @@ def test_les_6_copies_vendorisees_ont_le_garde_fou():
         assert os.path.exists(chemin), f"{chemin} manquant"
         src = open(chemin, encoding="utf-8").read()
         assert "def _est_vide" in src, f"{bot} : helper _est_vide absent"
-        for fournisseur in ("GEMINI", "MISTRAL", "GROQ", "OPENROUTER"):
+        for fournisseur in ("GEMINI", "MISTRAL", "GROQ", "NVIDIA"):
             assert f"[{fournisseur} {{model_name}}] réponse vide" in src, \
                 f"{bot} : branche {fournisseur} sans garde-fou de réponse vide"
 
@@ -78,7 +78,7 @@ class _FauxGroq:
         return _FauxChat("")
 
 
-class _FauxOpenRouter:
+class _FauxNvidia:
     """Échelon suivant : doit être atteint malgré le succès « vide » de Groq."""
     def __init__(self):
         self.appels = 0
@@ -93,22 +93,22 @@ class _FauxOpenRouter:
 def test_cascade_partagee_descend_apres_une_reponse_vide(monkeypatch):
     import shared.llm_cascade as cascade
 
-    groq, openrouter = _FauxGroq(), _FauxOpenRouter()
+    groq, nvidia = _FauxGroq(), _FauxNvidia()
     monkeypatch.setattr(cascade, "get_model_cascade",
                         lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
-                                    ("openrouter", "modele/secours")])
+                                    ("nvidia", "modele/secours")])
 
     texte = asyncio.run(cascade.generate_response(
         routing={"type": RequestType.TEXT, "reason": "test"},
         system_prompt="sys", transcript="", user_message="coucou",
         conversation_history=[], media_data=None, mime_type="",
         key_manager=None, mistral_client=None,
-        groq_client=groq, openrouter_client=openrouter,
+        groq_client=groq, nvidia_client=nvidia,
         bot_label="Test",
     ))
 
     assert groq.appels == 1, "Groq devait être tenté"
-    assert openrouter.appels == 1, "l'échelon suivant devait être atteint malgré le vide"
+    assert nvidia.appels == 1, "l'échelon suivant devait être atteint malgré le vide"
     assert texte == "Wesh ma vie !"
 
 
@@ -120,17 +120,17 @@ def test_cascade_inline_malena_descend_apres_une_reponse_vide(monkeypatch):
     os.environ.setdefault("DISCORD_TOKEN", "dummy")
     bot_malena = pytest.importorskip("bot_malena")
 
-    groq, openrouter = _FauxGroq(), _FauxOpenRouter()
+    groq, nvidia = _FauxGroq(), _FauxNvidia()
     monkeypatch.setattr(bot_malena, "get_model_cascade",
                         lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
-                                    ("openrouter", "modele/secours")])
+                                    ("nvidia", "modele/secours")])
     monkeypatch.setattr(bot_malena, "groq_client", groq)
-    monkeypatch.setattr(bot_malena, "openrouter_client", openrouter)
+    monkeypatch.setattr(bot_malena, "nvidia_client", nvidia)
 
     texte = asyncio.run(bot_malena.generate_response_hybrid("coucou"))
 
     assert groq.appels == 1, "Groq devait être tenté"
-    assert openrouter.appels == 1, "l'échelon suivant devait être atteint malgré le vide"
+    assert nvidia.appels == 1, "l'échelon suivant devait être atteint malgré le vide"
     assert texte == "Wesh ma vie !"
     assert "Erreur API" not in texte
 
@@ -240,22 +240,22 @@ def test_un_provider_qui_traine_ne_bloque_plus_la_cascade(monkeypatch):
     import shared.llm_cascade as cascade
 
     monkeypatch.setattr(cascade, "_BORNE_TEXTE", 0.2)
-    lent, openrouter = _FauxGroqLent(duree=2.0), _FauxOpenRouter()
+    lent, nvidia = _FauxGroqLent(duree=2.0), _FauxNvidia()
     monkeypatch.setattr(cascade, "get_model_cascade",
                         lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
-                                               ("openrouter", "modele/secours")])
+                                               ("nvidia", "modele/secours")])
 
     texte = asyncio.run(cascade.generate_response(
         routing={"type": RequestType.TEXT, "reason": "test"},
         system_prompt="sys", transcript="", user_message="coucou",
         conversation_history=[], media_data=None, mime_type="",
         key_manager=None, mistral_client=None,
-        groq_client=lent, openrouter_client=openrouter,
+        groq_client=lent, nvidia_client=nvidia,
         bot_label="Test",
     ))
 
     assert lent.appels == 1, "Groq devait être tenté"
-    assert openrouter.appels == 1, "la cascade devait basculer sans attendre le lent"
+    assert nvidia.appels == 1, "la cascade devait basculer sans attendre le lent"
     assert texte == "Wesh ma vie !"
 
 
@@ -265,21 +265,21 @@ def test_l_appelant_garde_la_main_sur_la_borne(monkeypatch):
     import shared.llm_cascade as cascade
 
     monkeypatch.setattr(cascade, "_BORNE_TEXTE", 0.05)
-    lent, openrouter = _FauxGroqLent(duree=0.3), _FauxOpenRouter()
+    lent, nvidia = _FauxGroqLent(duree=0.3), _FauxNvidia()
     monkeypatch.setattr(cascade, "get_model_cascade",
                         lambda _t, _bot=None: [("groq", "openai/gpt-oss-120b"),
-                                               ("openrouter", "modele/secours")])
+                                               ("nvidia", "modele/secours")])
 
     texte = asyncio.run(cascade.generate_response(
         routing={"type": RequestType.TEXT, "reason": "test"},
         system_prompt="sys", transcript="", user_message="coucou",
         conversation_history=[], media_data=None, mime_type="",
         key_manager=None, mistral_client=None,
-        groq_client=lent, openrouter_client=openrouter,
+        groq_client=lent, nvidia_client=nvidia,
         bot_label="Test", call_timeout=5.0,
     ))
 
-    assert openrouter.appels == 0, "la borne explicite a été écrasée par le défaut"
+    assert nvidia.appels == 0, "la borne explicite a été écrasée par le défaut"
     assert texte == "réponse arrivée trop tard"
 
 

@@ -13,7 +13,7 @@ class TwitchEventSub:
                  broadcaster_id: str, emit_callback, subscriptions: list[str],
                  reward_map: dict | None = None, bot_label: str = None,
                  personality_prompt: str = None, key_manager = None,
-                 mistral_client = None, groq_client = None, openrouter_client = None,
+                 mistral_client = None, groq_client = None, nvidia_client = None,
                  commands: dict = None):
         self.bot_id = bot_id
         self.logger = logger
@@ -28,7 +28,6 @@ class TwitchEventSub:
         self.key_manager = key_manager
         self.mistral_client = mistral_client
         self.groq_client = groq_client
-        self.openrouter_client = openrouter_client
         self.nvidia_client = nvidia_client
         self.commands = commands or {}
 
@@ -249,7 +248,7 @@ class TwitchEventSub:
                 key_manager=self.key_manager,
                 mistral_client=self.mistral_client,
                 groq_client=self.groq_client,
-                openrouter_client=self.openrouter_client, nvidia_client=getattr(self, "nvidia_client", None),
+                 nvidia_client=getattr(self, "nvidia_client", None),
                 bot_label=self.bot_label,
                 temperature=0.9,
                 max_tokens=60

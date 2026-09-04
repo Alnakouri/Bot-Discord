@@ -43,7 +43,7 @@ def _legacy_to_text(type_str, text):
 class DiscordDailyStatus:
     def __init__(self, bot, bot_id, bot_label, personality_prompt,
                  fallback_activities, key_manager=None, mistral_client=None,
-                 groq_client=None, openrouter_client=None, nvidia_client=None,
+                 groq_client=None,  nvidia_client=None,
                  system_prompt_provider=None, logger=None, enabled=True,
                  count=DEFAULT_COUNT):
         self.bot = bot
@@ -65,7 +65,6 @@ class DiscordDailyStatus:
         self.key_manager = key_manager
         self.mistral_client = mistral_client
         self.groq_client = groq_client
-        self.openrouter_client = openrouter_client
         self.nvidia_client = nvidia_client
         self.system_prompt_provider = system_prompt_provider  # optionnel: lambda -> prompt du moment
         self.logger = logger or logging.getLogger(bot_id)
@@ -183,7 +182,7 @@ class DiscordDailyStatus:
                 routing=routing, system_prompt=system_prompt, transcript="",
                 user_message=prompt, conversation_history=[], media_data=None, mime_type="",
                 key_manager=self.key_manager, mistral_client=self.mistral_client,
-                groq_client=self.groq_client, openrouter_client=self.openrouter_client, nvidia_client=getattr(self, "nvidia_client", None),
+                groq_client=self.groq_client,  nvidia_client=getattr(self, "nvidia_client", None),
                 bot_label=persona, temperature=0.9, max_tokens=400)
         except Exception as e:
             self.logger.error(f"❌ [DISCORD_STATUS:{self.bot_id}] appel LLM: {e}")

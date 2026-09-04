@@ -61,15 +61,20 @@ def test_aucun_client_groq_ne_dort_sur_un_429():
     )
 
 
-def test_aucun_client_openrouter_ne_dort_sur_un_429():
-    """Meme piege, meme SDK (le client OpenAI a lui aussi max_retries=2 par defaut)."""
+def test_aucun_client_nvidia_ne_dort_sur_un_429():
+    """Meme piege, meme SDK (le client OpenAI a lui aussi max_retries=2 par defaut).
+
+    ⚠️ Ce test visait les clients OpenRouter jusqu'au 2026-09-05. OpenRouter a ete
+    retire ; NVIDIA est desormais le seul fournisseur servi par le SDK OpenAI, et il
+    herite exactement du meme piege.
+    """
     manquants = []
     for dossier, fichier in BOTS.items():
         src = _source(dossier, fichier)
-        for appel in re.findall(r"OpenAI\([^)]*openrouter[^)]*\)", src):
+        for appel in re.findall(r"OpenAI\([^)]*NVIDIA[^)]*\)", src):
             if "max_retries=0" not in appel:
                 manquants.append(f"{fichier}: {appel}")
-    assert not manquants, "Clients OpenRouter sans max_retries=0 :\n  " + "\n  ".join(manquants)
+    assert not manquants, "Clients NVIDIA sans max_retries=0 :\n  " + "\n  ".join(manquants)
 
 
 def test_les_deux_familles_de_clients_sont_couvertes():
@@ -78,13 +83,13 @@ def test_les_deux_familles_de_clients_sont_couvertes():
     Sans cette borne, renommer la variable du client ferait passer les deux tests
     precedents au vert en n'inspectant plus rien.
     """
-    groq = openrouter = 0
+    groq = nvidia = 0
     for dossier, fichier in BOTS.items():
         src = _source(dossier, fichier)
         groq += len(re.findall(r"Groq\([^)]*\)", src))
-        openrouter += len(re.findall(r"OpenAI\([^)]*openrouter[^)]*\)", src))
+        nvidia += len(re.findall(r"OpenAI\([^)]*NVIDIA[^)]*\)", src))
     assert groq == 6, f"On attendait 6 clients Groq (un par bot), on en a trouve {groq}"
-    assert openrouter == 6, f"On attendait 6 clients OpenRouter, on en a trouve {openrouter}"
+    assert nvidia == 6, f"On attendait 6 clients NVIDIA (un par bot), on en a trouve {nvidia}"
 
 
 def test_les_cascades_inline_tracent_leurs_appels():
@@ -385,7 +390,7 @@ def test_les_clients_sont_definis_meme_sans_aucune_cle():
     cle, le nom n'existait pas du tout :
 
         Sheogorath/bot_sheogorath.py:431: in <module>
-            groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+            groq_client=groq_client,  nvidia_client=nvidia_client,
         E   NameError: name 'nvidia_client' is not defined
 
     Le bot ne demarrait meme pas. Ce test lit la structure du module — il n'a besoin
@@ -393,7 +398,7 @@ def test_les_clients_sont_definis_meme_sans_aucune_cle():
     """
     import ast
 
-    CLIENTS = ["nvidia_client", "openrouter_client", "groq_client", "mistral_client"]
+    CLIENTS = ["nvidia_client", "groq_client", "mistral_client"]
     fautifs = []
     inspectes = 0
     for dossier, fichier in BOTS.items():
@@ -410,7 +415,7 @@ def test_les_clients_sont_definis_meme_sans_aucune_cle():
             inspectes += 1
             if nom not in surs:
                 fautifs.append(f"{fichier}: {nom}")
-    assert inspectes == 24, f"On attendait 6 bots x 4 clients, on a inspecte {inspectes}"
+    assert inspectes == 18, f"On attendait 6 bots x 3 clients, on a inspecte {inspectes}"
     assert not fautifs, (
         "Ces clients ne sont pas definis inconditionnellement au niveau du module : "
         "sans la cle correspondante, le bot leve NameError au demarrage.\n  "
@@ -465,10 +470,10 @@ def test_le_health_check_ne_nomme_que_des_variables_qui_existent():
         for numero, ligne in enumerate(src.split("\n"), 1):
             if "logger.info" not in ligne or "HEALTH CHECK" in ligne:
                 continue
-            if not any(m in ligne for m in ("NVIDIA", "Gemini", "Mistral", "Groq", "OpenRouter")):
+            if not any(m in ligne for m in ("NVIDIA", "Gemini", "Mistral", "Groq")):
                 continue
             inspectes += 1
-            for nom in re.findall(r"\b(GEMINI_\w+|\w+_client|NVIDIA_API_KEY|OPENROUTER_API_KEY)\b", ligne):
+            for nom in re.findall(r"\b(GEMINI_\w+|\w+_client|NVIDIA_API_KEY)\b", ligne):
                 if nom not in definis:
                     fautifs.append(f"{fichier}:{numero} nomme {nom}, jamais defini")
     assert inspectes >= 20, f"Trop peu de lignes inspectees : {inspectes}"

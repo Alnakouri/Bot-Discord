@@ -101,7 +101,7 @@ async def main():
                     key_manager=key_manager,
                     groq_client=groq_client,
                     mistral_client=mistral_client,
-                    openrouter_client=openrouter_client
+                    
                 )
                 
                 success = all(resp != "[Toute la cascade de modèles a échoué]" for resp in responses)

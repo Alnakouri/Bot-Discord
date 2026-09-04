@@ -22,7 +22,7 @@ from datetime import datetime
 import base64
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.chrono import Chrono
-from core.models import groq_kwargs, NVIDIA_BASE_URL
+from core.models import groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
 from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from google.genai import types
@@ -109,8 +109,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY_1")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
 if not DISCORD_TOKEN:
     logger.critical("❌ DISCORD_TOKEN introuvable dans .env !")
     exit(1)
@@ -131,10 +129,6 @@ if MISTRAL_API_KEY:
     try: mistral_client = Mistral(api_key=MISTRAL_API_KEY)
     except Exception as e: logger.error(f"❌ Erreur Init Mistral : {e}")
 
-openrouter_client = None
-if OPENROUTER_API_KEY:
-    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
-    except Exception as e: logger.warning(f"⚠️ OpenRouter indisponible : {e}")
 
 # 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
 # cascade prenne le relais au lieu que le SDK dorme sur un 429.
@@ -149,8 +143,6 @@ key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", [GEMINI_API_KEY] if GEMINI_API_KEY else [])
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
-key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
-
 async def _daily_llm_call(system_prompt, user_message):
     from core.llm_cascade import generate_response
     return await generate_response(
@@ -158,7 +150,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+        groq_client=groq_client, nvidia_client=nvidia_client,
         bot_label="Malena", temperature=0.5, max_tokens=60)
 
 # CONSTRUCTION DYNAMIQUE DU HINT D'EXPRESSIONS
@@ -320,46 +312,40 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     _texte_branche = texte
                     return _texte_branche
 
-                # 5. OPENROUTER
-                elif client_type == "openrouter" and openrouter_client:
-                    logger.info(f"🌌 Tentative OpenRouter ({model_name})...")
-                    
-                    user_content = prompt
-                    # Support Multimodal Secours
-                    if media_data:
-                        b64_image = base64.b64encode(media_data).decode('utf-8')
-                        user_content = [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
-                            }
-                        ]
-                    
+                # 5. NVIDIA — 4e fournisseur, quota independant des trois autres.
+                # ⚠️ Ajoute le 2026-09-05. Le lot NVIDIA du 04/09 n'avait cable que
+                # shared/llm_cascade.py et ses copies vendorisees : cette cascade-ci est
+                # INLINE, l'echelon `nvidia` y tombait donc dans le vide a chaque fois.
+                elif client_type == "nvidia" and nvidia_client:
+                    if media_data is not None:
+                        logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
                     chat = await asyncio.wait_for(
                         asyncio.to_thread(
-                            openrouter_client.chat.completions.create,
-                            model=model_name,
+                            nvidia_client.chat.completions.create,
                             messages=[{"role": "system", "content": sys_prompt},
-                                      {"role": "user", "content": user_content}],
+                                      {"role": "user", "content": prompt}],
+                            model=model_name,
                             temperature=1.1,
                             max_tokens=300,
-                            extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Malena Bot"}
+                            # ⚠️ SANS ceci, nemotron RECOPIE sa pensée dans `content`, et
+                            # met six fois plus de temps à le faire.
+                            **nvidia_kwargs(model_name),
                         ),
-                        timeout=45 if media_data else 15
+                        timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
+                    # Filet malgré tout : le paramètre pourrait cesser d'être honoré.
                     if _fuite_de_raisonnement(chat.choices[0].message):
-                        logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
+                        logger.warning(f"⚠️ [NVIDIA {model_name}] raisonnement recopié dans la réponse → échelon suivant")
                         _raison = "fuite_raisonnement"
                         continue
                     texte = chat.choices[0].message.content
                     if _est_vide(texte):
-                        logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
+                        logger.warning(f"⚠️ [NVIDIA {model_name}] réponse vide → échelon suivant")
                         _raison = "vide"
                         continue
+                    logger.info(f"🟩 [NVIDIA {model_name}] Malena a répondu.")
                     _texte_branche = texte
                     return _texte_branche
-
             except Exception as e:
                 error_msg = str(e)
                 if not error_msg:
@@ -419,7 +405,7 @@ daily_bio = DiscordDailyBio(
     bot=bot, bot_id="malena", bot_label="Malena",
     personality_prompt=data.PERSONALITY_PROMPT,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
@@ -442,7 +428,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="malena", bot_label="Malena",
     personality_prompt=data.PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
 
@@ -486,7 +472,6 @@ async def on_ready():
     logger.info(f'   {"✅" if GEMINI_API_KEY else "❌"} Gemini')
     logger.info(f'   {"✅" if mistral_client else "❌"} Mistral')
     logger.info(f'   {"✅" if groq_client else "❌"} Groq')
-    logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
     logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
     # Lancer les tâches périodiques
     if not check_missed_mentions_malena.is_running():
@@ -512,8 +497,7 @@ async def on_ready():
         twitch_announcer = setup_twitch_announcer(
             bot, "malena", logger,
             personality_prompt=data.PERSONALITY_PROMPT, key_manager=key_manager,
-            mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Malena")
+            mistral_client=mistral_client, groq_client=groq_client, nvidia_client=nvidia_client, bot_label="Malena")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()

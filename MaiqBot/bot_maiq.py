@@ -25,7 +25,11 @@ import logging
 from datetime import datetime
 import base64
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, NVIDIA_BASE_URL
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
+# ⚠️ La cascade inline de M'aiq n'avait NI garde anti-fuite NI garde de reponse vide :
+# les deux vivaient dans le noyau, qu'elle recopie sans les emporter. On les importe au
+# lieu d'en faire une 8e copie. `generate_response` etait appele sans etre importe.
+from core.llm_cascade import generate_response, _est_vide, _fuite_de_raisonnement
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
@@ -134,8 +138,6 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
 # MEMORY SETTINGS
 conversation_history = {}
 MAX_HISTORY = 30 
@@ -149,8 +151,6 @@ key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", GEMINI_API_KEYS)
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
-key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
-
 # ANTI-REPETITION MEMORY (Par Serveur - ENHANCED)
   # {guild_id: ["réponse1", "réponse2", ...]} (max 10)
 response_memory = ResponseMemory()
@@ -183,7 +183,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+        groq_client=groq_client, nvidia_client=nvidia_client,
         bot_label="Maiq", temperature=0.5, max_tokens=60)
 
 
@@ -247,8 +247,6 @@ async def on_command_error(ctx, error):
 # Client Initialization (Safe Failover)
 groq_client = None
 mistral_client = None
-openrouter_client = None
-
 try:
     if GROQ_API_KEY:
         groq_client = Groq(api_key=GROQ_API_KEY, max_retries=0)
@@ -261,12 +259,6 @@ try:
 except Exception as e:
     logger.warning(f"[INIT] Mistral: {e}")
 
-try:
-    if OPENROUTER_API_KEY:
-        openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
-
-except Exception as e:
-    logger.warning(f"[INIT] OpenRouter: {e}")
 
 # 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
 # cascade prenne le relais au lieu que le SDK dorme sur un 429.
@@ -280,7 +272,7 @@ daily_bio = DiscordDailyBio(
     bot=bot, bot_id="maiq", bot_label="M'aiq le Menteur",
     personality_prompt=PERSONALITY_PROMPT,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
@@ -303,7 +295,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="maiq", bot_label="M'aiq le Menteur",
     personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client, nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
 
@@ -333,7 +325,6 @@ async def on_ready():
     logger.info(f'   ✅ Gemini : {len([k for k in GEMINI_API_KEYS if k])} clés')
     logger.info(f'   {"✅" if groq_client else "❌"} Groq (prioritaire)')
     logger.info(f'   {"✅" if mistral_client else "❌"} Mistral')
-    logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
     logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
     logger.info('--------------------------------------------------')
     
@@ -358,8 +349,7 @@ async def on_ready():
         twitch_announcer = setup_twitch_announcer(
             bot, "maiq", logger,
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
-            mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="M'aiq")
+            mistral_client=mistral_client, groq_client=groq_client, nvidia_client=nvidia_client, bot_label="M'aiq")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()
@@ -1526,39 +1516,42 @@ async def on_message(message):
                 logger.info(f"⚡ [GROQ {model_name}] M'aiq a répondu.")
                 break
 
-             # 5. OPENROUTER
-            elif client_type == "openrouter" and openrouter_client:
+            # 5. NVIDIA — 4e fournisseur, quota independant des trois autres.
+            # ⚠️ Ajoute le 2026-09-05. Le lot NVIDIA du 04/09 n'avait cable que
+            # shared/llm_cascade.py et ses copies vendorisees : cette cascade-ci est
+            # INLINE, l'echelon `nvidia` y tombait donc dans le vide a chaque fois.
+            elif client_type == "nvidia" and nvidia_client:
+                if media_data is not None:
+                    logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
                 msgs = [{"role": "system", "content": f"{current_personality_prompt}\n{transcript}{anti_repeat_prompt}{duel_context}"}]
                 for msg in conversation_history[channel_id]:
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
-                
-                # Support Multimodal Secours
-                if has_image and media_data:
-                    b64_image = base64.b64encode(media_data).decode('utf-8')
-                    user_content = [
-                        {"type": "text", "text": user_message},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
-                        }
-                    ]
-                    msgs.append({"role": "user", "content": user_content})
-                else:
-                    msgs.append({"role": "user", "content": user_message})
-                
+                msgs.append({"role": "user", "content": user_message})
+
                 chat = await asyncio.wait_for(
                     asyncio.to_thread(
-                        openrouter_client.chat.completions.create,
-                        model=model_name, messages=msgs, temperature=0.8, max_tokens=300,
-                        extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Maiq Bot"}
+                        nvidia_client.chat.completions.create,
+                        messages=msgs, model=model_name, temperature=0.7,
+                        # ⚠️ SANS ceci, nemotron RECOPIE sa pensée dans `content`, et
+                        # met six fois plus de temps à le faire.
+                        **nvidia_kwargs(model_name),
                     ),
-                    timeout=45 if media_data else 15
+                    timeout=15  # borne TEXTE : ce client ne transporte pas le media
                 )
+                # Filet malgré tout : le paramètre pourrait cesser d'être honoré.
+                if _fuite_de_raisonnement(chat.choices[0].message):
+                    logger.warning(f"⚠️ [NVIDIA {model_name}] raisonnement recopié dans la réponse → échelon suivant")
+                    _raison = "fuite_raisonnement"
+                    continue
                 response_text = chat.choices[0].message.content
-                logger.info(f"🌌 [OPENROUTER {model_name}] M'aiq a utilisé un secours visuel.")
+                if _est_vide(response_text):
+                    logger.warning(f"⚠️ [NVIDIA {model_name}] réponse vide → échelon suivant")
+                    response_text = None
+                    _raison = "vide"
+                    continue
+                logger.info(f"🟩 [NVIDIA {model_name}] M'aiq a répondu.")
                 break
-
         except Exception as e:
             error_msg = str(e)
             if not error_msg:

@@ -47,7 +47,6 @@ async def evaluate_response(
     key_manager,
     groq_client=None,
     mistral_client=None,
-    openrouter_client=None
 ) -> dict:
     """
     Appelle un juge LLM pour évaluer les réponses du bot selon 5 critères.
@@ -158,25 +157,6 @@ N'ajoute aucune introduction, aucune conclusion, pas de texte de présentation. 
             last_error = f"Mistral: {e}"
             logger.warning(f"Juge LLM : échec Mistral ({e})")
             time.sleep(1)
-
-    # 4. TENTATIVE OPENROUTER
-    if openrouter_client:
-        try:
-            logger.info("Juge LLM : tentative de secours avec OpenRouter...")
-            chat = openrouter_client.chat.completions.create(
-                model="meta-llama/llama-3.3-70b-instruct",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                response_format={"type": "json_object"}
-            )
-            res_text = chat.choices[0].message.content
-            if res_text:
-                res = clean_and_parse_json(res_text)
-                logger.info("Juge LLM : succès avec OpenRouter")
-                return res
-        except Exception as e:
-            last_error = f"OpenRouter: {e}"
-            logger.warning(f"Juge LLM : échec OpenRouter ({e})")
 
     # Échec de tous les fournisseurs : retour d'un rapport de secours avec scores -1
     logger.error(f"Juge LLM : tous les fournisseurs ont échoué. Erreur finale : {last_error}")

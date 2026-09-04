@@ -190,6 +190,7 @@ load_secure_env(Path(__file__).parent)
 
 # IMPORT LLM CASCADE
 from core.llm_cascade import generate_response
+from core.models import NVIDIA_BASE_URL
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
 
@@ -288,7 +289,6 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # MEMORY SETTINGS
 try:
@@ -312,7 +312,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+        groq_client=groq_client,  nvidia_client=nvidia_client,
         bot_label="Sugar Bot", temperature=0.5, max_tokens=60)
 
 async def _grudge_llm_call(system_prompt, user_message):
@@ -321,7 +321,7 @@ async def _grudge_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+        groq_client=groq_client,  nvidia_client=nvidia_client,
         bot_label="Sugar Bot", temperature=0.0, max_tokens=6)
 
 conversation_history = {}
@@ -336,7 +336,6 @@ key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", GEMINI_API_KEYS)
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
-key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
 
 # ANTI-REPETITION MEMORY
 
@@ -380,10 +379,6 @@ if MISTRAL_API_KEY:
     try: mistral_client = Mistral(api_key=MISTRAL_API_KEY)
     except Exception as e: logger.warning(f"[INIT] Mistral indisponible : {e}")
 
-openrouter_client = None
-if OPENROUTER_API_KEY:
-    try: openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
-    except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
 
 # 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
 # cascade prenne le relais au lieu que le SDK dorme sur un 429.
@@ -397,7 +392,7 @@ daily_bio = DiscordDailyBio(
     bot=bot, bot_id="sugar", bot_label="Sugar Bot",
     personality_prompt=PERSONALITY_PROMPT,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client,  nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
 
@@ -427,7 +422,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="sugar", bot_label="Sugar Bot",
     personality_prompt=PERSONALITY_PROMPT, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client,  nvidia_client=nvidia_client,
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
 
@@ -479,7 +474,6 @@ async def on_ready():
     logger.info(f'   ✅ Gemini : {len([k for k in GEMINI_API_KEYS if k])} clés')
     logger.info(f'   ✅ Groq : {"Oui" if GROQ_API_KEY else "Non"}')
     logger.info(f'   ✅ Mistral : {"Oui" if MISTRAL_API_KEY else "Non"}')
-    logger.info(f'   ✅ OpenRouter : {"Oui" if OPENROUTER_API_KEY else "Non"}')
     logger.info(f'   ✅ NVIDIA : {"Oui" if NVIDIA_API_KEY else "Non"}')
     
     logger.info("📊 STATISTIQUES SUGAR BOT:")
@@ -505,7 +499,7 @@ async def on_ready():
             bot, "sugar", logger,
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Sugar Bot")
+             nvidia_client=nvidia_client, bot_label="Sugar Bot")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()
@@ -519,7 +513,7 @@ async def on_ready():
             "sugar", logger,
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Sugar Bot",
+             nvidia_client=nvidia_client, bot_label="Sugar Bot",
             tone_directive_provider=lambda author, message: tone_directive(message),
             enable_events=True,
             enable_interjections=False,   # décision « silence sauf si nommé »
@@ -951,7 +945,7 @@ async def on_message(message):
             key_manager=key_manager,
             mistral_client=mistral_client,
             groq_client=groq_client,
-            openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+             nvidia_client=nvidia_client,
             bot_label="Sugar Bot",
             max_tokens=150,
             gemini_max_tokens=150,

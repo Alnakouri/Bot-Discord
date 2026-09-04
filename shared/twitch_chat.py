@@ -277,7 +277,7 @@ def _load_dashboard_twitch_config(bot_id: str, logger) -> dict:
 
 def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = None,
                       key_manager=None, mistral_client=None, groq_client=None,
-                      openrouter_client=None, nvidia_client=None, bot_label: str | None = None,
+                       nvidia_client=None, bot_label: str | None = None,
                       system_prompt_provider=None,
                       tone_directive_provider=None,
                       profile_bio: str | None = None,
@@ -466,7 +466,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         key_manager=key_manager,
         mistral_client=mistral_client,
         groq_client=groq_client,
-        openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+         nvidia_client=nvidia_client,
         bot_label=bot_label,
         system_prompt_provider=system_prompt_provider,
         tone_directive_provider=tone_directive_provider,

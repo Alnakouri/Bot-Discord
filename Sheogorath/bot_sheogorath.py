@@ -29,7 +29,11 @@ from core.media_handler import process_image_ollama
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
 
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, details_de_quota, NVIDIA_BASE_URL
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, nvidia_kwargs, details_de_quota, NVIDIA_BASE_URL
+# ⚠️ La cascade inline de Sheogorath n'avait NI garde anti-fuite NI garde de reponse
+# vide : les deux vivaient dans le noyau, qu'elle recopie sans les emporter. On les
+# importe au lieu d'en faire une 8e copie.
+from core.llm_cascade import _est_vide, _fuite_de_raisonnement
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -201,8 +205,6 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
 # MEMORY SETTINGS
 conversation_history = {}
 MAX_HISTORY = 30 
@@ -218,9 +220,6 @@ key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", GEMINI_API_KEYS)
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
-key_manager.register_api("openrouter", [OPENROUTER_API_KEY] if OPENROUTER_API_KEY else [])
-
-
 # ANTI-REPETITION MEMORY (Par Serveur - ENHANCED)
 # Maintenant on garde les 10 dernières réponses pour éviter les cycles
   # {guild_id: ["réponse1", "réponse2", ...]} (max 10)
@@ -348,7 +347,7 @@ async def _daily_llm_call(system_prompt, user_message):
         system_prompt=system_prompt, transcript="", user_message=user_message,
         conversation_history=[], media_data=None, mime_type="",
         key_manager=key_manager, mistral_client=mistral_client,
-        groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+        groq_client=groq_client, nvidia_client=nvidia_client,
         bot_label="Sheogorath", temperature=0.5, max_tokens=60)
 fact_brain = FactMemory()
 
@@ -386,11 +385,7 @@ async def on_command_error(ctx, error):
 # Client Initialization
 
 
-openrouter_client = None
-
 try:
-    if OPENROUTER_API_KEY:
-        openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
         logger.info("✅ [SYSTEM] Cerveau OpenRouter connecté.")
 
 except Exception as e:
@@ -430,7 +425,7 @@ daily_bio = DiscordDailyBio(
     bot=bot, bot_id="sheogorath", bot_label="Sheogorath",
     personality_prompt=sheo_data.PERSONALITY_BASE,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client, nvidia_client=nvidia_client,
     system_prompt_provider=get_current_system_prompt,  # suit l'humeur du jour
     logger=logger, enabled=ENABLE_DAILY_BIO,
 ) if DiscordDailyBio else None
@@ -470,7 +465,7 @@ daily_status = DiscordDailyStatus(
     bot=bot, bot_id="sheogorath", bot_label="Sheogorath",
     personality_prompt=sheo_data.PERSONALITY_BASE, fallback_activities=_STATUS_FALLBACK,
     key_manager=key_manager, mistral_client=mistral_client,
-    groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+    groq_client=groq_client, nvidia_client=nvidia_client,
     system_prompt_provider=get_current_system_prompt,  # suit l'humeur du jour
     logger=logger, enabled=ENABLE_DAILY_STATUS,
 ) if DiscordDailyStatus else None
@@ -673,7 +668,6 @@ async def on_ready():
     logger.info(f'   ✅ Gemini : {len([k for k in GEMINI_API_KEYS if k])} clés')
     logger.info(f'   {"✅" if groq_client else "❌"} Groq')
     logger.info(f'   {"✅" if mistral_client else "❌"} Mistral')
-    logger.info(f'   {"✅" if openrouter_client else "❌"} OpenRouter')
     logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
     logger.info(f'--------------------------------------------------')
     
@@ -694,8 +688,7 @@ async def on_ready():
         twitch_announcer = setup_twitch_announcer(
             bot, "sheogorath", logger,
             personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
-            mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Sheogorath")
+            mistral_client=mistral_client, groq_client=groq_client, nvidia_client=nvidia_client, bot_label="Sheogorath")
         if twitch_announcer:
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()
@@ -779,8 +772,7 @@ async def on_ready():
                     mime_type="",
                     key_manager=key_manager,
                     mistral_client=mistral_client,
-                    groq_client=groq_client,
-                    openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+                    groq_client=groq_client, nvidia_client=nvidia_client,
                     bot_label="Sheogorath",
                     temperature=1.0,
                     max_tokens=80
@@ -849,8 +841,7 @@ async def on_ready():
         twitch_chat = setup_twitch_chat(
             "sheogorath", logger,
             personality_prompt=sheo_data.PERSONALITY_BASE, key_manager=key_manager,
-            mistral_client=mistral_client, groq_client=groq_client,
-            openrouter_client=openrouter_client, nvidia_client=nvidia_client, bot_label="Sheogorath",
+            mistral_client=mistral_client, groq_client=groq_client, nvidia_client=nvidia_client, bot_label="Sheogorath",
             system_prompt_provider=get_current_system_prompt,
             profile_bio=profile_bio,
             enable_events=True,
@@ -1784,6 +1775,22 @@ def _twitch_recent_responses():
     except Exception:
         return []
 
+async def _other_bot_in_focus(message):
+    """True si la conversation est manifestement tournée vers un AUTRE bot."""
+    if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
+        return True
+    try:
+        async for prev in message.channel.history(limit=4, before=message):
+            if prev.author == bot.user:
+                return False   # ce bot était déjà dans la boucle → ok d'enchaîner
+            if prev.author.bot:
+                return True    # un autre bot vient de parler → c'est SON échange
+            if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
+                return True    # un humain vient de nommer un autre bot
+    except Exception:
+        return False
+    return False
+
 @bot.event
 async def on_message(message):
     # 0. Anti-Self
@@ -2069,13 +2076,18 @@ async def on_message(message):
         intervention_chance += 0.05
     
     # Anti-incrustation : on ne s'invite pas dans un échange visiblement adressé à un AUTRE bot.
-    _other_bot_named = any(n in msg_lower for n in OTHER_BOT_NAMES)
-    is_proactive = (not is_mentioned and not is_reply and not message.author.bot
-                    and not _other_bot_named and not has_image
-                    and random.random() < intervention_chance)
-
-    if is_proactive:
-        logger.info(f"⚡ [PROACTIVITY] Sheogorath s'ennuie et décide d'intervenir ! ({intervention_chance*100:.1f}%)")
+    _other_bot_named = await _other_bot_in_focus(message)
+    is_proactive_candidate = (not is_mentioned and not is_reply and not message.author.bot
+                              and not has_image
+                              and random.random() < intervention_chance)
+    
+    is_proactive = False
+    if is_proactive_candidate:
+        if _other_bot_named:
+            logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Sheogorath se tait.")
+        else:
+            logger.info(f"⚡ [PROACTIVITY] Sheogorath s'ennuie et décide d'intervenir ! ({intervention_chance*100:.1f}%)")
+            is_proactive = True
 
 
     
@@ -2467,103 +2479,6 @@ async def on_message(message):
 
             # 2. OpenRouter (tout modèle OpenRouter de la cascade, avec tool-calling)
             #    NB: garde élargie — plus de filtre "grok" (le modèle :free n'est plus un Grok).
-            elif client_type == "openrouter" and openrouter_client:
-                msgs = [{"role": "system", "content": f"{system_instruction}\nCONTEXT: {transcript}"}]
-                for msg in conversation_history[channel_id]:
-                    r = "user" if msg["role"] == "user" else "assistant"
-                    msgs.append({"role": r, "content": msg["parts"][0]})
-                if has_image and media_data:
-                    b64_image = base64.b64encode(media_data).decode('utf-8')
-                    user_content = [
-                        {"type": "text", "text": f"{message.author.name}: {user_message}"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}
-                        }
-                    ]
-                    msgs.append({"role": "user", "content": user_content})
-                else:
-                    msgs.append({"role": "user", "content": f"{message.author.name}: {user_message}"})
-                
-                try:
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            openrouter_client.chat.completions.create,
-                            model=model_name,
-                            messages=msgs,
-                            temperature=1.0,
-                            max_tokens=max_tokens_val,
-                            tools=OPENAI_TOOLS_DEFINITION,
-                            tool_choice="auto",
-                            extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
-                        ),
-                        timeout=45 if media_data else 15
-                    )
-                except Exception as _tool_err:
-                    # Modèle sans support tool-use (ex. Dolphin-Venice:free → 404 "No endpoints
-                    # found that support tool use") : on réessaie SANS outils au lieu de tomber
-                    # en cascade. On perd le tool-calling pour CE modèle, pas la réponse.
-                    logger.info(f"🔧 [OpenRouter] {model_name} sans tool-use → réessai sans outils : {_tool_err}")
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            openrouter_client.chat.completions.create,
-                            model=model_name,
-                            messages=msgs,
-                            temperature=1.0,
-                            max_tokens=max_tokens_val,
-                            extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
-                        ),
-                        timeout=45 if media_data else 15
-                    )
-
-                resp_msg = chat.choices[0].message
-                
-                # Handling Tool Calls
-                if resp_msg.tool_calls:
-                    for tool_call in resp_msg.tool_calls:
-                        tool_name = tool_call.function.name
-                        import json
-                        args = json.loads(tool_call.function.arguments)
-                        
-                        logger.info(f"🛠️ [OpenRouter Agent] Sheogorath appelle l'outil : {tool_name}({args})")
-                        
-                        tool_result = "Action impossible."
-                        if tool_name == "wabbajack":
-                            tool_result = await tool_wabbajack(args["user_id"], args["reason"], message.channel)
-                        elif tool_name == "set_mood":
-                            tool_result = tool_set_mood(args["mood"])
-                        elif tool_name == "start_identity_theft":
-                            tool_result = await tool_start_impersonation(args["user_id"], message.channel)
-                        
-                        # Feedback loop
-                        msgs.append(resp_msg)
-                        msgs.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_name,
-                            "content": tool_result
-                        })
-                    
-                    # Seconde passe
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            openrouter_client.chat.completions.create, model=model_name, messages=msgs, max_tokens=max_tokens_val, extra_headers={"HTTP-Referer": "https://discord-bot.local", "X-Title": "Sheogorath Bot"}
-                        ),
-                        timeout=45 if media_data else 15
-                    )
-                    response_text = chat.choices[0].message.content
-                else:
-                    response_text = resp_msg.content
-
-                # Un modèle :free peut renvoyer un contenu VIDE sans exception →
-                # on ne casse pas la cascade sur du vide, on tente l'échelon suivant.
-                if not (response_text and response_text.strip()):
-                    logger.warning(f"⚠️ [OPENROUTER {model_name}] réponse vide → échelon suivant")
-                    response_text = None
-                    continue
-                logger.info(f"😈 [OPENROUTER {model_name}] Sheogorath a parlé !")
-                break
-
             # 3. MISTRAL
             elif client_type == "mistral" and mistral_client:
                 if media_data is not None:
@@ -2600,7 +2515,38 @@ async def on_message(message):
                 logger.info(f"⚡ [GROQ {model_name}] Sheogorath a répondu !")
                 break
 
-
+            # 5. NVIDIA — 4e fournisseur, quota independant des trois autres.
+            # ⚠️ Ajoute le 2026-09-05. Le lot NVIDIA du 04/09 n'avait cable que
+            # shared/llm_cascade.py et ses copies vendorisees : cette cascade-ci est
+            # INLINE, l'echelon `nvidia` y tombait donc dans le vide a chaque fois.
+            elif client_type == "nvidia" and nvidia_client:
+                if media_data is not None:
+                    logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
+                chat = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        nvidia_client.chat.completions.create,
+                        messages=[{"role": "system", "content": system_instruction},
+                                  {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nLAST MSG: {user_message}"}],
+                        model=model_name, temperature=0.9, max_tokens=max_tokens_val,
+                        # ⚠️ SANS ceci, nemotron RECOPIE sa pensée dans `content`, et
+                        # met six fois plus de temps à le faire.
+                        **nvidia_kwargs(model_name),
+                    ),
+                    timeout=15  # borne TEXTE : ce client ne transporte pas le media
+                )
+                # Filet malgré tout : le paramètre pourrait cesser d'être honoré.
+                if _fuite_de_raisonnement(chat.choices[0].message):
+                    logger.warning(f"⚠️ [NVIDIA {model_name}] raisonnement recopié dans la réponse → échelon suivant")
+                    _raison = "fuite_raisonnement"
+                    continue
+                response_text = chat.choices[0].message.content
+                if _est_vide(response_text):
+                    logger.warning(f"⚠️ [NVIDIA {model_name}] réponse vide → échelon suivant")
+                    response_text = None
+                    _raison = "vide"
+                    continue
+                logger.info(f"🟩 [NVIDIA {model_name}] Sheogorath a répondu !")
+                break
 
         except Exception as e:
             error_msg = str(e)

@@ -94,7 +94,7 @@ class DailyProfileMixin:
                 key_manager=self.key_manager,
                 mistral_client=self.mistral_client,
                 groq_client=self.groq_client,
-                openrouter_client=self.openrouter_client, nvidia_client=getattr(self, "nvidia_client", None),
+                 nvidia_client=getattr(self, "nvidia_client", None),
                 bot_label=self.bot_label or self.bot_id,
                 temperature=0.9,
                 max_tokens=120
