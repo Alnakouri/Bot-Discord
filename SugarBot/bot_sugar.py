@@ -190,6 +190,7 @@ load_secure_env(Path(__file__).parent)
 
 # IMPORT LLM CASCADE
 from core.llm_cascade import generate_response
+from core.transcript import ligne_de_contexte
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
 
@@ -872,10 +873,9 @@ async def on_message(message):
         messages_list.append(hist_msg)
     
     for hist_msg in reversed(messages_list):
-        # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
-        if hist_msg.author.bot and hist_msg.author != bot.user:
-            continue
-        transcript += f"{hist_msg.author.name}: {hist_msg.content}\n"
+        ligne = ligne_de_contexte(hist_msg, bot.user, avec_mention=False)
+        if ligne:
+            transcript += ligne
     
     # ANTI-RÉPÉTITION (fusion Discord + Twitch : pont anti-doublon inter-canaux)
     recent_responses = merge_recent_responses(

@@ -25,6 +25,7 @@ import logging
 from pathlib import Path
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.media_handler import process_image_ollama
+from core.transcript import ligne_de_contexte
 
 from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs
 
@@ -2275,10 +2276,9 @@ async def on_message(message):
             
     # Reverse to get Chronological Order (Oldest -> Newest)
     for hist_msg in reversed(messages_list):
-        # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
-        if hist_msg.author.bot and hist_msg.author != bot.user:
-            continue
-        transcript += f"{hist_msg.author.name} ({hist_msg.author.mention}): {hist_msg.content}\n"
+        ligne = ligne_de_contexte(hist_msg, bot.user, avec_mention=True)
+        if ligne:
+            transcript += ligne
 
     # NB : l'activité est déjà injectée (occasionnellement) dans system_instruction.
     # On ne la ré-injecte PAS ici (l'ancien `current_sheo_activity` était gelé sur

@@ -23,6 +23,7 @@ from datetime import datetime
 from core.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
 from core.media_handler import process_image_ollama
 from core.llm_cascade import generate_response
+from core.transcript import ligne_de_contexte
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -947,10 +948,9 @@ async def on_message(message):
         messages_list.append(hist_msg)
     
     for hist_msg in reversed(messages_list):
-        # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
-        if hist_msg.author.bot and hist_msg.author != bot.user:
-            continue
-        transcript += f"{hist_msg.author.name}: {hist_msg.content}\n"
+        ligne = ligne_de_contexte(hist_msg, bot.user, avec_mention=False)
+        if ligne:
+            transcript += ligne
     
     # ANTI-RÉPÉTITION (fusion Discord + Twitch : pont anti-doublon inter-canaux)
     recent_responses = merge_recent_responses(

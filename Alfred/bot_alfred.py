@@ -36,6 +36,7 @@ import logging
 from datetime import datetime, timedelta
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.media_handler import process_image_ollama
+from core.transcript import ligne_de_contexte
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -1605,10 +1606,9 @@ async def on_message(message):
 
     # Reverse to get Chronological Order (Oldest -> Newest)
     for hist_msg in reversed(messages_list):
-        # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
-        if hist_msg.author.bot and hist_msg.author != bot.user:
-            continue
-        transcript += f"{hist_msg.author.name} ({hist_msg.author.mention}): {hist_msg.content}\n"
+        ligne = ligne_de_contexte(hist_msg, bot.user, avec_mention=True)
+        if ligne:
+            transcript += ligne
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_name_mentioned)

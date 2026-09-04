@@ -27,6 +27,7 @@ import base64
 from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.media_handler import process_image_ollama
+from core.transcript import ligne_de_contexte
 try:
     from shared.games import setup_games
     from games_persona import PERSONA
@@ -1293,10 +1294,9 @@ async def on_message(message):
             
     # Reverse to get Chronological Order (Oldest -> Newest)
     for hist_msg in reversed(messages_list):
-        # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
-        if hist_msg.author.bot and hist_msg.author != bot.user:
-            continue
-        transcript += f"{hist_msg.author.name} ({hist_msg.author.mention}): {hist_msg.content}\n"
+        ligne = ligne_de_contexte(hist_msg, bot.user, avec_mention=True)
+        if ligne:
+            transcript += ligne
             
     # INJECTION ACTIVITÉ (STATUS)
     transcript += f"\n[TON ACTIVITÉ ACTUELLE (STATUS DISCORD)] : Tu es en train de : '{current_maiq_activity}'."

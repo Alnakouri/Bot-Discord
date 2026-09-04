@@ -14,7 +14,8 @@ MODULES = [
     "safe_client.py",
     "response_memory.py",
     "models.py",
-    "api_tracking.py"
+    "api_tracking.py",
+    "transcript.py"
 ]
 
 MODULE_NAMES = [m[:-3] for m in MODULES]

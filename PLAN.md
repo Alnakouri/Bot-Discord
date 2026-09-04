@@ -1,179 +1,166 @@
-# PLAN — le 429 n'est plus le monstre qu'on croyait, et `on_ready` se sabote a chaque reconnexion
+# PLAN — le transcript amputé fait mentir les bots
 
 Redaction : Claude. Execution : Antigravity.
 
-Point de depart : la fiche de reprise annoncait comme « prochain chantier » le **429 a
-3600 s**, l'**`error_code = 0`** du suivi, et l'hypothese des **6 cles sur un meme
-compte**. Avant d'ecrire le plan, j'ai relu le code et interroge `data/api_usage.db`
-(261 lignes). **Deux tiers de ce chantier n'existent plus.** Ce qui reste est reel mais
-petit, et un defaut plus concret a ete exhume des logs du test live.
+Trouve au **test live du 2026-09-04 (00:12-00:30)**, en regardant les 6 bots repondre.
 
-⚠️ **Ce plan ne repare aucun incident observe.** Le 429 n'a pas mordu depuis que le suivi
-fonctionne. C'est de la prevention sur une mine amorcee ; le lot 2, lui, tourne
-aujourd'hui.
+A 00:28, l'utilisateur ecrit **seulement** `@Johnny silverhand`. Johnny repond :
 
----
+> **Sheogorath qui beugue ? Encore.** Ce dieu du fromage a plus de bugs qu'un netrunner
+> sous Adrenaline. 🧀🔥
 
-## Ce que les donnees disent, et qui change le plan  🔵
+Personne n'avait parle d'un bug de Sheogorath. Sheo venait au contraire de repondre
+normalement deux fois (`22:26:33` et `22:27:07`, GROQ `gpt-oss-120b`, sans une erreur).
 
-### Constat 1 — le cooldown de 3600 s ne concerne QUE Gemini
-
-`report_error` a **10 sites d'appel** (hors copies vendorisees), et **tous les dix**
-passent `"gemini"` en dur :
-
-```
-Alfred/bot_alfred.py:887, :1817
-MaiqBot/bot_maiq.py:607, :823, :999, :1537
-Sheogorath/bot_sheogorath.py:1364, :2578
-shared/llm_cascade.py:245
-```
-
-Un 429 de **Mistral, Groq ou OpenRouter n'atteint jamais le gestionnaire de cles.** La
-punition d'une heure n'a donc jamais pu tomber que sur une cle Gemini.
-
-### Constat 2 — aucun 429 Gemini depuis que le suivi fonctionne
-
-Les **25** lignes `gemini / 429` de la base datent toutes de l'ere anonyme
-(**2026-04-17 → 2026-06-19**, `model = NULL`, `bot_name = 'unknown'`), avant
-[[plan-suivi-appels-api]]. Les 429 de l'ere actuelle sont :
-
-| quand | api / modele | bot | consequence reelle |
-|---|---|---|---|
-| 29-31/08 (x4) | `groq` / `openai/gpt-oss-120b` | sheo | **aucune** — Groq n'appelle pas `report_error` |
-| 03/09 (x2) | `mistral` / `mistral-small-latest` | sheo, sugar | **aucune** — idem |
-
-La memoire disait « Mistral a renvoye un 429 a Sheo et un a Sugar, la cle est ecartee une
-heure ». **La premiere moitie est vraie, la seconde est fausse.**
-
-### Constat 3 — `error_code = 0` est deja resolu, il n'y a rien a faire
-
-**8 lignes sur 261** portent `error_code = 0`, et **toutes** portent
-`raison = 'TimeoutError'` (5 groq, 3 gemini). La colonne `raison`, ajoutee par
-[[plan-suivi-appels-api]], repond deja a la question « quota ou timeout ? ». Le reste de
-la base porte de vrais codes : 404, 429, 403, 400, 503, 500.
-
-⚠️ **Cette partie du chantier est annulee.** La fiche memoire decrivait un etat anterieur
-au correctif qui l'a resolu.
-
-### Constat 4 — les 403 Mistral sont deja fermes, ne pas les rouvrir
-
-7 lignes `mistral-large-latest / 403` (alfred 4, sheo 3) des **29-30/08**. C'est le modele
-hors free tier, deja identifie et remplace le 30/08 : `shared/models.py:19` le nomme
-`MISTRAL_HORS_TIER`. **Aucune ligne apres le correctif.** Rien a faire, c'est note ici
-pour qu'on ne parte pas deux fois a sa poursuite.
-
-### Ce qui reste vrai, et qu'on corrige
-
-`shared/api_manager.py:19` — `cooldown_times[429] = 3600`. **Une heure est une valeur
-inventee.** Un 429 Gemini peut vouloir dire « trop de requetes cette **minute** » (RPM) ou
-« quota du **jour** epuise » (RPD) : une heure est trop long pour la premiere et trop
-court pour la seconde. On devine, alors que **le fournisseur donne la reponse**.
+⚠️ **Ce n'est pas une hallucination gratuite : c'est la bonne conclusion tiree d'un
+contexte faux.** Le correctif porte donc sur le contexte, pas sur le prompt.
 
 ---
 
-## Lot 1 — obeir au delai que le fournisseur annonce, au lieu de le deviner  🟠
+## Le mecanisme, verifie dans le code  🔵
 
-`google.genai.errors.APIError` expose `.details` : le JSON de la reponse. Pour un 429,
-Google y place un bloc `google.rpc.RetryInfo` avec un `retryDelay` (ex. `"24s"`). C'est la
-seule source d'autorite sur la duree.
+`JohnnyBot/bot_johnny.py:949-953` — et la **meme boucle**, au mot pres, dans 4 autres
+bots :
 
-### Correction demandee
+```python
+for hist_msg in reversed(messages_list):
+    # Silence total entre bots : on n'inclut PAS les autres bots dans le contexte.
+    if hist_msg.author.bot and hist_msg.author != bot.user:
+        continue
+    transcript += f"{hist_msg.author.name}: {hist_msg.content}\n"
+```
 
-1. Dans `shared/api_manager.py`, `report_error` accepte un argument optionnel
-   `retry_delay_s` (defaut `None`).
-2. Sur un **429** :
-   - `retry_delay_s` fourni → cooldown = cette valeur, **bornee a [5 s, 900 s]** ;
-   - absent → **60 s**, pas 3600. Un free tier qui refuse se rouvre en secondes ou en
-     minutes, pas en heures.
-3. `cooldown_times[429]` disparait au profit de ces deux regles. Les autres codes du
-   dictionnaire restent ou ils sont (ils ne servent qu'a reconnaitre l'incident depuis
-   `9eb9d2f`).
-4. Dans `shared/llm_cascade.py:242-245`, extraire le `retryDelay` de l'exception Gemini et
-   le passer a `report_error`. L'extraction doit etre **defensive** : `details` peut etre
-   un dict, une liste, ou absent ; un format inattendu rend `None` et on retombe sur les
-   60 s. **Aucune exception ne doit sortir de cet extracteur** — il tourne deja dans un
-   `except`.
+Ne survivent que **l'utilisateur** et **le bot lui-meme**. Johnny n'avait pas parle depuis
+plusieurs minutes : son `CONTEXTE DU SALON` se reduisait donc a
 
-⚠️ **Ne pas etendre `report_error` aux autres fournisseurs dans ce lot.** L'asymetrie du
-constat 1 est reelle mais c'est une **decision de design**, pas un bug : la traiter
-demanderait de decider ce que « sante d'une cle Mistral » veut dire quand la cascade la
-depasse deja toute seule. A poser dans une fiche separee, pas ici.
+```
+CONTEXTE DU SALON (Chronologique) :
+ledev: sheo
+ledev: chut
+ledev: @M'aiq
+ledev: @Johnny silverhand
+```
 
-⚠️ Rappel [[decision-independance-stricte-vendoring-core]] : `api_manager.py` existe en
-**7 exemplaires** (`shared/` + `<Bot>/core/` x6). `tests/test_api_manager.py:59` verifie
-deja que les 7 portent la meme regle — il **tombera** si les copies ne sont pas
-regenerees. C'est voulu.
+⚠️ **Un humain qui appelle quatre noms d'affilee sans qu'aucun ne reponde, ca ressemble a
+une panne.** Le modele a lu ce qu'on lui a donne et l'a rationalise de la facon la plus
+evidente.
 
-### Tests demandes
-- un 429 **avec** `retry_delay_s=24` → cooldown a 24 s (pas 3600) ;
-- un 429 **sans** delai → 60 s ;
-- un `retry_delay_s` aberrant (`0`, `-1`, `100000`, `"vingt"`) → borne appliquee, aucune
-  exception ;
-- l'extracteur rend `None` sur `details` absent / liste vide / JSON inattendu, **sans
-  lever** ;
-- un cas nominal ou le `retryDelay` de Google est bien lu depuis une structure `details`
-  realiste (RetryInfo imbrique dans `error.details[]`).
+⚠️ **Masquer une information et la supprimer ne sont pas la meme chose.**
+[[plan-anti-contamination-transcript]] voulait empecher un bot de **recopier le verbatim**
+d'un autre ; [[plan-silence-total-bots]] les a purement **effaces**. Le premier protege,
+le second **fabrique un mensonge**.
+
+Meme famille que [[bug-sheo-bluff-images]] : le bot **affirme un fait sur un passe qui n'a
+pas eu lieu**. La cause y etait un prompt monte avant verification ; ici c'est un
+transcript ampute. Le symptome est le meme.
+
+Indice plus faible, meme soiree : Sugar, appelee **une** fois (`22:25:10`,
+`[NOM ALTERNATIF]`), ouvre par « **Trois fois** mon nom en un clin d'oeil ». Un decompte
+invente, sur un contexte du meme genre. Ne pas en faire un critere de reussite : c'est
+peut-etre sa coquetterie. Le cas Johnny suffit.
+
+### Les 5 sites exacts
+
+| Fichier | Ligne | Format |
+|---|---|---|
+| `Alfred/bot_alfred.py` | 1606-1610 | `nom (mention): contenu` |
+| `MaiqBot/bot_maiq.py` | 1295-1299 | `nom (mention): contenu` |
+| `Sheogorath/bot_sheogorath.py` | 2277-2281 | `nom (mention): contenu` |
+| `JohnnyBot/bot_johnny.py` | 949-953 | `nom: contenu` |
+| `SugarBot/bot_sugar.py` | 874-878 | `nom: contenu` |
+
+⚠️ **Malena n'est PAS concernee.** Elle a **sa propre cascade inline** — le rappel de
+[[bug-cascade-reponse-vide]] : « corriger `shared/` ne la couvre pas » — et cette cascade
+ne recoit que `sys_prompt` et `prompt`. Aucun contexte de salon nulle part : le mot
+`transcript` n'apparait qu'une fois dans son fichier, a `bot_malena.py:149`, et c'est
+`transcript=""`. Ne pas lui en fabriquer un ici : ce serait un changement de comportement,
+pas un correctif. **5 bots, pas 6.**
 
 ---
 
-## Lot 2 — `on_ready` rejoue a chaque reconnexion et avorte son propre travail  🔴
+## Correction demandee  🟠
 
-Trouve dans les logs du test live du 03/09, sans rapport avec le lot 1.
+### 1. Un helper partage, parce qu'il y a 5 copies de la meme boucle
 
+Nouveau `shared/transcript.py` :
+
+```python
+def ligne_de_contexte(hist_msg, moi, *, avec_mention=False):
+    """Rend la ligne a mettre au transcript pour ce message, ou None s'il n'y a rien a dire."""
 ```
-ERROR discord.client Ignoring exception in on_ready
-  File "/app/bot/bot_sheogorath.py", line 667, in on_ready
-    status_loop_sheo.start()
-RuntimeError: Task is already launched and is not completed.
-```
 
-`on_ready` **n'est pas un evenement de demarrage** : discord.py le refire a chaque
-reconnexion / RESUME du WebSocket. Le premier `.start()` sans garde leve, l'exception
-remonte, discord.py l'avale (`Ignoring exception`) — et **tout ce qui suit dans la
-fonction n'est jamais rejoue**. Chez Sheo, ce sont les lignes 668 a 868 :
-`mood_changer`, `daily_rumor_check_sheo`, `birthday_check_sheo`, `daily_bio_loop_sheo`,
-`twitch_poll_loop`, `daily_backup_check`, `check_missed_mentions_sheo`,
-`decree_cleanup_loop`.
+- message de l'utilisateur → la ligne verbatim, dans le format demande ;
+- message du bot **lui-meme** (`hist_msg.author == moi`) → verbatim aussi : il doit savoir
+  ce qu'il a dit ;
+- message d'un **autre bot** → une **trace neutre**, sans une lettre de son contenu :
+  `f"{nom} : [a repondu]"`.
 
-Compte sur 8 h le 03/09 : **Sheo 4x, Alfred 2x, M'aiq 2x, Johnny 2x, Malena 0, Sugar 0.**
+C'est tout ce que la trace doit dire. Elle repond a la seule question que le modele se
+posait — « est-ce que quelqu'un a repondu ? » — sans rien reveler du **quoi**, qui est
+precisement ce que [[plan-anti-contamination-transcript]] protege.
 
-⚠️ **C'est silencieux** : les boucles lancees au tout premier `on_ready` continuent de
-tourner, donc le bot a l'air sain. Ce qu'on perd, c'est toute initialisation **posterieure
-a la ligne fautive** — un `.start()` conditionnel dont le toggle a change, une boucle morte
-entre-temps, et tout ce qu'on ajoutera plus tard a la fin de `on_ready`.
+⚠️ **Ne pas nommer le modele, l'humeur, ni la longueur.** Tout ce qu'on ajoute au-dela de
+« quelqu'un a repondu » redevient de la contamination.
 
-### Correction demandee
-1. Sur **chaque** `.start()` de boucle `tasks.loop` appele dans `on_ready`, dans les **6
-   bots** : `if not <boucle>.is_running(): <boucle>.start()`.
-2. **Le modele a copier existe deja dans le depot** : Malena (`bot_malena.py:474-481`) et
-   Sugar (`bot_sugar.py:481-488`) gardent **deja** leurs `.start()` par `is_running()` —
-   c'est pour ca qu'elles n'apparaissent pas dans le compte des erreurs. Reprendre leur
-   forme telle quelle dans les 4 autres bots.
-   ⚠️ Mais elles ne sont pas indemnes : **`twitch_poll_loop.start()` est sans garde chez
-   les deux** (`bot_malena.py:500`, `bot_sugar.py:499`). La ligne n'est atteinte que si
-   Twitch est actif — meme mine, simplement pas encore amorcee. La corriger aussi.
-3. Ne **pas** deplacer les `.start()` hors de `on_ready` (dans `setup_hook`, par exemple) :
-   c'est un refactor plus large, hors de ce plan.
+### 2. Cabler les 5 bots
 
-### Test demande
-Un test par bot, ou un test parametre sur les 6 : appeler `on_ready` **deux fois** et
-verifier qu'aucune exception ne sort et que la **derniere** instruction de la fonction a
-bien ete atteinte les deux fois. ⚠️ Un test qui verifie seulement « pas d'exception au
-2e appel » ne prouve rien de ce qui compte : c'est **l'execution jusqu'au bout** qui est
-en cause.
+Remplacer les 5 boucles par un appel au helper, en gardant chacun **son** format
+(`avec_mention=True` pour Alfred, M'aiq et Sheo). Ne rien changer d'autre dans ces
+boucles : la collecte de `active_mortals` reste ou elle est.
 
-Indice a garder sous le coude, non explique : 5 `MOOD CHANGE` dans la **meme seconde** a
-`14:00:40`, juste apres une reconnexion. Probablement lie. **Ne pas partir dessus dans ce
-plan** — le noter si le lot 2 l'eclaire au passage.
+### 3. Le vendoring, qui est le vrai piege ici
+
+⚠️ `tools/vendor_core.py` porte une liste `MODULES` **en dur** : un fichier neuf dans
+`shared/` n'est **pas** copie tant qu'il n'y figure pas. Ajouter `"transcript.py"` a
+`MODULES`, puis relancer `python tools/vendor_core.py`, puis verifier que les 6
+`<Bot>/core/transcript.py` existent. Sans ca les bots plantent a l'import une fois
+deployes, et **les tests, qui importent `shared/`, ne verront rien**.
+
+⚠️ Import cote bot : `from core.transcript import ligne_de_contexte`, dans le meme
+`try/except ImportError` que les autres modules du noyau ([[bots-independants]]).
 
 ---
+
+## Tests demandes
+
+1. **La trace remplace le verbatim** — un historique contenant le message d'un autre bot
+   produit un transcript qui **contient** `[a repondu]` et **ne contient pas** le contenu
+   de ce message. C'est la garantie anti-contamination, jamais testee jusqu'ici.
+2. **Le bot se voit lui-meme** — son propre message ressort **verbatim**.
+3. **Le cas Johnny, reconstitue** — l'historique exact du 04/09 (`sheo`, reponse de Sheo,
+   `chut`, reponse de Sheo, `@M'aiq`, reponse de M'aiq, `@Johnny silverhand`) doit
+   produire un transcript ou **les reponses des autres apparaissent**. ⚠️ Ce test ne peut
+   pas verifier que Johnny cesse d'inventer — il verifie que **le contexte ne ment plus**.
+   Ne pas pretendre le contraire dans son nom ni dans son message d'echec.
+4. **Les 5 bots utilisent le helper** — sur le modele de
+   `tests/test_api_manager.py:59` : partir de la liste des 5, compter les fichiers
+   inspectes, `assert trouves == 5`. ⚠️ **Deriver le compte de la liste de depart, pas de
+   la boucle.**
+5. **Le module est vendorise** — les 6 `<Bot>/core/transcript.py` existent et sont
+   identiques a la source (la sonde `tools/sonde_core_drift.py` couvre deja ce role :
+   verifier qu'elle voit le nouveau fichier, sinon le test ci-dessus ne prouve rien).
+
+⚠️ **Verifier chaque test par MUTATION** : remettre le `continue` dans un bot, voir le
+test 4 tomber ; faire rendre le verbatim par le helper, voir le test 1 tomber. Retirer le
+correctif et voir le test rougir **pour la bonne raison** est la seule preuve.
+
+---
+
+## Ce que ce plan ne fait PAS
+
+- Il ne touche pas a `on_message` : **un bot continue de ne jamais repondre a un bot**
+  ([[plan-silence-total-bots]]). Seul le CONTEXTE change.
+- Il ne touche pas a la garde `_other_bot_in_focus` ([[plan-anti-incrustation-4bots]]),
+  qui lit le salon directement et non le transcript. Elle a fonctionne toute la soiree du
+  04/09 (`[ANTI-INCRUSTATION] … se tait`, Johnny 2x, Sugar 1x) : ne pas y toucher.
+- Il ne donne pas de transcript a Malena.
 
 ## Regles de travail (rappel)
 
-- **Verifier chaque nouveau test par MUTATION** : retirer le correctif, voir le test
-  tomber pour la **bonne** raison. C'est la seule preuve.
 - **Ne jamais dire « c'est bon » avant que la CI soit verte** — le local ment sur tout ce
-  qui depend de l'environnement (cles API presentes sur la machine).
+  qui depend de l'environnement.
 - Deux `pytest` en parallele font echouer `tests/test_dashboard_restart.py` (port fixe
-  8599) : ce n'est pas une regression, relancer seul.
-- Deploiement : le source est **bind-monte**, un `docker restart` suffit, pas de rebuild.
+  8599) : relancer seul.
+- Un fichier de test neuf doit etre **suivi par git**, sinon
+  `tests/test_depot_complet.py` refuse la suite (c'est voulu).
+- Deploiement : le source est **bind-monte**, un `docker restart` suffit.
