@@ -75,15 +75,23 @@ sur mesures réelles (`tools/sonde_modeles_persona.py` envoie le vrai prompt de 
 
 | Bot | Tête de cascade | Pourquoi |
 |-----|-----------------|----------|
-| **Alfred** | `mistral-small-latest` | Ironie sèche de majordome, registre « Monsieur » tenu |
-| **Johnny** | `mistral-small-latest` | Seul à sortir l'argot de rue sans l'édulcorer |
+| **Alfred** | `ministral-14b-latest` | Ironie sèche de majordome, registre « Monsieur » tenu |
+| **Johnny** | `ministral-14b-latest` | Seul à sortir l'argot de rue sans l'édulcorer |
 | **Sheogorath** | `openai/gpt-oss-120b` (Groq) | Sort Wabbajack, Haskill et le fromage de lui-même |
 | **Sugar Bot** | `gemini-3.5-flash-lite` | Tranche sans meubler, garde le vocabulaire maison |
 | **M'aiq** | `gemini-3.5-flash-lite` | Les meilleures faussetés cryptiques |
-| **Malena** | `mistral-small-latest` | L'argot marseillais sort tout seul |
+| **Malena** | `ministral-14b-latest` | L'argot marseillais sort tout seul |
 
 Chaque cascade mélange des **fournisseurs différents** : leurs quotas sont indépendants,
 donc si l'un limite, l'échelon suivant répond quand même.
+
+> [!IMPORTANT]
+> **Toute la famille `mistral-*` est plafonnée depuis le 2026-09-04** (429 permanent :
+> `mistral-small`, `mistral-medium` et `magistral-small`). Ce n'est ni un problème de clé
+> — les 6 bots ont des clés distinctes et valides — ni une limite par minute : le refus
+> persiste après 70 s d'inactivité. Seule la famille `ministral-*` répond encore, d'où la
+> bascule vers `ministral-14b-latest`, choisi sur sonde réelle (90 appels, les 6 personas).
+> Un test interdit le retour du modèle plafonné dans les cascades.
 
 > [!WARNING]
 > **Mistral Large a été retiré de toutes les cascades le 2026-08-30** : il rend
@@ -99,8 +107,8 @@ Là, c'est la **capacité** du modèle qui commande, pas le ton :
 | Rôle | Cascade |
 |------|---------|
 | 🖼️ Vision & audio | `gemini-3.5-flash` → `gemini-3.5-flash-lite` |
-| 🧠 Raisonnement complexe | `gemini-3.5-flash` → `mistral-small-latest` → `openai/gpt-oss-120b` |
-| 📢 Annonces de live | `gemini-3.5-flash-lite` → `mistral-small-latest` → `openai/gpt-oss-120b` |
+| 🧠 Raisonnement complexe | `gemini-3.5-flash` → `ministral-14b-latest` → `openai/gpt-oss-120b` |
+| 📢 Annonces de live | `gemini-3.5-flash-lite` → `ministral-14b-latest` → `openai/gpt-oss-120b` |
 
 > [!NOTE]
 > Les annonces de live sont **publiques** : c'est la qualité de langue qui prime, pas le

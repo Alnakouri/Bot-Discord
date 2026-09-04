@@ -190,6 +190,28 @@ def _norm(s: str) -> str:
     return "".join(c for c in s if unicodedata.category(c) != "Mn")
 
 
+def strip_markdown_emphasis(reply):
+    """Retire les `*...*` et `_..._` : le prompt de Sheogorath les INTERDIT.
+
+    ⚠️ Mesure du 2026-09-04 (sonde des 6 personas, 3 modeles Mistral) : Sheogorath est le
+    SEUL bot dont le prompt interdit explicitement les asterisques — « PAS DE NARRATION :
+    jamais d'actions... ni parentheses, ni asterisques », en tete, en majuscules, avec un
+    emoji d'interdiction — et c'est le SEUL a 9/9 reponses qui en contiennent. Le taux le
+    plus eleve des six.
+
+    Une regle de prompt oriente ; elle ne garantit rien. Seul un filet deterministe
+    garantit. Les mots sont conserves, seuls les marqueurs tombent."""
+    if not reply:
+        return reply
+    # `**gras**` puis `*italique*` ; `_..._` seulement entre limites de mots, pour ne pas
+    # amputer un pseudo comme `le_dev`.
+    # ⚠️ `**gras**` d'abord, sinon `**x**` laisse un asterisque orphelin.
+    nettoye = re.sub(r'\*\*(\S(?:[^*]*\S)?)\*\*', r'\1', reply)
+    nettoye = re.sub(r'\*(\S(?:[^*]*\S)?)\*', r'\1', nettoye)
+    nettoye = re.sub(r'(?<![\w])_([^_]+?)_(?![\w])', r'\1', nettoye)
+    return nettoye
+
+
 def _strip_echo_opening(reply, user_message, max_strips=2):
     """Coupe une ouverture qui HURLE l'insulte du mortel en écho (« Oh, "FACE DE PET" ! »,
     « NUL ?! ») et garde la vraie vanne derrière. Ne touche PAS :
@@ -223,7 +245,11 @@ def _strip_echo_opening(reply, user_message, max_strips=2):
         caps_tokens = re.findall(r"[A-ZÀ-ÖØ-Þ]{3,}", head)
         is_shouted_echo = bool({_norm(t) for t in caps_tokens} & user_words)
         # Tête = contient une citation en écho du mortel ?
-        raw_matches = re.findall(r'"([^"]+?)"|«([^»]+?)»|“([^”]+?)”|‘([^’]+?)’|\'([^\']+?)\'', head)
+        # ⚠️ Le markdown `*mot*` compte comme une citation. Sonde du 2026-09-04 : un
+        # modele a ouvert par `*Nul* ?!` — l'echo interdit — et il est passe, parce que
+        # ce motif n'etait ni un cri (pas de MAJUSCULES) ni une citation reconnue.
+        head_demarque = re.sub(r'\*{1,2}([^*]+?)\*{1,2}', r'"\1"', head)
+        raw_matches = re.findall(r'"([^"]+?)"|«([^»]+?)»|“([^”]+?)”|‘([^’]+?)’|\'([^\']+?)\'', head_demarque)
         quoted_segments = [seg for tup in raw_matches for seg in tup if seg]
         is_quoted_echo = any(
             (sig := {w for w in re.findall(r"\w+", _norm(seg)) if len(w) >= 3} - _ECHO_STOPWORDS)
@@ -278,6 +304,11 @@ def postprocess_response(response_text, fact_brain, user_id, original_message, m
 
     # 2.7 Coupe l'ouverture-perroquet qui HURLE l'insulte en écho ("Oh, FACE DE PET !")
     response_text = _strip_echo_opening(response_text, original_message)
+
+    # 2.75 Retire les asterisques — INTERDITES par le prompt, produites quand meme 9/9.
+    # ⚠️ APRES _strip_echo_opening : c'est le marqueur `*...*` qui lui permet de
+    # reconnaitre l'echo. Nettoyer avant lui reviendrait a lui crever un oeil.
+    response_text = strip_markdown_emphasis(response_text)
 
     # 3. Easter eggs
     response_text = apply_easter_eggs(response_text, original_message)

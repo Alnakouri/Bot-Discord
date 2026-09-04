@@ -75,8 +75,12 @@ NON_SECRETES = {"TWITCH_CHAT_CHANNELS", "TWITCH_PEER_BOTS", "PIPER_TTS_URL",
 
 # Les cles qui doivent exister chez tout le monde. Le reste (Twitch, TTS) depend des
 # fonctions activees bot par bot : on ne le reclame pas.
+# ⚠️ NVIDIA_API_KEY ajoute au socle le 2026-09-04 : la famille `mistral-*` est plafonnee
+# (429 permanent depuis ce jour-la) et nemotron, servi par l'API NVIDIA, est le repli
+# envisage. Un emplacement vide est ignore par les bots — le declarer ne casse rien et
+# evite qu'une cle NVIDIA finisse recopiee d'un bot a l'autre faute de champ.
 SOCLE = ["DISCORD_TOKEN", "GEMINI_KEY_1", "GROQ_API_KEY", "MISTRAL_API_KEY",
-         "OPENROUTER_API_KEY"]
+         "OPENROUTER_API_KEY", "NVIDIA_API_KEY"]
 
 ENTETE = """\
 # ------------------------------------------------------------------------------

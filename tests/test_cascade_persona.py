@@ -198,7 +198,7 @@ def test_aucune_cascade_n_utilise_le_modele_au_francais_faible(bot):
 # mistral-large : hors abonnement depuis le 2026-08-30
 # ---------------------------------------------------------------------------
 
-from shared.models import MISTRAL_HORS_TIER, MISTRAL_MAIN
+from shared.models import MISTRAL_HORS_TIER, MISTRAL_MAIN, MISTRAL_PLAFONNE
 
 
 @pytest.mark.parametrize("bot", BOTS)
@@ -241,6 +241,31 @@ def test_le_repli_sans_shared_ne_ressuscite_pas_le_modele_mort():
 
 def test_mistral_main_pointe_sur_un_modele_de_l_abonnement():
     assert MISTRAL_MAIN != MISTRAL_HORS_TIER
+
+
+@pytest.mark.parametrize("bot", BOTS)
+def test_aucune_cascade_n_utilise_le_modele_plafonne(bot):
+    """Toute la famille `mistral-*` est plafonnee depuis le 2026-09-04.
+
+    En base : 17 succes le 03/09, puis **0 sur 15** le 04/09, tous en 429. Dernier succes
+    le 2026-09-03T22:29.
+
+    ⚠️ Ce n'est PAS un probleme de cle — `models.list()` rend 46 modeles et les 6 bots ont
+    des cles distinctes — ni une limite par minute : le 429 persiste apres 70 s
+    d'inactivite, sur les 6 cles. `mistral-medium` et `magistral-small` sont plafonnes
+    aussi ; seule la famille `ministral-*` repond encore.
+    """
+    assert MISTRAL_PLAFONNE not in [m for _, m in CASCADES_PERSONA[bot]],         f"{bot} : mistral-small est plafonne (429 permanent depuis le 2026-09-04)"
+
+
+def test_mistral_main_n_est_pas_le_modele_plafonne():
+    assert MISTRAL_MAIN != MISTRAL_PLAFONNE
+    # ⚠️ Deriver la garde de la FAMILLE, pas d'un id : `mistral-medium` et
+    # `magistral-small` sont plafonnes de la meme facon.
+    assert MISTRAL_MAIN.startswith("ministral-"), (
+        f"MISTRAL_MAIN={MISTRAL_MAIN} : seule la famille `ministral-*` repond encore "
+        "(sonde du 2026-09-04)."
+    )
 
 
 # ---------------------------------------------------------------------------

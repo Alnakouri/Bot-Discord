@@ -25,7 +25,25 @@ MISTRAL_HORS_TIER = "mistral-large-latest"
 
 # Le Mistral de service. Pointait sur `mistral-large-latest` jusqu'au 2026-08-30 ;
 # bascule sur small, choisi sur sonde (cf. CASCADES_PERSONA, entree "alfred").
-MISTRAL_MAIN      = MISTRAL_SMALL
+# ⚠️ TOUTE la famille `mistral-*` est PLAFONNEE sur notre palier depuis le 2026-09-04.
+# En base : 17 succes le 03/09, puis 0 sur 15 le 04/09, tous en 429. Dernier succes le
+# 2026-09-03T22:29. Ce n'est PAS un probleme de cle : `models.list()` rend 46 modeles, et
+# les 6 bots ont des cles distinctes (tools/sonde_cles_partagees.py). Ce n'est pas non plus
+# une limite par minute : 429 persistant apres 70 s d'inactivite, sur les 6 cles.
+#   mistral-small-latest    -> 429      magistral-small-latest -> 429
+#   mistral-medium-latest   -> 429      ministral-*            -> OK
+# Seule la famille `ministral-*` (modeles « edge ») repond encore.
+MISTRAL_PLAFONNE  = MISTRAL_SMALL
+
+# Choisi sur sonde reelle du 2026-09-04 (tools/sonde_modeles_persona.py, 90 appels, les 6
+# vraies personas, 3 cas chacun). ministral-14b gagne sur les TROIS criteres a la fois :
+#   modele                 median   asterisques   echo en ouverture
+#   ministral-14b-latest    1,28 s      11/18            0/6   <-- retenu
+#   open-mistral-nemo       1,29 s      15/18            1/6
+#   ministral-8b-latest     1,70 s      16/18            1/6
+# L'« echo en ouverture » (repeter l'insulte : « Nul ?! ») est le gabarit explicitement
+# INTERDIT par le prompt de Sheogorath. ministral-14b est le seul a ne jamais le produire.
+MISTRAL_MAIN      = "ministral-14b-latest"
 
 
 # Modeles a RAISONNEMENT : ils depensent des tokens en pensee AVANT de repondre.
@@ -88,7 +106,8 @@ def groq_kwargs(model_name):
 # Conserve ici pour que personne ne le re-choisisse sans savoir. Un test l'interdit.
 GROQ_QWEN     = "qwen/qwen3.8-27b"
 GROQ_SMALL    = "openai/gpt-oss-20b"    # Groq — le plus rapide (0.45 s median)
-# MISTRAL_SMALL est remonte en haut du fichier : il sert desormais de MISTRAL_MAIN.
+# MISTRAL_SMALL a servi de MISTRAL_MAIN du 2026-08-30 au 2026-09-04 ; il est depuis
+# PLAFONNE (429 permanent), cf. MISTRAL_PLAFONNE. Un test l'interdit dans les cascades.
 
 # ---------------------------------------------------------------------------
 # CASCADE PAR PERSONA
@@ -162,11 +181,11 @@ CASCADES_PERSONA = {
     #   flash-lite     le plus court, mais ton fade et tic « helas » 2 fois sur 3.
     # Il partage le modele de Johnny et Malena : la voix vient du prompt de persona,
     # et les trois sorties restent nettement distinctes a la sonde.
-    "alfred": [("mistral", MISTRAL_SMALL), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
+    "alfred": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
 
     # Rockerboy de Night City : argot cru, phrases qui cognent. Mistral Small est le seul
     # a sortir le vocabulaire de la rue sans l'edulcorer (« t'es un gonk avec un clavier »).
-    "johnny": [("mistral", MISTRAL_SMALL), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
+    "johnny": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE)],
 
     # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
     # Wabbajack, Haskill et le fromage de lui-meme, en francais correct. Il ouvre
@@ -176,7 +195,7 @@ CASCADES_PERSONA = {
     # Piques courtes et sechees. gemini-flash-lite tranche sans meubler et garde le
     # vocabulaire maison (« aussi fragile qu'un sucre glace un jour de pluie, peteur »).
     # gpt-oss a ete ecarte ici : francais correct mais ton fade, l'acidite disparait.
-    "sugar": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_SMALL), ("groq", GROQ_FAST)],
+    "sugar": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST)],
 
     # Menteur cryptique d'Elder Scrolls : absurde bref a la 3e personne. Gemini Flash-Lite
     # invente les meilleures faussetes (« La troisieme lune existe. Elle est juste
@@ -185,7 +204,7 @@ CASCADES_PERSONA = {
 
     # Diva gitane marseillaise : l'argot local doit sonner juste. Mistral Small sort
     # « chanklette », « bonne mere », « gatee va » sans qu'on le lui souffle.
-    "malena": [("mistral", MISTRAL_SMALL), ("gemini", GEMINI_FLASH_LITE), ("groq", GROQ_FAST)],
+    "malena": [("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("groq", GROQ_FAST)],
 }
 
 _MARQUEURS_BOT = {

@@ -124,3 +124,68 @@ def test_force_short_response_cuts_newline_separated():
     assert "Cinq" not in out and "Six" not in out
     assert out.endswith("🧀")
 
+
+
+from sheo_llm import postprocess_response, strip_markdown_emphasis
+
+# ---------------------------------------------------------------------------
+# Le markdown : un trou dans le filet, et une regle de prompt qui ne tient pas
+# ---------------------------------------------------------------------------
+
+def test_l_echo_entoure_de_markdown_est_coupe():
+    """⚠️ `*Nul* ?!` passait a travers `_strip_echo_opening`.
+
+    Sonde du 2026-09-04 : un modele a ouvert par `*Nul* ?!` — exactement le gabarit que le
+    prompt de Sheogorath donne en exemple d'INTERDIT. Il est passe parce que ce n'etait ni
+    un cri (pas de MAJUSCULES) ni une citation reconnue : le detecteur connaissait `"..."`,
+    `«...»`, `“...”` et `'...'`, mais **pas le markdown**.
+    """
+    sortie = postprocess_response(
+        "Haha ! *Nul* ?! Mon petit mortel, tu confonds tout. Va compter les dents de Haskill. 😈",
+        None, 1, "t'es nul", max_sentences=4)
+    assert "Nul ?!" not in sortie, f"l'echo interdit a survecu : {sortie}"
+    assert "Haskill" in sortie, f"la vraie vanne a ete emportee : {sortie}"
+
+
+def test_l_echo_anodin_en_casse_normale_reste():
+    """⚠️ Le canon l'AUTORISE : « Des pâtes ? » est une reflexion voulue, pas un echo hurle.
+
+    Sans ce test, durcir le detecteur reviendrait a supprimer un trait de personnage.
+    """
+    sortie = postprocess_response(
+        "Des pâtes ? Voilà qui mérite un décret. Haskill, note ça. 🤔",
+        None, 1, "j'ai mangé des pâtes", max_sentences=4)
+    assert sortie.startswith("Des pâtes ?"), f"reflexion canon supprimee : {sortie}"
+
+
+def test_les_asterisques_sont_retirees():
+    """Le prompt les INTERDIT, le modele en met quand meme 9 fois sur 9.
+
+    Mesure du 2026-09-04 (sonde des 6 personas x 3 modeles Mistral) : Sheogorath est le
+    SEUL bot dont le prompt interdise explicitement les asterisques — et le SEUL a 9/9.
+    Le taux le plus eleve des six. Une regle de prompt oriente ; seul un filet
+    deterministe garantit.
+    """
+    assert strip_markdown_emphasis("Je suis **le PRINCE**, et *toi* un ver.") \
+        == "Je suis le PRINCE, et toi un ver."
+    # ⚠️ Ne pas amputer un pseudo : `_` n'est retire qu'entre limites de mots.
+    assert strip_markdown_emphasis("Salut le_dev.") == "Salut le_dev."
+    assert strip_markdown_emphasis("") == ""
+    assert strip_markdown_emphasis(None) is None
+
+
+def test_le_nettoyage_passe_APRES_le_detecteur_d_echo():
+    """⚠️ L'ordre est le correctif, pas un detail.
+
+    Nettoyer les asterisques AVANT `_strip_echo_opening` lui retire le marqueur `*...*`
+    sur lequel il reconnait l'echo : `*Nul* ?!` redevient `Nul ?!`, en casse normale, donc
+    autorise — et il ressort en clair. C'est le bug qu'a produit la premiere version.
+    """
+    src = open(os.path.join(_sheo_dir, "sheo_llm.py"), encoding="utf-8").read()
+    corps = src.split("def postprocess_response")[1]
+    i_echo = corps.index("_strip_echo_opening(response_text")
+    i_md = corps.index("strip_markdown_emphasis(response_text)")
+    assert i_echo < i_md, (
+        "strip_markdown_emphasis passe AVANT _strip_echo_opening : le detecteur d'echo "
+        "ne verra plus le markdown sur lequel il s'appuie."
+    )
