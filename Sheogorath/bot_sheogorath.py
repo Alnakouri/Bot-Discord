@@ -385,12 +385,6 @@ async def on_command_error(ctx, error):
 # Client Initialization
 
 
-try:
-        logger.info("✅ [SYSTEM] Cerveau OpenRouter connecté.")
-
-except Exception as e:
-    logger.warning(f"⚠️ [SYSTEM] OpenRouter absent : {e}")
-
 # 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
 # cascade prenne le relais au lieu que le SDK dorme sur un 429.
 nvidia_client = None

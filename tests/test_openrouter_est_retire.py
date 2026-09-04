@@ -48,6 +48,37 @@ CODE_VIVANT = re.compile(
 )
 
 
+def _lignes_de_log(chemin):
+    """Rend les lignes qui ECRIVENT dans les logs, commentaires exclus.
+
+    ⚠️ Un filet pose sur les IDENTIFIANTS ne protege pas la PROSE. Le 2026-09-05, tout le
+    code OpenRouter etait parti et les tests etaient verts — mais Sheogorath annoncait
+    encore « ✅ [SYSTEM] Cerveau OpenRouter connecté. » a chaque demarrage, depuis un
+    `try:` orphelin dont ce log etait devenu le seul corps. Il compilait, donc rien ne
+    le voyait. Meme piege que [[gotcha-repartee-cascade-fantome]] : en retirant un
+    fournisseur, chercher AUSSI son nom de marque.
+    """
+    src = (RACINE / chemin).read_text(encoding="utf-8")
+    return [
+        f"{chemin}:{n} {l.strip()}"
+        for n, l in enumerate(src.split("\n"), 1)
+        if re.search(r"logger\.(info|warning|error|debug)\(", l)
+        and "openrouter" in l.lower()
+    ]
+
+
+def test_aucun_bot_n_annonce_encore_openrouter_dans_ses_logs():
+    menteurs = []
+    for dossier, fichier in BOTS.items():
+        menteurs += _lignes_de_log(f"{dossier}/{fichier}")
+    for chemin in NOYAU + VENDORISES:
+        menteurs += _lignes_de_log(chemin)
+    assert not menteurs, (
+        "Ces lignes annoncent un fournisseur qui n'existe plus. Un log qui ment est pire "
+        "qu'un log absent : il fait chercher au mauvais endroit.\n  " + "\n  ".join(menteurs)
+    )
+
+
 def _sans_commentaires(chemin):
     """Rend la source privee de ses commentaires et de ses docstrings.
 
