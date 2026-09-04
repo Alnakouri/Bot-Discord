@@ -329,13 +329,15 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 try:
     if OPENROUTER_API_KEY:
         openrouter_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1", max_retries=0)
-        # 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
-        # cascade prenne le relais au lieu que le SDK dorme sur un 429.
-        nvidia_client = None
-        if NVIDIA_API_KEY:
-            try: nvidia_client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, max_retries=0)
-            except Exception as e: logger.warning(f'[NVIDIA] client indisponible: {e}')
+
 except Exception as e: logger.warning(f"[INIT] OpenRouter indisponible : {e}")
+
+# 4e fournisseur : quota independant des 3 autres. `max_retries=0` pour que la
+# cascade prenne le relais au lieu que le SDK dorme sur un 429.
+nvidia_client = None
+if NVIDIA_API_KEY:
+    try: nvidia_client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, max_retries=0)
+    except Exception as e: logger.warning(f'[NVIDIA] client indisponible: {e}')
 
 ENABLE_DAILY_BIO = os.getenv("ENABLE_DAILY_BIO", "1") != "0"
 daily_bio = DiscordDailyBio(

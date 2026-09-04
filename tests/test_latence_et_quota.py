@@ -375,3 +375,44 @@ def test_chaque_cascade_porte_un_4e_fournisseur():
             f"{bot} n'a que {len(set(fournisseurs))} fournisseurs distincts : "
             "si l'un plafonne, il ne reste presque rien."
         )
+
+
+def test_les_clients_sont_definis_meme_sans_aucune_cle():
+    """⚠️ Le local MENT sur tout ce qui depend de l'environnement.
+
+    Le 2026-09-04, `nvidia_client = None` avait ete pose DANS un `if OPENROUTER_API_KEY:`.
+    En local la cle existe, donc la ligne s'executait et la suite etait verte. En CI, sans
+    cle, le nom n'existait pas du tout :
+
+        Sheogorath/bot_sheogorath.py:431: in <module>
+            groq_client=groq_client, openrouter_client=openrouter_client, nvidia_client=nvidia_client,
+        E   NameError: name 'nvidia_client' is not defined
+
+    Le bot ne demarrait meme pas. Ce test lit la structure du module — il n'a besoin
+    d'aucune cle, donc il dit la meme chose ici et en CI.
+    """
+    import ast
+
+    CLIENTS = ["nvidia_client", "openrouter_client", "groq_client", "mistral_client"]
+    fautifs = []
+    inspectes = 0
+    for dossier, fichier in BOTS.items():
+        arbre = ast.parse(_source(dossier, fichier))
+        # Les affectations du CORPS du module : ni dans un if, ni dans un try, ni
+        # dans une fonction. Ce sont les seules qui existent a coup sur.
+        surs = set()
+        for noeud in arbre.body:
+            if isinstance(noeud, ast.Assign):
+                for cible in noeud.targets:
+                    if isinstance(cible, ast.Name):
+                        surs.add(cible.id)
+        for nom in CLIENTS:
+            inspectes += 1
+            if nom not in surs:
+                fautifs.append(f"{fichier}: {nom}")
+    assert inspectes == 24, f"On attendait 6 bots x 4 clients, on a inspecte {inspectes}"
+    assert not fautifs, (
+        "Ces clients ne sont pas definis inconditionnellement au niveau du module : "
+        "sans la cle correspondante, le bot leve NameError au demarrage.\n  "
+        + "\n  ".join(fautifs)
+    )
