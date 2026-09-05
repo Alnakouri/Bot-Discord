@@ -6,6 +6,7 @@ import time
 import asyncio
 import base64
 import logging
+import re
 
 from google.genai import types
 from shared.safe_client import get_client as get_safe_genai_client
@@ -27,24 +28,68 @@ def _est_vide(txt):
     return not (txt and txt.strip())
 
 
+# Marqueurs de méta-discours : le modèle PARLE DE la conversation au lieu d'y participer.
+# Repris de `tools/sonde_fuite_raisonnement.py`, qui les a établis et élargis au français
+# le 2026-09-04 (un détecteur anglophone avait classé « propres » trois vraies fuites).
+#
+# ⚠️ Mesuré avant d'être branché, le 2026-09-05 :
+#   * sur 460 vraies réponses des 6 bots (mémoires, archives, bios, statuts) →
+#     **0 faux positif**. Le seul marqueur qui en produisait, `mon rôle est de`, a été
+#     retiré : « Mon rôle est de répondre, pas de me taire » est une réplique EN
+#     PERSONNAGE, pas une fuite. Il reste dans la sonde, où un humain lit le verdict.
+#   * sur 12 appels NVIDIA sans garde-fou → **12 fuites sur 12, toutes attrapées**
+#     (« Here's a thinking process: ... »).
+_MARQUEURS_META = [
+    r"\bl'utilisateur\b", r"\bthe user\b", r"\bl'usager\b",
+    r"\bje dois r[ée]pondre\b", r"\bi need to respond\b", r"\bi should respond\b",
+    r"\bthinking process\b", r"\blet me think\b", r"\bfirst,? i\b",
+    r"\bsystem prompt\b", r"\ble prompt\b", r"\brappel des consignes\b",
+    r"\ben tant que .{0,30}, je dois\b",
+    r"\bd'apr[èe]s le transcript\b", r"\bthe assistant\b",
+    r"^<think>", r"\bokay,? so\b",
+]
+_META = re.compile("|".join(_MARQUEURS_META), re.I | re.M)
+
+
 def _fuite_de_raisonnement(msg):
-    """Certains modèles recopient leur PENSÉE dans `content` au lieu de la garder à part.
+    """Le modèle recopie sa PENSÉE dans `content` au lieu de la garder à part.
 
-    Mesuré le 2026-08-26 sur `nvidia/nemotron-3-super-120b-a12b:free` (OpenRouter) :
-    `content` commence par le raisonnement en anglais (« Okay, the user sent... »), le
-    budget de tokens y passe entièrement (`finish_reason="length"`) et aucune vraie
-    réponse n'arrive jamais. Malena a récité ce raisonnement en plein Discord.
-    `reasoning: {exclude: true}` ne corrige PAS le problème : il retire juste le champ,
-    la pensée reste dans `content`.
+    Deux formes, et il faut les deux — c'est tout l'objet du correctif du 2026-09-05.
 
+    **Forme 1, le champ `reasoning`.** Mesurée le 2026-08-26 sur
+    `nvidia/nemotron-3-super-120b-a12b:free` (OpenRouter) : `content` commence par le
+    raisonnement en anglais (« Okay, the user sent... »), le budget de tokens y passe
+    entièrement (`finish_reason="length"`) et aucune vraie réponse n'arrive jamais.
+    Malena a récité ce raisonnement en plein Discord. `reasoning: {exclude: true}` ne
+    corrige PAS le problème : il retire juste le champ, la pensée reste dans `content`.
     On détecte la recopie : `content` démarre comme `reasoning`.
+
+    **Forme 2, le contenu seul.** ⚠️ La forme 1 était un FILET MORT sur NVIDIA, le seul
+    fournisseur qui appelle encore cette fonction depuis le retrait d'OpenRouter :
+    l'endpoint NVIDIA **ne remplit jamais `reasoning`** (mesuré le 2026-09-05, 16 appels,
+    vide à chaque fois), donc le test sortait toujours par `if not pensee: return False`.
+    Et nemotron fuit quand même, ~1 fois sur 20 malgré `reasoning_effort="none"` :
+
+        'p? The user wants exactly: pong'
+
+    Le commentaire « Filet malgré tout » des branches nvidia promettait donc une
+    protection qui n'existait pas. Un filet écrit pour un fournisseur ne mord pas chez le
+    suivant : il faut le vérifier, pas le reconduire.
+
+    ⚠️ La forme 2 juge le TEXTE, donc elle s'applique à tout appelant, pas seulement à
+    NVIDIA. C'est voulu : le coût mesuré est nul (0 faux positif sur 460 réponses
+    réelles) et un échelon non terminal ne perd qu'un saut de cascade.
     """
-    pensee = (getattr(msg, "reasoning", None) or "").strip()
     contenu = (getattr(msg, "content", None) or "").strip()
-    if not pensee or not contenu:
+    if not contenu:
         return False
+
+    pensee = (getattr(msg, "reasoning", None) or "").strip()
     tete = pensee[:60]
-    return len(tete) >= 20 and contenu.startswith(tete)
+    if len(tete) >= 20 and contenu.startswith(tete):
+        return True
+
+    return bool(_META.search(contenu))
 
 
 def _blocs_de_details(details):
@@ -278,7 +323,8 @@ async def generate_response(
                         # divise aussi la latence par six.
                         **nvidia_kwargs(model_name),
                     )
-                    # Filet malgré tout : le paramètre pourrait cesser d'être honoré.
+                    # Filet : `reasoning_effort="none"` n'est pas etanche. Mesure du 2026-09-05,
+                    # 12 appels sans lui -> 12 fuites ; avec lui, ~1 sur 20 passe encore.
                     if _fuite_de_raisonnement(chat.choices[0].message):
                         logger.warning(f"⚠️ [NVIDIA {model_name}] le modèle a recopié son raisonnement dans la réponse → échelon suivant")
                         response_text = None

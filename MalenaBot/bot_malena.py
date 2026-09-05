@@ -24,6 +24,12 @@ from core.smart_router import classify_request, RequestType, download_media, get
 from core.chrono import Chrono
 from core.models import groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
 from core.api_tracking import tracer_appel
+# ⚠️ Ces deux garde-fous etaient RECOPIES ici. Le 2026-09-05, `_fuite_de_raisonnement()`
+# a gagne une seconde forme de detection (le meta-discours dans `content`, la seule qui
+# morde chez NVIDIA) : la copie locale ne l'aurait jamais eue, et Malena est justement le
+# bot qui a deja recite son raisonnement en plein Discord. On importe le noyau, comme
+# Alfred, M'aiq et Sheogorath — une copie de moins qui puisse deriver.
+from core.llm_cascade import _est_vide, _fuite_de_raisonnement
 from core.media_handler import process_image_ollama
 from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
@@ -177,28 +183,6 @@ def build_expression_hint(mood):
         f"seulement si ça colle au contexte) : {expr_list}"
     )
 
-def _est_vide(txt):
-    """Un modèle peut répondre 200 OK avec un contenu VIDE, sans lever d'exception.
-
-    Vu en prod le 2026-08-26 : Groq rend un contenu vide, Malena tente un envoi Discord
-    vide -> 400 « Cannot send an empty message », donc muette. Le vide n'est pas une
-    réponse : on descend la cascade au lieu de la casser.
-    """
-    return not (txt and txt.strip())
-
-
-def _fuite_de_raisonnement(msg):
-    """Le modèle recopie sa PENSÉE dans `content` au lieu de la garder à part.
-
-    Mesuré le 2026-08-26 sur `nvidia/nemotron-...:free` (dernier échelon OpenRouter) :
-    Malena a récité son raisonnement en anglais en plein Discord.
-    """
-    pensee = (getattr(msg, "reasoning", None) or "").strip()
-    contenu = (getattr(msg, "content", None) or "").strip()
-    if not pensee or not contenu:
-        return False
-    tete = pensee[:60]
-    return len(tete) >= 20 and contenu.startswith(tete)
 
 
 async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None, mime_type=None, meme_consigne=""):
@@ -333,7 +317,8 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
-                    # Filet malgré tout : le paramètre pourrait cesser d'être honoré.
+                    # Filet : `reasoning_effort="none"` n'est pas etanche. Mesure du 2026-09-05,
+                    # 12 appels sans lui -> 12 fuites ; avec lui, ~1 sur 20 passe encore.
                     if _fuite_de_raisonnement(chat.choices[0].message):
                         logger.warning(f"⚠️ [NVIDIA {model_name}] raisonnement recopié dans la réponse → échelon suivant")
                         _raison = "fuite_raisonnement"

@@ -193,6 +193,46 @@ def test_fuite_de_raisonnement_sans_faux_positif(msg):
     assert _fuite_de_raisonnement(msg) is False
 
 
+# ---------------------------------------------------------------------------
+# Seconde forme de fuite : le méta-discours dans `content`, SANS champ `reasoning`.
+#
+# ⚠️ C'est la seule forme qui existe chez NVIDIA — l'endpoint ne remplit jamais
+# `reasoning` (mesuré le 2026-09-05, 16 appels, vide à chaque fois). La forme 1 y était
+# donc un FILET MORT, alors que nemotron fuit ~1 fois sur 20 malgré
+# `reasoning_effort="none"`, et 12 fois sur 12 sans lui.
+# ---------------------------------------------------------------------------
+
+# Fuites RÉELLES, relevées en live le 2026-09-05 (les deux premières) et sur les 12
+# appels témoins sans garde-fou (la troisième).
+_FUITES_REELLES = [
+    "p? The user wants exactly: pong",
+    "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - User says: ...",
+    "Okay, so l'utilisateur me demande de répondre en tant que Malena.",
+]
+
+
+@pytest.mark.parametrize("texte", _FUITES_REELLES)
+def test_fuite_dans_le_contenu_seul_est_detectee(texte):
+    """Aucun de ces trois n'a de champ `reasoning` : la forme 1 les laissait TOUS passer."""
+    assert _fuite_de_raisonnement(_FauxMessageRaisonneur(content=texte)) is True
+
+
+# Vraies répliques des 6 bots. La mesure du 2026-09-05 a passé les marqueurs sur 460
+# réponses réelles (mémoires, archives, bios, statuts) : 0 faux positif. Celle qui en
+# produisait un, « Mon rôle est de répondre », a fait RETIRER son marqueur du noyau —
+# elle est gardée ici pour que le marqueur ne revienne pas par mégarde.
+@pytest.mark.parametrize("texte", [
+    "Wesh ma vie ! 💅 Tu crois que je vais me laisser faire ?",
+    "Mon rôle est de répondre, pas de me taire. Que proposes-tu à la place ?",
+    "Le fromage, mon petit mortel, est la seule vérité de ce monde. 🧀",
+    "Choom, t'as un clavier et une connexion. Sers-t'en.",
+    "M'aiq ne sait rien de tout cela. M'aiq préfère le soleil.",
+    "Très bien, Monsieur. Je m'en occupe immédiatement.",
+])
+def test_une_vraie_replique_n_est_pas_prise_pour_une_fuite(texte):
+    assert _fuite_de_raisonnement(_FauxMessageRaisonneur(content=texte)) is False
+
+
 def test_les_6_copies_vendorisees_ont_le_garde_fou_de_fuite():
     bots = ["Alfred", "JohnnyBot", "MaiqBot", "MalenaBot", "Sheogorath", "SugarBot"]
     for bot in bots:
@@ -203,9 +243,23 @@ def test_les_6_copies_vendorisees_ont_le_garde_fou_de_fuite():
 
 
 def test_malena_inline_a_les_deux_garde_fous():
-    """Rappel : Malena a sa PROPRE cascade, les correctifs de shared/ ne la couvrent pas."""
+    """Rappel : Malena a sa PROPRE cascade, les correctifs de shared/ ne la couvrent pas.
+
+    ⚠️ Ce test exigeait `def _fuite_de_raisonnement` — donc une COPIE. Le 2026-09-05 la
+    copie a montré son coût : le garde-fou a gagné une seconde forme de détection (le
+    méta-discours dans `content`, la seule qui morde chez NVIDIA) et la copie de Malena
+    ne l'aurait jamais eue. Or Malena est justement le bot qui a déjà récité son
+    raisonnement en plein Discord. On exige donc l'IMPORT du noyau, l'APPEL, et
+    l'ABSENCE de re-définition locale — les trois, sinon un simple import passerait au
+    vert sans que la fonction soit branchée.
+    """
     src = open(os.path.join(_parent_dir, "MalenaBot", "bot_malena.py"), encoding="utf-8").read()
-    assert "def _fuite_de_raisonnement" in src
+    assert "from core.llm_cascade import" in src and "_fuite_de_raisonnement" in src, \
+        "Malena doit importer le garde-fou du noyau"
+    assert "def _fuite_de_raisonnement" not in src, \
+        "Malena redéfinit le garde-fou : la copie ne recevra pas les correctifs du noyau"
+    assert "_fuite_de_raisonnement(chat.choices[0].message)" in src, \
+        "importé mais jamais appelé"
     assert "groq_kwargs(model_name)" in src
 
 

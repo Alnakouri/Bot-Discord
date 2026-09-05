@@ -2528,7 +2528,8 @@ async def on_message(message):
                     ),
                     timeout=15  # borne TEXTE : ce client ne transporte pas le media
                 )
-                # Filet malgré tout : le paramètre pourrait cesser d'être honoré.
+                # Filet : `reasoning_effort="none"` n'est pas etanche. Mesure du 2026-09-05,
+                # 12 appels sans lui -> 12 fuites ; avec lui, ~1 sur 20 passe encore.
                 if _fuite_de_raisonnement(chat.choices[0].message):
                     logger.warning(f"⚠️ [NVIDIA {model_name}] raisonnement recopié dans la réponse → échelon suivant")
                     _raison = "fuite_raisonnement"
