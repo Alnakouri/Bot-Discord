@@ -16,6 +16,7 @@ import base64
 # This MUST be done before any other imports that might use environment variables
 from pathlib import Path
 from core.secure_env import load_secure_env
+from core.boucles import installer_anti_rattrapage
 # Unsets conflicting Google Cloud env vars
 load_secure_env(Path(__file__).parent)
 from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
@@ -1962,5 +1963,8 @@ if __name__ == "__main__":
     if "VOTRE_TOKEN" in DISCORD_TOKEN:
         logger.error("ERREUR : Vous devez configurer le DISCORD_TOKEN dans bot_alfred.py !")
     else:
+        # Un `tasks.loop` rejoue TOUTES les iterations manquees quand l'horloge saute
+        # (veille de l'hote) : 40 `MOOD CHANGE` en deux secondes le 2026-09-04.
+        installer_anti_rattrapage(logger)
         setup_graceful_shutdown(bot)
         bot.run(DISCORD_TOKEN)

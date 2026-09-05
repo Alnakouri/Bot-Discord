@@ -21,6 +21,7 @@ from openai import OpenAI
 from datetime import datetime
 import base64
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
+from core.boucles import installer_anti_rattrapage
 from core.chrono import Chrono
 from core.models import groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
 from core.api_tracking import tracer_appel
@@ -908,5 +909,8 @@ async def on_member_remove(member):
     await handle_member_remove(bot, member, "Malena")
 
 if __name__ == "__main__":
+    # Un `tasks.loop` rejoue TOUTES les iterations manquees quand l'horloge saute
+    # (veille de l'hote) : 40 `MOOD CHANGE` en deux secondes le 2026-09-04.
+    installer_anti_rattrapage(logger)
     setup_graceful_shutdown(bot)
     bot.run(DISCORD_TOKEN)

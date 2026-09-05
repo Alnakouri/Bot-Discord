@@ -21,6 +21,7 @@ import re
 import json
 import os
 from core.response_memory import ResponseMemory
+from core.boucles import installer_anti_rattrapage
 import logging
 from datetime import datetime
 import base64
@@ -1751,5 +1752,8 @@ async def oubliemoi(ctx):
     await ctx.send("🐾 M'aiq sait beaucoup de choses, mais M'aiq choisit d'oublier. M'aiq a oublié vos histoires et vos secrets. Les lunes brillent sur un esprit vide. 🐾")
 
 if __name__ == "__main__":
+    # Un `tasks.loop` rejoue TOUTES les iterations manquees quand l'horloge saute
+    # (veille de l'hote) : 40 `MOOD CHANGE` en deux secondes le 2026-09-04.
+    installer_anti_rattrapage(logger)
     setup_graceful_shutdown(bot)
     bot.run(DISCORD_TOKEN)

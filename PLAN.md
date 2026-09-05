@@ -1,132 +1,152 @@
-# PLAN — les 104 `except: pass` : lus un par un, et le silence nu interdit
+# PLAN — les 5 « MOOD CHANGE » : ce n'etaient pas 5, et ce n'etait pas l'humeur
 
-Redaction et execution : Claude, le 2026-09-05 (3e session du jour).
+Redaction et execution : Claude, le 2026-09-06.
 
-Suite directe du lot `25141f9`. Le seul chantier encore ouvert etait celui-ci ; il est
-ferme, et verrouille.
+Le point ouvert disait : « **5 `MOOD CHANGE` dans la meme seconde** apres une reconnexion :
+jamais explique. » Il est explique. Il y en avait **40**, et le changement d'humeur n'y
+etait pour rien.
 
 ---
 
 ## Etat : vert  🟢
 
-**633 tests passent** (+46 sous-tests), suite complete en un seul processus. Zero nom
-indefini, zero erreur de syntaxe, aucune derive du noyau vendorise.
+**642 tests passent** (+46 sous-tests), suite complete en un seul processus.
 
 ---
 
-## Ce que la validation live a ferme au passage  ✅
+## Ce que le journal disait vraiment
 
-Le transcript Discord du 05/09 (13:49–13:51) clot **la vision de Sugar**, dernier des six
-a n'avoir jamais recu d'image en direct : image postee a 13:49, description rendue a
-13:50 (« Un chevalier tout en pointes et en acier… »). Les six ont repondu dans la meme
-minute, et le decret de Sheogorath a bien rendu son image a 20:10.
+`docker logs bot-sheogorath`, groupe par horodatage :
 
----
+    38 lignes MOOD CHANGE a 11:20:50   (+2 a 11:20:49)
+    20 lignes MOOD CHANGE a 14:00:40
 
-## Le chantier : 104 `except ...: pass`, lus un par un
+Et le contexte, le 2026-09-04 :
 
-L'inventaire par `ast` du 05/09 en comptait **104 dans 36 fichiers**, hors copies
-vendorisees. Le decompte a ete **reproduit a l'identique** avant de toucher quoi que ce
-soit — un chantier qui commence par un chiffre qu'on ne sait pas refaire commence mal.
-
-⚠️ Un premier detecteur, plus large (« tout gestionnaire qui ne journalise ni ne releve »),
-en trouvait **366**. Ce n'est pas le meme objet : il comptait les gestionnaires qui font
-un vrai repli (`except ValueError: elapsed = 0`). Le chiffre de 104 vise le `pass` nu,
-celui qui n'a aucune intention lisible.
-
-### La regle appliquee
-
-Trois issues, jamais une seule :
-
-1. **Journaliser** quand le silence peut cacher un bug — en `debug` si l'echec est
-   nominal (message deja supprime, permission absente), en `warning` s'il laisse le
-   systeme dans un etat faux.
-2. **Rester muet, mais le dire** — un commentaire sur place qui donne la raison.
-3. **Ne jamais ecrire `logger.` dans un fichier qui n'en a pas** : ce serait un
-   `NameError` **leve depuis le gestionnaire d'exception**, strictement pire que le
-   silence. Les 8 fichiers concernes ont ete traites en (2), sauf `dashboard/backend/app.py`
-   qui utilise deja `print`.
-
-### Ce que la lecture a trouve
-
-**Les 7 `on_timeout` de `shared/games/views.py` sont la meme cecite que le bug du quiz.**
-Chacun construit un embed puis edite le message, le tout sous `except Exception: pass`.
-Un message supprime et un `NameError` y ont exactement le meme aspect : aucun.
-C'est cette forme qui a fait que **l'ecran de fin de quiz ne s'affichait jamais** pendant
-des semaines. → helper `_ecran_expiration_echoue()` : `debug` pour un `HTTPException`
-(nominal), `warning` + `exc_info` pour tout le reste (un bug).
-
-**Trois silences laissaient le systeme dans un etat faux** — passes en `warning` :
-
-| endroit | ce que le silence cachait |
+| heure | evenement |
 |---|---|
-| `MaiqBot/bot_maiq.py:691` | suppression de l'enigme en base : **l'enigme restait active** |
-| `MaiqBot/bot_maiq.py:1146,1641` | participant non enregistre : il ne comptait pour rien |
-| `Alfred/bot_alfred.py:1204-1229` | retrait du timeout, du role et du pseudo de sanction : **l'utilisateur restait puni** |
+| 07:56:28 | dernier `MOOD CHANGE` normal |
+| — | **3 h 21 sans une seule ligne** : l'hote etait en veille |
+| 11:17:36 | `Shard ID None session has been invalidated` — reconnexion de la gateway |
+| 11:20:49–50 | **40 `MOOD CHANGE` en deux secondes** |
 
-**Six appels LLM avalaient leur echec** (`bot_sheogorath.py`, feature imposteur, Groq et
-Mistral) : la reponse retombait sur un texte par defaut sans que rien ne dise pourquoi.
-→ `debug` nomme par fournisseur.
+40 × 5 min = 200 min = **exactement le trou**.
 
-**Un chemin media** (`shared/smart_router.py:414`) et **une fenetre d'annonce**
-(`shared/twitch_announcer.py:375`) ont recu le `debug` que le plan precedent avait deja
-identifie.
-
-**Le reste est legitimement muet** — et le dit maintenant : `ALTER TABLE` deja passe,
-`queue.Full` a l'arret, `IntegrityError` sur doublon, annulation d'une tache qu'on vient
-soi-meme d'annuler, fichier temporaire deja disparu, flux console non reconfigurable,
-`shared/` absent (les bots doivent tourner sans).
+⚠️ Le premier reflexe — « `on_ready` rejoue et relance la boucle » — etait faux. Les
+gardes `is_running()` sont en place depuis `839fae5` et tiennent. La cause est ailleurs.
 
 ---
 
-## Le verrou : `tests/test_except_muet_documente.py`  ✅
+## La cause : `tasks.loop` dort jusqu'a un instant ABSOLU
 
-Il **n'interdit pas le silence** — beaucoup de gestionnaires doivent se taire. Il interdit
-le silence **nu** : un `except ...: pass` doit porter un commentaire, sur la ligne
-`except` ou sur le `pass`.
+`discord/ext/tasks/__init__.py` :
 
-⚠️ Le commentaire doit etre **dans** le gestionnaire. Un commentaire au-dessus du `try`
-explique le `try`, pas le silence.
+```python
+def _get_next_sleep_time(self, now=MISSING):
+    if self._sleep is not MISSING:
+        return self._last_iteration + datetime.timedelta(seconds=self._sleep)
+```
 
-⚠️ Les copies `*/core/` sont **incluses** : c'est la qu'un correctif de `shared/` peut ne
-pas etre descendu. Le test les a d'ailleurs immediatement prises en flagrant delit — il a
-fallu rejouer `tools/vendor_core.py`.
+L'instant du prochain tour est calcule depuis **l'iteration precedente**, jamais depuis
+« maintenant ». Quand l'horloge saute, cet instant est deja passe : la boucle s'execute,
+recalcule `precedent + intervalle`, retombe sur un instant **encore** passe, recommence.
+Elle rejoue tout le retard, dos a dos.
 
-Verifie par **mutation** : commentaire retire de `shared/chrono.py:42` → rouge sur la
-bonne ligne.
+⚠️ discord.py **a** une correction de derive d'horloge — mais elle est gardee par
+`while self._is_explicit_time() and ...` : elle ne s'applique qu'aux boucles a heure fixe
+(`time=`). Les boucles a intervalle, **c'est-a-dire toutes les notres**, n'ont aucun filet.
 
-⚠️ `tests/test_depot_complet.py` a fait son travail : le nouveau fichier de test n'etait
-pas suivi par git, et il l'a dit. Il n'existait que sur cette machine.
+**Mesure de reproduction** (10 lignes, sans Discord) : un saut de 10 minutes sur une
+boucle de 5 s produit **120 rattrapages en 7 ms**.
+
+---
+
+## Pourquoi seul le changement d'humeur se voyait
+
+Parce qu'il est **le seul a journaliser chaque tour**. Les 29 autres boucles ont rattrape
+en silence. Pour une veille nocturne de 8 h, les memes secondes rejouent :
+
+| boucle | intervalle | rattrapages |
+|---|---|---|
+| `vocal_patrol_loop` | 30 s | 960 |
+| `voice_idle_check` | 60 s | 480 |
+| `twitch_poll_loop` (×6 bots) | 90 s | 320 **chacune** |
+| `check_missed_mentions_*` | 2 min | 240 |
+| `mood_changer`, `decree_cleanup_loop`, `riddle_passive_hint_loop` | 5 min | 96 |
+| `daily_bio_loop_*`, `daily_rumor_check_*` | 1 h | 8 |
+
+`twitch_poll_loop` appelle l'API Twitch. Ce n'etait donc pas du bruit de journal : c'est
+**pres de 4 000 corps de boucle en une fraction de seconde a chaque reveil de la machine**,
+dont des milliers d'appels reseau.
+
+---
+
+## La correction : `shared/boucles.py`  ✅
+
+On ne touche pas aux 30 boucles une par une — on corrige le calcul, **une fois**, pour
+toutes les boucles du processus, y compris celles de `shared/twitch/` et celles qui
+seront ecrites demain. Si l'instant calcule est deja passe, on repart de maintenant au
+lieu de rejouer le retard, et on le **dit** dans le journal.
+
+`installer_anti_rattrapage(logger)` est pose dans le `if __name__ == "__main__"` des 6
+bots, juste avant `setup_graceful_shutdown`. **Pas au niveau module** : les tests importent
+ces fichiers, et un correctif global pose a l'import empecherait de tester le defaut.
+
+⚠️ Effet de bord assume : un corps de boucle qui dure plus longtemps que son propre
+intervalle attend desormais un intervalle complet au lieu de repartir aussitot. C'est le
+comportement souhaitable — sans quoi la boucle s'empile sur elle-meme.
+
+⚠️ `boucles.py` a ete ajoute aux **DEUX** listes de vendoring
+([[gotcha-deux-listes-vendoring]]) : `vendor_core.py` copie, `sonde_core_drift.py`
+surveille. Un module absent de la seconde serait vendorise sans filet.
+
+## Le verrou : `tests/test_anti_rattrapage_boucles.py`
+
+9 tests. Le premier est un **temoin** : il verifie que **le defaut existe toujours** dans
+la version installee de discord.py. Sans lui, une correction en amont rendrait les autres
+verts alors que plus rien ne protegerait, et personne ne le saurait.
+
+Les autres : le correctif supprime le rattrapage (120 appels → 2), la pose est
+**idempotente** (`on_ready` rejoue a chaque reconnexion — deux poses empileraient un
+enrobage sur l'autre), et chacun des 6 bots **importe ET appelle**
+([[gotcha-import-ajoute-mais-pas-cable]]).
+
+---
+
+## Ce que la lecture du journal a exhume au passage
+
+Le meme reveil du 04/09 montre `on_ready` mourir sur
+`CommandAlreadyRegistered: Command 'reputation' already registered` — la 2e pose des
+commandes slash. **Ce cas est deja couvert** : les 6 bots enveloppent
+`setup_slash_commands` dans un `try/except` depuis `839fae5`, et
+`tests/test_latence_et_quota.py` l'exige. La trace du journal est anterieure au correctif.
 
 ---
 
 ## Ce qui reste ouvert
 
-- **`report_error` n'est appele que pour Gemini** : decision de design a poser.
-- **5 `MOOD CHANGE` dans la meme seconde** apres une reconnexion : jamais explique.
-- Un **5e fournisseur reste inutile**. Pistes jamais sondees : Cerebras, Together.
-- Un reglage nemotron plus mordant que `reasoning_effort=none` (`chat_template_kwargs`,
-  `/no_think`) : jamais sonde, NVIDIA rate-limite des qu'on enchaine. Sans urgence, le
-  filet anti-fuite couvre le cas.
-- Le reste de [[dette-validation-live]] est inchange.
-- Les 2 pistes de fond : **Phase 3 repartie** (a re-specifier, code perdu) et la
-  **migration mempalace**.
+- **`report_error` n'est appele que pour Gemini** : decision de design a poser. C'est le
+  dernier vrai point de la liste.
+- Un reglage nemotron plus mordant que `reasoning_effort=none` : jamais sonde, NVIDIA
+  rate-limite des qu'on enchaine. Sans urgence.
+- Un **5e fournisseur reste inutile** : NVIDIA, 4e echelon, a **0 appel** en base sur
+  342 lignes depuis avril. Un 5e se placerait derriere un echelon jamais atteint.
+- Le reste de [[dette-validation-live]] : ce qui exige un humain, un clic ou un vrai live.
+- Les 2 pistes de fond : Phase 3 repartie, migration mempalace.
 
 ---
 
 ## Regles de travail — celles qui ont paye aujourd'hui
 
-- ⚠️ **Un chantier commence par reproduire son propre chiffre.** Deux definitions de
-  « gestionnaire muet » donnent 366 et 104 ; sans reproduire le 104 on aurait cru a une
-  explosion du probleme.
-- ⚠️ **Ne jamais ecrire `logger.` sans avoir verifie qu'il existe** dans ce fichier-la.
-- ⚠️ **`git checkout -- <fichier>` pour annuler une mutation de test efface aussi le
-  travail non commite du meme fichier.** C'est arrive sur `shared/chrono.py` : la
-  mutation a bien vire au rouge, et le correctif est parti avec. Sauvegarder ailleurs.
-- ⚠️ **Editer en remontant** : convertir un `except: pass` d'une ligne en deux lignes
-  decale tout ce qui suit. Traiter les cibles par numero de ligne **decroissant**.
-- ⚠️ Les fichiers du depot sont en CRLF cote disque et en LF dans l'index. Un outil qui
-  reecrit en LF ne change rien au contenu commite, mais `git status` peut afficher des
-  fichiers « modifies » a diff vide : `git checkout --` sur des fichiers reellement
-  identiques nettoie l'affichage.
+- ⚠️ **Un chiffre rapporte de memoire est un chiffre a re-mesurer.** « 5 MOOD CHANGE »
+  etait 40, et la cause n'avait rien a voir avec l'humeur.
+- ⚠️ **Grouper le journal par horodatage** (`awk | sort | uniq -c`) montre les rafales
+  qu'une lecture lineaire noie.
+- ⚠️ **Ce qui se voit dans un journal, c'est ce qui journalise.** 29 boucles rattrapaient
+  en silence ; seule celle qui parle a trahi les 29 autres.
+- ⚠️ **Reproduire le defaut avant de le corriger**, et **garder le temoin dans la suite** :
+  un correctif dont on ne verifie plus que le probleme existe devient un no-op silencieux.
+- ⚠️ **Verifier l'indentation de la cible avant d'inserer** : `setup_graceful_shutdown`
+  est a 4 espaces chez 2 bots et a 8 chez 4 autres. L'insertion aveugle a casse 4 fichiers,
+  rattrapee par `py_compile`.
 - ⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port 8599.

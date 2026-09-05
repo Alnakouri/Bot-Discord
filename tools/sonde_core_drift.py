@@ -16,7 +16,8 @@ MODULES = [
     "models.py",
     "api_tracking.py",
     "transcript.py",
-    "chrono.py"
+    "chrono.py",
+    "boucles.py"
 ]
 
 MODULE_NAMES = [m[:-3] for m in MODULES]

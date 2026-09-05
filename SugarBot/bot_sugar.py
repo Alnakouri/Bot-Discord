@@ -19,6 +19,7 @@ import re
 import json
 import os
 from core.response_memory import ResponseMemory, merge_recent_responses
+from core.boucles import installer_anti_rattrapage
 import logging
 from datetime import datetime
 from core.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
@@ -1029,6 +1030,9 @@ async def on_sugar_shutdown():
 
 if __name__ == "__main__":
     if DISCORD_TOKEN:
+        # Un `tasks.loop` rejoue TOUTES les iterations manquees quand l'horloge saute
+        # (veille de l'hote) : 40 `MOOD CHANGE` en deux secondes le 2026-09-04.
+        installer_anti_rattrapage(logger)
         setup_graceful_shutdown(bot, on_sugar_shutdown)
         bot.run(DISCORD_TOKEN)
     else:
