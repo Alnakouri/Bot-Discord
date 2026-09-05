@@ -794,7 +794,13 @@ class QuizView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         self.stop()
-        
+
+        # ⚠️ Sans cette ligne, l'embed de fin levait un NameError : `end_game` etait la
+        # SEULE des six methodes qui construisent un embed a ne pas definir `color`.
+        # L'ecran de fin de quiz ne s'affichait donc jamais, et l'exception partait dans
+        # un callback discord.py — donc nulle part de visible.
+        color = discord.Color.gold()
+
         bot_name = self.persona["name"]
         unregister_player(self.player.id)
 

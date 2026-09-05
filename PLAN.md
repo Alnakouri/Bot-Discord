@@ -1,181 +1,240 @@
-# PLAN — audit des 6 bots : lot execute, revu, corrige
+# PLAN — validation live de NVIDIA : faite, et ce qu'elle a trouve
 
-Redaction : Claude. Execution : Antigravity. **Revue et reparation : Claude, le 2026-09-05.**
+Redaction et execution : Claude, le 2026-09-05.
 
-Suite de l'audit du 2026-09-04 (« trouver la cause de tous les problemes »). Le lot a ete
-execute par Antigravity, **relu avant commit** comme le veut la regle — et la relecture a
-trouve de quoi remplir cette page.
-
----
-
-## Etat : vert, non commite  🟢
-
-**621 tests, `exit=0`, aucun nom indefini (`pyflakes`), aucune derive du noyau.**
-5 mutations passees, 5 rouges pour la bonne raison. Reste : commit, CI, deploiement,
-validation live.
+Suite directe de l'audit du 04/09. Le lot precedent (`cb65ca0`) etait pousse, CI verte,
+deploye — il ne restait que **la validation live**, seul point ouvert. Elle est faite.
+Elle a aussi exhume un trou que personne n'avait vu.
 
 ---
 
-## Ce que la relecture a trouve dans le lot livre  🔴
+## Etat : vert  🟢
 
-Le lot **ne compilait pas**. Trois familles de degats, toutes du meme geste : une
-suppression **par motif textuel** au lieu d'une suppression par structure.
+Les 6 conteneurs redemarres, **zero traceback et zero mention d'OpenRouter** sur toute la
+fenetre de demarrage, les six annoncent NVIDIA. NVIDIA repond **dans les six**, par la
+cascade du noyau comme en direct.
 
-| # | Degat | Portee |
-|---|---|---|
-| 1 | 193 `except` muets convertis **a l'aveugle** | 29 fichiers |
-| 2 | `SyntaxError` : la signature gardait une virgule orpheline | **11 fichiers** |
-| 3 | 22 noms indefinis apres la suppression d'OpenRouter | 12 fichiers |
-
-### 1. Les 193 logs aveugles — retires  ⚠️
-
-Le plan disait : *« Ne PAS tous les convertir a l'aveugle. Les passer en revue un par
-un. »* Ils l'ont tous ete, avec le meme message :
-
-    logger.debug("Exception silencieuse ignorée dans healthcheck.py")
-
-⚠️ **Ce message ne porte pas l'exception.** Il dit qu'il s'est passe quelque chose, jamais
-quoi : exactement le defaut qu'on voulait corriger, avec une ligne de log en plus.
-
-⚠️ **Pire : `logger` n'existe pas dans 29 de ces fichiers.** `pyflakes` en comptait **62
-occurrences** — `dashboard/backend/relauncher.py` (le bouton de redemarrage),
-`shared/twitch/connection.py`, les 6 `core/models.py`, les sondes. Un `except` silencieux
-mais inoffensif devenait un `NameError` **leve depuis le gestionnaire d'exception**.
-
-→ Les 193 lignes sont retirees (169 seules, 24 en ligne restaurees en `except X: pass`).
-Le sujet reste ouvert, cf. plus bas.
-
-### 2. Les 11 `SyntaxError` — reparees
-
-`openrouter_client=None,` a ete supprime en laissant `,` seul sur sa ligne dans les **7**
-cascades, un `try:` sans corps chez Alfred et M'aiq, une liste `SOCLE` sans crochet
-fermant, et une ligne coupee en deux dans une sonde.
-
-Meme geste dans `tests/test_crypto_roundtrip.py` : la fixture a ete supprimee **parce
-qu'elle citait la chaine `OPENROUTER_API_KEY`**, et le test s'est mis a lire une variable
-qui n'existait plus.
-
-### 3. Les 22 noms indefinis — reparees
-
-Les signatures ont ete nettoyees, **pas les corps ni les appelants** : `self.openrouter_client
-= openrouter_client` survivait dans `discord_profile`, `discord_status` et
-`twitch_announcer` ; `key_manager.register_api("openrouter", …)` chez Johnny et Sugar.
+La session a livre **trois** choses, dans cet ordre : la validation live elle-meme, puis
+les deux defauts qu'elle a exhumes — le filet anti-fuite mort chez NVIDIA, et un
+`NameError` qui empechait l'ecran de fin de quiz de s'afficher. Les deux sont **corriges,
+verrouilles par des tests, et verifies par mutation**.
 
 ---
 
-## Deux bugs ANTERIEURS au lot, exhumes par la relecture  🔴
+## Ce que la validation live a prouve  ✅
 
-### A. NVIDIA n'avait jamais servi un seul message
+### 1. Le demarrage est propre sur les six
 
-Le 4e fournisseur a ete ajoute le 04/09. `get_model_cascade()` rend bien `nvidia` en
-dernier echelon **pour les six personas**. Il n'a pourtant jamais repondu :
+    docker logs --since 15m <bot> | grep -icE "traceback|openrouter"   →  0, six fois
 
-* **Sheogorath, Alfred, M'aiq et Malena** portent leur cascade **INLINE** dans
-  `on_message`. Le lot du 04/09 n'a cable que `shared/llm_cascade.py` et ses 6 copies
-  vendorisees. Ces quatre-la n'avaient **aucune** branche `client_type == "nvidia"` :
-  l'echelon tombait dans le vide, **sans un mot dans les logs**.
-* **Johnny et Sugar** passent par le noyau, mais n'importaient pas `NVIDIA_BASE_URL`. La
-  construction du client levait un `NameError` **avale par son propre `except`**.
+⚠️ **Le compteur brut ment** : `docker logs` sans fenetre rend tout l'historique du
+conteneur, y compris les lignes d'avant le correctif (jusqu'a 95 mentions d'OpenRouter
+chez Sheogorath). Un `restart` ne remet pas ce journal a zero. **Toujours borner par
+`--since`** avant de conclure quoi que ce soit d'un `grep` sur `docker logs`.
 
-⚠️ Le health check annoncait « NVIDIA : Oui » sur les six — il regarde **la cle**, jamais
-le cablage. C'est ce qui a fait croire au 04/09 que le fournisseur etait en service.
+### 2. NVIDIA sert vraiment — mais aucun log ne pouvait le dire
 
-⚠️ **C'est la cause commune de l'audit sous sa forme la plus pure** : un correctif pose
-dans `shared/` ne descend pas dans les quatre cascades recopiees.
+`data/api_usage.db` au 05/09 : **zero appel NVIDIA** depuis son ajout. Non pas parce
+qu'il est casse — parce qu'il est **4e echelon** et que les trois premiers repondent
+toujours. Attendre `🟩 [NVIDIA` dans les logs, c'etait attendre une panne triple.
 
-→ **Cable dans les 4**, avec `nvidia_kwargs()` (sans lui nemotron recite sa pensee et met
-six fois plus de temps), le filet `_fuite_de_raisonnement()` et la garde `_est_vide()`.
-Alfred, M'aiq et Sheo **n'avaient ni l'un ni l'autre** : ils les **importent** du noyau au
-lieu d'en faire une 8e copie. Verrouille par `tests/test_nvidia_cable_partout.py`.
+→ D'ou `tools/sonde_nvidia.py`, qui va le chercher au lieu de l'attendre. Elle s'execute
+**dans** les conteneurs (`docker exec`) : les cles sont chiffrees et ne se dechiffrent
+qu'avec la `.master_key` montee dans l'image, donc la lancer depuis l'hote ne dirait rien.
 
-### B. EventSub Twitch ne pouvait pas demarrer
+| mode | ce qu'il prouve |
+|---|---|
+| `ping` | la cle, le modele, l'URL et `nvidia_kwargs()` sont bons dans le conteneur |
+| `--cascade` | `generate_response()` descend jusqu'a l'echelon `nvidia` et en rend du texte |
 
-`shared/twitch/eventsub_bridge.py` passe `nvidia_client=` a `TwitchEventSub(...)` depuis
-`4292cf0`, mais la signature ne l'a **jamais** eu : `TypeError` a la construction. Le corps
-affectait `self.nvidia_client` a partir d'un nom inexistant. → signature corrigee.
+Mesure : **6/6 au ping, 6/6 a la cascade**, 400 ms – 1 s en regime normal. Et six cles
+**differentes**, conformement a [[regle-une-cle-api-par-bot]].
 
-### C. Deux appels a un `generate_response` jamais importe
-
-Le `_daily_llm_call` d'Alfred et celui de M'aiq appelaient `generate_response` sans que le
-nom existe dans le module : `NameError` a chaque lecture du jour. → import ajoute (il
-venait de toute facon avec les gardes).
+⚠️ `--cascade` exerce **le noyau**. Alfred, M'aiq, Malena et Sheogorath portent leur
+cascade dans `on_message` : ce vert ne dit rien de leur cablage, et leur code n'est pas
+appelable hors d'un vrai message Discord. Pour eux l'autorite reste
+`tests/test_nvidia_cable_partout.py`, qui en lit la structure. La sonde le **dit** en fin
+de rapport plutot que de laisser croire l'inverse.
 
 ---
 
-## La decision qui restait a prendre : OpenRouter est RETIRE  ✅
+## Ce que la sonde a trouve — et qui est corrige  ✅
 
-C'etait la question ouverte n°1 de l'audit. Reponse : **retire**, et fige par
-`tests/test_openrouter_est_retire.py` (5 tests).
+### Le filet anti-fuite du noyau etait MORT sur NVIDIA
 
-Le motif n'est pas le menage, c'est un **piege arme** : `_fuite_de_raisonnement()` — la
-garde qui a empeche Malena de reciter son raisonnement en Discord — n'etait appelee que
-dans la branche OpenRouter du noyau. Le jour ou quelqu'un remettait OpenRouter dans une
-cascade, les cascades inline recitaient leur raisonnement en clair.
+Mesure du 05/09, ~56 appels : nemotron laisse fuir du meta-discours dans `content`
+**environ une fois sur vingt**, malgre `reasoning_effort=none` :
 
-⚠️ **Verifie avant de trancher** : le retrait ne coute aucune capacite. La cascade IMAGE
-ne rend que `["gemini", "gemini"]` pour les six personas ; la branche OpenRouter
-« secours multimodal » n'etait jamais atteinte. Le tool-use agentique de Sheo via
-OpenRouter etait mort pour la meme raison — le sien passe par Gemini.
+    'p? The user wants exactly: pong'              (malena)
+    'p deepellsellsellsellsellsellsworth, pong'    (maiq)
 
-**Les 9 tests qui verrouillaient la branche ont ete retournes, pas supprimes** :
+C'est ce qui serait parti dans Discord. Or le filet cense l'arreter ne peut pas :
 
-| test | avant | apres |
-|---|---|---|
-| `test_cascade_reponse_vide` (5) | echelon suivant = OpenRouter | = **NVIDIA** |
-| `test_aucun_client_…_ne_dort_sur_un_429` | 6 clients OpenRouter | **6 clients NVIDIA** |
-| `test_timeout_media` | media porte par gemini **et openrouter** | **gemini seul** |
-| `test_sheo_images` | payload multimodal OpenRouter | **payload Gemini** |
+```python
+def _fuite_de_raisonnement(msg):
+    pensee = (getattr(msg, "reasoning", None) or "").strip()
+    contenu = (getattr(msg, "content", None) or "").strip()
+    if not pensee or not contenu:
+        return False          # ← NVIDIA sort TOUJOURS par ici
+```
+
+**L'endpoint NVIDIA ne remplit jamais `reasoning`** (verifie : 16 appels, vide a chaque
+fois). Le detecteur rend donc `False` quoi qu'il arrive. Le commentaire de la branche
+nvidia — « Filet malgre tout : le parametre pourrait cesser d'etre honore » — promet une
+protection **qui n'existe pas**. Il ne protege que la forme OpenRouter, celle pour
+laquelle il a ete ecrit, et qui vient d'etre retiree du code.
+
+⚠️ C'est encore la meme cause commune : un filet ecrit pour un fournisseur, reconduit tel
+quel sur un autre, sans que rien ne verifie qu'il mord toujours.
+
+### La decision, prise : le filet lit desormais le CONTENU  ✅
+
+`_fuite_de_raisonnement()` teste maintenant **deux** formes. La forme 1 (le champ
+`reasoning`) est conservee telle quelle — elle sert si un fournisseur remplit ce champ.
+La forme 2 est neuve : des **marqueurs de meta-discours** cherches dans `content` seul.
+
+Les marqueurs ne sont pas inventes : ils viennent de `tools/sonde_fuite_raisonnement.py`,
+qui les a etablis et **elargis au francais** le 04/09 (un detecteur anglophone avait
+classe « propres » trois vraies fuites).
+
+⚠️ **Mesure faite AVANT de brancher**, parce qu'un filet a faux positifs est pire que pas
+de filet :
+
+| mesure | resultat |
+|---|---|
+| 460 vraies reponses des 6 bots (memoires, archives, bios, statuts) | **0 faux positif** |
+| 12 appels NVIDIA **sans** garde-fou (temoin) | **12 fuites sur 12, toutes attrapees** |
+| 40 appels NVIDIA **avec** `reasoning_effort=none` | 0 fuite sur 28 aboutis |
+
+Le seul marqueur qui produisait un faux positif, `mon rôle est de`, a ete **retire** du
+noyau : « Mon rôle est de répondre, pas de me taire » est une replique **en personnage**.
+Il reste dans la sonde, ou un humain lit le verdict. Un cas de test garde la porte fermee.
+
+⚠️ **La forme 2 juge le TEXTE**, donc elle s'applique a tout appelant, pas seulement a
+NVIDIA. C'est assume : le cout mesure est nul, et un echelon non terminal ne perd qu'un
+saut de cascade.
+
+⚠️ **La copie privee de Malena a ete supprimee.** Elle redefinissait
+`_fuite_de_raisonnement()` dans son propre fichier : elle n'aurait **jamais recu** la
+forme 2 — et Malena est precisement le bot qui a deja recite son raisonnement en plein
+Discord. Elle importe le noyau maintenant, comme Alfred, M'aiq et Sheogorath. Le test qui
+exigeait `def _fuite_de_raisonnement` chez elle a ete **retourne** : il exige l'import,
+l'appel, **et l'absence** de re-definition ([[gotcha-import-ajoute-mais-pas-cable]]).
+
+Le commentaire mensonger « Filet malgre tout » est corrige dans les **5** branches nvidia.
+
+Verifie par **2 mutations** : filet neutralise → les 3 fuites reelles passent au rouge ;
+copie de Malena ressuscitee → son test passe au rouge.
+
+**Ce qui reste non sonde** : un reglage nemotron plus mordant que `reasoning_effort=none`
+(`chat_template_kwargs={"thinking": False}`, directive systeme `/no_think`). La mesure a
+ete tentee et **NVIDIA a rate-limite** (429 sur 12 des 40 appels de la premiere
+configuration, 40/40 sur la suivante). Sans interet immediat : le filet couvre le cas.
+
+### Latence NVIDIA tres irreguliere
+
+400 ms en regime normal, mais des pics a **7–10 s** sur des reponses parfaitement
+propres, sans correlation avec la fuite. En 4e echelon, apres trois echecs, cela
+s'ajoute. A garder en tete si la cascade descend souvent jusque-la.
 
 ---
 
-## L'autre decision : la garde anti-incrustation de Sheogorath  ✅
+## Le second volet : « pyflakes avant pytest » etait un voeu  ✅
 
-Livree par Antigravity, verifiee : `_other_bot_in_focus` est desormais dans les **6**.
+La regle est ecrite dans ce fichier depuis le 05/09, et **rien ne la jouait**. Un
+`pyflakes` lance a la main pendant cette session a trouve, dans un fichier que le rapport
+de la veille declarait propre :
+
+    shared/games/views.py:821:  undefined name 'color'
+
+`end_game` est la **seule des six methodes** de ce fichier qui construisent un embed a ne
+pas definir `color = discord.Color.gold()`. **L'ecran de fin de quiz ne s'affichait donc
+jamais** : `NameError` leve dans un callback discord.py, c'est-a-dire nulle part de
+visible. → corrige, avec le commentaire qui dit pourquoi la ligne est la.
+
+⚠️ **La CI ne pouvait pas le voir** : son etape `py_compile` couvre
+`shared/*.py` — sans recursion — donc pas `shared/games/`. Et un `NameError` ne se voit
+de toute facon pas a la compilation.
+
+→ **`tests/test_aucun_nom_indefini.py`** : `pyflakes` joue **dans la suite**, sur les 10
+racines du depot, copies vendorisees `*/core/` comprises. Il ne retient que les
+**noms indefinis** et les **erreurs de syntaxe** — pas les imports inutilises, dont
+l'echec apprendrait a ignorer le test. Verifie par **mutation** (le correctif retire →
+rouge sur la bonne ligne).
+
+⚠️ **`pyflakes` a ete ajoute a `requirements.txt`.** Sans ca le test faisait
+`importorskip` et **se serait skippe en silence en CI** — un verrou qui s'auto-desarme
+quand sa dependance manque, c'est-a-dire le piege meme qu'il ferme. L'import est
+desormais **dur**.
+
+Ce que ce verrou aurait attrape s'il avait existe : les **62 `logger` indefinis** du
+04/09 et les **11 `SyntaxError`** du 05/09, qui ne cassaient aucun test.
 
 ---
 
-## Ce qui reste ouvert
+## Ce qui reste ouvert par ailleurs
 
-### Les 46 `except` muets — a refaire, une par une
+### Les 46 `except` muets — inventaire refait, chantier intact
 
-Le sujet n'est pas clos, il est **remis a zero**. Ce qu'il faut, et que la conversion
-aveugle n'a pas fait :
+Le decompte du plan precedent etait faux. **Mesure par `ast` le 05/09 : 104 gestionnaires
+muets dans 36 fichiers**, hors copies vendorisees `*/core/` (qui se regenerent depuis
+`shared/`). Les gros porteurs : `MaiqBot/bot_maiq.py` (15), `Alfred/bot_alfred.py` (13),
+`Sheogorath/bot_sheogorath.py` (11), `shared/games/views.py` (7).
+
+Et la contrainte qui avait fait echouer la conversion aveugle est maintenant **cartographiee** :
+**7 fichiers n'ont aucun `logger`** — `dashboard/backend/features_config.py`,
+`dashboard/backend/relauncher.py`, `shared/twitch/connection.py`, `shared/twitch_chat.py`,
+`shared/twitch_announcer.py` et les sondes de `tools/`. Y ecrire `logger.debug(...)`
+fabrique un `NameError` **leve depuis le gestionnaire d'exception**, ce qui est
+strictement pire que le silence.
+
+La methode reste celle du plan precedent, inchangee :
 
 1. **Porter l'exception** : `except Exception as e:` puis `logger.debug(f"… : {e}")`.
-   Un log sans l'erreur ne sert a rien.
-2. **Verifier qu'un `logger` existe** dans le fichier — 29 n'en ont pas.
-3. **Laisser muets ceux qui doivent l'etre**, avec un commentaire qui le dit (un
-   `_chrono.fin()` ne doit jamais casser une reponse).
+2. **Verifier qu'un `logger` existe** — les 7 ci-dessus n'en ont pas.
+3. **Laisser muets ceux qui doivent l'etre**, avec un commentaire qui le dit.
 
-Ce n'est pas un travail de motif textuel. C'est 46 lectures.
+Premiere lecture faite sur les 9 de `shared/` : la plupart sont **legitimement muets**
+(`sqlite3.OperationalError` sur un `ADD COLUMN` deja passe, `queue.Full` a l'arret,
+`IntegrityError` sur un doublon, le `chrono` qui ne doit jamais casser une reponse). Deux
+meritent un `debug` : `smart_router.py:414` (`except Exception` autour de
+`fetch_message` — c'est la resolution du media d'un message cite qui echoue en silence)
+et `twitch_announcer.py:375` (parsing ISO qui retombe sur la fenetre par defaut sans le
+dire) — **mais ce dernier fichier n'a pas de `logger`**.
 
-### Validation live
+### Inchange
 
-Rien de tout ceci n'a tourne en vrai. En particulier :
-
-* **`🟩 [NVIDIA` doit enfin apparaitre** dans les logs des 6 bots. C'est la preuve que le
-  4e fournisseur existe. Il est en dernier echelon : invisible tant que les 3 autres
-  repondent.
-* Le reste de la dette de validation live est inchange.
+Vision de Sugar jamais exercee en live ; `report_error` n'est appele que pour Gemini ;
+les 5 `MOOD CHANGE` dans la meme seconde apres reconnexion ; le reste de
+[[dette-validation-live]]. Un 5e fournisseur reste inutile.
 
 ---
 
 ## Regles de travail — celles qui ont paye aujourd'hui
 
-- ⚠️ **Relire ce qu'Antigravity a livre avant de commiter.** 11 fichiers ne compilaient
-  pas. Un `pytest` suffisait a le voir.
-- ⚠️ **`pyflakes` avant `pytest`.** Les 62 `logger` indefinis et les 22 noms orphelins ne
-  cassaient **aucun** test : ils n'auraient explose qu'en live, dans un `except`.
-- ⚠️ **Ne jamais supprimer du code par motif textuel.** Toute la casse du jour vient de
-  la : une virgule orpheline, un `try:` sans corps, une fixture de test effacee parce
-  qu'elle **citait** le mot.
-- ⚠️ **Un correctif dans `shared/` ne descend pas dans les 4 cascades inline.** NVIDIA
-  vient d'en faire la demonstration complete.
-- ⚠️ **Un health check qui regarde la cle ne prouve pas le cablage.**
-- ⚠️ **Verifier chaque test neuf par MUTATION.** 5 mutations, 5 rouges.
-- ⚠️ **Le heredoc du Bash tool detruit les sequences d'echappement** : un `\n` ecrit
-  ainsi coupe la chaine en deux. Passer par l'edition de fichier, ou `chr(92)`. Paye une
-  fois de plus aujourd'hui.
-- Deux `pytest` en parallele font echouer `tests/test_dashboard_restart.py` (port 8599).
-- Noms de service compose : `alfred`, `johnny`, `maiq`, `malena`, `sheogorath`, `sugar`.
-- Deploiement : le source est **bind-monte**, un `docker restart` suffit.
+- ⚠️ **Borner `docker logs` par `--since`.** Sans fenetre, le journal d'un conteneur
+  redemarre contient encore tout l'avant-correctif.
+- ⚠️ **Un filet ecrit pour un fournisseur ne mord pas chez le suivant.** Le verifier au
+  lieu de le reconduire — c'est la meme cause que les 4 cascades inline sans branche
+  `nvidia`.
+- ⚠️ **Un echelon de secours ne se valide pas en regardant les logs** : par construction
+  il ne sert que quand tout le reste est tombe. Il faut aller le chercher.
+- ⚠️ **Un detecteur ne se recopie pas dans une sonde** : la premiere version du verdict
+  utilisait trois marqueurs choisis a la main et a compte OK une vraie fuite. Mais
+  importer celui de la prod n'aurait rien valu non plus ici — il est mort sur ce
+  fournisseur. Il a fallu un critere qui ne depende ni de l'un ni de l'autre.
+- ⚠️ **Un verdict trop strict est un verdict qu'on apprend a ignorer** : compter `'Ping'`
+  au lieu de `'pong'` comme un echec, c'est signaler un modele mal luné comme une panne.
+- ⚠️ **Une regle qu'aucun outil ne joue est un voeu.** « pyflakes avant pytest » etait
+  ecrit ici depuis un jour, et un `NameError` dormait deja dans le code.
+- ⚠️ **Un verrou qui s'auto-skippe ne verrouille rien** : `importorskip` sur une
+  dependance absente de `requirements.txt` rend un test vert en CI sans rien lire.
+- ⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port
+  8599. Trois echecs distincts observes aujourd'hui — `test_dashboard_restart`,
+  `test_sheo_anti_tic`, `test_sheo_cheese_dose` — tous **verts en isolation** (32/32).
+- Le Bash tool casse les echappements dans un heredoc, et la console Windows est en
+  cp1252 : un `⚠️` dans un `print()` leve `UnicodeEncodeError`. Docstrings seulement.
+- `MSYS_NO_PATHCONV=1` pour un chemin conteneur ; `docker exec -i … python -` plutot que
+  `docker cp`, qui echoue sur le montage lecture seule.
+- Noms de conteneur : `bot-alfred`, `bot-johnny`, `bot-maiq`, `bot-malena`,
+  `bot-sheogorath`, `bot-sugar`. Le source est bind-monte : un `docker restart` deploie.
