@@ -470,8 +470,8 @@ async def apply_decree_role(guild, member, title, duration=600):
         new_pos = max(1, bot_role.position - 1)
         try:
             await role.edit(position=new_pos)
-        except discord.Forbidden:
-            pass
+        except discord.Forbidden as e:
+            logger.debug(f"[DECRET] placement hierarchique du role refuse : {e}")
 
         # 3. Assignation. Échec attendu si la cible est le PROPRIÉTAIRE du serveur
         #    (Discord interdit à tout bot de gérer ses rôles) ou si elle a un rôle
@@ -486,8 +486,8 @@ async def apply_decree_role(guild, member, title, duration=600):
             )
             try:
                 await role.delete(reason="Décret non assignable (cible protégée)")
-            except discord.HTTPException:
-                pass
+            except discord.HTTPException as e:
+                logger.debug(f"[DECRET] suppression du role non assignable impossible : {e}")
             _remove_decree(role.id)
             return None
         logger.info(f"👑 [DECRET] Rôle '{role_name}' assigné à {member.display_name} pour {duration}s")
@@ -565,7 +565,7 @@ async def cleanup_old_decree_roles(guild):
                 await role.delete(reason="Rôle de décret orphelin (nettoyage)")
                 logger.info(f"🧹 [DECRET] Rôle orphelin '{role.name}' supprimé (filet par-nom).")
             except discord.NotFound:
-                pass
+                pass  # le role a deja disparu, c'est precisement le but recherche
             except discord.Forbidden:
                 logger.warning(f"⚠️ [DECRET] Permissions insuffisantes (orphelin '{role.name}').")
             except Exception as e:

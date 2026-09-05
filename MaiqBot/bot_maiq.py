@@ -312,7 +312,7 @@ async def on_ready():
         enregistrer_serveurs("maiq", bot, logger)
         logger.info(f"🧪 [MODE TEST:maiq] {etat_lisible('maiq')}")
     except ImportError:
-        pass
+        pass  # shared/ est optionnel, le bot doit tourner sans
 
     logger.info('--------------------------------------------------')
     logger.info('🐱 M\'aiq le Menteur est prêt (Production Mode).')
@@ -433,7 +433,8 @@ async def check_missed_riddle_answers():
                     try:
                         await m.reply(f"🎉 **M'aiq s'était endormi...** Mais il a vu ta réponse ! Tu gagnes **+{total_reward}** points ! 💎")
                         await m.add_reaction("✅")
-                    except Exception: pass
+                    except Exception as e:
+                        logger.debug(f"[ENIGME] rattrapage hors-ligne : notification impossible : {e}")
                     
         except Exception as e:
             logger.error(f"⚠️ [STARTUP CHECK FAIL] Canal {channel.name}: {e}")
@@ -683,12 +684,13 @@ async def close_riddle_cleanup(channel, riddle_message_id: int = None):
         try:
             ref_msg = await channel.fetch_message(riddle_message_id)
             await ref_msg.unpin()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[ENIGME] desepinglage impossible : {e}")
     
     # 2. Supprimer de la DB
     try: delete_active_riddle(channel.id)
-    except Exception: pass
+    except Exception as e:
+        logger.warning(f"[ENIGME] suppression en base impossible : l'enigme restera active : {e}")
 
 # COMMANDES UTILITAIRES (!enigme, !profil)
 
@@ -1045,7 +1047,8 @@ async def on_reaction_add(reaction, user):
             chance = random.random()
             if chance < 0.4:
                 await reaction.message.channel.send(f"{user.mention} Ah ! Une pince ! M'aiq la prend. (Total volé: {count})")
-        except discord.HTTPException: pass
+        except discord.HTTPException as e:
+            logger.debug(f"[PINCE] compteur ou reaction : echec Discord : {e}")
 
     # 2. LE CHEVAL (Nourriture)
     elif emoji in ["🐴", "🐎", "🦄"]:
@@ -1143,10 +1146,12 @@ async def on_message(message):
                          return
 
                     try: add_riddle_participant(message.channel.id, message.author.id)
-                    except Exception: pass
+                    except Exception as e:
+                        logger.warning(f"[ENIGME] participant non enregistre en base : {e}")
                     
                     try: await message.add_reaction("✅")
-                    except Exception: pass
+                    except Exception as e:
+                        logger.debug(f"[ENIGME] reaction de succes impossible : {e}")
                     
                     existing_winners = get_riddle_winners(message.channel.id)
                     actual_reward = reward
@@ -1176,14 +1181,16 @@ async def on_message(message):
                         if active_riddle.get("message_id"):
                             ref_msg = await message.channel.fetch_message(active_riddle["message_id"])
                             await ref_msg.unpin()
-                    except Exception: pass
+                    except Exception as e:
+                        logger.debug(f"[ENIGME] desepinglage impossible : {e}")
                     
                     await message.reply(f"🎉 **Exact !** {bonus_text}Tu gagnes **+{actual_reward}** points de réputation ! 💎\n*(L'énigme reste ouverte pour les autres !)*") 
                     return
                 else:
                     if is_explicit_reply:
                         try: await message.add_reaction("❌")
-                        except Exception: pass
+                        except Exception as e:
+                            logger.debug(f"[ENIGME] reaction d'echec impossible : {e}")
                         reset_riddle_streak(message.author.id)
                         return
                     # Sinon on ignore passivement
@@ -1577,7 +1584,7 @@ async def on_message(message):
                 try:
                     _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
                 except (ValueError, KeyError, AttributeError):
-                    pass
+                    pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
             try:
                 tracer_appel(
                     bot="maiq", api=client_type, modele=model_name,
@@ -1638,7 +1645,8 @@ async def reponse_cmd(ctx, *, answer: str):
 
     # Tracking Participant
     try: add_riddle_participant(ctx.channel.id, ctx.author.id)
-    except Exception: pass
+    except Exception as e:
+        logger.warning(f"[ENIGME] participant non enregistre en base : {e}")
 
     correct, reward, message_text = check_answer(ctx.channel.id, answer)
     
@@ -1677,11 +1685,13 @@ async def reponse_cmd(ctx, *, answer: str):
             try:
                 ref_msg = await ctx.channel.fetch_message(game["message_id"])
                 await ref_msg.unpin()
-            except Exception: pass
+            except Exception as e:
+                logger.debug(f"[ENIGME] desepinglage impossible : {e}")
         
         # Feedback WIN
         try: await ctx.message.add_reaction("✅")
-        except Exception: pass
+        except Exception as e:
+            logger.debug(f"[ENIGME] reaction de succes impossible : {e}")
         await ctx.send(f"🎉 **Exact !** {bonus_text}{ctx.author.mention} gagne **+{actual_reward}** points de réputation ! 💎")
         return
 

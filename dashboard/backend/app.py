@@ -279,7 +279,7 @@ async def log_stream(websocket: WebSocket, bot: str = None):
         try:
             await websocket.close()
         except Exception:
-            pass
+            pass  # la socket est deja fermee cote client
 
 # --- ERRORS ---
 @app.get("/api/errors/count")
@@ -304,8 +304,8 @@ async def resolve_error(error_id: int):
         if row:
             bot_name = row[0]
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"resolve_error : nom du bot introuvable, audit attribue au defaut : {e}")
     audit_analyzer.log("resolve_error", bot_name, f"Erreur #{error_id} résolue")
     return res
 

@@ -446,7 +446,7 @@ async def on_ready():
         enregistrer_serveurs("malena", bot, logger)
         logger.info(f"🧪 [MODE TEST:malena] {etat_lisible('malena')}")
     except ImportError:
-        pass
+        pass  # shared/ est optionnel, le bot doit tourner sans
 
     logger.info(f'✅ Connectée en tant que {bot.user} (Gitana Mode)')
     logger.info(f'✅ {bot.user} est là ! (Gemini + Groq Hybrid)')
@@ -551,8 +551,8 @@ async def on_message(message):
                     try:
                         await message.add_reaction(emoji)
                         logger.info(f"✨ [REACTION] {emoji} sur message de {message.author.name} (cat: {cat_name})")
-                    except discord.HTTPException:
-                        pass
+                    except discord.HTTPException as e:
+                        logger.debug(f"[REACTION] emoji refuse par Discord : {e}")
                 break  # 1 seule catégorie de réaction par message
     
     # Mots qui forcent la réponse (ex: cuivre, caravane...)

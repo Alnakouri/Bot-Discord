@@ -134,8 +134,8 @@ class DailyMemory:
                 ud["daily_read"] = consigne.strip().strip('"').split("\n")[0][:160]
                 ud["daily_read_date"] = today
                 self.save_memory()
-        except Exception:
-            pass  # non bloquant
+        except Exception as e:
+            logger.debug(f"[LECTURE DU JOUR] mise a jour impossible : {e}")
 
 
 class FactMemory:

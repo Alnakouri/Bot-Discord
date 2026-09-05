@@ -377,7 +377,7 @@ async def on_ready():
         enregistrer_serveurs("johnny", bot, logger)
         logger.info(f"🧪 [MODE TEST:johnny] {etat_lisible('johnny')}")
     except ImportError:
-        pass
+        pass  # shared/ est optionnel, le bot doit tourner sans
     
     ensure_data_writable("johnny", DATA_DIR, logger)
     
@@ -1100,7 +1100,7 @@ async def on_johnny_shutdown():
         try:
             await twitch_chat_task
         except asyncio.CancelledError:
-            pass
+            pass  # annulation attendue : c'est nous qui venons d'appeler cancel()
 
 if __name__ == "__main__":
     if DISCORD_TOKEN:

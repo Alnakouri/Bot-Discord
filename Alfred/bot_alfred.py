@@ -385,7 +385,7 @@ async def on_ready():
         enregistrer_serveurs("alfred", bot, logger)
         logger.info(f"🧪 [MODE TEST:alfred] {etat_lisible('alfred')}")
     except ImportError:
-        pass
+        pass  # shared/ est optionnel, le bot doit tourner sans
     
     # HEALTH CHECK
     logger.info('📊 [HEALTH CHECK] APIs disponibles :')
@@ -711,7 +711,8 @@ class AlfredSink(voice_recv.AudioSink):
                     filename = await asyncio.to_thread(generate_audio)
                     self.ctx.voice_client.stop()
                     self.ctx.voice_client.play(discord.FFmpegPCMAudio(filename))
-                except Exception: pass
+                except Exception as e:
+                    logger.warning(f"[VOCAL] synthese ou lecture audio impossible : {e}")
 
 @bot.command()
 async def ecoute(ctx):
@@ -938,7 +939,7 @@ async def vocal_patrol_loop():
         try:
             vc.stop_listening()
         except Exception:
-            pass
+            pass  # on est deja dans la gestion d'erreur ; l'arret d'ecoute peut echouer sans consequence
         return
     
     # Récupérer le WAV combiné
@@ -1046,7 +1047,8 @@ async def vocal_patrol_loop():
                     try:
                         if member.display_name != SANCTION_NICKNAME:
                             await member.edit(nick=SANCTION_NICKNAME, reason="Sanction Alfred")
-                    except Exception: pass
+                    except Exception as e:
+                        logger.debug(f"[SANCTION] renommage impossible : {e}")
                     
                     # 4. Rôle de la Honte (Dès niveau 3+)
                     if warning_count >= 3:
@@ -1073,7 +1075,8 @@ async def vocal_patrol_loop():
                         if cave_channel:
                              try:
                                 await member.move_to(cave_channel, reason="Exil pour crimes musicaux majeurs")
-                             except Exception: pass
+                             except Exception as e:
+                                 logger.debug(f"[SANCTION] deplacement en cave impossible : {e}")
                         
                         if target_channel:
                             await target_channel.send(
@@ -1201,14 +1204,16 @@ async def remove_sanctions(member):
     # 1. Retirer Timeout
     try:
         await member.timeout(None, reason="Libération Alfred")
-    except Exception: pass
+    except Exception as e:
+        logger.warning(f"[SANCTION] retrait du timeout impossible : {e}")
     
     # 2. Retirer Rôle
     role = discord.utils.get(member.guild.roles, name=SANCTION_ROLE_NAME)
     if role and role in member.roles:
         try:
             await member.remove_roles(role, reason="Libération Alfred")
-        except Exception: pass
+        except Exception as e:
+            logger.warning(f"[SANCTION] retrait du role de la honte impossible : {e}")
             
     # 3. Restaurer Pseudo
     if user_id in active_sanctions:
@@ -1220,13 +1225,15 @@ async def remove_sanctions(member):
         try:
             if original and member.display_name != original:
                 await member.edit(nick=original, reason="Libération Alfred")
-        except Exception: pass
+        except Exception as e:
+            logger.warning(f"[SANCTION] restauration du pseudo impossible : {e}")
     else:
         # Fallback si pas en mémoire (reset nickname)
         try:
             if member.display_name == SANCTION_NICKNAME:
                 await member.edit(nick=None, reason="Libération Alfred")
-        except Exception: pass
+        except Exception as e:
+            logger.warning(f"[SANCTION] restauration du pseudo impossible : {e}")
 
 
 @bot.command(name="nettoyage")
@@ -1284,7 +1291,8 @@ async def do_cleanup(channel, limit=100, bots_only=False):
         
         await asyncio.sleep(4)
         try: await msg.delete()
-        except discord.HTTPException: pass
+        except discord.HTTPException as e:
+            logger.debug(f"[MENAGE] message de confirmation deja disparu : {e}")
         
     except discord.Forbidden:
         await channel.send("🤵 **Alfred** : Je n'ai pas les permissions nécessaires pour supprimer ces messages. 🧤")
@@ -1856,7 +1864,7 @@ async def on_message(message):
                     try:
                         _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
                     except (ValueError, KeyError, AttributeError):
-                        pass
+                        pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
                 try:
                     tracer_appel(
                         bot="alfred", api=client_type, modele=model_name,

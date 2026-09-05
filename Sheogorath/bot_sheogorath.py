@@ -651,7 +651,7 @@ async def on_ready():
         enregistrer_serveurs("sheogorath", bot, logger)
         logger.info(f"🧪 [MODE TEST:sheogorath] {etat_lisible('sheogorath')}")
     except ImportError:
-        pass
+        pass  # shared/ est optionnel, le bot doit tourner sans
 
     logger.info(f'--------------------------------------------------')
     logger.info(f'🧀 Sheogorath règne sur ce serveur ! (Production)')
@@ -1708,7 +1708,8 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
                     timeout=15
                 )
                 fake_text = chat.choices[0].message.content
-            except Exception: pass
+            except Exception as e:
+                logger.debug(f"[IMPOSTEUR] Mistral a echoue, repli sur le texte par defaut : {e}")
         
         if fake_text == "Je suis un imposteur !" and groq_client:
              try:
@@ -1722,7 +1723,8 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
                     timeout=15
                 )
                 fake_text = chat.choices[0].message.content
-             except Exception: pass
+             except Exception as e:
+                 logger.debug(f"[IMPOSTEUR] Groq a echoue, repli sur le texte par defaut : {e}")
 
         # Nettoyage
         fake_text = fake_text.replace('"', '').strip()
@@ -1822,8 +1824,8 @@ async def on_message(message):
         if word in msg_lower:
             try:
                 await message.add_reaction(emoji)
-            except discord.HTTPException:
-                pass 
+            except discord.HTTPException as e:
+                logger.debug(f"[REACTION] emoji refuse par Discord : {e}")
 
     # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
     if message.author.bot:
@@ -1943,7 +1945,8 @@ async def on_message(message):
                         timeout=15
                     )
                     fake_text = chat.choices[0].message.content
-                 except Exception: pass
+                 except Exception as e:
+                     logger.debug(f"[IMPOSTEUR] Groq a echoue, repli sur le texte par defaut : {e}")
             elif mistral_client:
                 try:
                     chat = await asyncio.wait_for(
@@ -1956,7 +1959,8 @@ async def on_message(message):
                         timeout=15
                     )
                     fake_text = chat.choices[0].message.content
-                except Exception: pass
+                except Exception as e:
+                    logger.debug(f"[IMPOSTEUR] Mistral a echoue, repli sur le texte par defaut : {e}")
             
             fake_text = fake_text.replace('"', '').strip()
             await send_imposter_message(message, target, fake_text)
@@ -2003,7 +2007,8 @@ async def on_message(message):
                         timeout=15
                     )
                     fake_text = chat.choices[0].message.content
-                except Exception: pass
+                except Exception as e:
+                    logger.debug(f"[IMPOSTEUR] Mistral a echoue, repli sur le texte par defaut : {e}")
             
             elif groq_client:
                  try:
@@ -2017,7 +2022,8 @@ async def on_message(message):
                         timeout=15
                     )
                     fake_text = chat.choices[0].message.content
-                 except Exception: pass
+                 except Exception as e:
+                     logger.debug(f"[IMPOSTEUR] Groq a echoue, repli sur le texte par defaut : {e}")
 
             fake_text = fake_text.replace('"', '').strip()
             await send_imposter_message(message, message.author, fake_text)
@@ -2571,7 +2577,7 @@ async def on_message(message):
                 try:
                     _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
                 except (ValueError, KeyError, AttributeError):
-                    pass
+                    pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
             try:
                 tracer_appel(
                     bot="sheo", api=client_type, modele=model_name,
@@ -2651,7 +2657,7 @@ async def on_sheo_shutdown():
         try:
             await twitch_chat_task
         except asyncio.CancelledError:
-            pass
+            pass  # annulation attendue : c'est nous qui venons d'appeler cancel()
 
 if __name__ == "__main__":
     if DISCORD_TOKEN:

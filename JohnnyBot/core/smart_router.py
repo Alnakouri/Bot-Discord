@@ -416,6 +416,6 @@ async def resolve_media_attachments(message):
                 msg = await message.channel.fetch_message(ref.message_id)
                 if msg and msg.attachments:
                     return msg.attachments
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[MEDIA] resolution du message cite impossible, on retombe sur les pieces jointes du message courant : {e}")
     return getattr(message, "attachments", [])

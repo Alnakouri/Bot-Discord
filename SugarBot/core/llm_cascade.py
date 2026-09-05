@@ -380,7 +380,7 @@ async def generate_response(
                 try:
                     _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
                 except (ValueError, KeyError, AttributeError):
-                    pass
+                    pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
             _bot_nom = bot_id_depuis_label(bot_label) or (bot_label or "").lower()
             tracer_appel(
                 bot=_bot_nom,

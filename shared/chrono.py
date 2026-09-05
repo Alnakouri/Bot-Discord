@@ -40,7 +40,7 @@ class Chrono:
             self.etapes[nom] = int((maintenant - self._dernier) * 1000)
             self._dernier = maintenant
         except Exception:
-            pass
+            pass  # le chrono ne doit JAMAIS casser une reponse
 
     def fin(self, envoye=True):
         """Cloture, journalise et enregistre. Rend le total en ms (0.0 si quelque chose casse).

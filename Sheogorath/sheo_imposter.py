@@ -48,8 +48,8 @@ async def send_imposter_message(ctx, target_member: discord.Member, text: str):
         # Fallback si pas de permission/webhook
         try:
             await channel.send("🚫 Le Prince n'a pas réussi à voler ce visage. (Permission 'Manage Webhooks' manquante ?)")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[IMPOSTEUR] message d'echec non envoye : {e}")
         return
 
     try:
@@ -71,8 +71,8 @@ async def send_imposter_message(ctx, target_member: discord.Member, text: str):
         logger.error(f"❌ [IMPOSTEUR] Erreur envoi: {e}")
         try:
             await channel.send("Le masque est tombé... (Erreur Webhook)")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[IMPOSTEUR] message d'echec non envoye : {e}")
 
 
 async def fetch_user_style_context(channel: discord.TextChannel, user: discord.Member, limit: int = 15) -> str:

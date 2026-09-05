@@ -1106,7 +1106,7 @@ def is_riddle_duplicate(question: str, answers: List[str] = None) -> bool:
                             conn.close()
                             return True
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    pass  # entree d'historique illisible : on passe simplement a la suivante
         except Exception as e:
             print(f"⚠️ Error checking duplicate answer: {e}")
 

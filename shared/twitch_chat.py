@@ -245,16 +245,16 @@ class TwitchChatBot(
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.viewers_state, f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(f"[TWITCH] sauvegarde finale des viewers impossible : {e}")
         # Sauvegarde finale des facts
         if hasattr(self, "viewer_facts") and self.viewer_facts:
             facts_path = os.path.join(DATA_DIR, f"twitch_facts_{self.bot_id}.json")
             try:
                 with open(facts_path, "w", encoding="utf-8") as f:
                     json.dump(self.viewer_facts, f, indent=2, ensure_ascii=False)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"[TWITCH] sauvegarde finale des faits viewers impossible : {e}")
         # Arrêt d'EventSub si actif
         if hasattr(self, "eventsub_client") and self.eventsub_client:
             self.eventsub_client.stop()
@@ -354,7 +354,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         try:
             voice_min_interval = float(dash_listen["min_interval"])
         except (ValueError, TypeError):
-            pass
+            pass  # valeur illisible dans le dashboard : on garde l'intervalle par defaut
     # Hôte du hub d'écoute : 127.0.0.1 par défaut (IPv4, évite le ::1). En conteneur avec
     # le hub sur la machine hôte, poser TWITCH_LISTEN_HOST=host.docker.internal.
     listen_host = os.getenv("TWITCH_LISTEN_HOST", "127.0.0.1").strip() or "127.0.0.1"

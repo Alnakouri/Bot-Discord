@@ -19,7 +19,7 @@ for _stream in (sys.stdout, sys.stderr):
         try:
             _stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
-            pass
+            pass  # flux non reconfigurable (deja UTF-8, ou redirige) : la sonde tourne quand meme
 
 # Add root directory to sys.path
 _parent_dir = str(Path(__file__).parent.parent)
@@ -211,7 +211,7 @@ def get_twitch_channel(bot_name: str) -> str:
                 if chat_channels:
                     return chat_channels[0].strip().lower().lstrip("#")
         except Exception:
-            pass
+            pass  # config illisible : on retombe sur la variable d'environnement
     env_channels = os.getenv("TWITCH_CHAT_CHANNELS", "")
     if env_channels:
         return env_channels.split(",")[0].strip().lower().lstrip("#")
@@ -334,7 +334,7 @@ async def run_single_probe(channel, bot_username, probe_msg, token, streamer_use
         try:
             await writer.wait_closed()
         except Exception:
-            pass
+            pass  # la socket est deja fermee
             
     return bot_reply
 

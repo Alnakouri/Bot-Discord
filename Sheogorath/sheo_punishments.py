@@ -259,8 +259,8 @@ async def apply_temporary_nickname(member, new_nick, channel, duration_seconds=6
                     await msg.add_reaction("🪄")
                     await msg.add_reaction("💀")
                     break
-        except discord.HTTPException:
-            pass
+        except discord.HTTPException as e:
+            logger.debug(f"[WABBAJACK] reaction sur le message d'origine impossible : {e}")
         logger.info(f"🪄 [WABBAJACK AUTO] Pseudo de {member.name} changé en {new_nick} pour {duration_seconds}s.")
     except discord.Forbidden:
         await channel.send(random.choice(fail_messages))

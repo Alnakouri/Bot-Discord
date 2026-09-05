@@ -48,7 +48,7 @@ def journaliser(message: str) -> None:
             with open(_JOURNAL, "a", encoding="utf-8") as f:
                 f.write(ligne + "\n")
         except Exception:
-            pass
+            pass  # on ne peut pas journaliser l'echec d'une journalisation
 
 
 def processus_vivant(pid: int) -> bool:
@@ -146,7 +146,7 @@ def tenter_lancement(commande, repertoire, port, mode) -> bool:
             proc.kill()        # ne pas laisser un processus fantome tenir le port
             journaliser("  processus fantome supprime")
     except Exception:
-        pass
+        pass  # le processus a deja disparu de lui-meme
     return False
 
 

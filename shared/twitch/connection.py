@@ -69,8 +69,8 @@ class ConnectionMixin:
             try:
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(self.viewers_state, f, indent=2)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"[TWITCH] sauvegarde finale des viewers impossible : {e}")
             self.logger.info(f"👋 [TWITCH_CHAT:{self.bot_id}] Arrêt de la boucle Twitch Chat.")
 
     def _desired_voice_listen(self) -> bool:
@@ -85,7 +85,7 @@ class ConnectionMixin:
             if "enabled" in listen:
                 return bool(listen["enabled"])
         except Exception:
-            pass
+            pass  # documente ci-dessus : toute erreur de lecture = on garde l'etat courant
         return bool(self.enable_voice_listen)
 
     async def _voice_supervisor(self):
@@ -105,11 +105,11 @@ class ConnectionMixin:
                     try:
                         await inner
                     except asyncio.CancelledError:
-                        pass
+                        pass  # annulation attendue : c'est nous qui venons d'appeler cancel()
                     inner = None
                 await asyncio.sleep(15)
         except asyncio.CancelledError:
-            pass
+            pass  # annulation attendue de la boucle elle-meme
         finally:
             if inner is not None and not inner.done():
                 inner.cancel()

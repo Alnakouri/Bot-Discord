@@ -14,6 +14,23 @@ from shared.games.rewards import try_award, REWARD_VALUES
 
 logger = logging.getLogger("shared_game_views")
 
+
+def _ecran_expiration_echoue(exc: Exception, jeu: str):
+    """Journalise l'echec d'un ecran de fin de partie sur expiration.
+
+    Un message supprime ou une edition refusee par Discord est nominal : debug.
+    Tout le reste est un bug de code -- et sans cette ligne il reste invisible,
+    car discord.py avale les exceptions levees dans `on_timeout`. C'est
+    exactement ce qui a masque le `NameError` de l'ecran de fin de quiz.
+    """
+    if isinstance(exc, discord.HTTPException):
+        logger.debug(f"[JEUX/{jeu}] ecran d'expiration non affiche : {exc}")
+    else:
+        logger.warning(
+            f"[JEUX/{jeu}] ecran d'expiration casse : {exc!r}", exc_info=True
+        )
+
+
 # Active games registry: user_id -> message_id
 active_games = {}
 
@@ -85,8 +102,8 @@ class DuelInviteView(discord.ui.View):
                         color=discord.Color.dark_gray()
                     )
                     await self.message.edit(embed=embed, view=None)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _ecran_expiration_echoue(e, "duel")
 
 
 class DefiSelectView(discord.ui.View):
@@ -140,8 +157,8 @@ class DefiSelectView(discord.ui.View):
             if hasattr(self, 'message') and self.message:
                 try:
                     await self.message.edit(content="Le choix du défi a expiré.", view=None)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _ecran_expiration_echoue(e, "defi")
 
 
 # ==========================================
@@ -299,8 +316,8 @@ class TicTacToeView(discord.ui.View):
                 embed = self.build_embed()
                 embed.description = f"Temps écoulé. \n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
-            except Exception:
-                pass
+            except Exception as e:
+                _ecran_expiration_echoue(e, "morpion")
 
 
 # ==========================================
@@ -452,8 +469,8 @@ class Connect4View(discord.ui.View):
                 grid_text = self.engine.serialize() + "\n1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣"
                 embed.description = f"**Temps écoulé.**\n\n{grid_text}\n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
-            except Exception:
-                pass
+            except Exception as e:
+                _ecran_expiration_echoue(e, "puissance4")
 
 
 # ==========================================
@@ -620,8 +637,8 @@ class RPSView(discord.ui.View):
                 embed = self.build_embed()
                 embed.description += f"\n\n**Temps écoulé.**\n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
-            except Exception:
-                pass
+            except Exception as e:
+                _ecran_expiration_echoue(e, "blackjack")
 
 
 # ==========================================
@@ -724,8 +741,8 @@ class BlackjackView(discord.ui.View):
                 embed = self.build_embed(reveal=True)
                 embed.description += f"\n\n**Temps écoulé.**\n\n*« {random.choice(self.persona['timeout_lines'])} »*"
                 await self.message.edit(embed=embed, view=self)
-            except Exception:
-                pass
+            except Exception as e:
+                _ecran_expiration_echoue(e, "blackjack-solo")
 
 
 # ==========================================
@@ -839,8 +856,8 @@ class QuizView(discord.ui.View):
                     color=discord.Color.dark_gray()
                 )
                 await self.message.edit(embed=embed, view=self)
-            except Exception:
-                pass
+            except Exception as e:
+                _ecran_expiration_echoue(e, "quiz")
 
 
 # ==========================================

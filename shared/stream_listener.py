@@ -25,13 +25,13 @@ def _ensure_cuda_dll_path():
         try:
             roots.append(site.getusersitepackages())
         except Exception:
-            pass
+            pass  # certains environnements n'exposent pas de site utilisateur
         for sp in roots:
             for d in glob.glob(os.path.join(sp, "nvidia", "*", "bin")):
                 try:
                     _CUDA_DLL_HANDLES.append(os.add_dll_directory(d))  # garder le handle vivant
                 except Exception:
-                    pass
+                    pass  # amorcage CUDA au mieux : un repertoire absent n'est pas une panne
                 # Ceinture+bretelles : PATH (persistant) pour les DLL chargées en cascade.
                 if d not in os.environ.get("PATH", ""):
                     os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
@@ -156,7 +156,7 @@ class StreamListenerHub:
                             {"type": "claim_response", "hash": text_hash, "granted": granted}))
                         logger.info(f"{'🏆 Claim accordé à' if granted else '⛔ Claim refusé à'} {bot_id} ({text_hash})")
             except websockets.exceptions.ConnectionClosed:
-                pass
+                pass  # le client s'est deconnecte : la boucle de service se termine normalement
             finally:
                 self.clients.remove(websocket)
                 logger.info(f"🔌 Client Bot déconnecté. Total: {len(self.clients)}")
@@ -364,8 +364,8 @@ class StreamListenerHub:
         for ws in list(self.clients):
             try:
                 await ws.send(msg)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[STT] diffusion du transcrit a un client impossible : {e}")
 
     def stop(self):
         self._stopped = True

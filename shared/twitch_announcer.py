@@ -372,8 +372,8 @@ class TwitchAnnouncer:
                 st = datetime.datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
                 mins_since_start = (now_utc - st).total_seconds() / 60.0
                 effective_window = max(float(window_min), min(mins_since_start + 5.0, 12 * 60.0))
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"[TWITCH] date de debut de live illisible, fenetre par defaut : {e}")
 
         try:
             async for message in channel.history(limit=100):

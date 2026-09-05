@@ -437,7 +437,7 @@ async def on_ready():
         enregistrer_serveurs("sugar", bot, logger)
         logger.info(f"🧪 [MODE TEST:sugar] {etat_lisible('sugar')}")
     except ImportError:
-        pass
+        pass  # shared/ est optionnel, le bot doit tourner sans
 
     logger.info("=" * 60)
     logger.info("Sugar Bot est en ligne.")
@@ -1025,7 +1025,7 @@ async def on_sugar_shutdown():
         try:
             await twitch_chat_task
         except asyncio.CancelledError:
-            pass
+            pass  # annulation attendue : c'est nous qui venons d'appeler cancel()
 
 if __name__ == "__main__":
     if DISCORD_TOKEN:

@@ -45,7 +45,7 @@ class FeaturesConfigManager:
                 try:
                     os.remove(tmp_path)
                 except Exception:
-                    pass
+                    pass  # le temporaire a deja disparu ; l'erreur d'origine est relancee juste apres
             raise e
 
     def get_all(self) -> dict:

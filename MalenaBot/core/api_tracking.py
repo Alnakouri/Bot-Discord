@@ -91,7 +91,7 @@ def _get_connection():
     try:
         conn.execute("ALTER TABLE api_calls ADD COLUMN raison TEXT;")
     except sqlite3.OperationalError:
-        pass
+        pass  # la colonne existe deja (migration deja passee)
         
     conn.commit()
     return conn
@@ -246,7 +246,7 @@ def reinitialiser_pour_tests():
             _queue.put_nowait(None)
             _writer_thread.join(timeout=5.0)
         except queue.Full:
-            pass
+            pass  # la file est pleine a l'arret : l'ecrivain se termine de toute facon
     _writer_thread = None
     _JOURNAL_FILE_PLEINE = False
     _JOURNAL_ECRITURE = False

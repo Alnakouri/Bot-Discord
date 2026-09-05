@@ -55,9 +55,9 @@ class LogCollector:
                                 log_entry["source"] = "file_jsonl"
                                 all_logs.append(log_entry)
                             except json.JSONDecodeError:
-                                pass
+                                pass  # ligne de journal illisible : on passe a la suivante
                 except Exception:
-                    pass
+                    pass  # le collecteur de journaux ne peut pas se plaindre dans les journaux
 
         # 2. S'il n'y a pas beaucoup de logs, fallback sur les .log (simplifié pour perfs)
         # On pourrait ajouter le parsing des .log ici si nécessaire
@@ -119,7 +119,7 @@ class LogCollector:
                                         log_entry["source"] = "stream"
                                         yield log_entry
                                     except json.JSONDecodeError:
-                                        pass
+                                        pass  # ligne de journal illisible : on passe a la suivante
                             last_positions[filepath] = f.tell()
                     except Exception as e:
                         print(f"Error watching {filepath}: {e}")

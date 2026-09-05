@@ -192,7 +192,7 @@ def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
-        pass
+        pass  # flux non reconfigurable (deja UTF-8, ou redirige) : la sonde tourne quand meme
     ap = argparse.ArgumentParser()
     ap.add_argument("--modele", action="append", help="limiter a ce(s) candidat(s)")
     ap.add_argument("--json", help="ecrire le rapport complet dans ce fichier")

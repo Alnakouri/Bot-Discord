@@ -87,8 +87,8 @@ async def check_piper_available() -> bool:
                             f"voice_ref={data.get('voice_ref_found', '?')})"
                         )
                         return True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[TTS] sonde Chatterbox injoignable : {e}")
             
             # Fallback : GET /?text=test (Piper compatible)
             async with session.get(f"{PIPER_TTS_URL}/?text=test") as resp:
@@ -430,8 +430,8 @@ async def play_audio(voice_client, audio_bytes: bytes) -> bool:
         try:
             if tmp_path.exists():
                 tmp_path.unlink()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[VOICE] fichier temporaire non supprime : {e}")
 
 
 async def disconnect_if_idle(bot):

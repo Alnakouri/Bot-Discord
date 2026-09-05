@@ -371,7 +371,7 @@ def format_facts_block(game: dict, category: str) -> str:
                 year = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).strftime("%Y")
                 parts.append(f"Sortie: {year}")
             except Exception:
-                pass
+                pass  # date de sortie illisible : on l'omet de la fiche
                 
     if category in ("about", "which_game", "mode"):
         summary = game.get("summary", "")
