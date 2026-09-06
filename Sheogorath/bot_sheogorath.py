@@ -93,7 +93,7 @@ try:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget, merge_recent_responses
+    from sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget, merge_recent_responses, consigne_de_ton
     from sheo_mentions import convert_text_mentions_to_discord
     from sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from sheo_imposter import (
@@ -109,7 +109,7 @@ except ImportError:
         PUNISHMENT_NICKS, DURATION_MAP,
         load_punishments, save_punishments
     )
-    from Sheogorath.sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget, merge_recent_responses
+    from Sheogorath.sheo_llm import postprocess_response, build_anti_tic_consigne, sentence_budget, merge_recent_responses, consigne_de_ton
     from Sheogorath.sheo_mentions import convert_text_mentions_to_discord
     from Sheogorath.sheo_faveur import FaveurSystem, FAVEUR_GAIN_MESSAGES, RANK_UP_MESSAGES
     from Sheogorath.sheo_imposter import (
@@ -2222,15 +2222,11 @@ async def on_message(message):
     # curieux, théâtral (Mania) — ou inquiétant et énigmatique (Dementia) — mais il ne sort pas
     # les menaces de torture/dents pour un message anodin. Les vraies menaces = pour un vrai
     # manque de respect (géré par la branche provoquée du prompt).
-    if not _is_provoked:
-        system_instruction += (
-            "[TON — PAS DE MENACE GRATUITE] : Le mortel ne t'a NI insulté NI manqué de respect. "
-            "Reste pleinement Sheogorath — joueur, exalté, curieux et imprévisible (Mania), ou "
-            "inquiétant et énigmatique (Dementia) — mais NE le menace PAS de mort, de torture ou "
-            "de lui arracher les dents pour un message aussi anodin. Rebondis VRAIMENT sur ce qu'il "
-            "vient de dire, avec malice et absurde. Les menaces glaciales sont réservées au manque "
-            "de respect réel.\n"
-        )
+    # ⚠️ Ce bloc REOUVRAIT l'humeur que le systeme venait de trancher (« ... (Mania), OU
+    # ... (Dementia) »), et il arrive APRES le prompt d'humeur donc il pesait plus lourd :
+    # quatre repliques d'affilee generees en `dementia` le 06/09 sont sorties joyeuses.
+    # `consigne_de_ton` garde la protection anti-menace et SUIT l'humeur au lieu de la rouvrir.
+    system_instruction += consigne_de_ton(current_mood, provoque=_is_provoked)
 
     # ANTI-ÉCHO (tic récurrent — TOUTES situations, provoqué OU NON). Sheo ouvrait
     # mécaniquement en recrachant le dernier mot du mortel en MAJUSCULES + « ?! » + « HAHA !

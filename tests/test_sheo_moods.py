@@ -155,3 +155,109 @@ def test_une_enveloppe_qui_contient_encore_quelque_chose_est_intacte():
 
     sortie = clean_internal_tags("Un cornichon (vraiment) chantant.")
     assert "(vraiment)" in sortie
+
+
+# ---------------------------------------------------------------------------
+# Le bloc [TON] rouvrait l'humeur que le systeme venait de trancher
+# ---------------------------------------------------------------------------
+#
+# Constate en live le 2026-09-06. Journal de bot-sheogorath :
+#
+#   20:30:27 [MOOD CHANGE] bliss -> dementia   (Prompt: SOMBRE/CRUEL)
+#   20:31:36 [LLM MODE] ... (Mood: dementia)   -> « vinaigre de licorne »
+#   20:32:04 [LLM MODE] ... (Mood: dementia)   -> « trone de cornichons chantants »
+#   20:32:49 [LLM MODE] ... (Mood: dementia)   -> « bulles de confiture »
+#   20:33:30 [LLM MODE] ... (Mood: dementia)   -> « papillons qui fredonnent du jazz »
+#
+# Quatre repliques joyeuses sous un prompt SOMBRE/CRUEL. Le bloc [TON], injecte APRES
+# le prompt d'humeur, disait : « joueur, exalte... (Mania), OU inquietant... (Dementia) ».
+# Un choix, plus proche de la fin donc plus lourd : le modele prenait le premier terme.
+
+HUMEURS = ["neutral", "mania", "dementia", "bliss"]
+
+
+def test_le_bloc_de_ton_ne_propose_JAMAIS_deux_humeurs():
+    """⚠️ LE verrou de ce correctif.
+
+    Le bloc doit NOMMER l'humeur active, jamais en offrir une seconde. Citer deux
+    humeurs, c'est rendre au modele une decision que le systeme avait deja prise.
+    """
+    from sheo_llm import consigne_de_ton
+
+    for humeur in HUMEURS:
+        texte = consigne_de_ton(humeur).lower()
+        citees = [h for h in HUMEURS if h in texte]
+        assert citees == [humeur], (
+            f"pour l'humeur « {humeur} », le bloc cite {citees} : "
+            "il rouvre le choix au lieu de suivre l'humeur active."
+        )
+
+
+def test_chaque_humeur_a_son_propre_registre():
+    """Sans registre distinct, nommer l'humeur ne changerait rien a ce qui est ecrit."""
+    from sheo_llm import consigne_de_ton
+
+    textes = {h: consigne_de_ton(h) for h in HUMEURS}
+    assert len(set(textes.values())) == len(HUMEURS), "deux humeurs rendent le meme bloc"
+    assert "paranoiaque" in textes["dementia"]
+    assert "exalte" in textes["mania"]
+
+
+def test_la_garde_anti_menace_gratuite_survit():
+    """⚠️ Elle existe pour une raison : Sheogorath n'est pas une brute qui menace de
+    torture a chaque message anodin. Suivre l'humeur ne doit pas la faire sauter."""
+    from sheo_llm import consigne_de_ton
+
+    for humeur in HUMEURS:
+        texte = consigne_de_ton(humeur)
+        assert "NE le menace PAS" in texte
+        assert "torture" in texte
+
+
+def test_sur_provocation_le_bloc_disparait():
+    """Provoque, Sheo retrouve le droit aux menaces : la branche du prompt s'en charge."""
+    from sheo_llm import consigne_de_ton
+
+    for humeur in HUMEURS:
+        assert consigne_de_ton(humeur, provoque=True) == ""
+
+
+def test_une_humeur_inconnue_ne_fait_pas_lever():
+    """Un nouvel etat ajoute demain ne doit pas casser la generation."""
+    from sheo_llm import consigne_de_ton
+
+    texte = consigne_de_ton("humeur_qui_n_existe_pas")
+    assert "[TON" in texte
+    assert consigne_de_ton(None)
+
+
+def test_le_bot_passe_VRAIMENT_l_humeur_courante():
+    """⚠️ Chercher le nom du helper passerait au vert sur un simple import.
+
+    On exige l'appel avec `current_mood`, ET la disparition du bloc en dur : le laisser
+    en place le ferait cohabiter avec le nouveau, et l'ancien gagnerait a nouveau.
+    """
+    import ast
+    import os
+
+    chemin = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "Sheogorath", "bot_sheogorath.py")
+    with open(chemin, encoding="utf-8") as f:
+        source = f.read()
+
+    assert "Reste pleinement Sheogorath" not in source, (
+        "l'ancien bloc [TON] en dur est toujours la : il rouvre le choix de l'humeur."
+    )
+
+    appels = [n for n in ast.walk(ast.parse(source, filename=chemin))
+              if isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Name)
+              and n.func.id == "consigne_de_ton"]
+    assert appels, "consigne_de_ton n'est jamais appele"
+    for appel in appels:
+        args = [a.id for a in appel.args if isinstance(a, ast.Name)]
+        args += [k.value.id for k in appel.keywords if isinstance(k.value, ast.Name)]
+        assert "current_mood" in args, (
+            f"l'humeur courante n'est pas transmise : {ast.dump(appel)[:120]}"
+        )

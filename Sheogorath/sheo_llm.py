@@ -432,6 +432,49 @@ def _motifs_recurrents(reponses, message_utilisateur=None, seuil=2, maxi=6):
     return [mot for _, mot in recurrents[:maxi]]
 
 
+# Registre d'ecriture propre a chaque humeur. ⚠️ UNE seule entree par humeur, jamais un
+# « ou » : voir `consigne_de_ton`.
+_REGISTRE_PAR_HUMEUR = {
+    "dementia": ("inquietant, enigmatique et paranoiaque — tu insinues plus que tu n'affirmes, "
+                 "les tenebres murmurent, le doute s'installe"),
+    "mania":    "joueur, exalte, curieux et imprevisible — les couleurs explosent",
+    "bliss":    "chaleureux, jovial et etrangement lucide — une euphorie qui met mal a l'aise",
+    "neutral":  "joueur et theatral, entre malice et menace voilee",
+}
+
+
+def consigne_de_ton(mood, provoque=False):
+    """Le bloc [TON] envoye au modele quand le mortel n'a NI insulte NI manque de respect.
+
+    ⚠️ Ce bloc REOUVRAIT l'humeur que le systeme venait de trancher. Il disait :
+    « joueur, exalte, curieux et imprevisible (Mania), OU inquietant et enigmatique
+    (Dementia) » — un choix, propose APRES le prompt d'humeur, donc plus proche de la
+    fin et plus lourd. Le modele prenait le premier terme a chaque fois.
+
+    Constate en live le 2026-09-06 : quatre repliques d'affilee generees en humeur
+    `dementia` (journal : 20:31:36, 20:32:04, 20:32:49, 20:33:30), quatre repliques
+    joyeuses — papillons qui fredonnent du jazz, bulles de confiture, cornichons
+    chantants. Aucune tenebre. La seule replique vraiment sombre de la session est
+    arrivee quand le mortel avait lui-meme ecrit le mot « dementia » : le modele reprenait
+    le theme de son TEXTE, jamais celui de son humeur.
+
+    La garde anti-menace-gratuite reste entiere — elle existe pour une raison : Sheogorath
+    n'est pas une brute qui menace de torture a chaque message anodin. Mais elle ne doit
+    pas coûter l'humeur. Dementia n'est PAS une menace de torture, c'est un malaise.
+    """
+    if provoque:
+        return ""
+    registre = _REGISTRE_PAR_HUMEUR.get(mood, _REGISTRE_PAR_HUMEUR["neutral"])
+    return (
+        "[TON — PAS DE MENACE GRATUITE] : Le mortel ne t'a NI insulte NI manque de respect. "
+        f"Ton humeur du moment est {str(mood).upper()} et elle est DEJA choisie : reste {registre}. "
+        "NE le menace PAS de mort, de torture ou de lui arracher les dents pour un message aussi "
+        "anodin — mais ne change PAS d'humeur pour autant. Rebondis VRAIMENT sur ce qu'il vient "
+        "de dire, avec malice et absurde. Les menaces glaciales sont reservees au manque de "
+        "respect reel.\n"
+    )
+
+
 def build_anti_tic_consigne(recent_responses, n=5, message_utilisateur=None):
     """À partir des N dernières réponses, liste les AMORCES et CLÔTURES à éviter.
     Retourne un fragment de prompt (str), ou "" si rien d'exploitable."""
