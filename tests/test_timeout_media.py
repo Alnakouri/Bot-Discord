@@ -142,6 +142,12 @@ class TestBorneMediaEnVrai(unittest.IsolatedAsyncioTestCase):
             patch("bot_sheogorath.fact_brain.get_facts", return_value=[]),
             patch("bot_sheogorath.faveur_system.get_rank_context", return_value=""),
             patch("bot_sheogorath.asyncio.wait_for", espion),
+            # ⚠️ `on_message` porte un mode IMPOSTEUR tire au sort a 0,5 % qui
+            # `return` avant la cascade. Sans ce verrou le test tombe une fois sur
+            # 200 — c'est arrive en CI le 2026-09-06 (run 34037022257), sur un
+            # commit qui ne touchait rien de tout ca. Un test qui depend d'un tirage
+            # n'est pas un test.
+            patch("bot_sheogorath.random.random", return_value=1.0),
         ):
             dl.return_value = (b"fake_image_data", "image/jpeg")
             cascade.return_value = [("gemini", "test-model")]

@@ -97,6 +97,10 @@ class TestSheoImages(unittest.IsolatedAsyncioTestCase):
                 with (
                     patch("bot_sheogorath.key_manager.get_key", return_value="FAKE_KEY"),
                     patch("bot_sheogorath.get_safe_genai_client") as mock_get_client,
+                    # ⚠️ Le mode IMPOSTEUR est tire au sort a 0,5 % et `return`
+                    # avant la cascade : sans ce verrou le test tombe une fois sur
+                    # 200, en CI, sur un commit sans rapport.
+                    patch("bot_sheogorath.random.random", return_value=1.0),
                 ):
                     mock_client = MagicMock()
                     mock_resp = MagicMock()
@@ -174,6 +178,10 @@ class TestSheoImages(unittest.IsolatedAsyncioTestCase):
                 with (
                     patch("bot_sheogorath.key_manager.get_key", return_value="FAKE_KEY"),
                     patch("bot_sheogorath.get_safe_genai_client") as mock_get_client,
+                    # ⚠️ Le mode IMPOSTEUR est tire au sort a 0,5 % et `return`
+                    # avant la cascade : sans ce verrou le test tombe une fois sur
+                    # 200, en CI, sur un commit sans rapport.
+                    patch("bot_sheogorath.random.random", return_value=1.0),
                 ):
                     # MagicMock, PAS AsyncMock : le code appelle `generate_content` via
                     # `asyncio.to_thread`, donc de façon SYNCHRONE. Un AsyncMock rendrait
