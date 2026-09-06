@@ -52,11 +52,10 @@ Commandes uniques par bot, pour ne pas en reveiller six :
 (Johnny) · `!enigme` `!rumeur` `!indice` `!profil` (M'aiq) · `!decret` `!quete` `!fromage`
 `!wabbajack` (Sheo) · `!exploit` `!chanson` `!equipage` (Sugar).
 Malena n'a que `!oubliemoi` : lui parler directement.
-Slash — `/help` `/ping` `/stats` `/reputation` `/leaderboard` `/quests` `/birthday` :
-⚠️ **sur 5 bots, pas 6**. Malena n'appelle jamais `setup_slash_commands` et ne l'a
-**jamais** appele (`git log -S` sur tout l'historique : aucun resultat). Elle a pourtant
-`setup_games` et les anniversaires cables. Ne pas chercher un slash chez elle pendant le
-test : il n'y en a pas.
+Slash, sur les 6 : `/help` `/ping` `/stats` `/reputation` `/leaderboard` `/quests`
+`/birthday`. ⚠️ Malena ne les avait **jamais** eues — trouve en redigeant ce plan, cable
+et deploye le 06/09 (`[SLASH] 7 commandes synchronisees` dans son journal). C'est
+justement chez elle qu'il faut les essayer.
 
 ---
 
@@ -124,13 +123,21 @@ Rien ici ne peut se simuler.
 
 - **`report_error` n'est appele que pour Gemini** (`shared/llm_cascade.py:359`) : Groq et
   NVIDIA ne mettent jamais une cle en quarantaine sur un 429. C'est du code, pas un test
-  live, et c'est le dernier vrai point ouvert.
-- **Malena n'a aucune commande slash** — trouve en redigeant ce plan. Les 5 autres
-  appellent `setup_slash_commands` ; elle ne l'importe meme pas, et ne l'a jamais fait.
-  Correctif = 2 lignes, calquees sur `Alfred/bot_alfred.py:91` et `:425`.
-- **Bruit d'arret** : `[MISSED CHECK] Erreur canal idee: Session is closed` chez Malena a
-  chaque `restart` — le graceful shutdown n'annule pas les boucles en vol. Benin.
+  live, et c'est **le dernier vrai point ouvert**.
 - **Phase 3 repartie** : a re-specifier, son contexte a peri (elle visait la cascade
   REPARTEE quand Grok la pilotait). **Migration mempalace** : hors depot.
+
+## Ferme le 06/09, en preparant ce plan
+
+- **Malena n'avait aucune commande slash** — jamais, depuis l'origine. Cablee, verrouillee
+  par `tests/test_commandes_une_seule_fois.py` (import ET appels, lus dans l'AST).
+- **L'arret gracieux fermait la session avec des boucles en vol**, et il etait de toute
+  facon **invisible** : logger sans handler. Registre de boucles dans `shared/boucles.py`,
+  `annuler_les_boucles()` avant `bot.close()`, `journal=` sur les 6. Constate live :
+  `[BOUCLES] 5 boucle(s) arretee(s) avant la fermeture`.
+- **3 tests dependaient d'un tirage a 0,5 %** (mode IMPOSTEUR) : CI rouge sur un commit
+  sans rapport, une fois sur 200. Hasard scelle.
+
+653 tests, CI verte, les 6 conteneurs redemarres.
 
 ⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port 8599.
