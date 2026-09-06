@@ -363,7 +363,76 @@ def merge_recent_responses(*sources, limit=8):
     return out[-limit:]
 
 
-def build_anti_tic_consigne(recent_responses, n=5):
+# Mots-outils : ils reviennent forcement d'une phrase a l'autre et ne disent rien d'un
+# tic. Ecrits SANS accent, parce que `_norm` les retire avant la comparaison.
+_MOTS_OUTILS = {
+    "dans", "pour", "avec", "sans", "mais", "donc", "plus", "tout", "tous", "toute",
+    "toutes", "cette", "leur", "leurs", "elle", "elles", "nous", "vous", "etre", "avoir",
+    "fait", "faire", "peut", "peux", "veux", "veut", "comme", "quand", "alors", "encore",
+    "aussi", "meme", "bien", "trop", "chaque", "quelque", "quelques", "quel", "quelle",
+    "quels", "quelles", "celui", "celle", "ceux", "cela", "juste", "deja", "puis",
+    "ensuite", "parce", "pendant", "toujours", "jamais", "rien", "personne", "autre",
+    "autres", "entre", "sous", "vers", "chez", "depuis", "apres", "avant", "moins",
+    "beaucoup", "peut-etre", "voila", "voici", "ainsi", "surtout", "petit", "petite",
+    "grand", "grande", "prochaine", "prochain",
+}
+
+
+def _radical(mot):
+    """Pluriel francais rabattu sur le singulier, pour comparer « cornichon » a
+    « cornichons ».
+
+    ⚠️ Sans ca, l'exclusion du sujet ne mordait pas : le mortel ecrit « ta tete de
+    cornichon ? » au singulier, Sheo repond « cornichons » au pluriel, et l'interdiction
+    s'appliquait quand meme — on lui coupait le sujet de la conversation.
+    """
+    if len(mot) > 4 and mot[-1] in ("s", "x"):
+        return mot[:-1]
+    return mot
+
+
+def _motifs_recurrents(reponses, message_utilisateur=None, seuil=2, maxi=6):
+    """Les mots de CONTENU presents dans au moins `seuil` des dernieres repliques.
+
+    ⚠️ Mesure du 2026-09-06, sur les 8 vraies reponses de Sheo a LeDev : le moule
+    « Haskill, <ordre> » tenait **7 repliques sur 8**, et aucun filet ne le voyait.
+    L'amorce (5 premiers mots) l'attrapait 2 fois sur 7, la cloture (5 derniers) **0 sur
+    7** : « Haskill » etait aux positions 103, 117, 126, 175, 220. Un tic ne vit ni au
+    debut ni a la fin, il vit au MILIEU — et rien ne regardait le milieu.
+
+    ⚠️ Les mots du message de l'utilisateur sont EXCLUS. S'il ecrit « ta tete de
+    cornichon ? », Sheo doit pouvoir lui repondre cornichon : on interdit la rengaine,
+    jamais le sujet de la conversation.
+
+    ⚠️ Rien n'est ajoute au prompt cote entree : `recent_responses` porte deja le texte
+    COMPLET des repliques, seul son affichage etait tronque a 60 caracteres ailleurs.
+    Ce filet coute quelques mots, pas quelques centaines de tokens — le quota Groq est
+    en tokens par minute et le prompt de Sheo en mange deja 56 %.
+    """
+    if not reponses:
+        return []
+
+    interdits_du_sujet = set()
+    if message_utilisateur:
+        interdits_du_sujet = {_radical(w) for w in re.findall(r"[a-z]+", _norm(message_utilisateur))}
+
+    compte = {}
+    for resp in reponses:
+        if not resp or not isinstance(resp, str):
+            continue
+        mots = {w for w in re.findall(r"[a-z]+", _norm(resp))
+                if len(w) >= 4 and w not in _MOTS_OUTILS
+                and _radical(w) not in interdits_du_sujet}
+        for mot in mots:
+            compte[mot] = compte.get(mot, 0) + 1
+
+    recurrents = [(n_vu, mot) for mot, n_vu in compte.items() if n_vu >= seuil]
+    # Le plus repete d'abord ; a egalite, ordre alphabetique pour rester deterministe.
+    recurrents.sort(key=lambda x: (-x[0], x[1]))
+    return [mot for _, mot in recurrents[:maxi]]
+
+
+def build_anti_tic_consigne(recent_responses, n=5, message_utilisateur=None):
     """À partir des N dernières réponses, liste les AMORCES et CLÔTURES à éviter.
     Retourne un fragment de prompt (str), ou "" si rien d'exploitable."""
     if not recent_responses:
@@ -432,7 +501,12 @@ def build_anti_tic_consigne(recent_responses, n=5):
         if c not in unique_clotures:
             unique_clotures.append(c)
 
-    if not unique_amorces and not unique_clotures:
+    recurrents = _motifs_recurrents(
+        [r for r in (recent_responses or [])[-n:] if isinstance(r, str)],
+        message_utilisateur=message_utilisateur,
+    )
+
+    if not unique_amorces and not unique_clotures and not recurrents:
         return ""
 
     consigne = "[ANTI-TICS — VARIE OU MEURS]"
@@ -448,6 +522,13 @@ def build_anti_tic_consigne(recent_responses, n=5):
         consigne += (
             f'\nTu as CLÔTURÉ par : {formatted_clotures}. '
             'INTERDIT de refinir pareil (surtout pas un "Haskill, note ça" recyclé) — change de chute.'
+        )
+    if recurrents:
+        formatted_mots = ", ".join(f'"{m}"' for m in recurrents)
+        consigne += (
+            f'\nCes mots reviennent DANS LE CORPS de tes dernières répliques : {formatted_mots}. '
+            'INTERDIT de les reprendre. Change de DÉCOR, pas seulement de phrase : '
+            'autre créature, autre objet, autre lubie.'
         )
 
     return consigne

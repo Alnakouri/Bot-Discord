@@ -2290,7 +2290,10 @@ async def on_message(message):
             system_instruction += f"{i}. \"{snippet}\"\n"
         system_instruction += "⚠️ INTERDICTION TOTALE de répéter ces phrases ou des variations proches. Trouve une idée COMPLÈTEMENT DIFFÉRENTE ! Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images, métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs."
     
-    anti_tic = build_anti_tic_consigne(recent_responses)
+    # ⚠️ `user_message` est passé pour que le filet des motifs récurrents n'interdise
+    # PAS le sujet de la conversation : si le mortel parle de cornichons, Sheo doit
+    # pouvoir lui répondre cornichons. On interdit la rengaine, jamais le sujet.
+    anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
     if anti_tic:
         system_instruction += "\n\n" + anti_tic
     

@@ -203,3 +203,120 @@ def test_le_nettoyage_passe_APRES_le_detecteur_d_echo():
         "strip_markdown_emphasis passe AVANT _strip_echo_opening : le detecteur d'echo "
         "ne verra plus le markdown sur lequel il s'appuie."
     )
+
+
+# ---------------------------------------------------------------------------
+# Le CORPS de la reponse : la ou les vrais tics vivent
+# ---------------------------------------------------------------------------
+#
+# Mesure du 2026-09-06 sur les 8 vraies reponses de Sheo a LeDev
+# (data/sheogorath_memory.json) : le moule « Haskill, <ordre> » tenait 7 repliques
+# sur 8. Position de « Haskill » : 103, 117, 126, 175, 220... Le filet AMORCE
+# (5 premiers mots) l'attrapait 2 fois sur 7 ; le filet CLOTURE, 0 sur 7.
+
+# Extrait fidele du transcript live, raccourci. Le moule est au MILIEU a chaque fois.
+REPLIQUES_LIVE = [
+    "Ah, mortel, tu invoques le Prince comme un mauvais sort. Je te nomme Grand "
+    "Chambellan de Bliss, charge de distribuer des papillons. Haskill, prepare une "
+    "tasse de the qui chante.",
+    "Un papillon vient de me murmurer que les etoiles portent des chapeaux de "
+    "confiture. Haskill, prepare un Wabbajack a la sauce caramel.",
+    "Alors, je te prepare un trone de cornichons chantants, nappe de fromage. "
+    "Haskill, apporte les chandelles en forme de papillons.",
+]
+
+
+def test_le_moule_du_milieu_est_enfin_vu():
+    """⚠️ Le test que les deux anciens filets ne pouvaient pas ecrire.
+
+    « Haskill » n'est ni dans les 5 premiers mots ni dans les 5 derniers d'aucune de
+    ces repliques : amorce et cloture le laissaient passer, replique apres replique.
+    """
+    from sheo_llm import _motifs_recurrents
+
+    motifs = _motifs_recurrents(REPLIQUES_LIVE)
+    assert "haskill" in motifs, f"le tic mesure a 7/8 n'est toujours pas vu : {motifs}"
+    assert "papillons" in motifs
+
+
+def test_un_mot_dit_une_seule_fois_n_est_pas_un_tic():
+    """Le seuil est a 2 : interdire ce qui n'a servi qu'une fois etoufferait la prose."""
+    from sheo_llm import _motifs_recurrents
+
+    motifs = _motifs_recurrents(REPLIQUES_LIVE)
+    assert "caramel" not in motifs, f"« caramel » n'apparait qu'une fois : {motifs}"
+    assert "wabbajack" not in motifs
+
+
+def test_les_mots_outils_ne_comptent_pas():
+    """« dans », « pour », « comme » reviennent toujours et ne disent rien d'un tic."""
+    from sheo_llm import _motifs_recurrents
+
+    motifs = _motifs_recurrents(REPLIQUES_LIVE)
+    assert not ({"dans", "pour", "comme", "avec"} & set(motifs)), motifs
+
+
+@pytest.mark.parametrize("message, mot_libere", [
+    ("ta tete de cornichon ?", "cornichons"),      # singulier -> pluriel
+    ("parle-moi des papillons", "papillons"),      # pluriel -> pluriel
+    ("j'adore le fromage", "fromage"),
+])
+def test_le_sujet_de_la_conversation_n_est_jamais_interdit(message, mot_libere):
+    """⚠️ On interdit la rengaine, jamais le SUJET.
+
+    Si le mortel ecrit « ta tete de cornichon ? », Sheo doit pouvoir lui repondre
+    cornichons. Le rapprochement se fait sur le radical : sans ca, le singulier de
+    l'utilisateur ne couvrait pas le pluriel du bot et on lui coupait la conversation.
+    """
+    from sheo_llm import _motifs_recurrents
+
+    # `maxi` releve : sans ca le plafond de 6 mots ferait sortir « cornichons » de la
+    # liste pour une raison qui n'a RIEN a voir avec l'exclusion qu'on teste ici.
+    doublees = REPLIQUES_LIVE + REPLIQUES_LIVE
+    sans = _motifs_recurrents(doublees, maxi=50)
+    avec = _motifs_recurrents(doublees, message_utilisateur=message, maxi=50)
+    assert mot_libere in sans, f"le test ne prouve rien si « {mot_libere} » n'etait pas interdit"
+    assert mot_libere not in avec, f"« {mot_libere} » reste interdit alors que le mortel en parle"
+
+
+def test_la_consigne_porte_bien_la_section_du_corps():
+    """Le filet doit arriver JUSQU'AU prompt, pas seulement exister dans un helper."""
+    from sheo_llm import build_anti_tic_consigne
+
+    consigne = build_anti_tic_consigne(REPLIQUES_LIVE)
+    assert "DANS LE CORPS" in consigne
+    assert "haskill" in consigne.lower()
+
+
+def test_entrees_vides_rendent_une_consigne_vide():
+    from sheo_llm import _motifs_recurrents, build_anti_tic_consigne
+
+    assert _motifs_recurrents([]) == []
+    assert _motifs_recurrents(None) == []
+    assert _motifs_recurrents([None, "", "   "]) == []
+    assert build_anti_tic_consigne([]) == ""
+
+
+def test_le_message_de_l_utilisateur_est_VRAIMENT_passe_par_le_bot():
+    """⚠️ Un test qui cherche le NOM du parametre passerait au vert sur la signature
+    seule. On exige l'APPEL, avec son argument, dans `bot_sheogorath.py`."""
+    import ast
+    import os
+
+    chemin = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "Sheogorath", "bot_sheogorath.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    appels = [n for n in ast.walk(arbre)
+              if isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Name)
+              and n.func.id == "build_anti_tic_consigne"]
+    assert appels, "build_anti_tic_consigne n'est plus appele du tout"
+    for appel in appels:
+        noms = {k.arg for k in appel.keywords}
+        assert "message_utilisateur" in noms, (
+            "le message du mortel n'est pas transmis : le filet interdirait alors le "
+            "SUJET de la conversation, pas seulement la rengaine."
+        )
