@@ -10,7 +10,7 @@ etait pour rien.
 
 ## Etat : vert  🟢
 
-**642 tests passent** (+46 sous-tests), suite complete en un seul processus.
+**644 tests passent** (+46 sous-tests), suite complete en un seul processus. CI verte (`34027591224`), les 6 conteneurs redemarres et le correctif **constate dans les 6 journaux**.
 
 ---
 
@@ -113,6 +113,29 @@ enrobage sur l'autre), et chacun des 6 bots **importe ET appelle**
 
 ---
 
+## L'addendum : le correctif ne se voyait nulle part
+
+`da4a852` n'ecrit qu'une seule ligne — celle du rattrapage abandonne — et elle n'apparait
+**qu'apres une vraie veille de l'hote**. Sur une machine qui tourne, rien ne permettait de
+constater que le filet etait en place : le meme piege que
+[[gotcha-echelon-de-secours-invisible]], applique cette fois a un correctif.
+
+`installer_anti_rattrapage` **dit maintenant sa pose** au demarrage, et se tait quand elle
+etait deja faite (`on_ready` rejoue a chaque reconnexion — une 2e pose qui parlerait
+polluerait le journal a chaque coupure reseau). 2 tests de plus, verifies **par la
+negative** : retirer la ligne fait tomber le test.
+
+Constate le 06/09 sur les 6 conteneurs :
+
+    10:30:20 | INFO | [BOUCLES] anti-rattrapage pose : les iterations manquees ne seront pas rejouees
+
+⚠️ Exhume au passage : au `docker restart`, Malena log `[MISSED CHECK] Erreur canal idee:
+Session is closed` — une boucle encore en vol quand la session se ferme. Benin (c'est
+l'arret, pas le demarrage), mais le graceful shutdown ne l'annule pas. Note dans les points
+ouverts.
+
+---
+
 ## Ce que la lecture du journal a exhume au passage
 
 Le meme reveil du 04/09 montre `on_ready` mourir sur
@@ -127,6 +150,8 @@ commandes slash. **Ce cas est deja couvert** : les 6 bots enveloppent
 
 - **`report_error` n'est appele que pour Gemini** : decision de design a poser. C'est le
   dernier vrai point de la liste.
+- **Bruit d'arret** : `[MISSED CHECK] Erreur canal idee: Session is closed` chez Malena a
+  chaque `restart` — le graceful shutdown n'annule pas les boucles en vol.
 - Un reglage nemotron plus mordant que `reasoning_effort=none` : jamais sonde, NVIDIA
   rate-limite des qu'on enchaine. Sans urgence.
 - Un **5e fournisseur reste inutile** : NVIDIA, 4e echelon, a **0 appel** en base sur
