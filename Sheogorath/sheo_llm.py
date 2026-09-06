@@ -93,9 +93,39 @@ def clean_internal_tags(response_text):
     # Strip des didascalies entre crochets (tags TTS)
     response_text = re.sub(r"\[(laugh|chuckle|sigh|shout|laughs|giggle|whisper|sob|cough|gasp)\]", "", response_text, flags=re.IGNORECASE)
 
+    # ⚠️ Les enveloppes VIDES laissees par tout ce qui precede.
+    # Chaque nettoyeur ci-dessus retire un CONTENU entre delimiteurs, aucun ne ramasse le
+    # delimiteur devenu vide : `([laugh])` -> `()`, `(*rire*)` -> `()`,
+    # `(<fact>...</fact>)` -> `()`. Constate en live le 2026-09-06, message `!neutre` :
+    # la reponse de Sheo se terminait par « ...crise de rage ? 🎩 () ».
+    response_text = _retirer_enveloppes_vides(response_text)
+
     # Espaces multiples
     response_text = re.sub(r"\s+", " ", response_text).strip()
     return response_text
+
+
+# Paires de delimiteurs qu'un nettoyage peut laisser vides. Le `*` et le `_` du markdown
+# sont deja traites par strip_markdown_emphasis ; ceux-ci lui survivent.
+_ENVELOPPES_VIDES = re.compile(
+    r"[ 	]*(?:\(\s*\)|\[\s*\]|\{\s*\}|«\s*»|\"\s*\"|“\s*”|<\s*>)"
+)
+
+
+def _retirer_enveloppes_vides(texte):
+    """Supprime les `()`, `[]`, `«»`... devenus vides apres le retrait de leur contenu.
+
+    ⚠️ Repete jusqu'a stabilite : `(( ))` demande deux passes, et un modele en produit.
+    On ne touche JAMAIS a une enveloppe qui contient encore quelque chose — `(oui)` reste.
+    """
+    if not texte:
+        return texte
+    for _ in range(5):
+        nouveau = _ENVELOPPES_VIDES.sub("", texte)
+        if nouveau == texte:
+            break
+        texte = nouveau
+    return texte
 
 
 def apply_easter_eggs(response_text, original_message):

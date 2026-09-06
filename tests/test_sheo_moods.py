@@ -125,3 +125,33 @@ def test_sheo_length_rules():
     assert "INVITE EXPLICITEMENT" in sheo_data.PERSONALITY_BASE
 
 
+
+
+# ---------------------------------------------------------------------------
+# Les enveloppes vides : chaque nettoyeur retire un contenu, aucun ne ramassait
+# le delimiteur devenu vide
+# ---------------------------------------------------------------------------
+
+def test_une_enveloppe_videe_de_son_contenu_disparait_aussi():
+    """⚠️ Constate en live le 2026-09-06, message `!neutre` de LeDev.
+
+    La reponse de Sheo se terminait par « ...lors de ta prochaine crise de rage ? 🎩 () »
+    — la parenthese vide est bien en base, ce n'est pas un artefact d'affichage.
+
+    Le mecanisme est generique : `clean_internal_tags` retire `[laugh]`,
+    `strip_markdown_emphasis` retire `*rire*`, l'extracteur de faits retire
+    `<fact>...</fact>`. Aucun ne regarde le delimiteur qui les entourait.
+    """
+    from sheo_llm import clean_internal_tags
+
+    assert clean_internal_tags("Va compter les dents. 🎩 ([laugh])").endswith("🎩")
+    assert "()" not in clean_internal_tags("Haskill ! ([laugh]) Apporte le the.")
+    assert "[]" not in clean_internal_tags("Un ordre [<fact>x</fact>] et puis rien.")
+
+
+def test_une_enveloppe_qui_contient_encore_quelque_chose_est_intacte():
+    """Le nettoyage ne doit pas manger une vraie parenthese : `(vraiment)` reste."""
+    from sheo_llm import clean_internal_tags
+
+    sortie = clean_internal_tags("Un cornichon (vraiment) chantant.")
+    assert "(vraiment)" in sortie
