@@ -1108,7 +1108,7 @@ if __name__ == "__main__":
         # Un `tasks.loop` rejoue TOUTES les iterations manquees quand l'horloge saute
         # (veille de l'hote) : 40 `MOOD CHANGE` en deux secondes le 2026-09-04.
         installer_anti_rattrapage(logger)
-        setup_graceful_shutdown(bot, on_johnny_shutdown)
+        setup_graceful_shutdown(bot, on_johnny_shutdown, journal=logger)
         bot.run(DISCORD_TOKEN)
     else:
         logger.error("ERREUR : Aucun token Discord trouvé dans le fichier .env !")

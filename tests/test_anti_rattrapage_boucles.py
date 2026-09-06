@@ -199,3 +199,19 @@ def test_chaque_bot_pose_le_correctif(chemin):
     assert "installer_anti_rattrapage(logger)" in src, (
         "%s importe le correctif mais ne l'appelle jamais" % chemin
     )
+
+
+@pytest.mark.parametrize("chemin", BOTS)
+def test_chaque_bot_donne_son_journal_a_l_arret_gracieux(chemin):
+    """Sans le logger du bot, l'arret gracieux est muet dans `docker logs`.
+
+    `shared/graceful_shutdown.py` ecrivait dans un logger `graceful_shutdown` sans
+    handler : ses INFO tombaient dans le vide. On ne pouvait donc pas verifier qu'il
+    tournait — et pas davantage que les boucles etaient bien arretees avant la
+    fermeture. Meme piege que l'anti-rattrapage, un module plus loin.
+    """
+    src = io.open(RACINE / chemin, encoding="utf-8").read()
+    assert "journal=logger" in src, (
+        "%s appelle setup_graceful_shutdown sans lui passer son logger : l'arret "
+        "sera invisible dans le journal" % chemin
+    )

@@ -12,10 +12,10 @@ import signal
 import asyncio
 import logging
 
-logger = logging.getLogger("graceful_shutdown")
+_logger_par_defaut = logging.getLogger("graceful_shutdown")
 
 
-def setup_graceful_shutdown(bot, on_shutdown_callback=None):
+def setup_graceful_shutdown(bot, on_shutdown_callback=None, journal=None):
     """
     Registers signal handlers for SIGTERM and SIGINT to cleanly close the bot.
     
@@ -23,7 +23,13 @@ def setup_graceful_shutdown(bot, on_shutdown_callback=None):
         bot: The discord.ext.commands.Bot instance.
         on_shutdown_callback: Optional async callable to run before closing
                               (e.g., saving memory files, flushing logs).
+        journal: le logger DU BOT. Sans lui, tout ce module ecrit dans un logger
+                 "graceful_shutdown" sans handler : les INFO sont perdues et l'arret
+                 est **entierement invisible** dans `docker logs`. On ne pouvait donc
+                 pas verifier qu'il tournait — meme piege que l'anti-rattrapage.
     """
+    logger = journal or _logger_par_defaut
+
     async def _shutdown():
         bot_name = bot.user.name if bot.user else "Bot"
         logger.info(f"[SHUTDOWN] {bot_name} - Arret gracieux en cours...")
