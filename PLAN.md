@@ -126,6 +126,34 @@ Rien ici ne peut se simuler.
 - Il n'y a **plus de point de code ouvert**. Tout ce qui reste demande un humain, un clic
   ou un vrai live.
 
+## Test live du 06/09 au soir — Sheogorath, 9 echanges
+
+**Ce que le transcript prouve** : repartie (« ta tete de cornichon ? » -> il rend le
+coup), longueur (2 a 4 phrases, aucun meublage), continuite sur 3 tours (carotte ->
+sceptre -> chocolat), emoji de ton present et variable.
+
+⚠️ **`!dementia`, `!mania`, `!neutre` NE SONT PAS des commandes.** Sheo n'en a que 10 :
+`decret` `quete` `fromage` `wabbajack` `rejoins` `quitte` `voix` `solution` `imposteur`
+`oubliemoi`. Ces trois messages sont passes en texte ordinaire. L'humeur n'est pilotable
+que par la boucle de 5 min, ou par un outil que le LLM s'appelle lui-meme.
+
+⚠️ **L'horloge du conteneur a 2 h de retard** : son journal dit 20:33 pour un message de
+22:33. Toujours `docker logs --since`, jamais l'heure affichee.
+
+**Deux defauts corriges** (`e0b0bdd`, `7141dc6`, 728 tests, CI verte, deploye) :
+
+1. Une `()` vide en fin de reponse. Les trois nettoyeurs retirent un CONTENU entre
+   delimiteurs, aucun ne ramassait le delimiteur devenu vide.
+2. Le moule `Haskill, <ordre>` dans **7 repliques sur 8**. Ni le filet AMORCE (vu 2 fois
+   sur 7) ni le filet CLOTURE (0 sur 7) ne regardaient le CORPS, ou le tic vit. Troisieme
+   filet : les mots presents dans >= 2 des 5 dernieres repliques sont interdits.
+
+**A regarder au prochain echange avec Sheo** : qu'il varie **sans s'appauvrir**. Le filet
+lui interdit jusqu'a 6 mots par tour ; si les repliques deviennent plates ou hors
+personnage, baisser `maxi` ou monter le `seuil` dans `_motifs_recurrents`.
+⚠️ `response_memory` est en MEMOIRE VIVE : apres un `docker restart`, le filet repart
+vide et ne mord qu'a partir de la 3e replique.
+
 ## Ferme le 06/09, 3e session — la quarantaine des cles
 
 Le dernier point de code. `report_error` n'etait appele que pour **Gemini** : Groq,
