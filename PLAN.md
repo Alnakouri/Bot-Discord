@@ -126,6 +126,45 @@ Rien ici ne peut se simuler.
 - Il n'y a **plus de point de code ouvert**. Tout ce qui reste demande un humain, un clic
   ou un vrai live.
 
+## ▶ SESSION 1 JOUEE le 07/09 vers 00:33-00:45 — reprendre ICI
+
+Mode test arme puis **desarme** (verifie sur les 6 : « publication normale »). Zero erreur
+sur 5 bots, une seule chez M'aiq (un 429 Groq, voir ci-dessous).
+
+### Ce qui passe
+
+- **Repartie de Sugar** : 6 insultes, 6 ripostes DISTINCTES, aucune ne se couche, aucun
+  moule, aucun sucre force. Le critere « moule repetitif » est tenu.
+- **Slash de Malena** : `/help` `/ping` `/stats` `/quests` repondent. C'etait le gros
+  point d'hier — elle n'en avait jamais eu.
+- **M'aiq** : `!enigme` affiche bien l'**ecran de fin**, `!rumeur` `!indice` `!profil` OK.
+- **Johnny** : `!gig` `!loot` `!nightcity` `!whisky` `!rant`, tous en voix.
+- **Anti-incrustation** : chaque bot nomme repond, les autres se taisent.
+- **Transcript partage** : Alfred a repris `cornichon -> carotte -> chocolat` d'une
+  conversation qu'il n'avait pas eue. Le transcript non ampute fonctionne.
+
+### 4 defauts a corriger (aucun urgent, aucun bloquant)
+
+1. **Un 429 Groq n'a PAS declenche de quarantaine.** Journal de M'aiq a 22:41:15 :
+   `[GROQ RUMEUR] Error code: 429 ... Please try again in 1.785s`. Zero ligne de
+   quarantaine sur les 6. ⚠️ **Cause** : `!rumeur` appelle Groq **HORS cascade**. Le
+   correctif du 06/09 couvre les 11 cascades ; les appels isoles d'un fournisseur y
+   echappent tous. **Chercher les autres** avant de corriger celui-la.
+2. **`!rumeur` a publie une mention inventee** : `<@123456789>`. Le prompt demande
+   d'inventer une rumeur « sur un joueur » sans lui fournir d'ID reel, et rien ne filtre
+   une mention invalide en SORTIE. Deux correctifs possibles, le second est le filet.
+3. **La redemption de Sugar ne prend pas.** Apres « dsl je m'excuse », il repond encore
+   « peteur ». Le carnet de rancunes durcit bien, il ne se relache pas.
+4. **Le classement compte les BOTS.** `/leaderboard` et `!equipage` listent Sheogorath,
+   Johnny — et **Onizuka**, un bot mort, renomme Sugar depuis
+   ([[plan-renommage-sugar-bot]]). Un fantome en base.
+
+### Non concluant, a refaire
+
+**L'humeur de Sheo et le moule `Haskill`** : il n'a repondu qu'UNE fois. Le filet
+anti-tics exige >= 2 reponses anterieures et il venait de redemarrer. Refaire avec 5-6
+messages espaces sur ~20 min — c'est la seule mesure qui demande de la duree.
+
 ## Test live du 06/09 au soir — Sheogorath, 9 echanges
 
 **Ce que le transcript prouve** : repartie (« ta tete de cornichon ? » -> il rend le
