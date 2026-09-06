@@ -30,7 +30,7 @@ from core.api_tracking import tracer_appel
 # morde chez NVIDIA) : la copie locale ne l'aurait jamais eue, et Malena est justement le
 # bot qui a deja recite son raisonnement en plein Discord. On importe le noyau, comme
 # Alfred, M'aiq et Sheogorath — une copie de moins qui puisse deriver.
-from core.llm_cascade import _est_vide, _fuite_de_raisonnement
+from core.llm_cascade import _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
 from core.media_handler import process_image_ollama
 from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
@@ -151,6 +151,9 @@ key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", [GEMINI_API_KEY] if GEMINI_API_KEY else [])
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
+# ⚠️ NVIDIA manquait ici : sans pool, sa clé ne pouvait pas être mise en
+# quarantaine sur un 429, et son index restait absent de `api_key_status`.
+key_manager.register_api("nvidia", [NVIDIA_API_KEY] if NVIDIA_API_KEY else [])
 async def _daily_llm_call(system_prompt, user_message):
     from core.llm_cascade import generate_response
     return await generate_response(
@@ -202,10 +205,18 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
         _code_erreur = None
         _raison = None
         _texte_branche = None
+        # ⚠️ Malena bâtit ses clients UNE fois au démarrage : elle ne demandait donc
+        # jamais sa clé au gestionnaire, et n'avait aucun moyen de la mettre en
+        # quarantaine. La clé ne sert ici qu'à nommer le coupable et à sauter l'échelon.
+        api_key = None
         try:
             try:
                 # 1. GEMINI
                 if client_type == "gemini" and gemini_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "gemini")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     logger.info(f"🧠 Tentative Gemini ({model_name})...")
                     # Construire le payload Gemini
                     last_turn_parts = [types.Part(text=f"SYSTEM: {sys_prompt}\n\nUSER: {prompt}")]
@@ -251,6 +262,10 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
 
                 # 2. MISTRAL
                 elif client_type == "mistral" and mistral_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "mistral")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     logger.info(f"🥖 Tentative Mistral ({model_name})...")
                     response = await asyncio.wait_for(
                         asyncio.to_thread(
@@ -273,6 +288,10 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
 
                 # 4. GROQ
                 elif client_type == "groq" and groq_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "groq")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     logger.info(f"🚀 Tentative Groq ({model_name})...")
                     chat = await asyncio.wait_for(
                         asyncio.to_thread(
@@ -303,6 +322,10 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                 # shared/llm_cascade.py et ses copies vendorisees : cette cascade-ci est
                 # INLINE, l'echelon `nvidia` y tombait donc dans le vide a chaque fois.
                 elif client_type == "nvidia" and nvidia_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "nvidia")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     if media_data is not None:
                         logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
                     chat = await asyncio.wait_for(
@@ -340,6 +363,9 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                 _raison = type(e).__name__
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
                 logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {type(e).__name__}: {error_msg}")
+                if api_key:
+                    key_manager.report_error(client_type, api_key, _code_erreur,
+                                             retry_delay_s=delai_de_reprise(e))
                 continue
         finally:
             _latence = int((time.perf_counter() - _depart) * 1000)
@@ -347,11 +373,17 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
             if not _succes and _raison is None:
                 # Aucune branche n'a tourné (client absent) : pas un échec d'API.
                 _raison = "non_tentee"
+            _index_cle = None
+            if api_key and hasattr(key_manager, "apis"):
+                try:
+                    _index_cle = key_manager.apis[client_type]["keys"].index(api_key)
+                except (ValueError, KeyError, AttributeError, TypeError):
+                    pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
             tracer_appel(
                 bot="malena",
                 api=client_type,
                 modele=model_name,
-                index_cle=None,
+                index_cle=_index_cle,
                 succes=_succes,
                 code_erreur=_code_erreur,
                 latence_ms=_latence,

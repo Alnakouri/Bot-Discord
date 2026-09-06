@@ -337,6 +337,9 @@ key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", GEMINI_API_KEYS)
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
+# ⚠️ NVIDIA manquait ici : sans pool, sa clé ne pouvait pas être mise en
+# quarantaine sur un 429, et son index restait absent de `api_key_status`.
+key_manager.register_api("nvidia", [NVIDIA_API_KEY] if NVIDIA_API_KEY else [])
 
 # ANTI-REPETITION MEMORY
 

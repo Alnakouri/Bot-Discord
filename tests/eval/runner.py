@@ -35,12 +35,16 @@ GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 # Clients
 key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", GEMINI_API_KEYS)
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
+# ⚠️ NVIDIA manquait ici : sans pool, sa clé ne pouvait pas être mise en
+# quarantaine sur un 429, et son index restait absent de `api_key_status`.
+key_manager.register_api("nvidia", [NVIDIA_API_KEY] if NVIDIA_API_KEY else [])
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 mistral_client = Mistral(api_key=MISTRAL_API_KEY) if MISTRAL_API_KEY else None

@@ -126,12 +126,20 @@ def delai_de_reprise(exc):
 
     Sur un 429, deviner la durée du cooldown est un pari : « trop de requêtes cette
     MINUTE » et « quota du JOUR épuisé » rendent le même code. Google, lui, dit combien
-    de temps attendre — autant l'écouter plutôt que d'inventer une heure.
+    de temps attendre — autant l'écouter plutôt que d'inventer une heure. Deux endroits
+    à lire, et il faut les deux : Gemini l'annonce dans le CORPS de l'erreur, les SDK de
+    style OpenAI (Groq, NVIDIA, Mistral) dans une EN-TÊTE HTTP.
 
     ⚠️ Cet extracteur tourne DÉJÀ à l'intérieur d'un `except` : il ne doit jamais lever,
     quelle que soit la forme de l'exception reçue. En cas de doute il rend None, et
     l'appelant retombe sur sa valeur par défaut.
     """
+    valeur = _delai_dans_le_corps(exc)
+    return valeur if valeur is not None else _delai_dans_les_entetes(exc)
+
+
+def _delai_dans_le_corps(exc):
+    """Le délai annoncé dans le CORPS de l'erreur (forme Google/`APIError.details`)."""
     try:
         for bloc in _blocs_de_details(getattr(exc, "details", None)):
             if "retryDelay" not in bloc:
@@ -150,6 +158,80 @@ def delai_de_reprise(exc):
     except Exception:
         return None
     return None
+
+
+# Unités que les fournisseurs mélangent dans une même en-tête : « 7.66s », « 2m59.56s »,
+# « 500ms », ou un nombre nu (`retry-after` en secondes).
+_UNITES_DE_DUREE = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001, "": 1.0}
+_MORCEAU_DE_DUREE = re.compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)?")
+
+
+def _duree_en_secondes(brut):
+    """« 24 », « 7.66s », « 2m59.56s », « 500ms » -> secondes. None si illisible.
+
+    ⚠️ Une date HTTP (« Wed, 21 Oct 2015 07:28:00 GMT ») est un `retry-after` valide que
+    ce lecteur refuse VOLONTAIREMENT : l'interpréter comme une durée poserait une
+    quarantaine absurde. Refuser rend None, et l'appelant retombe sur ses 60 s.
+    """
+    texte = str(brut).strip().lower()
+    if not texte:
+        return None
+    total = 0.0
+    position = 0
+    for morceau in _MORCEAU_DE_DUREE.finditer(texte):
+        if morceau.start() != position:
+            return None                      # du texte non numérique s'est glissé au milieu
+        total += float(morceau.group(1)) * _UNITES_DE_DUREE[morceau.group(2) or ""]
+        position = morceau.end()
+    if position == 0 or position != len(texte):
+        return None
+    return total
+
+
+def _delai_dans_les_entetes(exc):
+    """Le délai annoncé dans les EN-TÊTES HTTP (Groq, NVIDIA, Mistral — SDK style OpenAI).
+
+    ⚠️ Gemini est le seul fournisseur à annoncer son délai dans le CORPS de l'erreur. Les
+    autres le mettent dans une en-tête — que `details_de_quota()` lisait DÉJÀ pour le
+    journal, sans que personne ne s'en serve pour la quarantaine. Un extracteur écrit
+    pour un fournisseur ne mord pas chez le suivant, il faut le vérifier.
+    """
+    try:
+        entetes = getattr(getattr(exc, "response", None), "headers", None) or {}
+        for nom in ("retry-after", "x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
+            brut = entetes.get(nom)
+            if brut is None:
+                continue
+            valeur = _duree_en_secondes(brut)
+            if valeur is not None:
+                return valeur
+    except Exception:
+        return None
+    return None
+
+
+def _cle_du_pool(key_manager, api_name, exigee=False):
+    """Rend `(cle, raison_du_saut)` pour un échelon. `raison` non nulle => sauter.
+
+    `exigee=True` (Gemini) : l'échelon ne peut pas tourner sans la clé, il la passe au
+    constructeur du client. Ailleurs le client est déjà bâti et porte sa propre clé ; la
+    clé du pool ne sert qu'à nommer le coupable dans `report_error`.
+
+    ⚠️ D'où la garde : un pool NON ENREGISTRÉ ne doit JAMAIS faire sauter un échelon
+    facultatif. Sans elle, il suffirait d'oublier un `register_api` pour rendre un
+    fournisseur définitivement muet, sans une ligne de journal — le piège exact qui a
+    laissé NVIDIA annoncé sur les 6 bots et sans un seul appel pendant huit jours.
+    """
+    apis = getattr(key_manager, "apis", None)
+    if not isinstance(apis, dict) or api_name not in apis:
+        return None, ("pas_de_cle" if exigee else None)
+    cle = key_manager.get_key(api_name)
+    if cle is None:
+        # ⚠️ Un saut muet est un échelon invisible : on le dit, et `tracer_appel` le
+        # range en base sous `raison="quarantaine"` — un saut délibéré, pas un échec.
+        logger.info(f"⏭️ [{api_name.upper()}] clé en quarantaine → échelon suivant, sans appel")
+        return None, "quarantaine"
+    return cle, None
 
 
 # Borne par défaut d'un appel, quand l'appelant n'en fournit pas.
@@ -218,9 +300,9 @@ async def generate_response(
             try:
                 # 1. GEMINI
                 if client_type == "gemini":
-                    api_key = key_manager.get_key("gemini")
-                    if not api_key:
-                        _raison = "pas_de_cle"
+                    api_key, _saut = _cle_du_pool(key_manager, "gemini", exigee=True)
+                    if _saut:
+                        _raison = _saut
                         continue
                     client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
                     gemini_messages = []
@@ -272,6 +354,10 @@ async def generate_response(
     
                 # 2. MISTRAL
                 elif client_type == "mistral" and mistral_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "mistral")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     chat = await _call(
                         mistral_client.chat.complete,
                         model=model_name,
@@ -289,6 +375,10 @@ async def generate_response(
     
                 # 3. GROQ
                 elif client_type == "groq" and groq_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "groq")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     msgs = [{"role": "system", "content": system_prompt}]
                     for msg in conversation_history:
                         r = "user" if msg["role"] == "user" else "assistant"
@@ -310,6 +400,10 @@ async def generate_response(
     
                 # 4. NVIDIA (nemotron) — 4e fournisseur, quota independant des 3 autres.
                 elif client_type == "nvidia" and nvidia_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "nvidia")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     if media_data is not None:
                         logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
                     chat = await _call(
@@ -356,9 +450,14 @@ async def generate_response(
                     f"⚠️ [{client_type.upper()} FAIL] {model_name} - {type(e).__name__}: {error_msg}"
                     + (f"  [QUOTA] {_quota}" if _quota else "")
                 )
-                if client_type == "gemini" and api_key:
+                # ⚠️ Longtemps réservé à Gemini : Groq, Mistral et NVIDIA prenaient donc
+                # un 429 sans jamais écarter la clé, et retapaient dans le mur au message
+                # suivant. Mesuré en base le 2026-09-04 : trois appels Mistral de Johnny
+                # sur la MÊME clé morte dans la même seconde (05:30:45), deux de Sheo à
+                # 05:30:59. `report_error` ne fait rien si le pool lui est inconnu.
+                if api_key:
                     key_manager.report_error(
-                        "gemini", api_key, _code_erreur,
+                        client_type, api_key, _code_erreur,
                         retry_delay_s=delai_de_reprise(e),
                     )
                 continue
@@ -371,10 +470,10 @@ async def generate_response(
                 # bruit « unknown » que ce chantier existe pour supprimer.
                 _raison = "non_tentee"
             _index_cle = None
-            if client_type == "gemini" and api_key and hasattr(key_manager, "apis"):
+            if api_key and hasattr(key_manager, "apis"):
                 try:
-                    _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
-                except (ValueError, KeyError, AttributeError):
+                    _index_cle = key_manager.apis[client_type]["keys"].index(api_key)
+                except (ValueError, KeyError, AttributeError, TypeError):
                     pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
             _bot_nom = bot_id_depuis_label(bot_label) or (bot_label or "").lower()
             tracer_appel(

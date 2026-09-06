@@ -23,7 +23,7 @@ from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
 # ⚠️ La cascade inline d'Alfred n'avait NI garde anti-fuite NI garde de reponse vide :
 # les deux vivaient dans le noyau, qu'elle recopie sans les emporter. On les importe au
 # lieu d'en faire une 8e copie. `generate_response` etait appele sans etre importe.
-from core.llm_cascade import generate_response, _est_vide, _fuite_de_raisonnement
+from core.llm_cascade import generate_response, _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
 
 import discord
 from discord.ext import commands, tasks
@@ -164,6 +164,9 @@ key_manager = MultiAPIKeyManager()
 key_manager.register_api("gemini", GEMINI_API_KEYS)
 key_manager.register_api("groq", [GROQ_API_KEY] if GROQ_API_KEY else [])
 key_manager.register_api("mistral", [MISTRAL_API_KEY] if MISTRAL_API_KEY else [])
+# ⚠️ NVIDIA manquait ici : sans pool, sa clé ne pouvait pas être mise en
+# quarantaine sur un 429, et son index restait absent de `api_key_status`.
+key_manager.register_api("nvidia", [NVIDIA_API_KEY] if NVIDIA_API_KEY else [])
 # MEMORY SETTINGS
 # LTM SYSTEM
 try:
@@ -1692,8 +1695,10 @@ async def on_message(message):
             try:
                 # 1. GEMINI
                 if client_type == "gemini":
-                    api_key = key_manager.get_key("gemini")
-                    if not api_key: continue
+                    api_key, _saut = _cle_du_pool(key_manager, "gemini", exigee=True)
+                    if _saut:
+                        _raison = _saut
+                        continue
                     client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
                     
                     last_turn_parts = [types.Part(text=f"{final_system_prompt}\n\nDernier message : {user_message}")]
@@ -1769,6 +1774,10 @@ async def on_message(message):
 
                 # 2. MISTRAL
                 elif client_type == "mistral" and mistral_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "mistral")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     chat = await asyncio.wait_for(
                         asyncio.to_thread(
                             mistral_client.chat.complete,
@@ -1786,6 +1795,10 @@ async def on_message(message):
 
                 # 4. GROQ
                 elif client_type == "groq" and groq_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "groq")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     msgs = [{"role": "system", "content": final_system_prompt}]
                     for msg in conversation_history[channel_id]:
                         r = "user" if msg["role"] == "user" else "assistant"
@@ -1809,6 +1822,10 @@ async def on_message(message):
                 # shared/llm_cascade.py et ses copies vendorisees : cette cascade-ci est
                 # INLINE, l'echelon `nvidia` y tombait donc dans le vide a chaque fois.
                 elif client_type == "nvidia" and nvidia_client:
+                    api_key, _saut = _cle_du_pool(key_manager, "nvidia")
+                    if _saut:
+                        _raison = _saut
+                        continue
                     if media_data is not None:
                         logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
                     msgs = [{"role": "system", "content": final_system_prompt}]
@@ -1846,9 +1863,13 @@ async def on_message(message):
                 if not error_msg:
                     error_msg = type(e).__name__
                 logger.warning(f"⚠️ [{client_type.upper()} FAIL] {model_name} : {error_msg}")
-                if client_type == "gemini" and api_key:
+                # ⚠️ Réservé à Gemini jusqu'au 2026-09-06 : Groq, Mistral et NVIDIA prenaient
+                # un 429 sans jamais écarter la clé. `report_error` est inerte si le pool lui
+                # est inconnu, et `delai_de_reprise` lit désormais AUSSI l'en-tête retry-after.
+                if api_key:
                     error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
-                    key_manager.report_error("gemini", api_key, error_code)
+                    key_manager.report_error(client_type, api_key, error_code,
+                                             retry_delay_s=delai_de_reprise(e))
                 _raison = type(e).__name__
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
                 continue
@@ -1861,10 +1882,10 @@ async def on_message(message):
                 if not _succes and _raison is None:
                     _raison = "non_tentee"
                 _index_cle = None
-                if client_type == "gemini" and api_key and hasattr(key_manager, "apis"):
+                if api_key and hasattr(key_manager, "apis"):
                     try:
-                        _index_cle = key_manager.apis["gemini"]["keys"].index(api_key)
-                    except (ValueError, KeyError, AttributeError):
+                        _index_cle = key_manager.apis[client_type]["keys"].index(api_key)
+                    except (ValueError, KeyError, AttributeError, TypeError):
                         pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
                 try:
                     tracer_appel(
