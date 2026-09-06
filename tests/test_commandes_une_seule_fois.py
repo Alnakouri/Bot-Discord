@@ -70,3 +70,49 @@ def test_anti_collision():
                                 
     if collisions:
         assert False, "Collisions détectées :\n" + "\n".join(collisions)
+
+
+def test_les_six_bots_posent_les_commandes_slash():
+    """Malena etait le SEUL bot sans commandes slash — et ne les avait JAMAIS eues.
+
+    `git log -S setup_slash_commands -- MalenaBot/` ne rendait rien sur tout
+    l'historique : pas une regression, un oubli d'origine. Les 5 autres exposaient
+    `/help` `/ping` `/stats` `/reputation` `/leaderboard` `/quests` `/birthday`, elle
+    aucune — alors qu'elle a les mini-jeux et les anniversaires cables.
+
+    ⚠️ Un test qui cherche le NOM passe au vert sur un simple import. On exige donc
+    l'import ET les deux appels, lus dans l'AST.
+    """
+    from .conftest import BOT_FILES
+    bot_files = BOT_FILES
+    assert len(bot_files) == 6, f"Bots manquants, trouves: {bot_files}"
+
+    for bot_file in bot_files:
+        source = Path(bot_file).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        nom = Path(bot_file).name
+
+        importe = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "shared.slash_commands"
+            for alias in node.names
+        }
+        assert "setup_slash_commands" in importe, (
+            f"{nom} n'importe pas setup_slash_commands depuis shared.slash_commands"
+        )
+        assert "sync_slash_commands" in importe, (
+            f"{nom} n'importe pas sync_slash_commands : sans sync, Discord n'affiche rien"
+        )
+
+        appeles = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        assert "setup_slash_commands" in appeles, (
+            f"{nom} importe setup_slash_commands mais ne l'appelle jamais"
+        )
+        assert "sync_slash_commands" in appeles, (
+            f"{nom} ne synchronise jamais l'arbre : les commandes n'apparaitront pas"
+        )

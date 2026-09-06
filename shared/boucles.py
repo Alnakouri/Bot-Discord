@@ -40,8 +40,14 @@ elle-meme.
 """
 import datetime
 import logging
+import weakref
 
 logger = logging.getLogger("boucles")
+
+# Les `tasks.Loop` sont des variables de MODULE, pas des attributs de cog : ni discord.py
+# ni le bot n'en tient la liste, donc personne ne peut les arreter au moment voulu. On la
+# tient nous-memes, en WeakSet pour ne retenir aucune boucle morte.
+_BOUCLES = weakref.WeakSet()
 
 
 def installer_anti_rattrapage(journal=None):
@@ -81,8 +87,44 @@ def installer_anti_rattrapage(journal=None):
 
     _get_next_sleep_time._anti_rattrapage = True
     Loop._get_next_sleep_time = _get_next_sleep_time
+
+    # Meme pose, meme endroit : on enregistre au passage toute boucle qui demarre, pour
+    # pouvoir les arreter a l'extinction (cf. `annuler_les_boucles`).
+    if not getattr(Loop.start, "_registre_boucles", False):
+        depart = Loop.start
+
+        def start(self, *args, **kwargs):
+            tache = depart(self, *args, **kwargs)
+            _BOUCLES.add(self)
+            return tache
+
+        start._registre_boucles = True
+        Loop.start = start
     # Un correctif qu'aucun journal ne montre est un correctif qu'on ne peut pas valider
     # en live ([[gotcha-echelon-de-secours-invisible]]) : il ne se manifeste sinon qu'au
     # premier reveil de la machine, c'est-a-dire jamais quand on regarde.
     journal.info("[BOUCLES] anti-rattrapage pose : les iterations manquees ne seront pas rejouees")
     return True
+
+
+def annuler_les_boucles(journal=None):
+    """Arrete toutes les boucles en cours. Rend le nombre de boucles annulees.
+
+    A appeler AVANT `bot.close()` : sinon une iteration encore en vol continue de taper
+    sur une session HTTP deja fermee. Constate a chaque `docker restart` de Malena :
+    `[MISSED CHECK] Erreur canal idee: Session is closed` — l'erreur est benigne, mais
+    elle salit le journal d'arret et masquerait une vraie erreur au meme endroit.
+    """
+    journal = journal or logger
+    annulees = 0
+    for boucle in list(_BOUCLES):
+        try:
+            if boucle.is_running():
+                boucle.cancel()
+                annulees += 1
+        except Exception as e:
+            # Une boucle recalcitrante ne doit pas empecher d'arreter les suivantes.
+            journal.warning(f"[BOUCLES] annulation impossible : {type(e).__name__}: {e}")
+    if annulees:
+        journal.info(f"[BOUCLES] {annulees} boucle(s) arretee(s) avant la fermeture")
+    return annulees

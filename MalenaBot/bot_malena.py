@@ -57,6 +57,7 @@ from core.bot_logger import setup_logger
 try:
     from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel
     from shared.server_events import check_and_send_birthdays, handle_member_join, handle_member_remove
+    from shared.slash_commands import setup_slash_commands, sync_slash_commands
     DATABASE_AVAILABLE = True
     _DB_IMPORT_ERROR = None
 except ImportError as _e:
@@ -469,6 +470,20 @@ async def on_ready():
     if not status_loop_malena.is_running():
         status_loop_malena.start()
         
+    # INITIALISATION DES COMMANDES SLASH
+    # Malena etait le SEUL bot sans commandes slash — et elle ne les a jamais eues
+    # (`git log -S setup_slash_commands -- MalenaBot/` : aucun resultat). Pas une
+    # regression : un oubli d'origine.
+    if DATABASE_AVAILABLE:
+        try:
+            setup_slash_commands(bot, "Malena")
+            await sync_slash_commands(bot)
+            logger.info("[SLASH] Commandes slash initialisées")
+        except Exception as e:
+            # on_ready rejoue a chaque reconnexion : la 2e pose leve
+            # CommandAlreadyRegistered et avorterait tout le reste de on_ready.
+            logger.error(f"[SLASH] Erreur: {e}")
+
     # Setup Mini-Games
     if GAMES_AVAILABLE:
         try:

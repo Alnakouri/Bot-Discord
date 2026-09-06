@@ -27,7 +27,7 @@ import pytest
 
 from discord.ext import tasks
 
-from shared.boucles import installer_anti_rattrapage
+from shared.boucles import annuler_les_boucles, installer_anti_rattrapage
 
 RACINE = Path(__file__).resolve().parent.parent
 
@@ -50,8 +50,10 @@ RATTRAPAGES_ATTENDUS = SAUT_MINUTES * 60 // INTERVALLE
 def _restaurer_discord():
     """Le correctif remplace une methode de classe : la rendre a l'etat trouve."""
     origine = tasks.Loop._get_next_sleep_time
+    origine_start = tasks.Loop.start
     yield
     tasks.Loop._get_next_sleep_time = origine
+    tasks.Loop.start = origine_start
 
 
 def _rafale():
@@ -138,6 +140,52 @@ def test_une_pose_deja_faite_ne_redit_rien():
     assert installer_anti_rattrapage(journal) is False
     assert journal.info_dits == [], (
         "la 2e pose parle alors qu'elle n'a rien fait : %r" % journal.info_dits
+    )
+
+
+def test_les_boucles_sont_arretees_a_la_demande():
+    """Sans registre, personne ne sait quelles boucles tournent.
+
+    Les `tasks.Loop` sont des variables de MODULE, pas des attributs de cog : ni
+    discord.py ni le bot n'en tient la liste. `installer_anti_rattrapage` en tient une.
+    """
+    installer_anti_rattrapage()
+    etat = {}
+
+    @tasks.loop(seconds=INTERVALLE)
+    async def boucle():
+        pass
+
+    async def scenario():
+        boucle.start()
+        await asyncio.sleep(0.05)
+        etat["tournait"] = boucle.is_running()
+        etat["annulees"] = annuler_les_boucles()
+        await asyncio.sleep(0.05)
+        etat["tourne_encore"] = boucle.is_running()
+
+    asyncio.run(scenario())
+    assert etat["tournait"], "la boucle n'a jamais demarre : le scenario ne prouve rien"
+    assert etat["annulees"] >= 1, "aucune boucle annulee : le registre est vide"
+    assert not etat["tourne_encore"], "la boucle tourne toujours apres annulation"
+
+
+def test_l_arret_gracieux_coupe_les_boucles_avant_de_fermer():
+    """L'ordre est tout le correctif.
+
+    Une iteration encore en vol pendant `bot.close()` tape sur une session morte :
+    `[MISSED CHECK] Erreur canal idee: Session is closed` a chaque `docker restart` de
+    Malena. Benin, mais ca salit le journal d'arret — et ca masquerait une vraie erreur
+    au meme endroit.
+    """
+    src = io.open(RACINE / "shared" / "graceful_shutdown.py", encoding="utf-8").read()
+    assert "annuler_les_boucles" in src, (
+        "l'arret gracieux n'arrete pas les boucles : elles tourneront pendant la "
+        "fermeture de la session"
+    )
+    assert src.index("annuler_les_boucles(") < src.index("await bot.close()"), (
+        "les boucles sont annulees APRES la fermeture de la session : trop tard, "
+        "c'est exactement le bug qu'on corrige"
     )
 
 

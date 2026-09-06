@@ -36,6 +36,16 @@ def setup_graceful_shutdown(bot, on_shutdown_callback=None):
             except Exception as e:
                 logger.error(f"[SHUTDOWN] {bot_name} - Erreur callback: {e}")
         
+        # Arreter les boucles AVANT de fermer la session : une iteration encore en vol
+        # tape sinon sur une session morte. Constate a chaque `docker restart` de Malena
+        # (`[MISSED CHECK] Erreur canal idee: Session is closed`).
+        try:
+            from core.boucles import annuler_les_boucles
+            annuler_les_boucles(logger)
+        except ImportError as e:
+            # shared/ est optionnel ; le bot doit s'arreter meme sans lui.
+            logger.warning(f"[SHUTDOWN] {bot_name} - boucles non arretees ({e})")
+
         # Close bot connection
         try:
             await bot.close()
