@@ -411,3 +411,44 @@ def test_sans_gestionnaire_de_cles_la_cascade_tourne_quand_meme():
     groq, nvidia = _FauxGroq429(), _FauxNvidia()
     assert _un_message(None, groq, nvidia) == "Bonsoir."
     assert groq.appels == 1, "sans gestionnaire, Groq doit être tenté normalement"
+
+
+def test_un_gestionnaire_dont_seul_get_key_est_remplace_rend_bien_sa_cle():
+    """⚠️ Le test que le local ne pouvait pas faire échouer — et la CI, si.
+
+    Trois tests du dépôt (`test_sheo_images`, `test_timeout_media`) ne remplacent que
+    `key_manager.get_key`, sans peupler `apis`. Une première version de `_cle_du_pool`
+    interrogeait `apis` AVANT `get_key` : en local elle passait, parce que les vraies
+    clés Gemini y sont ; en CI, sans clé, la branche Gemini n'était plus jamais atteinte
+    et les trois tests tombaient.
+
+    La règle qui en sort : le gestionnaire est la seule autorité sur « ai-je une clé ».
+    On la lui demande, et on n'interprète que son refus.
+    """
+    class _SeulementGetKey:
+        def get_key(self, _nom):
+            return "FAKE_KEY"
+
+    assert _cle_du_pool(_SeulementGetKey(), "gemini", exigee=True) == ("FAKE_KEY", None)
+    assert _cle_du_pool(_SeulementGetKey(), "groq") == ("FAKE_KEY", None)
+
+
+def test_un_faux_gestionnaire_ne_rend_pas_une_fausse_cle():
+    """⚠️ Une clé est une chaîne, ou n'est pas.
+
+    Plusieurs tests du dépôt passent un `MagicMock` en guise de gestionnaire. Son
+    `get_key` rend un MagicMock — qui n'est pas `None`. Cette fausse clé descendait
+    jusqu'à `tracer_appel`, où SQLite la refusait :
+    « Error binding parameter 5: type 'MagicMock' is not supported ». L'appel n'était
+    alors plus tracé du tout, et le chantier du suivi API perdait ses lignes.
+    """
+    from unittest.mock import MagicMock
+
+    assert _cle_du_pool(MagicMock(), "groq") == (None, None)
+    assert _cle_du_pool(MagicMock(), "gemini", exigee=True) == (None, "pas_de_cle")
+
+    class _CleVide:
+        def get_key(self, _nom):
+            return ""
+
+    assert _cle_du_pool(_CleVide(), "groq") == (None, None)

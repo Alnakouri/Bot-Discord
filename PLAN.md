@@ -121,11 +121,40 @@ Rien ici ne peut se simuler.
 
 ## Ce qui n'est pas dans ce plan
 
-- **`report_error` n'est appele que pour Gemini** (`shared/llm_cascade.py:359`) : Groq et
-  NVIDIA ne mettent jamais une cle en quarantaine sur un 429. C'est du code, pas un test
-  live, et c'est **le dernier vrai point ouvert**.
 - **Phase 3 repartie** : a re-specifier, son contexte a peri (elle visait la cascade
   REPARTEE quand Grok la pilotait). **Migration mempalace** : hors depot.
+- Il n'y a **plus de point de code ouvert**. Tout ce qui reste demande un humain, un clic
+  ou un vrai live.
+
+## Ferme le 06/09, 3e session — la quarantaine des cles
+
+Le dernier point de code. `report_error` n'etait appele que pour **Gemini** : Groq,
+Mistral et NVIDIA prenaient un 429 sans consequence, et la cascade retapait dans le meme
+mur au message suivant. La note de reprise disait « Groq et NVIDIA » — **Mistral
+manquait aussi, et c'est le pire des trois** (17 x 429 en base contre 8 pour Groq).
+
+Ce que la base montrait, et qui a decide du travail :
+
+    2026-09-04 05:30:45  johnny  mistral  429   (x3, dans la MEME seconde)
+    2026-09-04 05:30:59  sheo    mistral  429   (x2)
+    2026-09-06 13:28:45  sheo    groq     429
+
+Livre : les 4 pools enregistres sur les 6 bots (NVIDIA ne l'etait **pas du tout**),
+`report_error` pour tous les fournisseurs, l'echelon **saute** quand sa cle est en
+quarantaine, et `delai_de_reprise` lit desormais AUSSI l'en-tete `retry-after` — la seule
+forme que Groq, Mistral et NVIDIA emettent. Applique aux **11** cascades : `shared/`, les
+6 vendorisees, les 4 inline.
+
+⚠️ La garde a ne jamais retirer : **un pool non enregistre ne fait pas sauter un echelon
+facultatif**. Sans elle, un `register_api` oublie rendrait un fournisseur muet sans une
+ligne de journal.
+
+**Reste a constater en live** : une ligne `⏭️ [<API>] cle en quarantaine → echelon
+suivant, sans appel` dans un journal, et des lignes `raison="quarantaine"` en base. Il
+faut pour cela un vrai 429 — le provoquer en enchainant les messages sur Sheo, dont le
+prompt mange 56 % du quota Groq par minute.
+
+    docker logs --since 15m bot-sheogorath 2>&1 | grep -E "quarantaine|QUARANTAINE"
 
 ## Ferme le 06/09, en preparant ce plan
 
@@ -138,6 +167,6 @@ Rien ici ne peut se simuler.
 - **3 tests dependaient d'un tirage a 0,5 %** (mode IMPOSTEUR) : CI rouge sur un commit
   sans rapport, une fois sur 200. Hasard scelle.
 
-653 tests, CI verte, les 6 conteneurs redemarres.
+712 tests, CI verte, les 6 conteneurs redemarres.
 
 ⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port 8599.

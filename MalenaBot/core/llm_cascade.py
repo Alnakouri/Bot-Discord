@@ -226,17 +226,30 @@ def _cle_du_pool(key_manager, api_name, exigee=False):
     facultatif. Sans elle, il suffirait d'oublier un `register_api` pour rendre un
     fournisseur définitivement muet, sans une ligne de journal — le piège exact qui a
     laissé NVIDIA annoncé sur les 6 bots et sans un seul appel pendant huit jours.
+
+    ⚠️ On DEMANDE la clé d'abord, et on n'interprète le refus qu'ensuite. L'ordre inverse
+    a rendu la CI rouge le 2026-09-06 : trois tests ne remplacent que `get_key`, sans
+    peupler `apis`. En local ils passaient — les vraies clés Gemini y sont — et en CI,
+    sans clé, la branche Gemini n'était plus jamais atteinte. Interroger le pool avant le
+    gestionnaire, c'est court-circuiter la seule autorité sur la question.
     """
+    obtenir = getattr(key_manager, "get_key", None)
+    cle = obtenir(api_name) if callable(obtenir) else None
+    # ⚠️ `isinstance(cle, str)` n'est pas de la ceinture-bretelles : plusieurs tests
+    # passent un `MagicMock` en guise de gestionnaire. Son `get_key` rend un MagicMock,
+    # qui n'est pas None — et cette fausse clé finissait bindée dans SQLite
+    # (« type 'MagicMock' is not supported »). Une clé est une chaîne, ou n'est pas.
+    if isinstance(cle, str) and cle:
+        return cle, None
+
     apis = getattr(key_manager, "apis", None)
-    if not isinstance(apis, dict) or api_name not in apis:
-        return None, ("pas_de_cle" if exigee else None)
-    cle = key_manager.get_key(api_name)
-    if cle is None:
+    if isinstance(apis, dict) and api_name in apis:
+        # Le pool existe et ne rend rien : ses clés sont en cooldown ou revoquées.
         # ⚠️ Un saut muet est un échelon invisible : on le dit, et `tracer_appel` le
         # range en base sous `raison="quarantaine"` — un saut délibéré, pas un échec.
         logger.info(f"⏭️ [{api_name.upper()}] clé en quarantaine → échelon suivant, sans appel")
         return None, "quarantaine"
-    return cle, None
+    return None, ("pas_de_cle" if exigee else None)
 
 
 # Borne par défaut d'un appel, quand l'appelant n'en fournit pas.
@@ -480,6 +493,8 @@ async def generate_response(
                     _index_cle = key_manager.apis[client_type]["keys"].index(api_key)
                 except (ValueError, KeyError, AttributeError, TypeError):
                     pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
+                if not isinstance(_index_cle, int):
+                    _index_cle = None   # un faux gestionnaire rend un objet : SQLite le refuserait
             _bot_nom = bot_id_depuis_label(bot_label) or (bot_label or "").lower()
             tracer_appel(
                 bot=_bot_nom,

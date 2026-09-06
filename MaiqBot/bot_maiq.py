@@ -1607,6 +1607,8 @@ async def on_message(message):
                     _index_cle = key_manager.apis[client_type]["keys"].index(api_key)
                 except (ValueError, KeyError, AttributeError, TypeError):
                     pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
+            if not isinstance(_index_cle, int):
+                _index_cle = None   # un faux gestionnaire rend un objet : SQLite le refuserait
             try:
                 tracer_appel(
                     bot="maiq", api=client_type, modele=model_name,

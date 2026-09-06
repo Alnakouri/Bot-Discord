@@ -379,6 +379,8 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     _index_cle = key_manager.apis[client_type]["keys"].index(api_key)
                 except (ValueError, KeyError, AttributeError, TypeError):
                     pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
+            if not isinstance(_index_cle, int):
+                _index_cle = None   # un faux gestionnaire rend un objet : SQLite le refuserait
             tracer_appel(
                 bot="malena",
                 api=client_type,
