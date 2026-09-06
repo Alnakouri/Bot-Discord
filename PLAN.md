@@ -1,177 +1,136 @@
-# PLAN — les 5 « MOOD CHANGE » : ce n'etaient pas 5, et ce n'etait pas l'humeur
+# PLAN — le protocole des tests live
 
-Redaction et execution : Claude, le 2026-09-06.
+Redaction : Claude, le 2026-09-06. Ce fichier remplace le plan « 5 MOOD CHANGE », clos et
+pousse (`da4a852` + `0c1e707` + `6c97732`, CI verte, deploye).
 
-Le point ouvert disait : « **5 `MOOD CHANGE` dans la meme seconde** apres une reconnexion :
-jamais explique. » Il est explique. Il y en avait **40**, et le changement d'humeur n'y
-etait pour rien.
-
----
-
-## Etat : vert  🟢
-
-**644 tests passent** (+46 sous-tests), suite complete en un seul processus. CI verte (`34027591224`), les 6 conteneurs redemarres et le correctif **constate dans les 6 journaux**.
+Tout ce qui reste ouvert exige **un humain, un clic ou un vrai live**. Ce plan dit
+comment faire chacun, dans quel ordre, et **ce que chaque etape prouve**.
 
 ---
 
-## Ce que le journal disait vraiment
+## La regle qui gouverne tout le reste
 
-`docker logs bot-sheogorath`, groupe par horodatage :
+⚠️ **Un test live ne vaut que par sa preuve.** « Ca a marche » n'est pas une preuve : un
+extrait de journal ou une capture en est une. Apres chaque session, borner la fenetre —
+un `restart` ne remet PAS le journal a zero ([[gotcha-docker-logs-sans-since]]) :
 
-    38 lignes MOOD CHANGE a 11:20:50   (+2 a 11:20:49)
-    20 lignes MOOD CHANGE a 14:00:40
+    docker logs --since 15m bot-sheogorath 2>&1 | grep -iE "ERROR|Traceback"
 
-Et le contexte, le 2026-09-04 :
-
-| heure | evenement |
-|---|---|
-| 07:56:28 | dernier `MOOD CHANGE` normal |
-| — | **3 h 21 sans une seule ligne** : l'hote etait en veille |
-| 11:17:36 | `Shard ID None session has been invalidated` — reconnexion de la gateway |
-| 11:20:49–50 | **40 `MOOD CHANGE` en deux secondes** |
-
-40 × 5 min = 200 min = **exactement le trou**.
-
-⚠️ Le premier reflexe — « `on_ready` rejoue et relance la boucle » — etait faux. Les
-gardes `is_running()` sont en place depuis `839fae5` et tiennent. La cause est ailleurs.
+⚠️ **Les 6 bots partagent le prefixe `!`.** Une commande ambigue reveille plusieurs bots.
+Les commandes ci-dessous sont uniques a un bot, sauf `!oubliemoi` que les 6 portent.
 
 ---
 
-## La cause : `tasks.loop` dort jusqu'a un instant ABSOLU
+## Session 1 — les personas (30 min, sans live, sans risque)
 
-`discord/ext/tasks/__init__.py` :
+**Le mode test existe exactement pour ca** : les bots ne publient plus que sur le serveur
+prive `123123123123123123`, Twitch et MP coupes. Le reste du serveur ne voit rien.
 
-```python
-def _get_next_sleep_time(self, now=MISSING):
-    if self._sleep is not MISSING:
-        return self._last_iteration + datetime.timedelta(seconds=self._sleep)
-```
+**Armer** : dashboard → interrupteur global `test_mode`. Ou a la main dans
+`data/bot_features.json` (`_global.test_mode = true`), puis
+`docker restart` des 6. ⚠️ **Ferme par defaut** : mode actif sans serveur choisi = silence
+total. Le `test_guild_id` est deja renseigne, ne pas le vider.
 
-L'instant du prochain tour est calcule depuis **l'iteration precedente**, jamais depuis
-« maintenant ». Quand l'horloge saute, cet instant est deja passe : la boucle s'execute,
-recalcule `precedent + intervalle`, retombe sur un instant **encore** passe, recommence.
-Elle rejoue tout le retard, dos a dos.
+**Desarmer a la fin.** Un mode test oublie = 6 bots muets sur le vrai serveur.
 
-⚠️ discord.py **a** une correction de derive d'horloge — mais elle est gardee par
-`while self._is_explicit_time() and ...` : elle ne s'applique qu'aux boucles a heure fixe
-(`time=`). Les boucles a intervalle, **c'est-a-dire toutes les notres**, n'ont aucun filet.
-
-**Mesure de reproduction** (10 lignes, sans Discord) : un saut de 10 minutes sur une
-boucle de 5 s produit **120 rattrapages en 7 ms**.
-
----
-
-## Pourquoi seul le changement d'humeur se voyait
-
-Parce qu'il est **le seul a journaliser chaque tour**. Les 29 autres boucles ont rattrape
-en silence. Pour une veille nocturne de 8 h, les memes secondes rejouent :
-
-| boucle | intervalle | rattrapages |
+| Ce qu'on veut voir | Comment le provoquer | Ce qui compte |
 |---|---|---|
-| `vocal_patrol_loop` | 30 s | 960 |
-| `voice_idle_check` | 60 s | 480 |
-| `twitch_poll_loop` (×6 bots) | 90 s | 320 **chacune** |
-| `check_missed_mentions_*` | 2 min | 240 |
-| `mood_changer`, `decree_cleanup_loop`, `riddle_passive_hint_loop` | 5 min | 96 |
-| `daily_bio_loop_*`, `daily_rumor_check_*` | 1 h | 8 |
+| **Humeurs de Sheo a l'ecrit** | lui parler 5-6 fois d'affilee, sur ~20 min (l'humeur tourne toutes les 5 min) | MAJUSCULES, chuchotement, emoji de ton **qui changent** ; `docker logs` montre `MOOD CHANGE` entre deux |
+| **Longueur = pertinence** | une question courte, puis « raconte-moi tout » | 4 phrases max, 10 seulement sur invitation |
+| **Moule repetitif de Sugar** | 5 messages differents a la suite | les 5 reponses ne doivent pas ouvrir pareil ni finir sur du sucre a chaque fois |
+| **Carnet de rancunes** | insulter Sugar 3 fois, puis s'excuser | le ton durcit, puis la redemption prend |
+| **Repartie** | insulter chaque bot une fois | il encaisse et rend le coup — aucun ne doit se coucher |
+| **Memes FR + lore** | tendre une perche (Kaamelott a Alfred, Night City a Johnny, fromage a Sheo) | la reference tombe juste, sans forcer |
+| **Anti-incrustation** | s'adresser a UN bot par son nom | les 5 autres se taisent |
+| **Transcript non ampute** | faire repondre 2 bots, puis demander au 3e « ils ont dit quoi ? » | il ne doit pas conclure a une panne ([[gotcha-transcript-monologue]]) |
+| **Vision** | poster une image en mentionnant un bot | il la decrit ; **sans** mention, il se tait |
+| **Jeux** | `!enigme` (M'aiq), `!quete` (Sheo), `/quests`, `/leaderboard` | l'**ecran de fin** s'affiche — c'est lui qui manquait, cf. [[verrou-pyflakes-dans-la-suite]] |
+| **Lecture du jour** | parler a un bot pour la 1re fois de la journee | ton adapte, une seule fois par jour et par personne |
 
-`twitch_poll_loop` appelle l'API Twitch. Ce n'etait donc pas du bruit de journal : c'est
-**pres de 4 000 corps de boucle en une fraction de seconde a chaque reveil de la machine**,
-dont des milliers d'appels reseau.
-
----
-
-## La correction : `shared/boucles.py`  ✅
-
-On ne touche pas aux 30 boucles une par une — on corrige le calcul, **une fois**, pour
-toutes les boucles du processus, y compris celles de `shared/twitch/` et celles qui
-seront ecrites demain. Si l'instant calcule est deja passe, on repart de maintenant au
-lieu de rejouer le retard, et on le **dit** dans le journal.
-
-`installer_anti_rattrapage(logger)` est pose dans le `if __name__ == "__main__"` des 6
-bots, juste avant `setup_graceful_shutdown`. **Pas au niveau module** : les tests importent
-ces fichiers, et un correctif global pose a l'import empecherait de tester le defaut.
-
-⚠️ Effet de bord assume : un corps de boucle qui dure plus longtemps que son propre
-intervalle attend desormais un intervalle complet au lieu de repartir aussitot. C'est le
-comportement souhaitable — sans quoi la boucle s'empile sur elle-meme.
-
-⚠️ `boucles.py` a ete ajoute aux **DEUX** listes de vendoring
-([[gotcha-deux-listes-vendoring]]) : `vendor_core.py` copie, `sonde_core_drift.py`
-surveille. Un module absent de la seconde serait vendorise sans filet.
-
-## Le verrou : `tests/test_anti_rattrapage_boucles.py`
-
-9 tests. Le premier est un **temoin** : il verifie que **le defaut existe toujours** dans
-la version installee de discord.py. Sans lui, une correction en amont rendrait les autres
-verts alors que plus rien ne protegerait, et personne ne le saurait.
-
-Les autres : le correctif supprime le rattrapage (120 appels → 2), la pose est
-**idempotente** (`on_ready` rejoue a chaque reconnexion — deux poses empileraient un
-enrobage sur l'autre), et chacun des 6 bots **importe ET appelle**
-([[gotcha-import-ajoute-mais-pas-cable]]).
+Commandes uniques par bot, pour ne pas en reveiller six :
+`!servir` `!parle` `!surveille` (Alfred) · `!gig` `!loot` `!nightcity` `!whisky` `!rant`
+(Johnny) · `!enigme` `!rumeur` `!indice` `!profil` (M'aiq) · `!decret` `!quete` `!fromage`
+`!wabbajack` (Sheo) · `!exploit` `!chanson` `!equipage` (Sugar).
+Malena n'a que `!oubliemoi` : lui parler directement.
+Slash — `/help` `/ping` `/stats` `/reputation` `/leaderboard` `/quests` `/birthday` :
+⚠️ **sur 5 bots, pas 6**. Malena n'appelle jamais `setup_slash_commands` et ne l'a
+**jamais** appele (`git log -S` sur tout l'historique : aucun resultat). Elle a pourtant
+`setup_games` et les anniversaires cables. Ne pas chercher un slash chez elle pendant le
+test : il n'y en a pas.
 
 ---
 
-## L'addendum : le correctif ne se voyait nulle part
+## Session 2 — les clics du dashboard (15 min)
 
-`da4a852` n'ecrit qu'une seule ligne — celle du rattrapage abandonne — et elle n'apparait
-**qu'apres une vraie veille de l'hote**. Sur une machine qui tourne, rien ne permettait de
-constater que le filet etait en place : le meme piege que
-[[gotcha-echelon-de-secours-invisible]], applique cette fois a un correctif.
+    dashboard\start_dashboard.bat        # puis http://127.0.0.1:8501
 
-`installer_anti_rattrapage` **dit maintenant sa pose** au demarrage, et se tait quand elle
-etait deja faite (`on_ready` rejoue a chaque reconnexion — une 2e pose qui parlerait
-polluerait le journal a chaque coupure reseau). 2 tests de plus, verifies **par la
-negative** : retirer la ligne fait tomber le test.
+⚠️ Il n'ecoute **que** sur 127.0.0.1 et exige une session : `/api/bots` rend 401 sans
+login, c'est le verrou qui mord, pas une panne.
 
-Constate le 06/09 sur les 6 conteneurs :
-
-    10:30:20 | INFO | [BOUCLES] anti-rattrapage pose : les iterations manquees ne seront pas rejouees
-
-⚠️ Exhume au passage : au `docker restart`, Malena log `[MISSED CHECK] Erreur canal idee:
-Session is closed` — une boucle encore en vol quand la session se ferme. Benin (c'est
-l'arret, pas le demarrage), mais le graceful shutdown ne l'annule pas. Note dans les points
-ouverts.
+1. **Toggle decret** — le seul point vraiment jamais vu bouger. `decret_enabled` est a
+   `true` pour les 6 ; le **basculer** a `false` sur Sheo, verifier que `!decret` refuse,
+   le remettre a `true`, verifier qu'il repond. C'est le **basculement** qu'on teste.
+2. **Bouton de redemarrage** — le declencher sur un bot, verifier qu'il revient Up.
+   ⚠️ Il pilote un process **Python local**, pas Docker ([[plan-bouton-redemarrage-dashboard]]).
+3. **Graphes et UX** — les charts se remplissent, les confirmations destructives
+   demandent confirmation, le statut affiche est le **vrai** statut.
+4. **Apparence des statuts** — ouvrir la liste des membres Discord et **regarder**. Les
+   logs prouvent que 12 statuts par jour sont generes ; ils ne disent pas s'ils sont
+   lisibles.
 
 ---
 
-## Ce que la lecture du journal a exhume au passage
+## Session 3 — EventSub de Sheo (20 min, une seule fois)
 
-Le meme reveil du 04/09 montre `on_ready` mourir sur
-`CommandAlreadyRegistered: Command 'reputation' already registered` — la 2e pose des
-commandes slash. **Ce cas est deja couvert** : les 6 bots enveloppent
-`setup_slash_commands` dans un `try/except` depuis `839fae5`, et
-`tests/test_latence_et_quota.py` l'exige. La trace du journal est anterieure au correctif.
+Le seul point qui demande une manip technique. EventSub (points de chaine, subs, hype,
+sondages, follows) exige le token du **PROPRIETAIRE de la chaine**, pas celui du bot.
+
+    python twitch_authorize.py --bot sheogorath_broadcaster ^
+        --client-id <CLIENT_ID_SHEO> --client-secret <CLIENT_SECRET_SHEO>
+
+⚠️ **Se connecter avec le compte STREAMER**, pas avec le compte du bot. Le fichier ecrit
+(`data/twitch_chat_auth_sheogorath_broadcaster.json`) est repere tout seul.
+Puis cocher `chat.eventsub` pour Sheo (dashboard, ou `data/twitch_config.json` : il est a
+`false`), et redemarrer Sheo.
+
+**Preuve** : declencher une recompense de points de chaine sur la chaine → Sheo reagit
+dans le chat.
 
 ---
 
-## Ce qui reste ouvert
+## Session 4 — le vrai live (pendant un stream)
 
-- **`report_error` n'est appele que pour Gemini** : decision de design a poser. C'est le
-  dernier vrai point de la liste.
+Rien ici ne peut se simuler.
+
+1. **Annonces de live** — demarrer le stream, attendre 90 s (`poll_interval_seconds`).
+   Les bots annoncent sur Discord. **Anti-doublon** : une seule annonce, pas six.
+2. **Ton adaptatif Twitch de Sugar** — lui parler dans le chat Twitch. Le ton doit
+   differer de Discord.
+3. **Silence sauf si nomme** — parler dans le chat **sans** nommer un bot : les 3 bots
+   presents se taisent.
+4. **Pont anti-doublon Discord↔Twitch** — poser la meme question sur les deux : la 2e
+   reponse ne doit pas recopier la 1re.
+5. **Ecoute STT** — sur le PC du micro, **d'abord** le diagnostic isole :
+
+        python check_stt.py --model small --device cpu --seconds 6
+
+   S'il transcrit, le plus dur est fait. Ensuite le hub : `python run_stream_listener.py`.
+   ⚠️ `Hub d'ecoute injoignable (port 8765)` au demarrage de Sheo est **nominal** tant que
+   le hub ne tourne pas. Parler au micro → **un seul** bot repond.
+
+---
+
+## Ce qui n'est pas dans ce plan
+
+- **`report_error` n'est appele que pour Gemini** (`shared/llm_cascade.py:359`) : Groq et
+  NVIDIA ne mettent jamais une cle en quarantaine sur un 429. C'est du code, pas un test
+  live, et c'est le dernier vrai point ouvert.
+- **Malena n'a aucune commande slash** — trouve en redigeant ce plan. Les 5 autres
+  appellent `setup_slash_commands` ; elle ne l'importe meme pas, et ne l'a jamais fait.
+  Correctif = 2 lignes, calquees sur `Alfred/bot_alfred.py:91` et `:425`.
 - **Bruit d'arret** : `[MISSED CHECK] Erreur canal idee: Session is closed` chez Malena a
-  chaque `restart` — le graceful shutdown n'annule pas les boucles en vol.
-- Un reglage nemotron plus mordant que `reasoning_effort=none` : jamais sonde, NVIDIA
-  rate-limite des qu'on enchaine. Sans urgence.
-- Un **5e fournisseur reste inutile** : NVIDIA, 4e echelon, a **0 appel** en base sur
-  342 lignes depuis avril. Un 5e se placerait derriere un echelon jamais atteint.
-- Le reste de [[dette-validation-live]] : ce qui exige un humain, un clic ou un vrai live.
-- Les 2 pistes de fond : Phase 3 repartie, migration mempalace.
+  chaque `restart` — le graceful shutdown n'annule pas les boucles en vol. Benin.
+- **Phase 3 repartie** : a re-specifier, son contexte a peri (elle visait la cascade
+  REPARTEE quand Grok la pilotait). **Migration mempalace** : hors depot.
 
----
-
-## Regles de travail — celles qui ont paye aujourd'hui
-
-- ⚠️ **Un chiffre rapporte de memoire est un chiffre a re-mesurer.** « 5 MOOD CHANGE »
-  etait 40, et la cause n'avait rien a voir avec l'humeur.
-- ⚠️ **Grouper le journal par horodatage** (`awk | sort | uniq -c`) montre les rafales
-  qu'une lecture lineaire noie.
-- ⚠️ **Ce qui se voit dans un journal, c'est ce qui journalise.** 29 boucles rattrapaient
-  en silence ; seule celle qui parle a trahi les 29 autres.
-- ⚠️ **Reproduire le defaut avant de le corriger**, et **garder le temoin dans la suite** :
-  un correctif dont on ne verifie plus que le probleme existe devient un no-op silencieux.
-- ⚠️ **Verifier l'indentation de la cible avant d'inserer** : `setup_graceful_shutdown`
-  est a 4 espaces chez 2 bots et a 8 chez 4 autres. L'insertion aveugle a casse 4 fichiers,
-  rattrapee par `py_compile`.
-- ⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port 8599.
+⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port 8599.
