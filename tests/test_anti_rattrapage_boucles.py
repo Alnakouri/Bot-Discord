@@ -104,6 +104,43 @@ def test_la_pose_est_idempotente():
     )
 
 
+class _JournalMuet:
+    """Retient les lignes info sans rien ecrire nulle part."""
+
+    def __init__(self):
+        self.info_dits = []
+
+    def info(self, message):
+        self.info_dits.append(message)
+
+    def warning(self, message):
+        pass
+
+
+def test_la_pose_se_voit_dans_le_journal():
+    """Un correctif qui ne se manifeste qu'au reveil de la machine est invisible.
+
+    La ligne de rattrapage, elle, n'apparait qu'apres une vraie veille : impossible de
+    verifier en live que le filet est en place. La pose, elle, se dit au demarrage.
+    """
+    journal = _JournalMuet()
+    assert installer_anti_rattrapage(journal) is True
+    assert any("anti-rattrapage" in ligne for ligne in journal.info_dits), (
+        "la pose ne dit rien : rien ne permet de constater dans le journal d'un bot "
+        "que le filet est en place. Lignes vues : %r" % journal.info_dits
+    )
+
+
+def test_une_pose_deja_faite_ne_redit_rien():
+    """on_ready rejoue a chaque reconnexion : la 2e pose ne doit pas polluer le journal."""
+    assert installer_anti_rattrapage() is True
+    journal = _JournalMuet()
+    assert installer_anti_rattrapage(journal) is False
+    assert journal.info_dits == [], (
+        "la 2e pose parle alors qu'elle n'a rien fait : %r" % journal.info_dits
+    )
+
+
 @pytest.mark.parametrize("chemin", BOTS)
 def test_chaque_bot_pose_le_correctif(chemin):
     """L'import ne suffit pas : un helper importe mais jamais appele ne protege rien."""

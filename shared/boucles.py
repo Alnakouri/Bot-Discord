@@ -81,4 +81,8 @@ def installer_anti_rattrapage(journal=None):
 
     _get_next_sleep_time._anti_rattrapage = True
     Loop._get_next_sleep_time = _get_next_sleep_time
+    # Un correctif qu'aucun journal ne montre est un correctif qu'on ne peut pas valider
+    # en live ([[gotcha-echelon-de-secours-invisible]]) : il ne se manifeste sinon qu'au
+    # premier reveil de la machine, c'est-a-dire jamais quand on regarde.
+    journal.info("[BOUCLES] anti-rattrapage pose : les iterations manquees ne seront pas rejouees")
     return True
