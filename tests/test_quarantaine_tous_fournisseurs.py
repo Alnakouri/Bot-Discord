@@ -452,3 +452,44 @@ def test_un_faux_gestionnaire_ne_rend_pas_une_fausse_cle():
             return ""
 
     assert _cle_du_pool(_CleVide(), "groq") == (None, None)
+
+
+# --------------------------------------------------------------------------------------
+# Une alerte qui crie pour du nominal est une alerte qu'on apprend à ignorer
+# --------------------------------------------------------------------------------------
+#
+# `dashboard/backend/error_analyzer.py` classe « TOUTES LES CLÉS », « ZÉRO clé saine » et
+# « CLÉS SONT ÉPUISÉES » en CRITICAL / « API Indisponible ». Depuis que la cascade demande
+# sa clé pour les 4 fournisseurs, un quota Groq par minute — 8 000 tokens, dont le prompt
+# de Sheo mange 56 % — passerait par là plusieurs fois par message.
+
+MOTIFS_CRITIQUES_DU_DASHBOARD = ["TOUTES LES CLÉS", "ZÉRO clé saine", "CLÉS SONT ÉPUISÉES"]
+
+
+def test_un_cooldown_passager_ne_declenche_pas_l_alerte_critique(caplog):
+    """Un 429 avec un délai annoncé : la cascade bascule, ce n'est pas une panne."""
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("groq", ["gsk_1"])
+    with caplog.at_level("DEBUG"):
+        mgr.report_error("groq", "gsk_1", 429, retry_delay_s=37)
+        assert mgr.get_key("groq") is None
+    journal = caplog.text
+    coupables = [m for m in MOTIFS_CRITIQUES_DU_DASHBOARD if m in journal]
+    assert not coupables, (
+        f"un simple cooldown déclenche l'alerte CRITICAL du dashboard via {coupables} : "
+        "le tableau de bord criera à la panne à chaque quota par minute."
+    )
+    assert "cooldown" in journal, "le cooldown doit quand même se voir dans le journal"
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_une_cle_revoquee_declenche_bien_l_alerte_critique(code, caplog):
+    """⚠️ L'inverse compte autant : aucun cooldown ne réparera une clé révoquée."""
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("gemini", ["k1"])
+    with caplog.at_level("DEBUG"):
+        mgr.report_error("gemini", "k1", code)
+        assert mgr.get_key("gemini") is None
+    assert any(m in caplog.text for m in MOTIFS_CRITIQUES_DU_DASHBOARD), (
+        "une clé révoquée doit rester visible comme une vraie panne dans le dashboard."
+    )

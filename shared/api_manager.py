@@ -53,8 +53,19 @@ class MultiAPIKeyManager:
                 logger.debug(f"[KEY MANAGER] {api_name.upper()} → clé idx={idx}")
                 return key
                 
-        # Si on arrive ici, toutes les clés sont soit invalides, soit en cooldown massif
-        logger.error(f"🚨 [CRITIQUE] {api_name.upper()} : TOUTES LES CLÉS SONT ÉPUISÉES OU EN COOLDOWN !")
+        # Aucune clé disponible. ⚠️ Distinguer le passager du définitif : le tableau de
+        # bord classe « TOUTES LES CLÉS » et « ZÉRO clé saine » en CRITICAL
+        # (dashboard/backend/error_analyzer.py). Depuis que la cascade demande sa clé pour
+        # les 4 fournisseurs, un simple quota Groq par minute passerait ici plusieurs fois
+        # par message — et une alerte qui crie pour du nominal est une alerte qu'on
+        # apprend à ignorer. Un cooldown derrière lequel la cascade bascule n'est pas une
+        # panne ; une clé révoquée, si.
+        revoquees = [k for k in keys if not self.apis[api_name]["status"][k]["valid"]]
+        if revoquees:
+            logger.error(f"🚨 [CRITIQUE] {api_name.upper()} : TOUTES LES CLÉS SONT ÉPUISÉES OU RÉVOQUÉES !")
+        else:
+            reprise = max(0, int(min(self.apis[api_name]["status"][k]["cooldown"] for k in keys) - now))
+            logger.warning(f"⏳ [KEY MANAGER] {api_name.upper()} : aucune clé libre avant {reprise}s (cooldown). L'appelant bascule.")
         return None  # Plus d'essai à l'aveugle, on avoue l'échec pour permettre le fallback
 
     def is_api_available(self, api_name):
@@ -129,8 +140,11 @@ class MultiAPIKeyManager:
         
         if saines > 0:
             logger.info(f"🔄 [KEY MANAGER] Bascule en cours... Il reste {saines} clé(s) saine(s) pour {api_name.upper()}.")
-        else:
+        elif any(not self.apis[api_name]["status"][k]["valid"] for k in self.apis[api_name]["keys"]):
             logger.error(f"🚨 [KEY MANAGER] ZÉRO clé saine restante pour {api_name.upper()} !!")
+        else:
+            # Toutes en cooldown, aucune révoquée : la cascade a des échelons derrière.
+            logger.warning(f"⏳ [KEY MANAGER] {api_name.upper()} : plus de clé libre pour l'instant, l'échelon sera sauté.")
 
     def get_status(self, api_name: str) -> dict:
         """Retourne le statut d'une API pour le healthcheck."""

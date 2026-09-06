@@ -128,6 +128,20 @@ def test_force_short_response_cuts_newline_separated():
 
 from sheo_llm import postprocess_response, strip_markdown_emphasis
 
+
+@pytest.fixture(autouse=True)
+def _sceller_les_easter_eggs(monkeypatch):
+    """⚠️ `postprocess_response` tire un easter egg au sort : 2 % de ALL CAPS EXPLOSION,
+    qui MET TOUTE LA SORTIE EN MAJUSCULES.
+
+    Le 2026-09-06, `assert "Haskill" in sortie` est tombe en pleine suite : la sortie
+    disait « HASKILL ». Un test qui depend d'un tirage n'est pas un test — c'est la
+    quatrieme fois dans ce depot, apres les 3 du mode IMPOSTEUR (`830be3c`). Ces tests
+    portent sur le nettoyage du texte, jamais sur le grain de folie : on scelle.
+    """
+    import sheo_llm
+    monkeypatch.setattr(sheo_llm.random, "random", lambda: 1.0)
+
 # ---------------------------------------------------------------------------
 # Le markdown : un trou dans le filet, et une regle de prompt qui ne tient pas
 # ---------------------------------------------------------------------------
