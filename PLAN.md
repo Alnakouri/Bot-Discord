@@ -148,6 +148,23 @@ que par la boucle de 5 min, ou par un outil que le LLM s'appelle lui-meme.
    sur 7) ni le filet CLOTURE (0 sur 7) ne regardaient le CORPS, ou le tic vit. Troisieme
    filet : les mots presents dans >= 2 des 5 dernieres repliques sont interdits.
 
+3. **L'humeur ne s'entendait pas a l'ecrit.** La boucle tourne (21 `MOOD CHANGE` sur
+   100 min) et `current_system_prompt` est bien la base du prompt — mais le bloc
+   `[TON — PAS DE MENACE GRATUITE]`, injecte APRES lui sur tout message non provocant,
+   proposait « ... (Mania), OU ... (Dementia) ». Il rendait au modele une decision deja
+   prise, et pesait plus lourd car plus tardif et plus court. Quatre repliques d'affilee
+   en `dementia` sont sorties joyeuses. `consigne_de_ton()` nomme desormais l'humeur
+   active et donne UN registre.
+
+**Comment verifier l'humeur sans commande** (il n'y en a pas, et il n'y en a jamais eu) :
+
+    docker logs --since 10m bot-sheogorath 2>&1 | grep -E "MOOD CHANGE|LLM MODE"
+
+`LLM MODE` journalise l'humeur au moment EXACT de chaque reponse. Comparer avec ce que
+Sheo a ecrit : dementia doit insinuer et inquieter, mania exploser, bliss rechauffer.
+⚠️ L'humeur tourne toutes les 5 min : enchainer 5-6 messages sur ~20 min pour en voir
+au moins deux.
+
 **A regarder au prochain echange avec Sheo** : qu'il varie **sans s'appauvrir**. Le filet
 lui interdit jusqu'a 6 mots par tour ; si les repliques deviennent plates ou hors
 personnage, baisser `maxi` ou monter le `seuil` dans `_motifs_recurrents`.
