@@ -149,12 +149,21 @@ forme que Groq, Mistral et NVIDIA emettent. Applique aux **11** cascades : `shar
 facultatif**. Sans elle, un `register_api` oublie rendrait un fournisseur muet sans une
 ligne de journal.
 
-**Reste a constater en live** : une ligne `⏭️ [<API>] cle en quarantaine → echelon
-suivant, sans appel` dans un journal, et des lignes `raison="quarantaine"` en base. Il
-faut pour cela un vrai 429 — le provoquer en enchainant les messages sur Sheo, dont le
-prompt mange 56 % du quota Groq par minute.
+⚠️ Effet de bord constate DANS le conteneur, et corrige : la cascade passant desormais
+par `get_key`, un 429 Groq journalisait « ZERO cle saine » — chaine que
+`dashboard/backend/error_analyzer.py:21` classe en **CRITICAL**. Un quota par minute
+aurait annonce une panne critique plusieurs fois par message. Un cooldown parle
+maintenant en WARNING ; une cle revoquee garde l'alarme entiere.
 
-    docker logs --since 15m bot-sheogorath 2>&1 | grep -E "quarantaine|QUARANTAINE"
+**Prouve dans bot-sheogorath**, avec le code deploye et les vraies cles chiffrees : les 4
+pools enregistres, `retry-after: 37` lu dans l'en-tete, quarantaine de 37 s, puis
+`⏭️ [GROQ] cle en quarantaine → echelon suivant, sans appel`, NVIDIA intact.
+
+**Reste a constater sur un vrai trafic** : des lignes `raison="quarantaine"` en base.
+Il faut un vrai 429 — enchainer les messages sur Sheo, dont le prompt mange 56 % du
+quota Groq par minute.
+
+    docker logs --since 15m bot-sheogorath 2>&1 | grep -E "quarantaine|cooldown"
 
 ## Ferme le 06/09, en preparant ce plan
 
@@ -167,6 +176,6 @@ prompt mange 56 % du quota Groq par minute.
 - **3 tests dependaient d'un tirage a 0,5 %** (mode IMPOSTEUR) : CI rouge sur un commit
   sans rapport, une fois sur 200. Hasard scelle.
 
-712 tests, CI verte, les 6 conteneurs redemarres.
+717 tests, CI verte, les 6 conteneurs redemarres.
 
 ⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port 8599.
