@@ -1130,7 +1130,8 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
         key_manager=key_manager, bot_label="Sheogorath", modele=GEMINI_FLASH, timeout=30,
         fabrique=lambda cle: get_safe_genai_client(
             api_key=cle, http_options={'api_version': 'v1beta'}
-        ).models.generate_content,
+        ),
+        methode="models.generate_content",
         model=GEMINI_FLASH,
         contents=rumor_prompt,
     )
@@ -1395,7 +1396,8 @@ async def check_missed_mentions_sheo():
                             "gemini",
                             key_manager=key_manager, bot_label="Sheogorath",
                             modele=GEMINI_FLASH, timeout=30,
-                            fabrique=lambda cle: get_safe_genai_client(api_key=cle).models.generate_content,
+                            fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+                            methode="models.generate_content",
                             model=GEMINI_FLASH, contents=late_prompt,
                         )
                     

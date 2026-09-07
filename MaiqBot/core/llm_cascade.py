@@ -530,6 +530,7 @@ async def appel_hors_cascade(
     bot_label,
     modele,
     fabrique=None,
+    methode=None,
     timeout=None,
     **kwargs,
 ):
@@ -556,9 +557,22 @@ async def appel_hors_cascade(
     d'un coup les quatre façons d'échouer : quarantaine, client absent, exception, vide.
 
     `fabrique` sert au seul Gemini, dont le client se BÂTIT avec la clé : elle reçoit la
-    clé et rend la fonction à appeler. Sa présence rend donc la clé obligatoire — sans
-    elle il n'y a rien à appeler, alors qu'ailleurs le client est déjà bâti et porte sa
-    propre clé (celle du pool ne sert qu'à nommer le coupable dans `report_error`).
+    clé et rend le CLIENT ; `methode` nomme le chemin à appeler dessus
+    (`"models.generate_content"`). Sa présence rend la clé obligatoire — sans elle il n'y
+    a rien à bâtir, alors qu'ailleurs le client est déjà bâti et porte sa propre clé
+    (celle du pool ne sert qu'à nommer le coupable dans `report_error`).
+
+    ⚠️ **Pourquoi la fabrique rend le CLIENT et non directement la méthode.** Première
+    version, le 2026-09-07 : `fabrique=lambda cle: get_safe_genai_client(cle).models.generate_content`.
+    Le `Client` n'était alors référencé par personne — `client.models` ne garde AUCUN lien
+    vers lui — donc il était ramassé par le GC, et son transport HTTP fermé avec lui. Tous
+    les appels Gemini hors cascade échouaient sur
+
+        RuntimeError: Cannot send a request, as the client has been closed.
+
+    Invisible, parce que l'échelon suivant répondait : le décret du soir est sorti normal,
+    signé Mistral. C'est le piège de [[gotcha-echelon-de-secours-invisible]] exactement.
+    En rendant le client, il vit dans une variable locale jusqu'à la fin de l'appel.
     """
     if timeout is None:
         timeout = _BORNE_TEXTE
@@ -572,7 +586,15 @@ async def appel_hors_cascade(
         if _saut:
             _raison = _saut
             return None
-        appel = fabrique(api_key) if fabrique is not None else fonction
+        # ⚠️ `client` DOIT rester une variable locale : c'est elle, et rien d'autre, qui
+        # empêche le GC de fermer le transport HTTP pendant l'appel. Ne pas l'inliner.
+        client = fabrique(api_key) if fabrique is not None else None
+        if client is not None:
+            appel = client
+            for morceau in (methode or "").split("."):
+                appel = getattr(appel, morceau)
+        else:
+            appel = fonction
         if appel is None:
             # Client non construit (clé absente au démarrage) : ce n'est pas un échec
             # d'API, et ça ne doit pas remplir la base d'erreurs sans cause.

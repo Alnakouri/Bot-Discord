@@ -629,7 +629,8 @@ async def publish_daily_rumor():
         rumor_text = await appel_hors_cascade(
             "gemini",
             key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
-            fabrique=lambda cle: get_safe_genai_client(api_key=cle).models.generate_content,
+            fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+            methode="models.generate_content",
             model='gemini-3.5-flash', contents=rumor_prompt,
         )
     
@@ -835,7 +836,8 @@ async def generate_and_post_riddle(target_channel):
                 key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
                 fabrique=lambda cle: get_safe_genai_client(
                     api_key=cle, http_options={'api_version': 'v1beta'}
-                ).models.generate_content,
+                ),
+                methode="models.generate_content",
                 model='gemini-3.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(response_mime_type="application/json"),
@@ -1005,7 +1007,8 @@ async def maiq_rumeur(ctx):
             key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
             fabrique=lambda cle: get_safe_genai_client(
                 api_key=cle, http_options={'api_version': 'v1beta'}
-            ).models.generate_content,
+            ),
+            methode="models.generate_content",
             model='gemini-3.5-flash',
             contents=prompt,
         )

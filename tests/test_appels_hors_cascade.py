@@ -148,11 +148,18 @@ def test_gemini_batit_son_client_avec_la_cle_du_pool(traces):
     mgr.register_api("gemini", ["AIza_1"])
     vues = []
 
+    class _Client:
+        class models:
+            @staticmethod
+            def generate_content(**_kw):
+                return _FauxGemini("Salutations.")
+
     def _fabrique(cle):
         vues.append(cle)
-        return lambda **_kw: _FauxGemini("Salutations.")
+        return _Client()
 
-    assert _appeler(fournisseur="gemini", fabrique=_fabrique, key_manager=mgr,
+    assert _appeler(fournisseur="gemini", fabrique=_fabrique,
+                    methode="models.generate_content", key_manager=mgr,
                     bot_label="Alfred", modele="m") == "Salutations."
     assert vues == ["AIza_1"]
 
@@ -163,9 +170,10 @@ def test_gemini_sans_cle_ne_tente_rien():
 
     def _fabrique(_cle):
         appels.append(1)
-        return lambda **_kw: _FauxGemini("jamais")
+        return object()
 
-    assert _appeler(fournisseur="gemini", fabrique=_fabrique, key_manager=mgr,
+    assert _appeler(fournisseur="gemini", fabrique=_fabrique,
+                    methode="models.generate_content", key_manager=mgr,
                     bot_label="Alfred", modele="m") is None
     assert not appels, "sans clé, il n'y a rien à bâtir ni à appeler"
 
@@ -232,6 +240,123 @@ def test_l_appel_ne_bloque_pas_la_boucle_asyncio():
 
     asyncio.run(_scenario())
     assert len(temoin) == 5, "la boucle est restée bloquée pendant l'appel"
+
+
+# --------------------------------------------------------------------------------------
+# Le client Gemini doit SURVIVRE a son propre appel
+# --------------------------------------------------------------------------------------
+
+def test_le_client_bati_par_la_fabrique_reste_vivant_pendant_l_appel(traces):
+    """⚠️ Regression du 2026-09-07, vue dans le journal du decret du soir :
+
+        [GEMINI FAIL] gemini-3.5-flash - RuntimeError: Cannot send a request,
+                                         as the client has been closed.
+        [MISTRAL ministral-14b-latest] Sheogorath (hors cascade)
+
+    Premiere version de la fabrique :
+    `lambda cle: get_safe_genai_client(cle).models.generate_content`. Le `Client` n'etait
+    alors reference par personne — `client.models` ne garde AUCUN lien vers lui — donc le
+    GC le ramassait et fermait son transport HTTP. **Tous** les appels Gemini hors cascade
+    echouaient, sur les 6 bots, et personne ne le voyait : l'echelon suivant repondait.
+
+    Ici on mesure la seule chose qui compte : au moment ou l'appel s'execute, l'objet rendu
+    par la fabrique est-il encore vivant ?
+    """
+    import gc
+    import weakref
+
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("gemini", ["AIza_1"])
+    temoin = {}
+
+    class _Client:
+        def __init__(self):
+            self.models = self
+
+        def generate_content(self, **_kw):
+            gc.collect()          # le pire moment possible
+            temoin["vivant"] = temoin["ref"]() is not None
+            return _FauxGemini("Salutations.")
+
+    def _fabrique(_cle):
+        client = _Client()
+        temoin["ref"] = weakref.ref(client)
+        return client
+
+    assert _appeler(fournisseur="gemini", fabrique=_fabrique,
+                    methode="models.generate_content", key_manager=mgr,
+                    bot_label="Sheogorath", modele="m") == "Salutations."
+    assert temoin["vivant"] is True, (
+        "Le client a ete ramasse par le GC pendant son propre appel : son transport HTTP "
+        "est ferme, et tous les appels Gemini hors cascade echouent en silence."
+    )
+
+
+def test_la_fabrique_rend_le_client_et_methode_dit_quoi_appeler(traces):
+    """Le chemin pointe est resolu sur l'objet, pas devine."""
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("gemini", ["AIza_1"])
+
+    class _Client:
+        class models:
+            @staticmethod
+            def generate_content(**_kw):
+                return _FauxGemini("par le chemin pointe")
+
+    assert _appeler(fournisseur="gemini", fabrique=lambda _c: _Client(),
+                    methode="models.generate_content", key_manager=mgr,
+                    bot_label="Alfred", modele="m") == "par le chemin pointe"
+
+
+def _fabriques_du_fichier(arbre):
+    """Les `fabrique=` passees a `appel_hors_cascade`, avec leur ligne.
+
+    ⚠️ Par l'AST, jamais par une regex de ligne. Premiere version de ce verrou : une
+    regex `fabrique=.*generate_content` — elle ne voyait que les fabriques tenant sur UNE
+    ligne, et 3 des 6 sites Gemini sont a cheval sur trois lignes. Elle rendait 3 fautes
+    sur 6 en annoncant la couverture complete.
+    """
+    trouvees = []
+    for noeud in ast.walk(arbre):
+        if not (isinstance(noeud, ast.Call)
+                and isinstance(noeud.func, ast.Name)
+                and noeud.func.id == "appel_hors_cascade"):
+            continue
+        mots = {k.arg: k.value for k in noeud.keywords}
+        if "fabrique" in mots:
+            trouvees.append((noeud.lineno, mots["fabrique"], "methode" in mots))
+    return trouvees
+
+
+@pytest.mark.parametrize("chemin", ["Alfred/bot_alfred.py", "MaiqBot/bot_maiq.py",
+                                    "Sheogorath/bot_sheogorath.py"])
+def test_une_fabrique_rend_le_client_jamais_la_methode(chemin):
+    """⚠️ Le verrou de la regression du 2026-09-07.
+
+    Une fabrique qui rend `client.models.generate_content` laisse le `Client` sans
+    aucune reference : le GC le ramasse, ferme son transport, et l'echelon Gemini meurt
+    en silence derriere son echelon de secours.
+
+    La regle tient en une phrase : le corps de la lambda doit APPELER (batir un client),
+    pas ACCEDER a un attribut.
+    """
+    arbre = ast.parse((RACINE / chemin).read_text(encoding="utf-8"), filename=chemin)
+    fabriques = _fabriques_du_fichier(arbre)
+    assert fabriques, f"{chemin} n'a plus aucune fabrique Gemini"
+
+    fautes = []
+    for ligne, valeur, a_methode in fabriques:
+        corps = valeur.body if isinstance(valeur, ast.Lambda) else None
+        if corps is not None and not isinstance(corps, ast.Call):
+            fautes.append(f"  ligne {ligne} : la fabrique rend "
+                          f"`{ast.unparse(corps)[:60]}` au lieu du client")
+        if not a_methode:
+            fautes.append(f"  ligne {ligne} : `fabrique=` sans `methode=`")
+
+    assert not fautes, (
+        f"{chemin} :\n" + "\n".join(fautes)
+        + "\n\nLa fabrique doit rendre le CLIENT, et `methode=` dire quoi appeler dessus."
+    )
 
 
 # --------------------------------------------------------------------------------------

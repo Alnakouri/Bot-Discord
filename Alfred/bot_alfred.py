@@ -879,7 +879,8 @@ async def analyze_audio_with_gemini(wav_data, user_names=None):
     result = await appel_hors_cascade(
         "gemini",
         key_manager=key_manager, bot_label="Alfred", modele=GEMINI_FLASH, timeout=45,
-        fabrique=lambda cle: get_safe_genai_client(api_key=cle).models.generate_content,
+        fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+        methode="models.generate_content",
         model=GEMINI_FLASH,
         contents=[
             types.Content(
