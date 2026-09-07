@@ -128,8 +128,14 @@ sorti normal, signe Mistral ([[gotcha-echelon-de-secours-invisible]]).
 ne voit que les fabriques tenant sur UNE ligne, et 3 des 6 sites sont a cheval sur trois.
 **3 fautes sur 6, en annoncant la couverture complete.** Refait sur l'AST.
 
-**Reste a constater** : au prochain `!decret`, le journal doit dire
-`✅ [GEMINI gemini-3.5-flash] Sheogorath (hors cascade)` et non plus le FAIL.
+**CONSTATE LIVE** le 2026-09-08 a 01:02 (journal du conteneur, 23:02:55) :
+
+    ✅ [GEMINI gemini-3.5-flash] Sheogorath (hors cascade)
+    👑 [DECRET] Role 'AMIRAL DE LA BAIGNOIRE VIDE' assigne a LeDev pour 600s
+    🧀 [DÉCRET SHEO PUBLIÉ] Titre: Amiral de la Baignoire Vide
+
+Plus de FAIL, plus de repli sur Mistral : Gemini repond du premier coup, le titre est
+extrait et le role assigne. **Session 2 close, aucun point en suspens.**
 
 ---
 
