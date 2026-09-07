@@ -767,7 +767,11 @@ async def on_message(message):
                     pass  # la panne est survenue avant meme le demarrage du chrono
                 logger.error(f"❌ Erreur de génération : {e}")
                 logger.error(f"❌ [API ERROR] : {e}")
-                await message.reply("Ay caramba ! J'ai mal à la tête, laissez-moi tranquille ! (Erreur API)")
+                # ⚠️ Le « (Erreur API) » sortait du personnage et n'apprenait rien a
+                # personne : l'utilisateur ne peut rien en faire, et la cause est deja
+                # dans les deux lignes de journal juste au-dessus. Meme defaut que le
+                # « (désactivé via le dashboard) » de Sheogorath, vu le 2026-09-07.
+                await message.reply("Ay caramba ! J'ai mal à la tête, laissez-moi tranquille !")
 
 # DÉTECTION DES MENTIONS MANQUÉES
 

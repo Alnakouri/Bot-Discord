@@ -643,7 +643,11 @@ async def parle(ctx, *, text: str):
 
     # Generation
     if not elevenlabs_client:
-        return await ctx.send("🤵 **Alfred** : Ma voix (ElevenLabs) n'est pas configurée, Monsieur.")
+        # Nommer le fournisseur au salon sort du personnage — et n'aide personne :
+        # celui qui peut y remedier lit les journaux, pas le fil de discussion.
+        logger.warning("[VOIX] refuse : client ElevenLabs absent (cle manquante ?)")
+        return await ctx.send("🤵 **Alfred** : Je crains d'avoir égaré ma voix, Monsieur. "
+                              "L'écrit devra suffire.")
 
     async with ctx.typing():
         try:

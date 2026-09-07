@@ -1214,12 +1214,29 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
 
     logger.info(f"🧀 [DÉCRET SHEO PUBLIÉ] Cible: {target_user.display_name} | Titre: {title}")
 
+# Refus de decret, DANS la voix du Prince. Aucun ne nomme le dashboard, l'interrupteur
+# ni le systeme : Sheogorath ignore qu'il est un programme, c'est tout son personnage.
+SHEO_DECRETS_SUSPENDUS = [
+    "🚫 Le Prince a suspendu ses décrets… pour l'instant. Reviens quand la lune aura changé d'avis.",
+    "🧀 Mes décrets sont partis se coucher dans un fromage. Ne les réveille pas, ils mordent.",
+    "🦋 Aucun décret aujourd'hui, mortel. J'ai prêté ma plume à un papillon, et il refuse de me la rendre.",
+    "🕯️ Le registre des décrets est fermé. Il boude. Ça lui arrive.",
+    "🎩 Pas de décret. Mon sceptre fait la grève, et je ne négocie pas avec un bâton.",
+]
+
+
 @bot.command(name="decret", aliases=["decree"])
 @commands.has_permissions(administrator=True)
 async def decret_cmd(ctx, target: discord.Member = None):
     """Force la publication d'un décret impérial (Admin only pour test)."""
     if not is_feature_enabled("sheogorath", "decret_enabled", default=True):
-        await ctx.send("🚫 Le Prince a suspendu ses décrets… pour l'instant. (désactivé via le dashboard)")
+        # ⚠️ Sheogorath ne parle JAMAIS d'un dashboard : la mention entre parentheses
+        # sortait du personnage et revelait la mecanique a tout le salon. Un refus doit
+        # rester DANS la voix — l'admin qui a coupe l'interrupteur sait pourquoi, et
+        # le journal ci-dessous le dit a qui lit les journaux. Vu en test live le
+        # 2026-09-07, session 2 du protocole.
+        logger.info("🚫 [DÉCRET] refuse : decret_enabled = false pour sheogorath")
+        await ctx.send(random.choice(SHEO_DECRETS_SUSPENDUS))
         return
     await publish_daily_rumor_sheo(target_channel=ctx.channel, target_user=target)
 
@@ -1554,7 +1571,11 @@ async def wabbajack_cmd(ctx, target: discord.Member = None):
 async def join_voice_cmd(ctx):
     """Sheogorath rejoint le canal vocal de l'utilisateur."""
     if not VOICE_AVAILABLE:
-        await ctx.send("🔇 Ma voix divine est en maintenance, mortel ! (TTS non configuré)")
+        # Le « (TTS non configure) » nommait la mecanique au salon. La cause reste
+        # entiere dans le journal ; la replique, elle, reste dans la voix du Prince.
+        logger.info("🔇 [VOIX] refuse : VOICE_AVAILABLE = False (TTS non configure)")
+        await ctx.send("🔇 Ma voix divine s'est enrouée à force de hurler aux papillons, mortel. "
+                       "Tu devras te contenter de l'écrit.")
         return
     await cmd_join_voice(ctx)
 
