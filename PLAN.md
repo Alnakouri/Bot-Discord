@@ -84,6 +84,55 @@ login, c'est le verrou qui mord, pas une panne.
 
 ---
 
+## ▶ SESSION 2 JOUEE le 07/09, 21:00-21:40 — LES 4 POINTS PASSENT
+
+1. **Toggle decret** — le seul point jamais vu bouger. `True -> False` : `!decret`
+   refuse. `False -> True` : il publie, role assigne 600 s, titre extrait. **Le
+   basculement marche dans les DEUX sens.**
+2. **Bouton de redemarrage d'un bot** — `johnny` et `maiq` sont repartis (`Up 2 minutes`
+   quand les autres etaient a 16 min et 11 h). Il pilote bien `docker compose restart`.
+3. **Bouton de redemarrage du DASHBOARD** — il se relance et sert de nouveau.
+4. **Apparence des statuts** — regardes dans la liste des membres : les 6 sont lisibles
+   et chacun dans sa voix. C'est le seul point que rien d'automatique ne pouvait juger.
+
+### Les 3 defauts qu'elle a sortis — tous corriges
+
+**a. Un 2e lancement du dashboard demarrait l'application avant d'echouer sur le port.**
+Uvicorn joue les hooks de demarrage AVANT de se lier : la 2e instance s'ouvrait a demi —
+elle touche `data/` et les journaux que les 6 bots partagent — puis mourait sur un
+winerror brut. `port_libre()` existait deja dans le relanceur, ecrit pour cette question
+exacte, et personne ne l'appelait au lancement.
+
+**b. Les bots nommaient leur mecanique au salon.** `!decret` desactive repondait
+« (desactive via le dashboard) ». Sheogorath ignore qu'il est un programme — c'est tout
+son personnage. Le verrou ecrit pour ce cas en a trouve **trois autres** : « (Erreur
+API) » chez Malena, « (TTS non configure) » chez Sheo, « Ma voix (ElevenLabs) » chez
+Alfred. Les quatre repassent dans la voix du personnage.
+⚠️ Retirer l'explication de la replique ne doit pas la faire DISPARAITRE : chaque refus
+journalise desormais sa cause, et un test l'exige.
+
+**c. Le client Gemini mourait avant son propre appel** — regression du matin, trouvee
+dans le journal du decret :
+
+    [GEMINI FAIL] gemini-3.5-flash - RuntimeError: Cannot send a request,
+                                     as the client has been closed.
+    [MISTRAL ministral-14b-latest] Sheogorath (hors cascade)
+
+La fabrique rendait `get_safe_genai_client(cle).models.generate_content` : le `Client`
+n'etait alors reference par personne — `client.models` ne garde aucun lien vers lui —
+donc le GC le ramassait et fermait son transport HTTP. **Les 6 sites Gemini hors cascade,
+sur 3 bots, depuis le matin.** Invisible : l'echelon suivant repondait, le decret est
+sorti normal, signe Mistral ([[gotcha-echelon-de-secours-invisible]]).
+
+⚠️ Le premier verrou ecrit pour ca etait une regex `fabrique=.*generate_content` : elle
+ne voit que les fabriques tenant sur UNE ligne, et 3 des 6 sites sont a cheval sur trois.
+**3 fautes sur 6, en annoncant la couverture complete.** Refait sur l'AST.
+
+**Reste a constater** : au prochain `!decret`, le journal doit dire
+`✅ [GEMINI gemini-3.5-flash] Sheogorath (hors cascade)` et non plus le FAIL.
+
+---
+
 ## Session 3 — EventSub de Sheo (20 min, une seule fois)
 
 Le seul point qui demande une manip technique. EventSub (points de chaine, subs, hype,
