@@ -8,6 +8,43 @@ from datetime import datetime
 
 logger = logging.getLogger("twitch_eventsub")
 
+# L'endpoint reel de Twitch. Surchargeable pour pointer un serveur factice.
+WS_URL_TWITCH = "wss://eventsub.wss.twitch.tv/ws"
+
+
+def _url_websocket(journal=None):
+    """L'endpoint EventSub : celui de Twitch, ou celui qu'on lui substitue.
+
+    ⚠️ Pourquoi cette couture existe. EventSub ne se declenche que sur de VRAIS
+    evenements de chaine : une recompense de points exige d'etre Affilie, d'avoir cree
+    une recompense PERSONNALISEE (les recompenses integrees de Twitch ne declenchent
+    jamais `...custom_reward_redemption.add`), et un second compte pour la depenser.
+    Autant dire qu'on ne teste jamais la reaction.
+
+    La CLI officielle de Twitch sert un serveur EventSub factice :
+
+        twitch event websocket start-server
+        twitch event trigger channel.follow --transport=websocket
+
+    ⚠️ Depuis un conteneur, `127.0.0.1` designe le conteneur lui-meme : viser
+    `ws://host.docker.internal:8080/ws`.
+
+    ⚠️ Ce que le serveur factice ne prouve PAS : il accepte n'importe quel abonnement.
+    Le token du compte STREAMER, lui, se verifie sur les lignes « Abonne a ... » du vrai
+    endpoint — un 403 y dit qu'on a pris le token du bot. Les deux moities sont
+    disjointes, et c'est la seconde qui rate en pratique.
+    """
+    url = (os.getenv("TWITCH_EVENTSUB_WS_URL") or "").strip()
+    if not url:
+        return WS_URL_TWITCH
+    # ⚠️ Ne JAMAIS surcharger en silence : un bot branche sur un serveur factice
+    # n'entendrait plus un seul evenement reel, et rien ne le dirait.
+    (journal or logger).warning(
+        f"🧪 [TWITCH_EVENTSUB] endpoint SUBSTITUE par TWITCH_EVENTSUB_WS_URL : {url} "
+        "— aucun evenement reel de Twitch ne sera recu."
+    )
+    return url
+
 class TwitchEventSub:
     def __init__(self, bot_id: str, logger, auth, client_id: str,
                  broadcaster_id: str, emit_callback, subscriptions: list[str],
@@ -31,7 +68,7 @@ class TwitchEventSub:
         self.nvidia_client = nvidia_client
         self.commands = commands or {}
 
-        self.ws_url = "wss://eventsub.wss.twitch.tv/ws"
+        self.ws_url = _url_websocket(self.logger)
         self._stopped = False
         self.active_subs = []
         self.cooldowns = {} # key -> timestamp

@@ -152,8 +152,52 @@ sondages, follows) exige le token du **PROPRIETAIRE de la chaine**, pas celui du
 Puis cocher `chat.eventsub` pour Sheo (dashboard, ou `data/twitch_config.json` : il est a
 `false`), et redemarrer Sheo.
 
-**Preuve** : declencher une recompense de points de chaine sur la chaine → Sheo reagit
-dans le chat.
+### Les deux moities, disjointes — et c'est la premiere qui rate
+
+**1. Le token (le vrai risque) — se verifie SANS declencher quoi que ce soit.**
+Redemarrer Sheo, puis :
+
+    docker logs --since 3m bot-sheogorath 2>&1 | grep EVENTSUB
+
+Attendu : `🔌 Connecte au WebSocket`, `🔑 Session bienvenue recue`, puis **7** lignes
+`✅ Abonne a channel.…`. Un `⚠️ Echec abonnement … (code 403)` dit qu'on a pris le token
+du BOT et non celui du streamer. C'est l'echec probable, et il se lit en 2 minutes.
+
+**2. La reaction — la partie qu'on ne peut presque jamais provoquer.**
+
+⚠️ Une recompense de points exige d'etre **Affilie**, d'avoir cree une recompense
+**PERSONNALISEE** (les recompenses integrees de Twitch — « Mettre en avant mon message »,
+« Debloquer un emote » — ne declenchent **jamais**
+`channel.channel_points_custom_reward_redemption.add`), et un **second compte** pour la
+depenser : le streamer n'accumule pas de points sur sa propre chaine.
+
+Trois voies, de la plus simple a la plus lourde :
+
+- **Un follow depuis un second compte.** Aucun Affilie, aucun point, marche hors live,
+  et c'est le MEME chemin de code qu'une recompense. Unfollow/refollow pour rejouer.
+- **Un sondage**, la seule chose declenchable seul (Creator Dashboard → Stream Manager →
+  Quick Actions). Affilie requis.
+- **Le serveur factice de la CLI Twitch** (gratuit, officiel) :
+
+        twitch event websocket start-server
+        twitch event trigger channel.follow --transport=websocket
+
+  Le bot y est pointe par `TWITCH_EVENTSUB_WS_URL` (ajoutee le 2026-09-08 ; sans elle,
+  l'endpoint reste celui de Twitch). ⚠️ **Depuis un conteneur, `127.0.0.1` designe le
+  conteneur** : viser `ws://host.docker.internal:8080/ws`.
+  ⚠️ Le serveur factice accepte n'importe quel abonnement : il ne prouve **pas** le
+  token. Il ne remplace pas le point 1, il complete le point 2.
+  ⚠️ La substitution s'ANNONCE dans le journal (`🧪 endpoint SUBSTITUE`) : oubliee, elle
+  rendrait EventSub definitivement muet sans une erreur.
+
+**Preuve, dans les deux cas** : `🔔 Evenement recu: channel.…`, puis Sheo parle dans le
+chat. Pour une recompense : `🎁 Custom reward redeemed: <titre> par <pseudo>`.
+
+⚠️ Cooldown de **5 s par type d'evenement** : deux essais rapproches du meme type, le
+second est ignore (`⏳ … (cooldown)`). Ce n'est pas une panne.
+
+⚠️ `reward_map` est vide : **n'importe quel** titre de recompense declenche la reaction
+LLM generique. Pas besoin d'un nom precis.
 
 ---
 
