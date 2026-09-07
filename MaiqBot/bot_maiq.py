@@ -30,7 +30,7 @@ from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
 # ⚠️ La cascade inline de M'aiq n'avait NI garde anti-fuite NI garde de reponse vide :
 # les deux vivaient dans le noyau, qu'elle recopie sans les emporter. On les importe au
 # lieu d'en faire une 8e copie. `generate_response` etait appele sans etre importe.
-from core.llm_cascade import generate_response, _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
+from core.llm_cascade import generate_response, appel_hors_cascade, _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
@@ -318,6 +318,26 @@ async def on_ready():
     except ImportError:
         pass  # shared/ est optionnel, le bot doit tourner sans
 
+    # FILET ANTI-MENTION INVENTEE. Meme point de passage que la garde ci-dessus.
+    # Le 2026-09-07, `!rumeur` a publie `<@123456789>` : un identifiant que le modele
+    # a fabrique faute d'en avoir un vrai. Un `try` separe — ces deux filets ne
+    # dependent pas l'un de l'autre.
+    try:
+        from shared.mentions import installer_filtre_mentions
+        installer_filtre_mentions("maiq", logger)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
+
+    # Le classement comptait les BOTS : le 2026-09-07, `/leaderboard` listait
+    # Sheogorath, Johnny et « Onizuka » — SugarBot sous un nom fige a sa premiere
+    # interaction. Un bot est le seul a savoir qu'il en est un : il se declare.
+    try:
+        from shared.shared_database import marquer_utilisateur_bot
+        if bot.user:
+            marquer_utilisateur_bot(bot.user.id, bot.user.name, bot.user.display_name)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
+
     logger.info('--------------------------------------------------')
     logger.info('🐱 M\'aiq le Menteur est prêt (Production Mode).')
     logger.info('--------------------------------------------------')
@@ -595,39 +615,23 @@ async def publish_daily_rumor():
     
     # Try GROQ first
     if groq_client:
-        try:
-            chat = await asyncio.wait_for(
-                asyncio.to_thread(
-                    groq_client.chat.completions.create,
-                    messages=[{"role": "user", "content": rumor_prompt}],
-                    model=GROQ_FAST,
-                    **groq_kwargs(GROQ_FAST),
-                    temperature=0.9
-                ),
-                timeout=30
-            )
-            rumor_text = chat.choices[0].message.content
-        except Exception as e:
-            logger.warning(f"⚠️ [RUMEUR] Groq failed: {e}")
+        rumor_text = await appel_hors_cascade(
+            "groq", groq_client.chat.completions.create,
+            key_manager=key_manager, bot_label="M'aiq", modele=GROQ_FAST, timeout=30,
+            messages=[{"role": "user", "content": rumor_prompt}],
+            model=GROQ_FAST,
+            **groq_kwargs(GROQ_FAST),
+            temperature=0.9,
+        )
     
     # Fallback Gemini
     if not rumor_text:
-        api_key = key_manager.get_key("gemini")
-        if api_key:
-            try:
-                client = get_safe_genai_client(api_key=api_key)
-                resp = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.models.generate_content,
-                        model='gemini-3.5-flash', contents=rumor_prompt
-                    ),
-                    timeout=30
-                )
-                rumor_text = resp.text
-            except Exception as e:
-                error_code = getattr(e, "code", getattr(e, "status_code", 0))
-                key_manager.report_error("gemini", api_key, error_code)
-                logger.warning(f"⚠️ [RUMEUR] Gemini failed: {e}")
+        rumor_text = await appel_hors_cascade(
+            "gemini",
+            key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
+            fabrique=lambda cle: get_safe_genai_client(api_key=cle).models.generate_content,
+            model='gemini-3.5-flash', contents=rumor_prompt,
+        )
     
     if not rumor_text:
         # Fallback statique
@@ -809,41 +813,38 @@ async def generate_and_post_riddle(target_channel):
         
         # Essai Groq
         if groq_client:
-            try:
-                chat = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        groq_client.chat.completions.create,
-                        messages=[{"role": "user", "content": prompt}],
-                        model=GROQ_FAST,
-                        **groq_kwargs(GROQ_FAST),
-                        temperature=0.9,
-                        response_format={"type": "json_object"}
-                    ),
-                    timeout=30
-                )
-                riddle_data = json.loads(chat.choices[0].message.content)
-            except Exception as e:
-                logger.warning(f"⚠️ [RIDDLE MAIQ] Groq JSON fail: {e}")
+            brut = await appel_hors_cascade(
+                "groq", groq_client.chat.completions.create,
+                key_manager=key_manager, bot_label="M'aiq", modele=GROQ_FAST, timeout=30,
+                messages=[{"role": "user", "content": prompt}],
+                model=GROQ_FAST,
+                **groq_kwargs(GROQ_FAST),
+                temperature=0.9,
+                response_format={"type": "json_object"},
+            )
+            if brut:
+                try:
+                    riddle_data = json.loads(brut)
+                except ValueError as e:
+                    logger.warning(f"⚠️ [RIDDLE MAIQ] Groq JSON fail: {e}")
                 
         # Fallback Gemini
         if not riddle_data:
-            api_key = key_manager.get_key("gemini")
-            if api_key:
+            brut = await appel_hors_cascade(
+                "gemini",
+                key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
+                fabrique=lambda cle: get_safe_genai_client(
+                    api_key=cle, http_options={'api_version': 'v1beta'}
+                ).models.generate_content,
+                model='gemini-3.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            if brut:
                 try:
-                    client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                    resp = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            client.models.generate_content,
-                            model='gemini-3.5-flash',
-                            contents=prompt,
-                            config=types.GenerateContentConfig(response_mime_type="application/json")
-                        ),
-                        timeout=30
-                    )
-                    riddle_data = json.loads(resp.text)
-                except Exception as e:
+                    riddle_data = json.loads(brut)
+                except ValueError as e:
                     logger.warning(f"⚠️ [RIDDLE MAIQ] Gemini JSON fail: {e}")
-                    key_manager.report_error("gemini", api_key, 500)
 
         # Validation Anti-Doublon (Uniquement pour les NORMALES)
         if riddle_data and "question" in riddle_data:
@@ -937,20 +938,16 @@ async def profil_maiq_cmd(interaction: discord.Interaction):
             f"Il a {points} points de réputation et son rang est '{level}'. "
             "Génère une très courte remarque sardonique ou mystérieuse (1-2 phrases maximum) de M'aiq à son sujet."
         )
-        try:
-            chat = await asyncio.wait_for(
-                asyncio.to_thread(
-                    groq_client.chat.completions.create,
-                    messages=[{"role": "user", "content": prompt}],
-                    model=GROQ_FAST,
-                    **groq_kwargs(GROQ_FAST),
-                    temperature=0.8
-                ),
-                timeout=15
-            )
-            quote = chat.choices[0].message.content.strip()
-        except Exception as e:
-            logger.warning(f"[PROFIL] Groq failed: {e}")
+        reponse = await appel_hors_cascade(
+            "groq", groq_client.chat.completions.create,
+            key_manager=key_manager, bot_label="M'aiq", modele=GROQ_FAST, timeout=15,
+            messages=[{"role": "user", "content": prompt}],
+            model=GROQ_FAST,
+            **groq_kwargs(GROQ_FAST),
+            temperature=0.8,
+        )
+        if reponse:
+            quote = reponse.strip()
             
     # Remove artifacts
     for artifact in ["[INST]", "[/INST]", "</s>", "<s>", "<<SYS>>", "<</SYS>>"]:
@@ -981,46 +978,37 @@ async def maiq_stats(ctx):
 @bot.command(name="rumeur")
 async def maiq_rumeur(ctx):
     """Lance une rumeur (Lie) complètement fausse."""
-    prompt = f"SYSTEM: {PERSONALITY_PROMPT}\nINSTRUCTION: Invente une rumeur absurde et très courte sur un autre Prince Daedra, un joueur, ou un événement impossible. Commence par 'M'aiq a entendu dire que...' ou 'Certains disent que...'."
+    # ⚠️ « sur un joueur » sans lui fournir d'identifiant, c'est demander une
+    # invention : le 2026-09-07 le modele a publie `<@123456789>`. La consigne ferme
+    # la porte, le filet de `shared/mentions.py` tient quand elle ne suffit pas.
+    prompt = f"SYSTEM: {PERSONALITY_PROMPT}\nINSTRUCTION: Invente une rumeur absurde et très courte sur un autre Prince Daedra, un habitant de Tamriel, ou un événement impossible. Commence par 'M'aiq a entendu dire que...' ou 'Certains disent que...'. N'ecris JAMAIS de mention Discord de la forme <@...> : tu n'as l'identifiant de personne, et un identifiant invente s'afficherait tel quel."
     
     response_text = None
     
     # Use Groq (Speed)
+    # ⚠️ C'est CET appel qui a pris un 429 sans quarantaine le 2026-09-07 : il est isolé,
+    # la cascade ne le voit pas. `appel_hors_cascade` lui rend le pool et le traçage.
     if groq_client:
-        try:
-             chat = await asyncio.wait_for(
-                 asyncio.to_thread(
-                     groq_client.chat.completions.create,
-                     messages=[{"role": "user", "content": prompt}],
-                     model=GROQ_FAST,
-                     **groq_kwargs(GROQ_FAST),
-                     temperature=0.9
-                 ),
-                 timeout=30
-             )
-             response_text = chat.choices[0].message.content
-        except Exception as e:
-            logger.warning(f"[GROQ RUMEUR] {e}")
+        response_text = await appel_hors_cascade(
+            "groq", groq_client.chat.completions.create,
+            key_manager=key_manager, bot_label="M'aiq", modele=GROQ_FAST, timeout=30,
+            messages=[{"role": "user", "content": prompt}],
+            model=GROQ_FAST,
+            **groq_kwargs(GROQ_FAST),
+            temperature=0.9,
+        )
         
     # Fallback Gemini
     if not response_text:
-        api_key = key_manager.get_key("gemini")
-        if api_key:
-            try:
-                client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                resp = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.models.generate_content,
-                        model='gemini-3.5-flash',
-                        contents=prompt
-                    ),
-                    timeout=30
-                )
-                response_text = resp.text
-            except Exception as e:
-             error_code = getattr(e, "code", getattr(e, "status_code", 0))
-             key_manager.report_error("gemini", api_key, error_code)
-             logger.warning(f"[RUMEUR] Gemini rumeur command failed: {e}")
+        response_text = await appel_hors_cascade(
+            "gemini",
+            key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
+            fabrique=lambda cle: get_safe_genai_client(
+                api_key=cle, http_options={'api_version': 'v1beta'}
+            ).models.generate_content,
+            model='gemini-3.5-flash',
+            contents=prompt,
+        )
             
     if response_text:
         await ctx.send(f"📢 **[RUMEUR]** {response_text}")

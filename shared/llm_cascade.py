@@ -482,14 +482,7 @@ async def generate_response(
                 # échec d'API. Sans ça, la base se remplit d'échecs sans cause — le
                 # bruit « unknown » que ce chantier existe pour supprimer.
                 _raison = "non_tentee"
-            _index_cle = None
-            if api_key and hasattr(key_manager, "apis"):
-                try:
-                    _index_cle = key_manager.apis[client_type]["keys"].index(api_key)
-                except (ValueError, KeyError, AttributeError, TypeError):
-                    pass  # la cle n'est pas dans cette liste : l'index reste None, le tracage suit quand meme
-                if not isinstance(_index_cle, int):
-                    _index_cle = None   # un faux gestionnaire rend un objet : SQLite le refuserait
+            _index_cle = _index_de_cle(key_manager, client_type, api_key)
             _bot_nom = bot_id_depuis_label(bot_label) or (bot_label or "").lower()
             tracer_appel(
                 bot=_bot_nom,
@@ -503,3 +496,114 @@ async def generate_response(
             )
 
     return response_text
+
+
+def _index_de_cle(key_manager, api_name, api_key):
+    """Index de la clé dans son pool, ou None. Sert au traçage, jamais à décider."""
+    if not api_key or not hasattr(key_manager, "apis"):
+        return None
+    try:
+        index = key_manager.apis[api_name]["keys"].index(api_key)
+    except (ValueError, KeyError, AttributeError, TypeError):
+        return None
+    # ⚠️ Un faux gestionnaire (MagicMock) rend un objet que SQLite refuserait de binder.
+    return index if isinstance(index, int) else None
+
+
+def _texte_de(fournisseur, reponse):
+    """Le texte d'une réponse brute. Gemini le porte à plat, les autres l'emboîtent."""
+    if fournisseur == "gemini":
+        return reponse.text
+    return reponse.choices[0].message.content
+
+
+async def appel_hors_cascade(
+    fournisseur,
+    fonction=None,
+    *,
+    key_manager,
+    bot_label,
+    modele,
+    fabrique=None,
+    timeout=None,
+    **kwargs,
+):
+    """UN appel fournisseur isolé — hors cascade — avec l'hygiène d'un échelon de cascade.
+
+    ⚠️ Pourquoi ceci existe. Le chantier du 2026-09-06 a branché `report_error` et
+    `tracer_appel` sur les **11 cascades**. Or tous les fournisseurs ne sont pas appelés
+    depuis une cascade : `!rumeur`, les décrets, les rattrapages de mention, l'imposteur
+    et le conseil hebdomadaire tapent le SDK en direct, avec leur propre repli à deux
+    échelons écrit à la main. Constaté en test live le 2026-09-07 à 22:41 chez M'aiq :
+
+        [GROQ RUMEUR] Error code: 429 ... Please try again in 1.785s
+
+    Zéro ligne de quarantaine sur les six bots, zéro ligne en base. La clé restait saine
+    pour le gestionnaire, et le message suivant retapait dans le même mur.
+
+    Ce que la fonction garantit, exactement comme un échelon de `generate_response` :
+      1. la clé vient du POOL — une clé en quarantaine saute l'appel, sans le tenter ;
+      2. un échec appelle `report_error` avec le délai lu chez le fournisseur ;
+      3. l'appel est tracé en base, succès comme échec, avec sa raison ;
+      4. l'appel est borné dans le temps et ne bloque pas la boucle (`to_thread`).
+
+    Rend le TEXTE, ou None. Les appelants n'extrayaient rien d'autre, et le None couvre
+    d'un coup les quatre façons d'échouer : quarantaine, client absent, exception, vide.
+
+    `fabrique` sert au seul Gemini, dont le client se BÂTIT avec la clé : elle reçoit la
+    clé et rend la fonction à appeler. Sa présence rend donc la clé obligatoire — sans
+    elle il n'y a rien à appeler, alors qu'ailleurs le client est déjà bâti et porte sa
+    propre clé (celle du pool ne sert qu'à nommer le coupable dans `report_error`).
+    """
+    if timeout is None:
+        timeout = _BORNE_TEXTE
+    api_key, _saut = _cle_du_pool(key_manager, fournisseur, exigee=fabrique is not None)
+
+    _depart = time.perf_counter()
+    texte = None
+    _raison = None
+    _code_erreur = 0
+    try:
+        if _saut:
+            _raison = _saut
+            return None
+        appel = fabrique(api_key) if fabrique is not None else fonction
+        if appel is None:
+            # Client non construit (clé absente au démarrage) : ce n'est pas un échec
+            # d'API, et ça ne doit pas remplir la base d'erreurs sans cause.
+            _raison = "non_tentee"
+            return None
+        reponse = await asyncio.wait_for(asyncio.to_thread(appel, **kwargs), timeout=timeout)
+        texte = _texte_de(fournisseur, reponse)
+        if _est_vide(texte):
+            logger.warning(f"⚠️ [{fournisseur.upper()} {modele}] réponse vide — {bot_label}")
+            texte = None
+            _raison = "vide"
+            return None
+        logger.info(f"✅ [{fournisseur.upper()} {modele}] {bot_label} (hors cascade)")
+        return texte
+    except Exception as e:
+        _raison = type(e).__name__
+        _code_erreur = getattr(e, "code", getattr(e, "status_code", 0))
+        _quota = details_de_quota(e)
+        logger.warning(
+            f"⚠️ [{fournisseur.upper()} FAIL] {modele} - {type(e).__name__}: {e or type(e).__name__}"
+            + (f"  [QUOTA] {_quota}" if _quota else "")
+        )
+        if api_key:
+            key_manager.report_error(
+                fournisseur, api_key, _code_erreur,
+                retry_delay_s=delai_de_reprise(e),
+            )
+        return None
+    finally:
+        tracer_appel(
+            bot=bot_id_depuis_label(bot_label) or (bot_label or "").lower(),
+            api=fournisseur,
+            modele=modele,
+            index_cle=_index_de_cle(key_manager, fournisseur, api_key),
+            succes=bool(texte),
+            code_erreur=_code_erreur,
+            latence_ms=int((time.perf_counter() - _depart) * 1000),
+            raison=_raison,
+        )

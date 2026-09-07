@@ -143,21 +143,67 @@ sur 5 bots, une seule chez M'aiq (un 429 Groq, voir ci-dessous).
 - **Transcript partage** : Alfred a repris `cornichon -> carotte -> chocolat` d'une
   conversation qu'il n'avait pas eue. Le transcript non ampute fonctionne.
 
-### 4 defauts a corriger (aucun urgent, aucun bloquant)
+### 4 defauts — TOUS CORRIGES le 07/09 (807 tests, reste la CI et le deploiement)
 
-1. **Un 429 Groq n'a PAS declenche de quarantaine.** Journal de M'aiq a 22:41:15 :
-   `[GROQ RUMEUR] Error code: 429 ... Please try again in 1.785s`. Zero ligne de
-   quarantaine sur les 6. ⚠️ **Cause** : `!rumeur` appelle Groq **HORS cascade**. Le
-   correctif du 06/09 couvre les 11 cascades ; les appels isoles d'un fournisseur y
-   echappent tous. **Chercher les autres** avant de corriger celui-la.
-2. **`!rumeur` a publie une mention inventee** : `<@123456789>`. Le prompt demande
-   d'inventer une rumeur « sur un joueur » sans lui fournir d'ID reel, et rien ne filtre
-   une mention invalide en SORTIE. Deux correctifs possibles, le second est le filet.
-3. **La redemption de Sugar ne prend pas.** Apres « dsl je m'excuse », il repond encore
-   « peteur ». Le carnet de rancunes durcit bien, il ne se relache pas.
-4. **Le classement compte les BOTS.** `/leaderboard` et `!equipage` listent Sheogorath,
-   Johnny — et **Onizuka**, un bot mort, renomme Sugar depuis
-   ([[plan-renommage-sugar-bot]]). Un fantome en base.
+**1. Un 429 Groq sans quarantaine — CORRIGE.** Journal de M'aiq a 22:41:15 :
+`[GROQ RUMEUR] Error code: 429 ... Please try again in 1.785s`, zero ligne de
+quarantaine sur les 6. Cause : `!rumeur` appelle Groq **HORS cascade**.
+
+En cherchant les autres, avant de corriger celui-la : **19 appels nus** dans 3 bots.
+`publish_daily_rumor` et `generate_and_post_riddle` et `profil` et `!rumeur` (M'aiq),
+les decrets et le rattrapage de mention et les 3 chemins de l'imposteur (Sheogorath),
+le conseil du vendredi et la patrouille vocale (Alfred). Chacun avec son repli a deux
+echelons ecrit a la main, aucun ne demandait sa cle au pool, aucun n'ecrivait en base.
+
+Livre : `appel_hors_cascade()` dans `shared/llm_cascade.py` (donc vendorise dans les 6),
+qui rend a un appel isole l'hygiene d'un echelon de cascade — cle du pool, saut si
+quarantaine, `report_error` avec le delai lu chez le fournisseur, tracage, borne de
+temps, `to_thread`. Les 19 sites y passent.
+
+⚠️ Le verrou est le seul qui empeche la reconstruction : `tests/test_appels_hors_cascade.py`
+interdit tout appel SDK nu dans les 6 bots (parcours `ast`). **Il abrite la BOUCLE de
+cascade, pas sa fonction** — abriter `on_message` entier cachait les 4 appels de
+l'imposteur, qui vivent dans la meme fonction que la cascade inline de Sheogorath.
+Verifie contre la version d'avant : 19 appels nus vus, 0 aujourd'hui.
+
+**2. `!rumeur` a publie `<@123456789>` — CORRIGE**, les deux moities.
+Le prompt ne demande plus une rumeur « sur un joueur » sans fournir d'ID, et interdit
+explicitement d'ecrire une mention. Le filet, lui, tient quand le modele desobeit :
+`shared/mentions.py`, installe sur les 6 au meme point de passage que le mode test.
+
+⚠️ La regle du filet est **structurelle**, jamais une question de cache : un identifiant
+Discord a >= 17 chiffres et une date posterieure a 2015. `123456789` ne PEUT pas en etre
+un. Regarder si le membre existe dans le cache aurait efface des mentions legitimes des
+qu'un membre n'est pas charge — un filet plus dangereux que le defaut.
+
+**3. La redemption de Sugar — CORRIGE.** Deux causes, toutes deux de temps :
+- chaque message d'une **rafale** valait +2 : six insultes d'affilee plafonnaient le
+  carnet a 5, et il fallait ensuite 3 excuses espacees de 10 min pour revenir a 0 ;
+- l'excuse partageait le **cooldown de 600 s** des « merci », prevu contre le spam de
+  gentillesses. La premiere excuse comptait, les suivantes non.
+
+Une rafale est desormais UN emportement (`AGGRO_WINDOW = 120 s`) et l'excuse a sa propre
+horloge courte (`APOLOGY_COOLDOWN = 60 s`). Le scenario live rejoue en test : 6 insultes
+-> score 2, « dsl je m'excuse » -> 0, pardon accorde explicitement. Le garde-fou d'origine
+tient toujours : 5 « merci » d'affilee ne rachetent qu'un point.
+
+**4. Le classement comptait les BOTS — CORRIGE.** Les trois fantomes lus en base :
+
+    1467929828060561583  Onizuka           <- SugarBot, nom fige avant le renommage
+    1467967030639722629  Rigurt le Hardi   <- Johnny, idem
+    1450597777695309834  Sheogorath
+
+⚠️ Aucun n'est reconnaissable au NOM : `users` le fige au jour de la premiere
+interaction. Le seul qui sache qu'un bot est un bot, c'est le bot — il se **declare**
+au demarrage (`marquer_utilisateur_bot`, sur les 6), ce qui rafraichit au passage le
+nom perime. Colonne `is_bot` + `WHERE COALESCE(u.is_bot, 0) = 0`.
+
+⚠️ `COALESCE` n'est pas de la ceinture-bretelles : sur une base d'avant la migration
+`is_bot` vaut NULL, et `NULL = 0` ne vaut pas « vrai » en SQL — le classement serait
+sorti **entierement vide**. Un filtre qui efface tout le monde est pire que le defaut.
+
+**A constater au prochain live** : `/leaderboard` ne montre les 3 bots qu'une fois les
+6 conteneurs redemarres (c'est au demarrage qu'ils se declarent).
 
 ### Non concluant, a refaire
 

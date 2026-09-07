@@ -23,7 +23,7 @@ from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
 # ⚠️ La cascade inline d'Alfred n'avait NI garde anti-fuite NI garde de reponse vide :
 # les deux vivaient dans le noyau, qu'elle recopie sans les emporter. On les importe au
 # lieu d'en faire une 8e copie. `generate_response` etait appele sans etre importe.
-from core.llm_cascade import generate_response, _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
+from core.llm_cascade import generate_response, appel_hors_cascade, _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
 
 import discord
 from discord.ext import commands, tasks
@@ -390,6 +390,26 @@ async def on_ready():
         logger.info(f"🧪 [MODE TEST:alfred] {etat_lisible('alfred')}")
     except ImportError:
         pass  # shared/ est optionnel, le bot doit tourner sans
+
+    # FILET ANTI-MENTION INVENTEE. Meme point de passage que la garde ci-dessus.
+    # Le 2026-09-07, `!rumeur` a publie `<@123456789>` : un identifiant que le modele
+    # a fabrique faute d'en avoir un vrai. Un `try` separe — ces deux filets ne
+    # dependent pas l'un de l'autre.
+    try:
+        from shared.mentions import installer_filtre_mentions
+        installer_filtre_mentions("alfred", logger)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
+
+    # Le classement comptait les BOTS : le 2026-09-07, `/leaderboard` listait
+    # Sheogorath, Johnny et « Onizuka » — SugarBot sous un nom fige a sa premiere
+    # interaction. Un bot est le seul a savoir qu'il en est un : il se declare.
+    try:
+        from shared.shared_database import marquer_utilisateur_bot
+        if bot.user:
+            marquer_utilisateur_bot(bot.user.id, bot.user.name, bot.user.display_name)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
     
     # HEALTH CHECK
     logger.info('📊 [HEALTH CHECK] APIs disponibles :')
@@ -514,14 +534,13 @@ async def weekly_protip_alfred():
                 # Utilise Mistral ou Gemini
                 resp = "Un bon majordome a toujours un mouchoir propre. Pour les larmes... ou le sang."
                 if mistral_client:
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            mistral_client.chat.complete,
-                            model=MISTRAL_MAIN, messages=[{"role": "user", "content": prompt}]
-                        ),
-                        timeout=30
-                    )
-                    resp = chat.choices[0].message.content
+                    # `or resp` : le conseil de repli reste la reponse quand l'appel echoue.
+                    resp = await appel_hors_cascade(
+                        "mistral", mistral_client.chat.complete,
+                        key_manager=key_manager, bot_label="Alfred",
+                        modele=MISTRAL_MAIN, timeout=30,
+                        model=MISTRAL_MAIN, messages=[{"role": "user", "content": prompt}],
+                    ) or resp
                 
                 await target_channel.send(f"🧐 **[CONSEIL DU VENDREDI]** {resp}")
                 # Sleep pour ne pas spammer tout le quart d'heure
@@ -848,66 +867,53 @@ async def analyze_audio_with_gemini(wav_data, user_names=None):
         (False, None) si pas de chant/soundboard
         (True, str) si détecté, avec commentaire sarcastique d'Alfred
     """
-    api_key = key_manager.get_key("gemini")
-    if not api_key:
-        logger.warning("[VOCAL PATROL] Aucune clé Gemini disponible")
-        return None
-    
     # Construire la liste des utilisateurs pour le prompt
     users_str = ", ".join(user_names) if user_names else "des utilisateurs inconnus"
-    
-    try:
-        client = get_safe_genai_client(api_key=api_key)
-        
-        # Envoyer l'audio à Gemini
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.models.generate_content,
-                model=GEMINI_FLASH,
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part(inline_data=types.Blob(
-                                mime_type="audio/wav",
-                                data=wav_data
-                            )),
-                            types.Part(text=(
-                                "Écoute attentivement cet audio. Est-ce que quelqu'un CHANTE ou ABUSE de la SOUNDBOARD dans cet enregistrement ? "
-                                "Le chant inclut : fredonner, chanter des paroles, faire des vocalises, siffler une mélodie. "
-                                "L'abus de soundboard inclut : sons répétitifs, effets sonores en boucle, bruits de mème, sons forts et distordus (earrape). "
-                                "La parole normale, les rires naturels, et les bruits de fond ne comptent PAS. "
-                                f"\n\nLes utilisateurs présents dans le vocal sont : {users_str}."
-                                "\n\nRéponds avec ce FORMAT EXACT :\n"
-                                "Ligne 1 : OUI ou NON\n"
-                                "Ligne 2 (SEULEMENT si OUI) : Un commentaire SARCASTIQUE et DRÔLE de 2 phrases maximum, "
-                                "dans le style d'Alfred Pennyworth (majordome britannique cynique de Batman). "
-                                "CITE les utilisateurs par leur NOM dans ton commentaire. "
-                                "Commente ce que tu as RÉELLEMENT entendu : la qualité du chant, le choix de chanson, "
-                                "le niveau de nuisance sonore, ou le spam de soundboard. Sois MÉCHANT mais élégant. "
-                                "Utilise 1-2 emojis parmi : 🧐 😒 🦇 ☕ 🎵❌ 🧹"
-                            ))
-                        ]
-                    )
-                ],
-                config=types.GenerateContentConfig(temperature=0.9)
-            ),
-            timeout=30
-        )
-        
-        result = response.text.strip()
-        lines = result.split("\n", 1)
-        detected = "OUI" in lines[0].upper()
-        comment = lines[1].strip() if len(lines) > 1 and detected else None
-        
-        logger.info(f"🎤 [VOCAL PATROL] Gemini Audio → detected={detected}, comment='{comment}'")
-        return (detected, comment)
-        
-    except Exception as e:
-        error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
-        key_manager.report_error("gemini", api_key, error_code)
-        logger.error(f"❌ [VOCAL PATROL] Erreur Gemini Audio: {e}")
+
+    # Appel hors cascade : c'est le helper qui tient le pool (cle en quarantaine =
+    # aucun appel), `report_error` avec le delai du fournisseur, et le tracage en base.
+    result = await appel_hors_cascade(
+        "gemini",
+        key_manager=key_manager, bot_label="Alfred", modele=GEMINI_FLASH, timeout=45,
+        fabrique=lambda cle: get_safe_genai_client(api_key=cle).models.generate_content,
+        model=GEMINI_FLASH,
+        contents=[
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(inline_data=types.Blob(
+                        mime_type="audio/wav",
+                        data=wav_data
+                    )),
+                    types.Part(text=(
+                        "Écoute attentivement cet audio. Est-ce que quelqu'un CHANTE ou ABUSE de la SOUNDBOARD dans cet enregistrement ? "
+                        "Le chant inclut : fredonner, chanter des paroles, faire des vocalises, siffler une mélodie. "
+                        "L'abus de soundboard inclut : sons répétitifs, effets sonores en boucle, bruits de mème, sons forts et distordus (earrape). "
+                        "La parole normale, les rires naturels, et les bruits de fond ne comptent PAS. "
+                        f"\n\nLes utilisateurs présents dans le vocal sont : {users_str}."
+                        "\n\nRéponds avec ce FORMAT EXACT :\n"
+                        "Ligne 1 : OUI ou NON\n"
+                        "Ligne 2 (SEULEMENT si OUI) : Un commentaire SARCASTIQUE et DRÔLE de 2 phrases maximum, "
+                        "dans le style d'Alfred Pennyworth (majordome britannique cynique de Batman). "
+                        "CITE les utilisateurs par leur NOM dans ton commentaire. "
+                        "Commente ce que tu as RÉELLEMENT entendu : la qualité du chant, le choix de chanson, "
+                        "le niveau de nuisance sonore, ou le spam de soundboard. Sois MÉCHANT mais élégant. "
+                        "Utilise 1-2 emojis parmi : 🧐 😒 🦇 ☕ 🎵❌ 🧹"
+                    ))
+                ]
+            )
+        ],
+        config=types.GenerateContentConfig(temperature=0.9),
+    )
+    if not result:
         return None
+
+    result = result.strip()
+    lines = result.split("\n", 1)
+    detected = "OUI" in lines[0].upper()
+    comment = lines[1].strip() if len(lines) > 1 and detected else None
+    logger.info(f"🎤 [VOCAL PATROL] Gemini Audio → detected={detected}, comment='{comment}'")
+    return (detected, comment)
 
 
 @tasks.loop(seconds=30)

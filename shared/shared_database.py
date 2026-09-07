@@ -289,6 +289,23 @@ def init_database():
         except Exception as e:
             print(f"[DATABASE] Erreur migration reputation (riddle_streak): {e}")
 
+    # ⚠️ Le classement comptait les BOTS. `/leaderboard` et `!equipage` listaient
+    # Sheogorath, Johnny et « Onizuka » — ce dernier etant SugarBot sous son ancien nom
+    # (id 1467929828060561583, renomme depuis). Vu en test live le 2026-09-07.
+    #
+    # Trois lignes fantomes a 0 point, entrees en base avant que les six bots ne se
+    # taisent entre eux. Elles ne peuvent pas etre reconnues au nom : il est fige au
+    # jour de la premiere interaction. Seul le bot concerne sait qu'il est un bot —
+    # d'ou `marquer_utilisateur_bot()`, qu'il appelle sur lui-meme au demarrage.
+    try:
+        cursor.execute("SELECT is_bot FROM users LIMIT 1")
+    except sqlite3.OperationalError:
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN is_bot INTEGER DEFAULT 0")
+            print("[DATABASE] Colonne is_bot ajoutee a users.")
+        except Exception as e:
+            print(f"[DATABASE] Erreur migration users (is_bot): {e}")
+
     # Tables pour le système de mini-jeux partagé (cooldowns, daily caps et pvp pairs)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS game_cooldowns (
@@ -582,19 +599,54 @@ def get_riddle_streak(user_id: int) -> int:
 
 
 def get_reputation_leaderboard(limit: int = 10) -> List[Dict]:
-    """Récupère le classement de réputation."""
+    """Récupère le classement de réputation. Les bots en sont exclus.
+
+    ⚠️ `COALESCE` : sur une base d'avant la migration, `is_bot` peut etre NULL et
+    `NULL = 0` ne vaut pas `vrai` en SQL — le classement serait alors VIDE. Un filtre
+    qui efface tout le monde est pire que le defaut qu'il corrige.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT r.user_id, r.points, r.level, u.username, u.display_name
         FROM reputation r
         JOIN users u ON r.user_id = u.user_id
+        WHERE COALESCE(u.is_bot, 0) = 0
         ORDER BY r.points DESC
         LIMIT ?
     """, (limit,))
     results = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return results
+
+
+def marquer_utilisateur_bot(user_id: int, username: str = None, display_name: str = None) -> bool:
+    """Marque une ligne de `users` comme etant un BOT, et rafraichit son nom.
+
+    Appelee par chaque bot sur lui-meme au demarrage : c'est le seul moment ou
+    l'information existe a coup sur. Les noms stockes datent de la premiere interaction
+    et peuvent etre perimes — « Onizuka » pour SugarBot, « Rigurt le Hardi » pour
+    Johnny : on les remet a jour au passage, pour les journaux et le dashboard.
+
+    Ne cree RIEN : un bot qui n'a jamais ete inscrit n'a pas a l'etre ici.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if username or display_name:
+            cursor.execute(
+                "UPDATE users SET is_bot = 1, username = COALESCE(?, username), "
+                "display_name = COALESCE(?, display_name) WHERE user_id = ?",
+                (username, display_name, user_id))
+        else:
+            cursor.execute("UPDATE users SET is_bot = 1 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"⚠️ [DATABASE] Erreur marquage bot {user_id}: {e}")
+        return False
+    finally:
+        conn.close()
 
 
 # GESTION DES ANNIVERSAIRES

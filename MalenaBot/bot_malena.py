@@ -484,6 +484,26 @@ async def on_ready():
     except ImportError:
         pass  # shared/ est optionnel, le bot doit tourner sans
 
+    # FILET ANTI-MENTION INVENTEE. Meme point de passage que la garde ci-dessus.
+    # Le 2026-09-07, `!rumeur` a publie `<@123456789>` : un identifiant que le modele
+    # a fabrique faute d'en avoir un vrai. Un `try` separe — ces deux filets ne
+    # dependent pas l'un de l'autre.
+    try:
+        from shared.mentions import installer_filtre_mentions
+        installer_filtre_mentions("malena", logger)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
+
+    # Le classement comptait les BOTS : le 2026-09-07, `/leaderboard` listait
+    # Sheogorath, Johnny et « Onizuka » — SugarBot sous un nom fige a sa premiere
+    # interaction. Un bot est le seul a savoir qu'il en est un : il se declare.
+    try:
+        from shared.shared_database import marquer_utilisateur_bot
+        if bot.user:
+            marquer_utilisateur_bot(bot.user.id, bot.user.name, bot.user.display_name)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
+
     logger.info(f'✅ Connectée en tant que {bot.user} (Gitana Mode)')
     logger.info(f'✅ {bot.user} est là ! (Gemini + Groq Hybrid)')
 

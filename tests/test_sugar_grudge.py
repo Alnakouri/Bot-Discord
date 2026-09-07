@@ -80,8 +80,11 @@ class TestGrudgeBook(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = os.path.join(self.tmp.name, "grudge.json")
-        # cooldown 0 pour tester les enchaînements sans attendre
-        self.book = GrudgeBook(self.path, positive_cooldown=0)
+        # Tous les délais à 0 pour tester les enchaînements sans attendre : le barème
+        # (+2 par offense, −2/−1 par geste) se mesure ici, ses garde-fous de temps ont
+        # leurs propres tests dans TestGrudgeRythme.
+        self.book = GrudgeBook(self.path, positive_cooldown=0, apology_cooldown=0,
+                               aggro_window=0)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -193,7 +196,8 @@ class TestSugarGrudgeLLM(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = os.path.join(self.tmp.name, "grudge_llm.json")
-        self.book = GrudgeBook(self.path, positive_cooldown=0, llm_enabled=True)
+        self.book = GrudgeBook(self.path, positive_cooldown=0, llm_enabled=True,
+                               apology_cooldown=0, aggro_window=0)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -342,6 +346,86 @@ class TestToneDirective(unittest.TestCase):
         # Test aggro text (returns empty string)
         self.assertEqual(tone_directive("ferme la"), "")
         self.assertEqual(tone_directive("t'es nulle"), "")
+
+
+class TestGrudgeRythme(unittest.TestCase):
+    """Le RYTHME du carnet : ce qui compte pour une offense, et ce qui relâche.
+
+    Défaut mesuré en test live le 2026-09-07 : six insultes d'affilée pour éprouver
+    la répartie de Sugar, puis « dsl je m'excuse » — et elle répond encore « peteur ».
+
+    Deux causes, toutes deux de temps :
+      * chaque message d'une même rafale valait +2, donc le carnet était au plafond ;
+      * l'excuse partageait le cooldown de 10 minutes des « merci », prévu contre le
+        spam de gentillesses : la première excuse comptait, les suivantes non.
+    Le carnet durcissait sans jamais se relâcher.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "grudge_rythme.json")
+        self.book = GrudgeBook(self.path)      # les vrais réglages, c'est le sujet
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _score(self):
+        return self.book.book["1"]["score"]
+
+    def test_le_scenario_live_du_2026_09_07(self):
+        """Six insultes d'affilée, puis une excuse : le pardon doit être accordé."""
+        for insulte in ["t'es nulle", "ta gueule", "espèce de débile",
+                        "tu sers à rien", "t'es vraiment conne", "dégage"]:
+            self.book.update("1", insulte, addressed=True)
+        self.assertEqual(self._score(), 2,
+                         "une rafale d'insultes est UN emportement, pas six offenses")
+
+        directive = self.book.update("1", "dsl je m'excuse", addressed=True)
+        self.assertEqual(self._score(), 0)
+        self.assertIn("regagner ton pardon", directive,
+                      "après une excuse, Sugar doit accorder son pardon explicitement")
+
+    def test_une_offense_plus_tard_recompte(self):
+        """La fenêtre ne pardonne pas : elle refuse seulement de compter deux fois."""
+        self.book.update("1", "t'es nulle", addressed=True)
+        self.assertEqual(self._score(), 2)
+        # Même personne, mais l'emportement d'avant est passé.
+        self.book.book["1"]["last_aggro_ts"] = 0.0
+        self.book.update("1", "ta gueule", addressed=True)
+        self.assertEqual(self._score(), 4, "une nouvelle offense doit bien re-monter")
+
+    def test_une_excuse_n_est_pas_bloquee_par_un_merci_recent(self):
+        """⚠️ Le cœur du défaut : deux horloges, pas une.
+
+        Un « merci » d'il y a cinq minutes ne doit pas rendre une excuse sans effet.
+        """
+        self.book.update("1", "t'es nulle", addressed=True)          # 2
+        self.book.update("1", "merci quand même", addressed=True)    # 1, pose l'horloge kind
+        self.assertEqual(self._score(), 1)
+        self.book.update("1", "pardon Sugar", addressed=True)        # doit compter
+        self.assertEqual(self._score(), 0)
+
+    def test_les_excuses_en_rafale_ne_soldent_pas_le_carnet(self):
+        """L'excuse a une horloge courte, mais elle en a une : « dsl dsl dsl » ne suffit pas."""
+        self.book.update("1", "t'es nulle", addressed=True)
+        self.book.book["1"]["last_aggro_ts"] = 0.0
+        self.book.update("1", "ta gueule", addressed=True)
+        self.book.book["1"]["last_aggro_ts"] = 0.0
+        self.book.update("1", "espèce de débile", addressed=True)
+        self.assertEqual(self._score(), 5)
+
+        self.book.update("1", "dsl", addressed=True)
+        self.book.update("1", "dsl", addressed=True)
+        self.book.update("1", "dsl", addressed=True)
+        self.assertEqual(self._score(), 3,
+                         "seule la première excuse de la rafale doit compter")
+
+    def test_le_spam_de_merci_reste_bloque(self):
+        """Le garde-fou d'origine tient toujours : on ne se rachète pas en spammant."""
+        self.book.update("1", "t'es nulle", addressed=True)
+        for _ in range(5):
+            self.book.update("1", "merci !", addressed=True)
+        self.assertEqual(self._score(), 1)
 
 
 if __name__ == "__main__":

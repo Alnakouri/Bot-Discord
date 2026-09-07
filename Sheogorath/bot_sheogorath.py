@@ -34,7 +34,7 @@ from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN
 # ⚠️ La cascade inline de Sheogorath n'avait NI garde anti-fuite NI garde de reponse
 # vide : les deux vivaient dans le noyau, qu'elle recopie sans les emporter. On les
 # importe au lieu d'en faire une 8e copie.
-from core.llm_cascade import _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
+from core.llm_cascade import appel_hors_cascade, _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -657,6 +657,26 @@ async def on_ready():
     except ImportError:
         pass  # shared/ est optionnel, le bot doit tourner sans
 
+    # FILET ANTI-MENTION INVENTEE. Meme point de passage que la garde ci-dessus.
+    # Le 2026-09-07, `!rumeur` a publie `<@123456789>` : un identifiant que le modele
+    # a fabrique faute d'en avoir un vrai. Un `try` separe — ces deux filets ne
+    # dependent pas l'un de l'autre.
+    try:
+        from shared.mentions import installer_filtre_mentions
+        installer_filtre_mentions("sheogorath", logger)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
+
+    # Le classement comptait les BOTS : le 2026-09-07, `/leaderboard` listait
+    # Sheogorath, Johnny et « Onizuka » — SugarBot sous un nom fige a sa premiere
+    # interaction. Un bot est le seul a savoir qu'il en est un : il se declare.
+    try:
+        from shared.shared_database import marquer_utilisateur_bot
+        if bot.user:
+            marquer_utilisateur_bot(bot.user.id, bot.user.name, bot.user.display_name)
+    except ImportError:
+        pass  # shared/ est optionnel, le bot doit tourner sans
+
     logger.info(f'--------------------------------------------------')
     logger.info(f'🧀 Sheogorath règne sur ce serveur ! (Production)')
     logger.info(f'--------------------------------------------------')
@@ -1104,19 +1124,16 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     
     full_response = None
     
-    # Try Gemini first (asyncio.to_thread to prevent blocking the Event Loop)
-    api_key = key_manager.get_key("gemini")
-    if api_key:
-        try:
-            client = get_safe_genai_client(api_key=api_key, http_options={'api_version': 'v1beta'})
-            resp = await asyncio.to_thread(
-                client.models.generate_content,
-                model=GEMINI_FLASH,
-                contents=rumor_prompt
-            )
-            full_response = resp.text
-        except Exception as e:
-            logger.warning(f"⚠️ [RUMEUR SHEO] Gemini failed: {e}")
+    # Try Gemini first (le helper borne l'appel et le passe hors de la boucle)
+    full_response = await appel_hors_cascade(
+        "gemini",
+        key_manager=key_manager, bot_label="Sheogorath", modele=GEMINI_FLASH, timeout=30,
+        fabrique=lambda cle: get_safe_genai_client(
+            api_key=cle, http_options={'api_version': 'v1beta'}
+        ).models.generate_content,
+        model=GEMINI_FLASH,
+        contents=rumor_prompt,
+    )
     
     # Repli Mistral. ⚠️ C'etait nemotron:free (OPENROUTER_FREE), ecarte pour FUITE DE
     # RAISONNEMENT : il recopie sa pensee dans `content`. Ces appels-ci sont DIRECTS,
@@ -1125,17 +1142,14 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     # Mistral est le bon repli : autre fournisseur que Gemini (quota independant,
     # tout l'interet d'un repli) et il passe les criteres d'admission.
     if not full_response and mistral_client:
-        try:
-            chat = await asyncio.to_thread(
-                mistral_client.chat.complete,
-                model=MISTRAL_MAIN,
-                messages=[{"role": "user", "content": rumor_prompt}],
-                temperature=1.0,
-                max_tokens=300
-            )
-            full_response = chat.choices[0].message.content
-        except Exception as e:
-            logger.warning(f"⚠️ [RUMEUR SHEO] Mistral failed: {e}")
+        full_response = await appel_hors_cascade(
+            "mistral", mistral_client.chat.complete,
+            key_manager=key_manager, bot_label="Sheogorath", modele=MISTRAL_MAIN, timeout=30,
+            model=MISTRAL_MAIN,
+            messages=[{"role": "user", "content": rumor_prompt}],
+            temperature=1.0,
+            max_tokens=300,
+        )
     
     if not full_response:
         # Repli (les 2 IA ont échoué) : décrets variés DANS la voix de Sheogorath,
@@ -1348,39 +1362,25 @@ async def check_missed_mentions_sheo():
                     
                     # Essayer les APIs dans l'ordre
                     if groq_client:
-                        try:
-                            chat = await asyncio.wait_for(
-                                asyncio.to_thread(
-                                    groq_client.chat.completions.create,
-                                    messages=[{"role": "user", "content": late_prompt}],
-                                    model=GROQ_FAST,
-                                    **groq_kwargs(GROQ_FAST),
-                                    temperature=0.95,
-                                    max_tokens=200
-                                ),
-                                timeout=30
-                            )
-                            response_text = chat.choices[0].message.content
-                        except Exception as e:
-                            logger.warning(f"⚠️ [MISSED MENTION] Groq fail: {e}")
-                    
+                        response_text = await appel_hors_cascade(
+                            "groq", groq_client.chat.completions.create,
+                            key_manager=key_manager, bot_label="Sheogorath",
+                            modele=GROQ_FAST, timeout=30,
+                            messages=[{"role": "user", "content": late_prompt}],
+                            model=GROQ_FAST,
+                            **groq_kwargs(GROQ_FAST),
+                            temperature=0.95,
+                            max_tokens=200,
+                        )
+
                     if not response_text:
-                        api_key = key_manager.get_key("gemini")
-                        if api_key:
-                            try:
-                                gclient = get_safe_genai_client(api_key=api_key)
-                                resp = await asyncio.wait_for(
-                                    asyncio.to_thread(
-                                        gclient.models.generate_content,
-                                        model=GEMINI_FLASH, contents=late_prompt
-                                    ),
-                                    timeout=30
-                                )
-                                response_text = resp.text
-                            except Exception as e:
-                                error_code = getattr(e, "code", getattr(e, "status_code", 0))
-                                key_manager.report_error("gemini", api_key, error_code)
-                                logger.warning(f"⚠️ [MISSED MENTION] Gemini fail: {e}")
+                        response_text = await appel_hors_cascade(
+                            "gemini",
+                            key_manager=key_manager, bot_label="Sheogorath",
+                            modele=GEMINI_FLASH, timeout=30,
+                            fabrique=lambda cle: get_safe_genai_client(api_key=cle).models.generate_content,
+                            model=GEMINI_FLASH, contents=late_prompt,
+                        )
                     
                     if not response_text:
                         # Fallback statique
@@ -1700,35 +1700,23 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
         
         # LLM Call
         if mistral_client:
-            try:
-                chat = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        mistral_client.chat.complete,
-                        model=MISTRAL_MAIN,
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=1.0,
-                        max_tokens=300
-                    ),
-                    timeout=15
-                )
-                fake_text = chat.choices[0].message.content
-            except Exception as e:
-                logger.debug(f"[IMPOSTEUR] Mistral a echoue, repli sur le texte par defaut : {e}")
-        
+            fake_text = await appel_hors_cascade(
+                "mistral", mistral_client.chat.complete,
+                key_manager=key_manager, bot_label="Sheogorath", modele=MISTRAL_MAIN,
+                model=MISTRAL_MAIN,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=1.0,
+                max_tokens=300,
+            ) or fake_text
+
         if fake_text == "Je suis un imposteur !" and groq_client:
-             try:
-                chat = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        groq_client.chat.completions.create,
-                        model=GROQ_FAST,
-                        **groq_kwargs(GROQ_FAST),
-                        messages=[{"role": "user", "content": prompt}]
-                    ),
-                    timeout=15
-                )
-                fake_text = chat.choices[0].message.content
-             except Exception as e:
-                 logger.debug(f"[IMPOSTEUR] Groq a echoue, repli sur le texte par defaut : {e}")
+            fake_text = await appel_hors_cascade(
+                "groq", groq_client.chat.completions.create,
+                key_manager=key_manager, bot_label="Sheogorath", modele=GROQ_FAST,
+                model=GROQ_FAST,
+                **groq_kwargs(GROQ_FAST),
+                messages=[{"role": "user", "content": prompt}],
+            ) or fake_text
 
         # Nettoyage
         fake_text = fake_text.replace('"', '').strip()
@@ -1938,33 +1926,21 @@ async def on_message(message):
             
             # Generation (Fastest avail)
             if groq_client:
-                 try:
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            groq_client.chat.completions.create,
-                            model=GROQ_FAST,
-                            **groq_kwargs(GROQ_FAST),
-                            messages=[{"role": "user", "content": full_prompt}]
-                        ),
-                        timeout=15
-                    )
-                    fake_text = chat.choices[0].message.content
-                 except Exception as e:
-                     logger.debug(f"[IMPOSTEUR] Groq a echoue, repli sur le texte par defaut : {e}")
+                fake_text = await appel_hors_cascade(
+                    "groq", groq_client.chat.completions.create,
+                    key_manager=key_manager, bot_label="Sheogorath", modele=GROQ_FAST,
+                    model=GROQ_FAST,
+                    **groq_kwargs(GROQ_FAST),
+                    messages=[{"role": "user", "content": full_prompt}],
+                ) or fake_text
             elif mistral_client:
-                try:
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            mistral_client.chat.complete,
-                            model=MISTRAL_MAIN,
-                            messages=[{"role": "user", "content": full_prompt}],
-                            max_tokens=300
-                        ),
-                        timeout=15
-                    )
-                    fake_text = chat.choices[0].message.content
-                except Exception as e:
-                    logger.debug(f"[IMPOSTEUR] Mistral a echoue, repli sur le texte par defaut : {e}")
+                fake_text = await appel_hors_cascade(
+                    "mistral", mistral_client.chat.complete,
+                    key_manager=key_manager, bot_label="Sheogorath", modele=MISTRAL_MAIN,
+                    model=MISTRAL_MAIN,
+                    messages=[{"role": "user", "content": full_prompt}],
+                    max_tokens=300,
+                ) or fake_text
             
             fake_text = fake_text.replace('"', '').strip()
             await send_imposter_message(message, target, fake_text)
@@ -1999,35 +1975,23 @@ async def on_message(message):
             fake_text = "Moi aussi je dis des choses !" # Fallback
             
             if mistral_client:
-                try:
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            mistral_client.chat.complete,
-                            model=MISTRAL_MAIN,
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=1.0,
-                            max_tokens=300
-                        ),
-                        timeout=15
-                    )
-                    fake_text = chat.choices[0].message.content
-                except Exception as e:
-                    logger.debug(f"[IMPOSTEUR] Mistral a echoue, repli sur le texte par defaut : {e}")
-            
+                fake_text = await appel_hors_cascade(
+                    "mistral", mistral_client.chat.complete,
+                    key_manager=key_manager, bot_label="Sheogorath", modele=MISTRAL_MAIN,
+                    model=MISTRAL_MAIN,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=1.0,
+                    max_tokens=300,
+                ) or fake_text
+
             elif groq_client:
-                 try:
-                    chat = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            groq_client.chat.completions.create,
-                            model=GROQ_FAST,
-                            **groq_kwargs(GROQ_FAST),
-                            messages=[{"role": "user", "content": prompt}]
-                        ),
-                        timeout=15
-                    )
-                    fake_text = chat.choices[0].message.content
-                 except Exception as e:
-                     logger.debug(f"[IMPOSTEUR] Groq a echoue, repli sur le texte par defaut : {e}")
+                fake_text = await appel_hors_cascade(
+                    "groq", groq_client.chat.completions.create,
+                    key_manager=key_manager, bot_label="Sheogorath", modele=GROQ_FAST,
+                    model=GROQ_FAST,
+                    **groq_kwargs(GROQ_FAST),
+                    messages=[{"role": "user", "content": prompt}],
+                ) or fake_text
 
             fake_text = fake_text.replace('"', '').strip()
             await send_imposter_message(message, message.author, fake_text)

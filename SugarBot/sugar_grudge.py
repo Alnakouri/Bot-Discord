@@ -23,6 +23,20 @@ logger = logging.getLogger("sugar_grudge")
 
 MAX_SCORE = 5
 POSITIVE_COOLDOWN = 600  # secondes entre deux gestes gentils comptabilisés
+
+# ⚠️ Une EXCUSE n'est pas un « merci » : c'est LE geste de rédemption, et lui appliquer
+# le cooldown des gestes gentils rendait le pardon inatteignable. Mesuré en test live le
+# 2026-09-07 : six insultes d'affilée, « dsl je m'excuse », et Sugar dit encore
+# « peteur ». Elle a sa propre horloge, courte — assez pour que « dsl dsl dsl » ne
+# solde pas le carnet d'un coup, pas assez pour qu'une excuse reste sans effet.
+APOLOGY_COOLDOWN = 60
+
+# Une rafale d'insultes est UN emportement, pas trois offenses. Sans cette fenêtre,
+# trois messages en dix secondes portaient le score à 5 (plafond), et il fallait ensuite
+# trois excuses espacées de dix minutes pour revenir à zéro : le carnet durcissait sans
+# jamais se relâcher. Une nouvelle offense APRÈS la fenêtre re-monte le score, elle.
+AGGRO_WINDOW = 120
+
 LLM_COOLDOWN = 60
 
 LLM_CLASSIFY_PROMPT = (
@@ -157,11 +171,16 @@ def tone_directive(text):
 class GrudgeBook:
     """Rancune persistée par utilisateur. Cloisonné par user_id, aucun contenu stocké."""
 
-    def __init__(self, filename, positive_cooldown=POSITIVE_COOLDOWN, llm_enabled=True):
+    def __init__(self, filename, positive_cooldown=POSITIVE_COOLDOWN, llm_enabled=True,
+                 apology_cooldown=APOLOGY_COOLDOWN, aggro_window=AGGRO_WINDOW):
         self.filename = filename
         self.positive_cooldown = positive_cooldown
+        self.apology_cooldown = apology_cooldown
+        self.aggro_window = aggro_window
         self.llm_enabled = llm_enabled
-        self.book = {}  # {uid: {"score": int, "last_day": "YYYY-MM-DD", "last_positive_ts": float}}
+        # {uid: {"score": int, "last_day": "YYYY-MM-DD", "last_positive_ts": float,
+        #        "last_apology_ts": float, "last_aggro_ts": float}}
+        self.book = {}
         self._load()
 
     def _load(self):
@@ -210,19 +229,35 @@ class GrudgeBook:
         old_score = entry.get("score", 0)
         redeemed = False
 
+        now = time.time()
+
         if tone == "aggro":
-            entry["score"] = min(MAX_SCORE, old_score + 2)
-            if entry["score"] != old_score:
-                logger.info(f"🖤 [CARNET] {uid} inscrit au carnet ({old_score}→{entry['score']})")
+            # Une rafale = UN emportement. Sans ça, trois insultes en dix secondes
+            # plafonnaient le carnet et rendaient toute excuse dérisoire.
+            meme_emportement = (now - entry.get("last_aggro_ts", 0.0)) < self.aggro_window
+            entry["last_aggro_ts"] = now
+            if meme_emportement:
+                logger.info(f"🖤 [CARNET] {uid} enchaîne dans le même emportement "
+                            f"(score inchangé : {old_score})")
+            else:
+                entry["score"] = min(MAX_SCORE, old_score + 2)
+                if entry["score"] != old_score:
+                    logger.info(f"🖤 [CARNET] {uid} inscrit au carnet ({old_score}→{entry['score']})")
         elif tone in ("apology", "kind") and old_score > 0:
-            now = time.time()
-            if now - entry.get("last_positive_ts", 0.0) >= self.positive_cooldown:
+            # ⚠️ Deux horloges séparées : une excuse ne doit pas être bloquée par un
+            # « merci » d'il y a cinq minutes, ni l'inverse.
+            horloge = "last_apology_ts" if tone == "apology" else "last_positive_ts"
+            attente = self.apology_cooldown if tone == "apology" else self.positive_cooldown
+            if now - entry.get(horloge, 0.0) >= attente:
                 delta = 2 if tone == "apology" else 1
                 entry["score"] = max(0, old_score - delta)
-                entry["last_positive_ts"] = now
+                entry[horloge] = now
                 redeemed = entry["score"] == 0  # pardon gagné par un GESTE (pas par le temps)
                 logger.info(f"🍬 [CARNET] {uid} se rachète ({old_score}→{entry['score']})"
                             + (" — PARDONNÉ" if redeemed else ""))
+            else:
+                logger.info(f"🍬 [CARNET] {uid} : geste « {tone} » trop rapproché du "
+                            f"précédent, score inchangé ({old_score})")
 
         self._save()
         return redeemed
