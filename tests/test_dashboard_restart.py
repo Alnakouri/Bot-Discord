@@ -267,3 +267,70 @@ def test_le_contexte_de_lancement_est_fige_au_demarrage():
 
     # Figé avant tout import lourd, donc avant qu'un module puisse changer de dossier.
     assert src.index("_LANCEMENT_CWD = os.getcwd()") < src.index("from fastapi import FastAPI")
+
+
+# ---------------------------------------------------------------------------
+# Le garde de port au DEMARRAGE : uvicorn se lie trop tard
+# ---------------------------------------------------------------------------
+
+def test_le_lancement_verifie_le_port_avant_de_demarrer_l_application():
+    """⚠️ Constate le 2026-09-07, deux fenetres ouvertes sur le meme dashboard :
+
+        INFO:     Application startup complete.
+        ERROR:    [Errno 10048] error while attempting to bind on address ...
+
+    Uvicorn joue les hooks de demarrage de l'application AVANT d'echouer a se lier.
+    La 2e instance s'ouvre donc a demi — elle touche `data/` et les journaux que les
+    six bots live partagent — puis meurt sur un winerror brut. L'utilisateur lit
+    « startup complete » suivi d'une erreur et croit a une panne du dashboard.
+
+    ⚠️ On exige l'APPEL, pas la presence du nom : un simple import passerait le test
+    alors que rien ne garderait le port.
+    """
+    import ast
+
+    source = (_backend / "app.py").read_text(encoding="utf-8")
+    arbre = ast.parse(source, filename="app.py")
+
+    principal = [
+        n for n in arbre.body
+        if isinstance(n, ast.If) and ast.unparse(n.test).replace('"', "'") == "__name__ == '__main__'"
+    ]
+    assert principal, "app.py n'a plus de bloc `if __name__ == \"__main__\"`"
+    bloc = principal[0]
+
+    appels = [n for n in ast.walk(bloc)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+              and n.func.id == "port_libre" and n.args]
+    assert appels, (
+        "Le lancement n'interroge pas `port_libre()` : une 2e instance demarrera "
+        "l'application avant d'echouer a se lier."
+    )
+
+    # Et le garde doit COUPER, pas seulement prevenir.
+    sorties = [n for n in ast.walk(bloc)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "exit"]
+    assert sorties, "Le garde previent mais ne coupe pas : uvicorn demarrera quand meme."
+
+    # Le garde doit precede `uvicorn.run`, sinon il ne sert a rien.
+    ligne_garde = min(a.lineno for a in appels)
+    lancements = [n.lineno for n in ast.walk(bloc)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                  and n.func.attr == "run"]
+    assert lancements and ligne_garde < min(lancements), (
+        "Le garde de port doit passer AVANT `uvicorn.run`."
+    )
+
+
+def test_le_garde_de_port_teste_par_bind_et_non_par_connexion():
+    """`port_libre` est la bonne fonction, et elle reserve au lieu de se connecter.
+
+    Se connecter sans jamais accepter remplit la file d'attente d'en face : sondee en
+    boucle, la methode par connexion finit par declarer libre un port toujours pris.
+    """
+    import inspect
+
+    source = inspect.getsource(port_libre)
+    assert ".bind(" in source
+    assert ".connect(" not in source

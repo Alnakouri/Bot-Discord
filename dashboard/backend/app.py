@@ -691,7 +691,35 @@ async def health():
     return {"status": "ok"}
 
 if __name__ == "__main__":
+    # ⚠️ Le port AVANT tout le reste. Constate le 2026-09-07 : le dashboard tournait
+    # deja (relance par son propre bouton) et un second `start_dashboard.bat` a affiche
+    #
+    #     INFO:     Application startup complete.
+    #     ERROR:    [Errno 10048] error while attempting to bind on address ...
+    #
+    # Uvicorn joue les hooks de demarrage de l'application AVANT d'echouer a se lier :
+    # la 2e instance s'ouvre a demi — elle touche `data/` et les journaux que les bots
+    # live partagent — puis meurt sur un winerror brut. L'utilisateur lit
+    # « startup complete » suivi d'une erreur, et croit a une panne du dashboard.
+    #
+    # `port_libre()` existait deja dans le relanceur, ecrit exactement pour cette
+    # question, et personne ne l'appelait ici. Il teste par BIND, jamais par connexion :
+    # se connecter sans accepter remplit la file d'attente d'en face et finit par se
+    # mentir a soi-meme (cf. son commentaire).
+    from relauncher import port_libre
+
+    if not port_libre(DASHBOARD_PORT):
+        print(
+            f"\n[DASHBOARD] Le port {DASHBOARD_PORT} est DEJA pris : "
+            "le dashboard tourne deja.\n"
+            f"            Ouvrir http://127.0.0.1:{DASHBOARD_PORT} : "
+            "il n'y a rien a relancer.\n"
+            "            (Pour repartir de zero : fermer l'autre fenetre, "
+            "puis relancer celle-ci.)\n"
+        )
+        sys.exit(1)
+
     # Bind localhost uniquement : ce dashboard expose le contrôle des bots
     # (start/stop) SANS authentification ; il ne doit jamais être joignable
     # depuis le LAN. reload désactivé (pas de mode debug en exécution réelle).
-    uvicorn.run("app:app", host="127.0.0.1", port=8501, reload=False)
+    uvicorn.run("app:app", host="127.0.0.1", port=DASHBOARD_PORT, reload=False)
