@@ -158,6 +158,55 @@ def test_une_enveloppe_qui_contient_encore_quelque_chose_est_intacte():
 
 
 # ---------------------------------------------------------------------------
+# La ponctuation ORPHELINE : celle qui rattachait le morceau retire
+# ---------------------------------------------------------------------------
+
+def test_une_virgule_orpheline_en_tete_de_replique_disparait():
+    """⚠️ Constate en live le 2026-09-07 a 18:37 (journal du conteneur : 16:37:36).
+
+    Sheogorath a repondu, mot pour mot :
+
+        « , @LeDev. Tu penses vraiment dompter le vent en le nommant serviteur... »
+
+    Meme mecanisme que l'enveloppe vide du 06/09, une couche plus loin : un nettoyeur
+    retire `[whisper]` ou `<note>...</note>` et laisse la virgule qui les accrochait.
+    Une parenthese vide se voit ; une virgule en tete passe pour une faute du modele.
+    """
+    from sheo_llm import clean_internal_tags
+
+    assert clean_internal_tags("[whisper], @LeDev. Tu penses dompter le vent ?") \
+        .startswith("@LeDev")
+    assert clean_internal_tags("<note>Haskill se penche</note>, @LeDev. Le vent.") \
+        .startswith("@LeDev")
+
+
+def test_deux_separateurs_colles_par_un_retrait_fusionnent():
+    """Le morceau retire etait AU MILIEU : `Ah, [laugh], mortel` -> `Ah, mortel`."""
+    from sheo_llm import clean_internal_tags
+
+    assert clean_internal_tags("Ah, [laugh], mortel !") == "Ah, mortel !"
+
+
+@pytest.mark.parametrize("propre", [
+    "... et puis le silence.",              # reprise a mi-pensee : VOULUE
+    "\u2026 le silence, encore.",
+    "\u2014 Le vent, dis-tu ?",                 # auto-interruption : VOULUE
+    "Vraiment ; oui : c'est cela !",        # espace avant ; : ! ? = typographie FR
+    "Un cornichon (vraiment) chantant.",
+    "Que veux-tu, mortel ?",
+])
+def test_une_replique_propre_n_est_jamais_touchee(propre):
+    """⚠️ La garde qui compte : le filet ne doit pas mordre sur du legitime.
+
+    Les points de suspension et le tiret d'auto-interruption sont des ouvertures
+    voulues, et l'espace francais devant `;` `:` `!` `?` est CORRECT.
+    """
+    from sheo_llm import _retirer_ponctuation_orpheline
+
+    assert _retirer_ponctuation_orpheline(propre) == propre
+
+
+# ---------------------------------------------------------------------------
 # Le bloc [TON] rouvrait l'humeur que le systeme venait de trancher
 # ---------------------------------------------------------------------------
 #

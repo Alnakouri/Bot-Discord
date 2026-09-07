@@ -100,6 +100,10 @@ def clean_internal_tags(response_text):
     # la reponse de Sheo se terminait par « ...crise de rage ? 🎩 () ».
     response_text = _retirer_enveloppes_vides(response_text)
 
+    # ⚠️ Et la ponctuation qui RATTACHAIT le morceau retire. Meme mecanisme, une couche
+    # plus loin : une enveloppe vide se voit (`()`), une virgule orpheline non.
+    response_text = _retirer_ponctuation_orpheline(response_text)
+
     # Espaces multiples
     response_text = re.sub(r"\s+", " ", response_text).strip()
     return response_text
@@ -122,6 +126,51 @@ def _retirer_enveloppes_vides(texte):
         return texte
     for _ in range(5):
         nouveau = _ENVELOPPES_VIDES.sub("", texte)
+        if nouveau == texte:
+            break
+        texte = nouveau
+    return texte
+
+
+# Une amorce qui ne peut jamais etre voulue. `…` et `...` en sont exclus : une reponse
+# qui commence par des points de suspension est LEGITIME (reprise a mi-pensee), et
+# `—` aussi (auto-interruption, cf. _trim_incomplete_tail).
+_AMORCE_ORPHELINE = re.compile(r"^[\s]*(?!\.\.\.|…)[,;:.!?]+[\s]*")
+
+# Deux separateurs colles par le retrait de ce qui les separait.
+_SEPARATEURS_COLLES = re.compile(r",\s*(?=[,.;:!?])")
+
+# Un espace laisse DEVANT une virgule. ⚠️ Uniquement la virgule : en typographie
+# francaise, l'espace avant `;` `:` `!` `?` est CORRECT et doit survivre.
+_ESPACE_AVANT_VIRGULE = re.compile(r"\s+,")
+
+
+def _retirer_ponctuation_orpheline(texte):
+    """Retire la ponctuation qui rattachait un morceau supprime par les nettoyeurs.
+
+    ⚠️ Constate en live le 2026-09-07, 18:37. Sheogorath a repondu :
+
+        « , @LeDev. Tu penses vraiment dompter le vent... »
+
+    Meme mecanisme que les enveloppes vides ([[_retirer_enveloppes_vides]]), une couche
+    plus loin : `clean_internal_tags` retire `[whisper]`, `<note>...</note>`, `[INST]`
+    — et laisse la virgule qui les accrochait a la phrase. Une parenthese vide se voit ;
+    une virgule en tete de replique passe pour une faute du modele.
+
+    Trois formes, et rien d'autre :
+      * l'amorce  : `, @LeDev.`  ->  `@LeDev.`
+      * le collage : `Ah, , mortel`   ->  `Ah, mortel`
+      * l'espace  : `Ah , mortel`     ->  `Ah, mortel`
+
+    ⚠️ Ce qui NE doit PAS bouger : une replique ouverte par `...` ou `—` (voulue), et
+    l'espace typographique francais devant `;` `:` `!` `?`.
+    """
+    if not texte:
+        return texte
+    for _ in range(5):
+        nouveau = _SEPARATEURS_COLLES.sub("", texte)
+        nouveau = _ESPACE_AVANT_VIRGULE.sub(",", nouveau)
+        nouveau = _AMORCE_ORPHELINE.sub("", nouveau)
         if nouveau == texte:
             break
         texte = nouveau

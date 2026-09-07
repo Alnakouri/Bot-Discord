@@ -205,11 +205,60 @@ sorti **entierement vide**. Un filtre qui efface tout le monde est pire que le d
 **A constater au prochain live** : `/leaderboard` ne montre les 3 bots qu'une fois les
 6 conteneurs redemarres (c'est au demarrage qu'ils se declarent).
 
-### Non concluant, a refaire
+### ▶ SESSION 1-BIS JOUEE le 07/09, 18:35-20:58 — L'HUMEUR S'ENTEND
 
-**L'humeur de Sheo et le moule `Haskill`** : il n'a repondu qu'UNE fois. Le filet
-anti-tics exige >= 2 reponses anterieures et il venait de redemarrer. Refaire avec 5-6
-messages espaces sur ~20 min — c'est la seule mesure qui demande de la duree.
+13 echanges sur 2 h 23, la seule mesure qui demandait de la duree. **Concluant.**
+
+⚠️ Horloge du conteneur : **18:59 conteneur = 20:59 hote**, soit −2 h. Toujours
+`--since`, jamais l'heure affichee ([[gotcha-docker-logs-sans-since]]).
+
+| Discord | Journal | Humeur | Ce que la replique FAIT |
+|---|---|---|---|
+| 18:35 | 16:35:20 | dementia | « murmure aux ombres », « un piege », « les murs ont des oreilles gourmandes » 🔪 |
+| 18:36 | 16:36:18 | dementia | « le reflet du 47 qui te suit », « Shhh... serments oublies » 🕯️🔪 |
+| 18:36 | 16:36:47 | dementia | « phare sans ame », « les convives sont des ombres », « un reflet brise » |
+| 18:37 | 16:37:07 | dementia | rend le coup sur « tete de cul », sans se coucher 😈 |
+| 18:37 | 16:37:36 | dementia | « les secrets que tu caches meme a toi-meme » 🕯️🔪 |
+| 18:42 | 16:42:24 | **bliss** | « quel honneur inattendu ! », chapeau de confiture, partage 😏 |
+| 18:43 | 16:43:05 | **neutral** | fantaisie plate : ni menace, ni euphorie |
+| 19:31 | 17:31:06 | dementia | « Hush... les ombres observent », « le dernier echo que tu entends » |
+| 19:31 | 17:31:16 | dementia | « fantomes presses », des phares qui deviennent des yeux |
+| 20:16 | 18:16:15 | dementia | « les os grincent sous la lune », « tes reves les plus obscurs » |
+| 20:52 | 18:52:44 | **bliss** | nuages qui dansent le tango, « illusion parfumee au sucre » 😏 |
+| 20:53 | 18:53:07 | **mania** | « HAHA ! », les trombones qui deviennent des dents — ca deborde |
+| 20:58 | 18:58:43 | **bliss** | « veux-tu une part ? », le fromage qui rit — chaleureux |
+
+**8 dementia insinuent et inquietent, 3 bliss rechauffent et offrent, la seule mania
+explose, la seule neutral ne fait ni l'un ni l'autre. Zero contre-exemple sur 13.**
+Le correctif `910d445` — `consigne_de_ton()` nomme l'humeur active au lieu de rouvrir
+une decision deja prise — tient en conditions reelles.
+
+**Le moule `Haskill` ne tient plus.** 4 mentions, mais 3 repondent aux messages de
+l'utilisateur (Haskill est le SUJET, et le filet a raison de ne pas l'interdire). Une
+seule est spontanee : 18:43, sur une question de carottes. **1 sur 13**, contre 7 sur 8
+avant le correctif ([[gotcha-tic-au-milieu-de-la-replique]]).
+
+**« Cornichon » revient 3 fois** (18:37, 19:31, 20:53) mais espace de ~50 min, donc hors
+de la fenetre des 5 dernieres repliques. A ce rythme c'est un running gag, pas un tic :
+ne pas toucher au reglage pour ca.
+
+### Le defaut qu'elle a sorti — CORRIGE
+
+**Une virgule orpheline en tete de replique.** A 18:37, « si si » ->
+
+    « , @LeDev. Tu penses vraiment dompter le vent en le nommant serviteur... »
+
+Meme mecanisme que la `()` vide du 06/09, **une couche plus loin** : `clean_internal_tags`
+retire `[whisper]`, `<note>...</note>`, `[INST]` — et laisse la ponctuation qui les
+accrochait a la phrase. Une parenthese vide se voit ; une virgule en tete passe pour une
+faute du modele.
+
+`_retirer_ponctuation_orpheline()` ramasse trois formes et rien d'autre : l'amorce
+(`, @X` -> `@X`), le collage (`Ah, , mortel` -> `Ah, mortel`), l'espace avant virgule.
+
+⚠️ Ce qu'il ne touche PAS, et qui est teste : une replique ouverte par `...` ou `—`
+(reprise a mi-pensee, auto-interruption — voulues), et l'espace typographique francais
+devant `;` `:` `!` `?`.
 
 ## Test live du 06/09 au soir — Sheogorath, 9 echanges
 
