@@ -70,7 +70,12 @@ login, c'est le verrou qui mord, pas une panne.
    `true` pour les 6 ; le **basculer** a `false` sur Sheo, verifier que `!decret` refuse,
    le remettre a `true`, verifier qu'il repond. C'est le **basculement** qu'on teste.
 2. **Bouton de redemarrage** — le declencher sur un bot, verifier qu'il revient Up.
-   ⚠️ Il pilote un process **Python local**, pas Docker ([[plan-bouton-redemarrage-dashboard]]).
+   ⚠️ **La note « il pilote un process Python local » est PERIMEE** (verifie le 07/09) :
+   `bot_manager.restart_bot()` lance `docker compose restart <service>`, et les 6 clefs
+   du `BOT_REGISTRY` correspondent exactement aux 6 services du `docker-compose.yml`
+   (`sheogorath` `maiq` `alfred` `johnny` `sugar` `malena`). Le bouton doit donc marcher
+   sur les conteneurs. Les pieges de [[plan-bouton-redemarrage-dashboard]] restent vrais
+   pour le redemarrage du DASHBOARD lui-meme (`app.py:652`), pas pour celui d'un bot.
 3. **Graphes et UX** — les charts se remplissent, les confirmations destructives
    demandent confirmation, le statut affiche est le **vrai** statut.
 4. **Apparence des statuts** — ouvrir la liste des membres Discord et **regarder**. Les
