@@ -81,6 +81,45 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         return
 
 
+NL = "\n"  # saut de ligne, pour les blocs multi-lignes ci-dessous
+
+
+def est_broadcaster(bot_id: str) -> bool:
+    """Le suffixe `_broadcaster` change QUEL COMPTE doit se connecter.
+
+    ⚠️ C'est le seul echec probable de la manip EventSub : se connecter avec le compte
+    du BOT rend un token qui n'est proprietaire d'aucune chaine → tous les abonnements
+    « channel.… » repondent 403. Le message affiche doit donc suivre le suffixe, sinon
+    l'outil dicte lui-meme la faute qu'il est cense eviter.
+    """
+    return bot_id.endswith("_broadcaster")
+
+
+def consigne_compte(bot_id: str) -> str:
+    """La phrase affichee juste avant d'ouvrir le navigateur."""
+    if est_broadcaster(bot_id):
+        return (">>> Connecte-toi avec le COMPTE DU STREAMER (le proprietaire de la "
+                "chaine), PAS avec le compte du bot, puis autorise l'application.")
+    return ">>> Connecte-toi avec le COMPTE DU BOT puis autorise l'application."
+
+
+def lignes_env(bot_id: str, access_token: str, refresh_token: str) -> str:
+    """Ce qu'on recopie dans le .env — ou surtout, ce qu'on n'y recopie PAS.
+
+    ⚠️ Un token broadcaster colle dans TWITCH_OAUTH_TOKEN ferait parler le bot SOUS
+    L'IDENTITE DU STREAMER dans son propre chat. Le fichier d'auth dedie suffit :
+    setup_twitch_chat le repere tout seul.
+    """
+    if est_broadcaster(bot_id):
+        return (NL + "ATTENTION : NE recopie PAS ces tokens dans le .env du bot : ils sont ceux du"
+                + NL + "   STREAMER, et TWITCH_OAUTH_TOKEN ferait parler le bot sous son identite."
+                + NL + "   Le fichier d'auth ci-dessus suffit, EventSub le trouve seul.")
+    return (NL + "--- A ajouter dans le .env du bot (puis re-chiffrer) ---"
+            + NL + "TWITCH_OAUTH_TOKEN=" + access_token
+            + NL + "TWITCH_REFRESH_TOKEN=" + refresh_token
+            + NL + "--------------------------------------------------------")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Autorisation OAuth Twitch par bot.")
     parser.add_argument("--bot", required=True, help="bot_id (ex: johnny, sheogorath)")
@@ -102,7 +141,7 @@ def main():
         "force_verify": "true",  # force le choix du compte (évite la session Sheo)
     })
     url = f"{AUTHORIZE_URL}?{qs}"
-    print("\n>>> Connecte-toi avec le COMPTE DU BOT puis autorise l'application.\n")
+    print("\n" + consigne_compte(args.bot) + "\n")
     print(f"Si le navigateur ne s'ouvre pas, ouvre ce lien manuellement :\n{url}\n")
     webbrowser.open(url)
 
@@ -156,10 +195,7 @@ def main():
         print(f"\n✅ Tokens écrits dans : {auth_path}")
 
     # 5. Afficher les lignes .env à intégrer (TWITCH_OAUTH_TOKEN est REQUIS au boot)
-    print("\n--- À ajouter dans le .env du bot (puis re-chiffrer) ---")
-    print(f"TWITCH_OAUTH_TOKEN={access_token}")
-    print(f"TWITCH_REFRESH_TOKEN={refresh_token}")
-    print("--------------------------------------------------------")
+    print(lignes_env(args.bot, access_token, refresh_token))
     print(f"\nScopes accordés : {', '.join(SCOPES)}")
     print("Token valide ~", int(expires_in), "s ; le bot le rafraîchira automatiquement via le refresh_token.")
 
