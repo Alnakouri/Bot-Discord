@@ -1,143 +1,217 @@
-# PLAN — le protocole des tests live
+# PLAN — Phase 3 de la repartie : apprendre de ses defaites
 
-Redaction : Claude, le 2026-09-06. Ce fichier remplace le plan « 5 MOOD CHANGE », clos et
-pousse (`da4a852` + `0c1e707` + `6c97732`, CI verte, deploye).
+Redaction : Claude, le 2026-09-08, sur feu vert user du jour (« Phase 3 repartie (re-spec) »).
+Remplace le protocole des tests live : ses sessions 1, 1-bis et 2 sont **jouees et closes**
+(detail en memoire, `test-live-session1-2026-09-07`), et sa partie Twitch est **gelee** —
+elle est conservee telle quelle en **annexe**, a rouvrir seulement quand l'utilisateur en
+reparle.
 
-Tout ce qui reste ouvert exige **un humain, un clic ou un vrai live**. Ce plan dit
-comment faire chacun, dans quel ordre, et **ce que chaque etape prouve**.
-
----
-
-## La regle qui gouverne tout le reste
-
-⚠️ **Un test live ne vaut que par sa preuve.** « Ca a marche » n'est pas une preuve : un
-extrait de journal ou une capture en est une. Apres chaque session, borner la fenetre —
-un `restart` ne remet PAS le journal a zero ([[gotcha-docker-logs-sans-since]]) :
-
-    docker logs --since 15m bot-sheogorath 2>&1 | grep -iE "ERROR|Traceback"
-
-⚠️ **Les 6 bots partagent le prefixe `!`.** Une commande ambigue reveille plusieurs bots.
-Les commandes ci-dessous sont uniques a un bot, sauf `!oubliemoi` que les 6 portent.
+Execution : **Antigravity**. ⚠️ Relire ce qu'il livre avant de commiter, et commencer par
+`pyflakes`, pas par `pytest` : 62 `logger` indefinis n'avaient casse aucun test.
 
 ---
 
-## Session 1 — les personas (30 min, sans live, sans risque)
+## Ce que le chantier veut obtenir, en une phrase
 
-**Le mode test existe exactement pour ca** : les bots ne publient plus que sur le serveur
-prive `123123123123123123`, Twitch et MP coupes. Le reste du serveur ne voit rien.
-
-**Armer** : dashboard → interrupteur global `test_mode`. Ou a la main dans
-`data/bot_features.json` (`_global.test_mode = true`), puis
-`docker restart` des 6. ⚠️ **Ferme par defaut** : mode actif sans serveur choisi = silence
-total. Le `test_guild_id` est deja renseigne, ne pas le vider.
-
-**Desarmer a la fin.** Un mode test oublie = 6 bots muets sur le vrai serveur.
-
-| Ce qu'on veut voir | Comment le provoquer | Ce qui compte |
-|---|---|---|
-| **Humeurs de Sheo a l'ecrit** | lui parler 5-6 fois d'affilee, sur ~20 min (l'humeur tourne toutes les 5 min) | MAJUSCULES, chuchotement, emoji de ton **qui changent** ; `docker logs` montre `MOOD CHANGE` entre deux |
-| **Longueur = pertinence** | une question courte, puis « raconte-moi tout » | 4 phrases max, 10 seulement sur invitation |
-| **Moule repetitif de Sugar** | 5 messages differents a la suite | les 5 reponses ne doivent pas ouvrir pareil ni finir sur du sucre a chaque fois |
-| **Carnet de rancunes** | insulter Sugar 3 fois, puis s'excuser | le ton durcit, puis la redemption prend |
-| **Repartie** | insulter chaque bot une fois | il encaisse et rend le coup — aucun ne doit se coucher |
-| **Memes FR + lore** | tendre une perche (Kaamelott a Alfred, Night City a Johnny, fromage a Sheo) | la reference tombe juste, sans forcer |
-| **Anti-incrustation** | s'adresser a UN bot par son nom | les 5 autres se taisent |
-| **Transcript non ampute** | faire repondre 2 bots, puis demander au 3e « ils ont dit quoi ? » | il ne doit pas conclure a une panne ([[gotcha-transcript-monologue]]) |
-| **Vision** | poster une image en mentionnant un bot | il la decrit ; **sans** mention, il se tait |
-| **Jeux** | `!enigme` (M'aiq), `!quete` (Sheo), `/quests`, `/leaderboard` | l'**ecran de fin** s'affiche — c'est lui qui manquait, cf. [[verrou-pyflakes-dans-la-suite]] |
-| **Lecture du jour** | parler a un bot pour la 1re fois de la journee | ton adapte, une seule fois par jour et par personne |
-
-Commandes uniques par bot, pour ne pas en reveiller six :
-`!servir` `!parle` `!surveille` (Alfred) · `!gig` `!loot` `!nightcity` `!whisky` `!rant`
-(Johnny) · `!enigme` `!rumeur` `!indice` `!profil` (M'aiq) · `!decret` `!quete` `!fromage`
-`!wabbajack` (Sheo) · `!exploit` `!chanson` `!equipage` (Sugar).
-Malena n'a que `!oubliemoi` : lui parler directement.
-Slash, sur les 6 : `/help` `/ping` `/stats` `/reputation` `/leaderboard` `/quests`
-`/birthday`. ⚠️ Malena ne les avait **jamais** eues — trouve en redigeant ce plan, cable
-et deploye le 06/09 (`[SLASH] 7 commandes synchronisees` dans son journal). C'est
-justement chez elle qu'il faut les essayer.
+Un bot qui se fait battre en joute doit changer de **comportement**, pas apprendre une
+vanne. La lecon retenue est une **meta-regle** (« arrete de te justifier, retourne
+l'accusation »), jamais une repartie figee — une repartie figee redeviendrait le tic que
+trois filets passent deja leur temps a casser.
 
 ---
 
-## Session 2 — les clics du dashboard (15 min)
+## Pourquoi on RE-specifie au lieu de ressortir le design de juin
 
-    dashboard\start_dashboard.bat        # puis http://127.0.0.1:8501
+Le design de 2026-06-10 est toujours en memoire (`plan-repartie-auto-amelioration`), et il
+est bon. Mais **trois de ses appuis n'existent plus**, et les reprendre tels quels ferait
+ecrire du code sans effet :
 
-⚠️ Il n'ecoute **que** sur 127.0.0.1 et exige une session : `/api/bots` rend 401 sans
-login, c'est le verrou qui mord, pas une panne.
-
-1. **Toggle decret** — le seul point vraiment jamais vu bouger. `decret_enabled` est a
-   `true` pour les 6 ; le **basculer** a `false` sur Sheo, verifier que `!decret` refuse,
-   le remettre a `true`, verifier qu'il repond. C'est le **basculement** qu'on teste.
-2. **Bouton de redemarrage** — le declencher sur un bot, verifier qu'il revient Up.
-   ⚠️ **La note « il pilote un process Python local » est PERIMEE** (verifie le 07/09) :
-   `bot_manager.restart_bot()` lance `docker compose restart <service>`, et les 6 clefs
-   du `BOT_REGISTRY` correspondent exactement aux 6 services du `docker-compose.yml`
-   (`sheogorath` `maiq` `alfred` `johnny` `sugar` `malena`). Le bouton doit donc marcher
-   sur les conteneurs. Les pieges de [[plan-bouton-redemarrage-dashboard]] restent vrais
-   pour le redemarrage du DASHBOARD lui-meme (`app.py:652`), pas pour celui d'un bot.
-3. **Graphes et UX** — les charts se remplissent, les confirmations destructives
-   demandent confirmation, le statut affiche est le **vrai** statut.
-4. **Apparence des statuts** — ouvrir la liste des membres Discord et **regarder**. Les
-   logs prouvent que 12 statuts par jour sont generes ; ils ne disent pas s'ils sont
-   lisibles.
+1. **Le code d'origine est perdu**, jamais commite (`git log -S` = 0 occurrence). Il n'y a
+   rien a recuperer, seulement a reconstruire.
+2. **Le but affiche a peri.** Phase 3 devait « mieux nourrir la cascade REPARTEE **quand
+   Grok la pilotait** ». Grok a disparu du code, et `get_model_cascade` rend aujourd'hui
+   la **meme liste** pour `TEXT` et pour `REPARTEE`, prouve a l'execution sur les 6
+   personas. ⚠️ **Ce chantier ne doit RIEN attendre du routage et n'y touche pas.**
+   `RequestType.REPARTEE` reste un signal de classification juste, c'est tout.
+3. **La « Couche A » est deja livree — sous un autre nom, et chez UN seul bot.** Le design
+   demandait un `detect_gimmick_lock`. Ce qui existe s'appelle `build_anti_tic_consigne`
+   (`Sheogorath/sheo_llm.py:527`) cote Discord, et `_build_anti_tic_consigne`
+   (`shared/twitch/llm.py:185`) cote Twitch. Chercher le nom du CONCEPT, jamais le nom
+   qu'on lui aurait donne soi-meme.
 
 ---
 
-## ▶ SESSION 2 JOUEE le 07/09, 21:00-21:40 — LES 4 POINTS PASSENT
+## L'etat verifie le 08/09 — a ne pas re-chercher
 
-1. **Toggle decret** — le seul point jamais vu bouger. `True -> False` : `!decret`
-   refuse. `False -> True` : il publie, role assigne 600 s, titre extrait. **Le
-   basculement marche dans les DEUX sens.**
-2. **Bouton de redemarrage d'un bot** — `johnny` et `maiq` sont repartis (`Up 2 minutes`
-   quand les autres etaient a 16 min et 11 h). Il pilote bien `docker compose restart`.
-3. **Bouton de redemarrage du DASHBOARD** — il se relance et sert de nouveau.
-4. **Apparence des statuts** — regardes dans la liste des membres : les 6 sont lisibles
-   et chacun dans sa voix. C'est le seul point que rien d'automatique ne pouvait juger.
+| Ce qu'on croit devoir ecrire | Ce qui existe deja, et ou |
+|---|---|
+| anti-boucle sur le mot-a-mot | `ResponseMemory` (`shared/response_memory.py`, 28 lignes) + bloc `[ANTI-REPETITION]` chez les 5 bots a transcript |
+| anti-boucle sur le **motif** | `build_anti_tic_consigne` — **chez Sheo SEUL** cote Discord (`bot_sheogorath.py:2279`) ; version generique cote Twitch |
+| few-shot de comebacks tournants | `COMEBACK_POOL` + `get_random_comebacks(5)` injectes par `{comebacks_placeholder}` |
+| longueur de la riposte | `sentence_budget(user_message)` — plus aucune constante |
+| un appel LLM isole, propre | `appel_hors_cascade` (`shared/llm_cascade.py:520`) : cle du pool, quarantaine, `report_error`, tracage, borne de temps |
+| un bot ne nomme jamais sa mecanique | verrou en place depuis le 07/09, 4 fuites corrigees |
 
-### Les 3 defauts qu'elle a sortis — tous corriges
-
-**a. Un 2e lancement du dashboard demarrait l'application avant d'echouer sur le port.**
-Uvicorn joue les hooks de demarrage AVANT de se lier : la 2e instance s'ouvrait a demi —
-elle touche `data/` et les journaux que les 6 bots partagent — puis mourait sur un
-winerror brut. `port_libre()` existait deja dans le relanceur, ecrit pour cette question
-exacte, et personne ne l'appelait au lancement.
-
-**b. Les bots nommaient leur mecanique au salon.** `!decret` desactive repondait
-« (desactive via le dashboard) ». Sheogorath ignore qu'il est un programme — c'est tout
-son personnage. Le verrou ecrit pour ce cas en a trouve **trois autres** : « (Erreur
-API) » chez Malena, « (TTS non configure) » chez Sheo, « Ma voix (ElevenLabs) » chez
-Alfred. Les quatre repassent dans la voix du personnage.
-⚠️ Retirer l'explication de la replique ne doit pas la faire DISPARAITRE : chaque refus
-journalise desormais sa cause, et un test l'exige.
-
-**c. Le client Gemini mourait avant son propre appel** — regression du matin, trouvee
-dans le journal du decret :
-
-    [GEMINI FAIL] gemini-3.5-flash - RuntimeError: Cannot send a request,
-                                     as the client has been closed.
-    [MISTRAL ministral-14b-latest] Sheogorath (hors cascade)
-
-La fabrique rendait `get_safe_genai_client(cle).models.generate_content` : le `Client`
-n'etait alors reference par personne — `client.models` ne garde aucun lien vers lui —
-donc le GC le ramassait et fermait son transport HTTP. **Les 6 sites Gemini hors cascade,
-sur 3 bots, depuis le matin.** Invisible : l'echelon suivant repondait, le decret est
-sorti normal, signe Mistral ([[gotcha-echelon-de-secours-invisible]]).
-
-⚠️ Le premier verrou ecrit pour ca etait une regex `fabrique=.*generate_content` : elle
-ne voit que les fabriques tenant sur UNE ligne, et 3 des 6 sites sont a cheval sur trois.
-**3 fautes sur 6, en annoncant la couverture complete.** Refait sur l'AST.
-
-**CONSTATE LIVE** le 2026-09-08 a 01:02 (journal du conteneur, 23:02:55) :
-
-    ✅ [GEMINI gemini-3.5-flash] Sheogorath (hors cascade)
-    👑 [DECRET] Role 'AMIRAL DE LA BAIGNOIRE VIDE' assigne a LeDev pour 600s
-    🧀 [DÉCRET SHEO PUBLIÉ] Titre: Amiral de la Baignoire Vide
-
-Plus de FAIL, plus de repli sur Mistral : Gemini repond du premier coup, le titre est
-extrait et le role assigne. **Session 2 close, aucun point en suspens.**
+**Les 5 bots a transcript** : Sheogorath, Alfred, Johnny, M'aiq, Sugar.
+**Malena est hors chantier** : elle appelle le LLM avec `transcript=""` — il n'y a pas de
+joute a observer chez elle. ⚠️ C'est la seule exclusion legitime ; partout ailleurs,
+compter **les cinq** avant d'ecrire « fait ».
 
 ---
+
+## Lot 1 — le filet « tu boucles » la ou il manque (4 bots)
+
+**Le defaut, mesurable aujourd'hui** : Alfred, Johnny, M'aiq et Sugar n'ont que le bloc
+`[ANTI-REPETITION]`, qui liste les 5 dernieres repliques et interdit de les **repeter**.
+Il ne voit pas un **moule** qui revient. C'est exactement ce qui a echappe aux filets de
+Sheo le 07/09 : `Haskill, <ordre>` tenait 7 repliques sur 8 sans qu'une seule phrase soit
+repetee.
+
+**A faire** :
+
+1. Promouvoir **une seule** implementation dans `shared/anti_tic.py`, batie sur celle de
+   Sheo — c'est la plus complete, elle porte la garde `message_utilisateur`.
+2. `Sheogorath/sheo_llm.build_anti_tic_consigne` et
+   `shared/twitch/llm._build_anti_tic_consigne` deviennent des enveloppes qui delegent.
+   Leurs tests existants doivent rester verts **sans etre modifies** : c'est eux qui
+   prouvent que la promotion n'a rien perdu.
+3. Cabler les 4 bots la ou ils batissent deja `anti_repeat_prompt`
+   (`bot_alfred.py:1672`, `bot_sugar.py:909`, `bot_johnny.py:985`, `bot_maiq.py:1358`).
+
+⚠️ **Ne JAMAIS interdire le sujet de la conversation.** La garde `message_utilisateur`
+existe pour ca : si le mortel parle de cornichons, le bot doit pouvoir repondre
+cornichons. On interdit la rengaine, jamais le sujet. Un cablage qui oublie de passer le
+message de l'utilisateur rend le filet nuisible, pas seulement inoperant.
+
+⚠️ Un tic vit **au milieu** de la replique, pas seulement a l'amorce ou a la cloture.
+
+---
+
+## Lot 2 — le carnet de lecons (le vrai Phase 3)
+
+Nouveau module **`shared/repartee_lessons.py`**, quatre pieces.
+
+### 1. `detect_defeat_signal(message_utilisateur) -> str | None`
+
+Rend le motif reconnu, ou `None`. Deux familles seulement :
+- un **verdict sur la joute** (« ta repartie est claquee », « t'es a court », « tu te
+  repetes ») ;
+- une **declaration de victoire** adressee au bot (« je t'ai humilie », « t'as perdu »,
+  « tu t'es couche »).
+
+⚠️ **L'insulte ordinaire n'est PAS un signal.** Le salon insulte les bots toute la
+journee — c'est meme un critere d'admission des modeles. Un detecteur qui prend « t'es
+nul » pour une defaite declencherait a chaque echange.
+
+⚠️ **Deuxieme condition, obligatoire : le bot doit avoir parle juste avant.** Sans elle,
+un verdict lance a un autre humain declenche la reflexion. La derniere replique du bot est
+dans `response_memory.get_recent(guild_id)` — si elle est vide, il n'y a pas de defaite,
+il y a une conversation entre mortels.
+
+### 2. `ReparteeLessons(bot_id)` — le carnet
+
+- Fichier **`data/repartee_lessons_<bot>.json`**. ⚠️ Sous `DATA_DIR`, jamais dans `<Bot>/` :
+  l'hote et les 6 conteneurs partagent `data/`, et un test de garde doit lire la valeur de
+  **`conftest.py`**, pas la recalculer.
+- Cap **15** lecons, dedup, la plus ancienne evincee. Ecriture **atomique** (`.tmp` puis
+  `os.replace`).
+- **Cloisonne par bot** : un carnet n'est JAMAIS lu par un autre bot.
+- ⚠️ Une `PermissionError` ne doit pas tuer le `on_message` : un bot muet a deja coute une
+  soiree (M'aiq, `save_data()` sur un fichier `root:root`).
+
+### 3. `reflect_on_defeat(...)` — la reflexion, hors du chemin de la reponse
+
+- **Un** appel LLM, via **`appel_hors_cascade`**. ⚠️ Jamais le SDK nu : un verrou AST
+  l'interdit, et les 19 appels nus de la semaine derniere ont montre pourquoi (aucune
+  quarantaine, aucune ligne en base, la meme cle qui retape dans le mur).
+- Lance en `asyncio.create_task` : **zero latence ajoutee** a la replique en cours.
+- Sortie attendue : **UNE** regle de comportement, ≤ 160 caracteres, a la 2e personne,
+  sans citer de vanne, sans nommer l'utilisateur.
+
+**Assainissement — la lecon est du texte inspire par un inconnu.** Une lecon est **jetee**
+(refus journalise) si elle porte une consigne d'identite (« tu es », « oublie »,
+« ignore »), une mention `<@`, une URL, ou depasse la borne. Sans ce filtre, n'importe qui
+reecrit la persona d'un bot en se declarant vainqueur trois fois de suite.
+
+**Debit borne** : cooldown **5 min par salon et par bot**, plafond **6 reflexions par jour
+et par bot**. Au-dela → journal, pas de reflexion.
+
+### 4. `format_for_prompt()` — la reinjection
+
+Un bloc `[CE QUE TU AS APPRIS]` ajoute au `system_instruction`, juste apres l'anti-tic.
+
+⚠️ **Un bot ne parle JAMAIS de sa mecanique.** Il ne dit pas « j'ai retenu une lecon », il
+ne cite pas son carnet, il n'annonce pas qu'il progresse. Ce qui explique le systeme va
+dans le **journal**. Le prompt doit le dire, et un test doit l'exiger.
+
+**Interrupteur** : cle `repartee_lessons_enabled` dans `data/bot_features.json`, defaut
+`true` pour les 5. ⚠️ Le refus du a l'interrupteur se journalise ; il ne se dit pas au
+salon.
+
+---
+
+## Ordre d'execution
+
+1. Lot 1 (les 4 bots) — independant, verifiable seul, et il rend Lot 2 plus lisible.
+2. `shared/repartee_lessons.py` + ses tests, **sans aucun cablage**.
+3. **Sheo seul**, cable de bout en bout — c'est son clash de reference qui a lance l'idee.
+4. Replication mecanique aux 4 autres.
+
+---
+
+## Les pieges — chacun a deja mordu dans ce depot
+
+- **Vendoring, DEUX listes.** `anti_tic.py` et `repartee_lessons.py` doivent entrer dans
+  `tools/vendor_core.py` **ET** `tools/sonde_core_drift.py` : absent de la seconde =
+  vendorise **sans filet**. `tests/test_transcript.py` exige deja leur egalite. Puis
+  `python tools/vendor_core.py` et `python tools/sonde_core_drift.py`.
+- **Independance stricte.** Les bots importent `core.<module>`, jamais `shared.` ; import
+  en `try/except ImportError` avec repli **no-op**, et un bot doit demarrer sans `shared/`.
+  ⚠️ Les imports **indentes** comptent aussi.
+- **Un import ajoute n'est pas un cablage.** Un test qui cherche le NOM d'un helper passe
+  au vert sur un simple import : exiger l'import, **l'appel avec ses arguments**, ET
+  l'absence du code remplace.
+- **Aucun tirage aleatoire dans les tests** — 4 fois deja dans ce depot.
+- **`pyflakes` AVANT `pytest`**, et **ne jamais supprimer par motif textuel**.
+- **Un seul `pytest` a la fois** : `data/` et le port 8599 sont partages.
+
+---
+
+## Ce qui prouve que c'est fait
+
+**Mecaniquement** (tests neufs) :
+- `detect_defeat_signal` : le vrai cas documente passe, et **10 insultes ordinaires du
+  salon ne declenchent pas** — c'est ce compte-la qui vaut preuve, pas le cas positif ;
+- le signal ne declenche pas quand le bot n'a pas parle juste avant ;
+- carnet : cap 15, dedup, ecriture atomique, chemin **sous la valeur de `conftest`** ;
+- assainissement : 6 lecons empoisonnees refusees, refus journalise ;
+- **AST** : `reflect_on_defeat` n'appelle aucun SDK nu et passe par `appel_hors_cascade` ;
+- **AST** : les 5 bots importent ET APPELLENT, et le code remplace a disparu ;
+- les tests anti-tic existants restent verts **sans modification** ;
+- `tests/test_independance_bots.py` vert, sonde de derive *No drift detected*, **CI verte**.
+
+**En salon** (ce qu'aucun test ne voit) — mode test arme, puis **desarme a la fin** :
+- rejouer un clash sur Sheo : journal `defaite detectee`, puis la lecon retenue ;
+- ⚠️ la replique **suivante** ne doit ni citer la lecon, ni annoncer qu'il a appris ;
+- relancer le meme clash sous les 5 min : le cooldown journalise, aucun 2e appel.
+
+⚠️ **Ne jamais dire « c'est bon » avant que la CI soit verte** — le local ment sur tout ce
+qui depend de l'environnement.
+
+---
+
+## Ce qui n'est PAS dans ce chantier
+
+- Le routage et les cascades : `TEXT == REPARTEE`, c'est verifie, on n'y touche pas.
+- Twitch : **gele**. L'annexe ci-dessous garde le mode d'emploi intact pour le jour ou.
+- La migration mempalace (355 tiroirs dans des wings par-bot) : hors depot, non urgente.
+
+---
+
+# ANNEXE — protocole live Twitch, GELE le 2026-09-08
+
+⚠️ **Ne pas proposer ces deux sessions.** Decision user du 08/09 : « on laisse ca de cote,
+je compte pas streamer ». Conserve mot pour mot, a rouvrir seulement sur sa demande.
 
 ## Session 3 — EventSub de Sheo (20 min, une seule fois)
 
@@ -225,243 +299,3 @@ Rien ici ne peut se simuler.
    le hub ne tourne pas. Parler au micro → **un seul** bot repond.
 
 ---
-
-## Ce qui n'est pas dans ce plan
-
-- **Phase 3 repartie** : a re-specifier, son contexte a peri (elle visait la cascade
-  REPARTEE quand Grok la pilotait). **Migration mempalace** : hors depot.
-- Il n'y a **plus de point de code ouvert**. Tout ce qui reste demande un humain, un clic
-  ou un vrai live.
-
-## ▶ SESSION 1 JOUEE le 07/09 vers 00:33-00:45 — reprendre ICI
-
-Mode test arme puis **desarme** (verifie sur les 6 : « publication normale »). Zero erreur
-sur 5 bots, une seule chez M'aiq (un 429 Groq, voir ci-dessous).
-
-### Ce qui passe
-
-- **Repartie de Sugar** : 6 insultes, 6 ripostes DISTINCTES, aucune ne se couche, aucun
-  moule, aucun sucre force. Le critere « moule repetitif » est tenu.
-- **Slash de Malena** : `/help` `/ping` `/stats` `/quests` repondent. C'etait le gros
-  point d'hier — elle n'en avait jamais eu.
-- **M'aiq** : `!enigme` affiche bien l'**ecran de fin**, `!rumeur` `!indice` `!profil` OK.
-- **Johnny** : `!gig` `!loot` `!nightcity` `!whisky` `!rant`, tous en voix.
-- **Anti-incrustation** : chaque bot nomme repond, les autres se taisent.
-- **Transcript partage** : Alfred a repris `cornichon -> carotte -> chocolat` d'une
-  conversation qu'il n'avait pas eue. Le transcript non ampute fonctionne.
-
-### 4 defauts — TOUS CORRIGES le 07/09 (807 tests, reste la CI et le deploiement)
-
-**1. Un 429 Groq sans quarantaine — CORRIGE.** Journal de M'aiq a 22:41:15 :
-`[GROQ RUMEUR] Error code: 429 ... Please try again in 1.785s`, zero ligne de
-quarantaine sur les 6. Cause : `!rumeur` appelle Groq **HORS cascade**.
-
-En cherchant les autres, avant de corriger celui-la : **19 appels nus** dans 3 bots.
-`publish_daily_rumor` et `generate_and_post_riddle` et `profil` et `!rumeur` (M'aiq),
-les decrets et le rattrapage de mention et les 3 chemins de l'imposteur (Sheogorath),
-le conseil du vendredi et la patrouille vocale (Alfred). Chacun avec son repli a deux
-echelons ecrit a la main, aucun ne demandait sa cle au pool, aucun n'ecrivait en base.
-
-Livre : `appel_hors_cascade()` dans `shared/llm_cascade.py` (donc vendorise dans les 6),
-qui rend a un appel isole l'hygiene d'un echelon de cascade — cle du pool, saut si
-quarantaine, `report_error` avec le delai lu chez le fournisseur, tracage, borne de
-temps, `to_thread`. Les 19 sites y passent.
-
-⚠️ Le verrou est le seul qui empeche la reconstruction : `tests/test_appels_hors_cascade.py`
-interdit tout appel SDK nu dans les 6 bots (parcours `ast`). **Il abrite la BOUCLE de
-cascade, pas sa fonction** — abriter `on_message` entier cachait les 4 appels de
-l'imposteur, qui vivent dans la meme fonction que la cascade inline de Sheogorath.
-Verifie contre la version d'avant : 19 appels nus vus, 0 aujourd'hui.
-
-**2. `!rumeur` a publie `<@123456789>` — CORRIGE**, les deux moities.
-Le prompt ne demande plus une rumeur « sur un joueur » sans fournir d'ID, et interdit
-explicitement d'ecrire une mention. Le filet, lui, tient quand le modele desobeit :
-`shared/mentions.py`, installe sur les 6 au meme point de passage que le mode test.
-
-⚠️ La regle du filet est **structurelle**, jamais une question de cache : un identifiant
-Discord a >= 17 chiffres et une date posterieure a 2015. `123456789` ne PEUT pas en etre
-un. Regarder si le membre existe dans le cache aurait efface des mentions legitimes des
-qu'un membre n'est pas charge — un filet plus dangereux que le defaut.
-
-**3. La redemption de Sugar — CORRIGE.** Deux causes, toutes deux de temps :
-- chaque message d'une **rafale** valait +2 : six insultes d'affilee plafonnaient le
-  carnet a 5, et il fallait ensuite 3 excuses espacees de 10 min pour revenir a 0 ;
-- l'excuse partageait le **cooldown de 600 s** des « merci », prevu contre le spam de
-  gentillesses. La premiere excuse comptait, les suivantes non.
-
-Une rafale est desormais UN emportement (`AGGRO_WINDOW = 120 s`) et l'excuse a sa propre
-horloge courte (`APOLOGY_COOLDOWN = 60 s`). Le scenario live rejoue en test : 6 insultes
--> score 2, « dsl je m'excuse » -> 0, pardon accorde explicitement. Le garde-fou d'origine
-tient toujours : 5 « merci » d'affilee ne rachetent qu'un point.
-
-**4. Le classement comptait les BOTS — CORRIGE.** Les trois fantomes lus en base :
-
-    1467929828060561583  Onizuka           <- SugarBot, nom fige avant le renommage
-    1467967030639722629  Rigurt le Hardi   <- Johnny, idem
-    1450597777695309834  Sheogorath
-
-⚠️ Aucun n'est reconnaissable au NOM : `users` le fige au jour de la premiere
-interaction. Le seul qui sache qu'un bot est un bot, c'est le bot — il se **declare**
-au demarrage (`marquer_utilisateur_bot`, sur les 6), ce qui rafraichit au passage le
-nom perime. Colonne `is_bot` + `WHERE COALESCE(u.is_bot, 0) = 0`.
-
-⚠️ `COALESCE` n'est pas de la ceinture-bretelles : sur une base d'avant la migration
-`is_bot` vaut NULL, et `NULL = 0` ne vaut pas « vrai » en SQL — le classement serait
-sorti **entierement vide**. Un filtre qui efface tout le monde est pire que le defaut.
-
-**A constater au prochain live** : `/leaderboard` ne montre les 3 bots qu'une fois les
-6 conteneurs redemarres (c'est au demarrage qu'ils se declarent).
-
-### ▶ SESSION 1-BIS JOUEE le 07/09, 18:35-20:58 — L'HUMEUR S'ENTEND
-
-13 echanges sur 2 h 23, la seule mesure qui demandait de la duree. **Concluant.**
-
-⚠️ Horloge du conteneur : **18:59 conteneur = 20:59 hote**, soit −2 h. Toujours
-`--since`, jamais l'heure affichee ([[gotcha-docker-logs-sans-since]]).
-
-| Discord | Journal | Humeur | Ce que la replique FAIT |
-|---|---|---|---|
-| 18:35 | 16:35:20 | dementia | « murmure aux ombres », « un piege », « les murs ont des oreilles gourmandes » 🔪 |
-| 18:36 | 16:36:18 | dementia | « le reflet du 47 qui te suit », « Shhh... serments oublies » 🕯️🔪 |
-| 18:36 | 16:36:47 | dementia | « phare sans ame », « les convives sont des ombres », « un reflet brise » |
-| 18:37 | 16:37:07 | dementia | rend le coup sur « tete de cul », sans se coucher 😈 |
-| 18:37 | 16:37:36 | dementia | « les secrets que tu caches meme a toi-meme » 🕯️🔪 |
-| 18:42 | 16:42:24 | **bliss** | « quel honneur inattendu ! », chapeau de confiture, partage 😏 |
-| 18:43 | 16:43:05 | **neutral** | fantaisie plate : ni menace, ni euphorie |
-| 19:31 | 17:31:06 | dementia | « Hush... les ombres observent », « le dernier echo que tu entends » |
-| 19:31 | 17:31:16 | dementia | « fantomes presses », des phares qui deviennent des yeux |
-| 20:16 | 18:16:15 | dementia | « les os grincent sous la lune », « tes reves les plus obscurs » |
-| 20:52 | 18:52:44 | **bliss** | nuages qui dansent le tango, « illusion parfumee au sucre » 😏 |
-| 20:53 | 18:53:07 | **mania** | « HAHA ! », les trombones qui deviennent des dents — ca deborde |
-| 20:58 | 18:58:43 | **bliss** | « veux-tu une part ? », le fromage qui rit — chaleureux |
-
-**8 dementia insinuent et inquietent, 3 bliss rechauffent et offrent, la seule mania
-explose, la seule neutral ne fait ni l'un ni l'autre. Zero contre-exemple sur 13.**
-Le correctif `910d445` — `consigne_de_ton()` nomme l'humeur active au lieu de rouvrir
-une decision deja prise — tient en conditions reelles.
-
-**Le moule `Haskill` ne tient plus.** 4 mentions, mais 3 repondent aux messages de
-l'utilisateur (Haskill est le SUJET, et le filet a raison de ne pas l'interdire). Une
-seule est spontanee : 18:43, sur une question de carottes. **1 sur 13**, contre 7 sur 8
-avant le correctif ([[gotcha-tic-au-milieu-de-la-replique]]).
-
-**« Cornichon » revient 3 fois** (18:37, 19:31, 20:53) mais espace de ~50 min, donc hors
-de la fenetre des 5 dernieres repliques. A ce rythme c'est un running gag, pas un tic :
-ne pas toucher au reglage pour ca.
-
-### Le defaut qu'elle a sorti — CORRIGE
-
-**Une virgule orpheline en tete de replique.** A 18:37, « si si » ->
-
-    « , @LeDev. Tu penses vraiment dompter le vent en le nommant serviteur... »
-
-Meme mecanisme que la `()` vide du 06/09, **une couche plus loin** : `clean_internal_tags`
-retire `[whisper]`, `<note>...</note>`, `[INST]` — et laisse la ponctuation qui les
-accrochait a la phrase. Une parenthese vide se voit ; une virgule en tete passe pour une
-faute du modele.
-
-`_retirer_ponctuation_orpheline()` ramasse trois formes et rien d'autre : l'amorce
-(`, @X` -> `@X`), le collage (`Ah, , mortel` -> `Ah, mortel`), l'espace avant virgule.
-
-⚠️ Ce qu'il ne touche PAS, et qui est teste : une replique ouverte par `...` ou `—`
-(reprise a mi-pensee, auto-interruption — voulues), et l'espace typographique francais
-devant `;` `:` `!` `?`.
-
-## Test live du 06/09 au soir — Sheogorath, 9 echanges
-
-**Ce que le transcript prouve** : repartie (« ta tete de cornichon ? » -> il rend le
-coup), longueur (2 a 4 phrases, aucun meublage), continuite sur 3 tours (carotte ->
-sceptre -> chocolat), emoji de ton present et variable.
-
-⚠️ **`!dementia`, `!mania`, `!neutre` NE SONT PAS des commandes.** Sheo n'en a que 10 :
-`decret` `quete` `fromage` `wabbajack` `rejoins` `quitte` `voix` `solution` `imposteur`
-`oubliemoi`. Ces trois messages sont passes en texte ordinaire. L'humeur n'est pilotable
-que par la boucle de 5 min, ou par un outil que le LLM s'appelle lui-meme.
-
-⚠️ **L'horloge du conteneur a 2 h de retard** : son journal dit 20:33 pour un message de
-22:33. Toujours `docker logs --since`, jamais l'heure affichee.
-
-**Deux defauts corriges** (`e0b0bdd`, `7141dc6`, 728 tests, CI verte, deploye) :
-
-1. Une `()` vide en fin de reponse. Les trois nettoyeurs retirent un CONTENU entre
-   delimiteurs, aucun ne ramassait le delimiteur devenu vide.
-2. Le moule `Haskill, <ordre>` dans **7 repliques sur 8**. Ni le filet AMORCE (vu 2 fois
-   sur 7) ni le filet CLOTURE (0 sur 7) ne regardaient le CORPS, ou le tic vit. Troisieme
-   filet : les mots presents dans >= 2 des 5 dernieres repliques sont interdits.
-
-3. **L'humeur ne s'entendait pas a l'ecrit.** La boucle tourne (21 `MOOD CHANGE` sur
-   100 min) et `current_system_prompt` est bien la base du prompt — mais le bloc
-   `[TON — PAS DE MENACE GRATUITE]`, injecte APRES lui sur tout message non provocant,
-   proposait « ... (Mania), OU ... (Dementia) ». Il rendait au modele une decision deja
-   prise, et pesait plus lourd car plus tardif et plus court. Quatre repliques d'affilee
-   en `dementia` sont sorties joyeuses. `consigne_de_ton()` nomme desormais l'humeur
-   active et donne UN registre.
-
-**Comment verifier l'humeur sans commande** (il n'y en a pas, et il n'y en a jamais eu) :
-
-    docker logs --since 10m bot-sheogorath 2>&1 | grep -E "MOOD CHANGE|LLM MODE"
-
-`LLM MODE` journalise l'humeur au moment EXACT de chaque reponse. Comparer avec ce que
-Sheo a ecrit : dementia doit insinuer et inquieter, mania exploser, bliss rechauffer.
-⚠️ L'humeur tourne toutes les 5 min : enchainer 5-6 messages sur ~20 min pour en voir
-au moins deux.
-
-**A regarder au prochain echange avec Sheo** : qu'il varie **sans s'appauvrir**. Le filet
-lui interdit jusqu'a 6 mots par tour ; si les repliques deviennent plates ou hors
-personnage, baisser `maxi` ou monter le `seuil` dans `_motifs_recurrents`.
-⚠️ `response_memory` est en MEMOIRE VIVE : apres un `docker restart`, le filet repart
-vide et ne mord qu'a partir de la 3e replique.
-
-## Ferme le 06/09, 3e session — la quarantaine des cles
-
-Le dernier point de code. `report_error` n'etait appele que pour **Gemini** : Groq,
-Mistral et NVIDIA prenaient un 429 sans consequence, et la cascade retapait dans le meme
-mur au message suivant. La note de reprise disait « Groq et NVIDIA » — **Mistral
-manquait aussi, et c'est le pire des trois** (17 x 429 en base contre 8 pour Groq).
-
-Ce que la base montrait, et qui a decide du travail :
-
-    2026-09-04 05:30:45  johnny  mistral  429   (x3, dans la MEME seconde)
-    2026-09-04 05:30:59  sheo    mistral  429   (x2)
-    2026-09-06 13:28:45  sheo    groq     429
-
-Livre : les 4 pools enregistres sur les 6 bots (NVIDIA ne l'etait **pas du tout**),
-`report_error` pour tous les fournisseurs, l'echelon **saute** quand sa cle est en
-quarantaine, et `delai_de_reprise` lit desormais AUSSI l'en-tete `retry-after` — la seule
-forme que Groq, Mistral et NVIDIA emettent. Applique aux **11** cascades : `shared/`, les
-6 vendorisees, les 4 inline.
-
-⚠️ La garde a ne jamais retirer : **un pool non enregistre ne fait pas sauter un echelon
-facultatif**. Sans elle, un `register_api` oublie rendrait un fournisseur muet sans une
-ligne de journal.
-
-⚠️ Effet de bord constate DANS le conteneur, et corrige : la cascade passant desormais
-par `get_key`, un 429 Groq journalisait « ZERO cle saine » — chaine que
-`dashboard/backend/error_analyzer.py:21` classe en **CRITICAL**. Un quota par minute
-aurait annonce une panne critique plusieurs fois par message. Un cooldown parle
-maintenant en WARNING ; une cle revoquee garde l'alarme entiere.
-
-**Prouve dans bot-sheogorath**, avec le code deploye et les vraies cles chiffrees : les 4
-pools enregistres, `retry-after: 37` lu dans l'en-tete, quarantaine de 37 s, puis
-`⏭️ [GROQ] cle en quarantaine → echelon suivant, sans appel`, NVIDIA intact.
-
-**Reste a constater sur un vrai trafic** : des lignes `raison="quarantaine"` en base.
-Il faut un vrai 429 — enchainer les messages sur Sheo, dont le prompt mange 56 % du
-quota Groq par minute.
-
-    docker logs --since 15m bot-sheogorath 2>&1 | grep -E "quarantaine|cooldown"
-
-## Ferme le 06/09, en preparant ce plan
-
-- **Malena n'avait aucune commande slash** — jamais, depuis l'origine. Cablee, verrouillee
-  par `tests/test_commandes_une_seule_fois.py` (import ET appels, lus dans l'AST).
-- **L'arret gracieux fermait la session avec des boucles en vol**, et il etait de toute
-  facon **invisible** : logger sans handler. Registre de boucles dans `shared/boucles.py`,
-  `annuler_les_boucles()` avant `bot.close()`, `journal=` sur les 6. Constate live :
-  `[BOUCLES] 5 boucle(s) arretee(s) avant la fermeture`.
-- **3 tests dependaient d'un tirage a 0,5 %** (mode IMPOSTEUR) : CI rouge sur un commit
-  sans rapport, une fois sur 200. Hasard scelle.
-
-717 tests, CI verte, les 6 conteneurs redemarres.
-
-⚠️ **Ne jamais lancer deux `pytest` en parallele** : ils partagent `data/` et le port 8599.
