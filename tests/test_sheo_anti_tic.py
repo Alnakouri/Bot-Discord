@@ -320,3 +320,66 @@ def test_le_message_de_l_utilisateur_est_VRAIMENT_passe_par_le_bot():
             "le message du mortel n'est pas transmis : le filet interdirait alors le "
             "SUJET de la conversation, pas seulement la rengaine."
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════
+# Le prompt ne doit pas ENSEIGNER le tic que le filet interdit
+# ═══════════════════════════════════════════════════════════════════════════════════════
+
+
+def _phrases_des_litteraux(chemin):
+    """Toutes les phrases de toutes les chaines du fichier persona."""
+    import ast
+    import re
+
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+    for noeud in ast.walk(arbre):
+        if isinstance(noeud, ast.Constant) and isinstance(noeud.value, str):
+            for phrase in re.split(r"(?<=[.!?])\s+|\n", noeud.value):
+                phrase = phrase.strip()
+                if phrase:
+                    yield phrase
+
+
+def test_la_persona_ne_DEMONTRE_plus_le_moule_Haskill():
+    """⚠️ Test live du 2026-09-08 : le moule « Haskill, <ordre> » revient dans 3 repliques
+    sur 4, alors que le filet anti-tics venait d'etre deploye et interdisait bien le mot
+    (verifie en rejouant les 4 repliques).
+
+    La cause n'etait pas le filet : `sheo_data.py` PRESCRIVAIT le moule (« appel a
+    Haskill » listee comme facon de clore) et le DEMONTRAIT — 3 des 15 exemples few-shot,
+    dont 5 sont tires au hasard a chaque message, plus 4 exemples d'humeur. Le prompt
+    montrait donc le tic ~2 fois pendant qu'une ligne le lui interdisait. Une
+    demonstration bat une interdiction.
+
+    Ce test interdit la DEMONSTRATION, pas le personnage : « je comptais les dents de
+    Haskill » reste parfaitement legitime. Ce qui est banni, c'est une phrase qui
+    COMMENCE par un ordre lance a Haskill — le moule lui-meme."""
+    import os
+
+    chemin = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "Sheogorath", "sheo_data.py")
+
+    fautives = [p for p in _phrases_des_litteraux(chemin) if p.startswith("Haskill,")]
+    assert not fautives, (
+        "la persona demontre a nouveau le moule « Haskill, <ordre> » ; le filet "
+        "anti-tics ne peut pas gagner contre un exemple :\n  " + "\n  ".join(fautives))
+
+
+def test_la_persona_ne_PRESCRIT_plus_Haskill_comme_facon_de_clore():
+    """La regle « MAITRE DU JEU » proposait « appel a Haskill » parmi les facons de
+    reprendre la main. Nommer un tiers precis dans une liste de sorties, c'est en faire
+    la sortie par defaut."""
+    import os
+
+    chemin = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "Sheogorath", "sheo_data.py")
+    with open(chemin, encoding="utf-8") as f:
+        source = f.read()
+
+    assert "appel à Haskill" not in source, (
+        "« appel à Haskill » est de retour dans les facons de clore : c'est ce qui "
+        "fabriquait le moule que le filet passe son temps a interdire.")
