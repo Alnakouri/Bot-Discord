@@ -318,3 +318,22 @@ def test_aucun_bot_n_importe_un_module_inexistant():
                 assert os.path.exists(copie), (
                     f"{nom} importe `{module}`, qui n'existe pas : l'ImportError serait "
                     f"avalée et la fonctionnalité éteinte en silence")
+
+
+def test_le_toggle_existe_dans_le_DASHBOARD_et_pas_seulement_en_lecture():
+    """⚠️ Corriger la LECTURE d'un interrupteur ne sert a rien si rien ne l'ECRIT.
+    `repartee_lessons_enabled` etait lu correctement par bot, mais n'apparaissait nulle
+    part dans le dashboard : impossible de couper l'apprentissage sans redeployer — pour
+    la seule fonction qui reecrit la persona d'un bot."""
+    with open(os.path.join(RACINE, "dashboard", "backend", "features_config.py"),
+              encoding="utf-8") as f:
+        defauts = f.read()
+    assert '"repartee_lessons_enabled"' in defauts, (
+        "la cle n'est pas dans les DEFAULTS du dashboard : aucune case a cocher "
+        "n'apparaitra, et le fichier ne la portera jamais")
+
+    with open(os.path.join(RACINE, "dashboard", "frontend", "js", "app.js"),
+              encoding="utf-8") as f:
+        app = f.read()
+    assert "repartee_lessons_enabled" in app, (
+        "la case s'afficherait sous son nom technique")

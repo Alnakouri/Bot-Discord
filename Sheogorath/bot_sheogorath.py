@@ -2273,12 +2273,6 @@ async def on_message(message):
             system_instruction += f"{i}. \"{snippet}\"\n"
         system_instruction += "⚠️ INTERDICTION TOTALE de répéter ces phrases ou des variations proches. Trouve une idée COMPLÈTEMENT DIFFÉRENTE ! Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images, métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs."
     
-    # ⚠️ `user_message` est passé pour que le filet des motifs récurrents n'interdise
-    # PAS le sujet de la conversation : si le mortel parle de cornichons, Sheo doit
-    # pouvoir lui répondre cornichons. On interdit la rengaine, jamais le sujet.
-    anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
-    if anti_tic:
-        system_instruction += "\n\n" + anti_tic
 
     try:
         from core.repartee_lessons import detect_defeat_signal, reflect_on_defeat, format_for_prompt
@@ -2330,6 +2324,17 @@ async def on_message(message):
         ligne = ligne_de_contexte(hist_msg, bot.user, avec_mention=True)
         if ligne:
             transcript += ligne
+
+    # ANTI-TICS. ⚠️ On passe TOUT ce que les mortels ont dit recemment, pas seulement
+    # le dernier message : le 2026-09-09, le filet a interdit « jyggalag » — le SUJET
+    # meme de la question, et le coeur du lore de Sheogorath — parce que le mortel
+    # avait pose sa question deux messages plus tot puis reproche l'esquive sans
+    # renommer le sujet. Sheo a esquive trois fois de suite. On interdit la rengaine,
+    # JAMAIS le sujet.
+    _mots_des_mortels = [m.content for m in messages_list if not m.author.bot and m.content]
+    anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=_mots_des_mortels)
+    if anti_tic:
+        system_instruction += "\n\n" + anti_tic
 
     # NB : l'activité est déjà injectée (occasionnellement) dans system_instruction.
     # On ne la ré-injecte PAS ici (l'ancien `current_sheo_activity` était gelé sur

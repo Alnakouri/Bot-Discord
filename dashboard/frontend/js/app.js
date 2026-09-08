@@ -291,6 +291,7 @@ window.loadDiscordConfig = async function(botId) {
                 let displayName = featureName;
                 if (featureName === 'decret_enabled') displayName = "Décret activé";
                 if (featureName === 'test_mode') displayName = "Mode test (ne publie que sur le serveur privé)";
+                if (featureName === 'repartee_lessons_enabled') displayName = "Carnet de repartie (le bot apprend de ses défaites)";
                 
                 let disabledAttr = '';
                 let note = '';

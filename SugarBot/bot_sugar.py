@@ -926,7 +926,10 @@ async def on_message(message):
 
     # ANTI-TICS : les amorces/clôtures/mots récurrents des dernières répliques, interdits
     # nommément. L'anti-répétition ci-dessus cite des phrases ; celui-ci vise le MOULE.
-    _consigne_anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
+    # ⚠️ TOUT ce que les mortels ont dit, pas seulement le dernier message : sinon
+    # le filet interdit le SUJET de la conversation des qu'on cesse de le renommer.
+    _mots_des_mortels = [m.content for m in messages_list if not m.author.bot and m.content]
+    _consigne_anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=_mots_des_mortels)
     anti_tic = f"\n\n{_consigne_anti_tic}" if _consigne_anti_tic else ""
 
     try:

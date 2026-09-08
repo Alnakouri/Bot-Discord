@@ -6,6 +6,12 @@ from bot_manager import BOT_REGISTRY
 
 DEFAULTS = {
     "decret_enabled": True,
+    # Carnet de repartie : le bot tire une regle de comportement de ses defaites et se
+    # l'injecte ensuite dans son prompt systeme. ⚠️ C'est la SEULE fonction qui reecrit la
+    # persona a partir de ce qu'un inconnu a declenche : il faut pouvoir la couper d'un
+    # clic sans redeployer. `shared/repartee_lessons.est_active` lit cette cle ici, par
+    # bot — elle etait lue a la racine du fichier, ou elle n'existait jamais.
+    "repartee_lessons_enabled": True,
     # Mode test par bot : ce bot ne publie que sur le serveur prive. S'ajoute a
     # l'interrupteur global (l'un des deux suffit), cf. shared/bot_features.py.
     "test_mode": False,

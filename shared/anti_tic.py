@@ -1,4 +1,5 @@
 import re
+import difflib
 import unicodedata
 import logging
 
@@ -52,17 +53,70 @@ def _radical(mot):
         return mot[:-1]
     return mot
 
+
+def _mots_du_sujet(message_utilisateur):
+    """Les mots que les HUMAINS ont employés récemment — jamais interdits au bot.
+
+    ⚠️ Accepte une chaîne OU une liste de messages. Le 2026-09-09, la version qui ne
+    regardait que le message COURANT a interdit « jyggalag » à Sheogorath : le mortel
+    avait posé sa question deux messages plus tôt, puis reproché l'esquive sans renommer
+    le sujet. Le filet a donc banni le SUJET de la conversation, et le bot a esquivé —
+    l'utilisateur le lui a reproché deux fois de suite, en clair. Un tic se juge sur ce
+    que le BOT ressasse ; le sujet appartient à la conversation, pas au bot."""
+    if not message_utilisateur:
+        return set()
+    if isinstance(message_utilisateur, str):
+        messages = [message_utilisateur]
+    else:
+        messages = [m for m in message_utilisateur if isinstance(m, str)]
+    mots = set()
+    for m in messages:
+        mots.update(_radical(w) for w in re.findall(r"[a-z]+", _norm(m)))
+    return mots
+
+
+def _est_du_sujet(mot, mots_du_sujet):
+    """Vrai si `mot` est un mot des humains — a l'orthographe pres.
+
+    ⚠️ La comparaison exacte ne suffit pas. Le 2026-09-09, le mortel a ecrit
+    « jygalag » et Sheogorath « Jyggalag » : une lettre d'ecart, et le sujet de la
+    conversation retombait dans les mots interdits. Les gens ecrivent vite et mal
+    (« deadra », « parchemain », « afronter » dans le meme echange) ; un filet qui exige
+    l'orthographe exacte finit par interdire au bot de parler de ce dont on lui parle."""
+    if mot in mots_du_sujet:
+        return True
+    if len(mot) < 5:
+        return False  # trop court : « tour » et « jour » se ressembleraient trop
+    return bool(difflib.get_close_matches(mot, mots_du_sujet, n=1, cutoff=0.82))
+
+
+def _mot_d_amorce_recurrent(reponses, seuil=2):
+    """Le PREMIER mot, quand il ouvre au moins `seuil` des dernières répliques.
+
+    ⚠️ Les amorces sont comparées sur 5 mots : « ah un complot digne d'un » et « ah la
+    peur de la » sont deux amorces DIFFÉRENTES, et le tic d'un seul mot passait entre les
+    mailles. Constaté le 2026-09-09 : « Ah, » ouvrait 3 répliques de Sheo sur 5 sans que
+    rien ne le signale."""
+    compte = {}
+    for resp in reponses or []:
+        if not isinstance(resp, str):
+            continue
+        mots = re.findall(r"[a-z]+", _norm(resp))
+        if mots:
+            compte[mots[0]] = compte.get(mots[0], 0) + 1
+    fautifs = sorted(((n, m) for m, n in compte.items() if n >= seuil), reverse=True)
+    return fautifs[0][1] if fautifs else None
+
+
 def _motifs_recurrents(reponses, message_utilisateur=None, seuil=2, maxi=6):
     """Les mots de CONTENU presents dans au moins `seuil` des dernieres repliques.
 
-    ⚠️ Les mots du message de l'utilisateur sont EXCLUS.
+    ⚠️ Les mots des HUMAINS sont EXCLUS — voir `_mots_du_sujet`.
     """
     if not reponses:
         return []
 
-    interdits_du_sujet = set()
-    if message_utilisateur:
-        interdits_du_sujet = {_radical(w) for w in re.findall(r"[a-z]+", _norm(message_utilisateur))}
+    interdits_du_sujet = _mots_du_sujet(message_utilisateur)
 
     compte = {}
     for resp in reponses:
@@ -70,7 +124,7 @@ def _motifs_recurrents(reponses, message_utilisateur=None, seuil=2, maxi=6):
             continue
         mots = {w for w in re.findall(r"[a-z]+", _norm(resp))
                 if len(w) >= 4 and w not in _MOTS_OUTILS
-                and _radical(w) not in interdits_du_sujet}
+                and not _est_du_sujet(_radical(w), interdits_du_sujet)}
         for mot in mots:
             compte[mot] = compte.get(mot, 0) + 1
 
@@ -155,12 +209,11 @@ def build_anti_tic_consigne(recent_responses, n=5, message_utilisateur=None,
         if c not in unique_clotures:
             unique_clotures.append(c)
 
-    recurrents = _motifs_recurrents(
-        [r for r in (recent_responses or [])[-n:] if isinstance(r, str)],
-        message_utilisateur=message_utilisateur,
-    )
+    derniers = [r for r in (recent_responses or [])[-n:] if isinstance(r, str)]
+    recurrents = _motifs_recurrents(derniers, message_utilisateur=message_utilisateur)
+    mot_d_amorce = _mot_d_amorce_recurrent(derniers)
 
-    if not unique_amorces and not unique_clotures and not recurrents:
+    if not unique_amorces and not unique_clotures and not recurrents and not mot_d_amorce:
         return ""
 
     consigne = "[ANTI-TICS — VARIE OU MEURS]"
@@ -170,6 +223,12 @@ def build_anti_tic_consigne(recent_responses, n=5, message_utilisateur=None,
             f'\nTu as OUVERT tes dernières répliques par : {formatted_amorces}. '
             'INTERDIT de rouvrir par une de ces amorces ou une variation proche — '
             'trouve une entrée NEUVE (question sèche, non-sequitur, ordre, constat).'
+        )
+    if mot_d_amorce:
+        consigne += (
+            f'\nEt tu ouvres sans arrêt sur le MÊME MOT : "{mot_d_amorce}". '
+            'Ta prochaine réplique ne doit pas commencer par lui — ni par une '
+            'interjection qui joue le même rôle.'
         )
     if unique_clotures:
         formatted_clotures = ", ".join(f'"{c}"' for c in unique_clotures)

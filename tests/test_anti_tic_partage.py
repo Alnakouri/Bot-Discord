@@ -162,3 +162,64 @@ def test_le_filet_est_appele_ET_injecte_dans_le_prompt(nom, fichier, variable):
     assert relue, (
         f"{nom} calcule la consigne dans `{variable}` et ne la relit jamais : "
         f"elle n'atteint aucun prompt")
+
+
+# ─────────────────────────── le SUJET n'est jamais un tic ──────────────────────────────
+
+
+def test_le_sujet_de_la_conversation_n_est_jamais_interdit():
+    """⚠️ Test live du 2026-09-09 : le filet a interdit « jyggalag » à Sheogorath — le
+    SUJET de la question, et le coeur de son lore (Sheogorath EST Jyggalag maudit). Le
+    mortel avait posé sa question deux messages plus tôt, puis reproché l'esquive sans
+    renommer le sujet ; le filet ne regardait que le message COURANT. Sheo a esquivé
+    trois fois de suite, et l'utilisateur le lui a dit en clair, deux fois."""
+    from shared.anti_tic import _motifs_recurrents
+
+    repliques = [
+        "Jyggalag se reflete dans mon miroir, cornichons et papillons.",
+        "Si Jyggalag est moi, alors tes questions sont des cornichons.",
+    ]
+    mortels = [
+        "sheo tu es le resultat d'une entourloupe jouee a jygalag ?",
+        "en realite jygalag c'est toi",
+        "encore une esquive tu es faible",  # ne renomme plus le sujet
+    ]
+
+    sans_historique = _motifs_recurrents(repliques, message_utilisateur=mortels[-1])
+    assert "jyggalag" in sans_historique, "le defaut d'origine n'est plus reproduit"
+
+    avec_historique = _motifs_recurrents(repliques, message_utilisateur=mortels)
+    assert "jyggalag" not in avec_historique, (
+        "le filet interdit encore le sujet de la conversation")
+    assert "cornichons" in avec_historique, (
+        "en protegeant le sujet on a cesse de voir les vrais tics du bot")
+
+
+def test_une_faute_de_frappe_ne_fait_pas_bannir_le_sujet():
+    """Le mortel ecrit « jygalag », le bot « Jyggalag » : une lettre d'ecart suffisait a
+    faire retomber le sujet dans les mots interdits. Les gens ecrivent vite et mal."""
+    from shared.anti_tic import _est_du_sujet, _mots_du_sujet
+
+    sujet = _mots_du_sujet(["en realite jygalag c'est toi", "un prince deadra"])
+    assert _est_du_sujet("jyggalag", sujet), "orthographe approchante non reconnue"
+    assert _est_du_sujet("daedra", sujet)
+    assert not _est_du_sujet("cornichon", sujet), "exclusion trop large"
+
+
+def test_le_tic_d_un_seul_mot_d_ouverture_est_vu():
+    """⚠️ Les amorces sont comparees sur 5 mots : « ah un complot digne d'un » et « ah la
+    peur de la » sont DIFFERENTES. Le 2026-09-09, « Ah, » ouvrait 3 repliques sur 5 sans
+    que rien ne le signale."""
+    from shared.anti_tic import _mot_d_amorce_recurrent, build_anti_tic_consigne
+
+    repliques = [
+        "Ah, un complot digne d'un gateau a la menthe.",
+        "Tu pretends que je suis un pantin de theatre.",
+        "Ah, si le miroir se reflete, qui tient la cuillere ?",
+        "Ah, la peur de la realite ? Mes chaises chantent.",
+    ]
+    assert _mot_d_amorce_recurrent(repliques) == "ah"
+    assert '"ah"' in build_anti_tic_consigne(repliques)
+
+    varie = ["Premiere chose a dire.", "Deuxieme chose a dire.", "Troisieme et ddernier."]
+    assert _mot_d_amorce_recurrent(varie) is None
