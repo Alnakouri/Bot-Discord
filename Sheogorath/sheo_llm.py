@@ -33,6 +33,19 @@ except Exception:  # pragma: no cover - fallback no-op si shared/ absent
         return text
 
 
+# Filet anti-tics : mutualisé dans le noyau (vendorisé sous <Bot>/core/), donc présent
+# même déployé sans `shared/`. Le repli no-op garde la génération vivante en dernier
+# recours plutôt que de la faire échouer sur un helper de confort.
+try:
+    from core.anti_tic import build_anti_tic_consigne as _anti_tic_noyau
+except ImportError:  # pragma: no cover
+    try:
+        from shared.anti_tic import build_anti_tic_consigne as _anti_tic_noyau
+    except ImportError:
+        def _anti_tic_noyau(*_a, **_kw):
+            return ""
+
+
 # Balises internes à supprimer
 INTERNAL_TAG_PATTERNS = [
     r"<thought>.*?</thought>",
@@ -525,102 +538,14 @@ def consigne_de_ton(mood, provoque=False):
 
 
 def build_anti_tic_consigne(recent_responses, n=5, message_utilisateur=None):
-    """À partir des N dernières réponses, liste les AMORCES et CLÔTURES à éviter.
-    Retourne un fragment de prompt (str), ou "" si rien d'exploitable."""
-    if not recent_responses:
-        return ""
+    """Enveloppe : le filet est mutualisé dans le noyau, le tic NOMMÉ reste à Sheo.
 
-    morceaux_amorces = []
-    morceaux_clotures = []
-
-    # Prends les n dernières réponses
-    for resp in recent_responses[-n:]:
-        if not resp or not isinstance(resp, str):
-            continue
-        try:
-            # 1. Nettoyer les balises <thought> ou <think> de la réponse
-            clean_resp = resp
-            for pattern in INTERNAL_TAG_PATTERNS:
-                clean_resp = re.sub(pattern, "", clean_resp, flags=re.DOTALL | re.IGNORECASE)
-            
-            # Nettoyer les espaces
-            clean_resp = re.sub(r"\s+", " ", clean_resp).strip()
-            if not clean_resp:
-                continue
-
-            # 2. Amorce (4-5 premiers mots)
-            # Normaliser : minuscules, ponctuation de bord retirée
-            words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in clean_resp.split()]
-            words = [w for w in words if w]
-            if len(words) >= 2:
-                amorce_len = min(5, len(words))
-                amorce_phrase = " ".join(words[:amorce_len])
-                if amorce_phrase:
-                    morceaux_amorces.append(amorce_phrase)
-
-            # 3. Clôture
-            # Retirer l'emoji de ton final avec _TRAILING_EMOJI_RE
-            m = _TRAILING_EMOJI_RE.search(clean_resp)
-            cloture_base = clean_resp
-            if m:
-                cloture_base = clean_resp[:m.start()].rstrip()
-
-            # Découper en phrases (\s+ : saut de ligne compte aussi comme frontière)
-            sentences = re.split(r'(?<=[.!?])\s+', cloture_base)
-            sentences = [s.strip() for s in sentences if s.strip()]
-            if sentences:
-                last_sentence = sentences[-1]
-                # Prendre les ~5 derniers mots de cette dernière phrase
-                last_words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in last_sentence.split()]
-                last_words = [w for w in last_words if w]
-                if last_words:
-                    cloture_len = min(5, len(last_words))
-                    cloture_phrase = " ".join(last_words[-cloture_len:])
-                    if cloture_phrase:
-                        morceaux_clotures.append(cloture_phrase)
-        except Exception as e:
-            logger.warning(f"Erreur lors du parsing anti-tic : {e}")
-            continue
-
-    # Dédupliquer tout en gardant l'ordre
-    unique_amorces = []
-    for a in morceaux_amorces:
-        if a not in unique_amorces:
-            unique_amorces.append(a)
-
-    unique_clotures = []
-    for c in morceaux_clotures:
-        if c not in unique_clotures:
-            unique_clotures.append(c)
-
-    recurrents = _motifs_recurrents(
-        [r for r in (recent_responses or [])[-n:] if isinstance(r, str)],
+    « Haskill, note ça » est SA clôture réflexe (7 répliques sur 8 le 07/09) : c'est ici,
+    et nulle part dans le helper partagé, qu'on a le droit de la citer."""
+    return _anti_tic_noyau(
+        recent_responses,
+        n=n,
         message_utilisateur=message_utilisateur,
+        exemple_cloture="Haskill, note ça",
     )
 
-    if not unique_amorces and not unique_clotures and not recurrents:
-        return ""
-
-    consigne = "[ANTI-TICS — VARIE OU MEURS]"
-    if unique_amorces:
-        formatted_amorces = ", ".join(f'"{a}"' for a in unique_amorces)
-        consigne += (
-            f'\nTu as OUVERT tes dernières répliques par : {formatted_amorces}. '
-            'INTERDIT de rouvrir par une de ces amorces ou une variation proche — '
-            'trouve une entrée NEUVE (question sèche, non-sequitur, ordre, constat).'
-        )
-    if unique_clotures:
-        formatted_clotures = ", ".join(f'"{c}"' for c in unique_clotures)
-        consigne += (
-            f'\nTu as CLÔTURÉ par : {formatted_clotures}. '
-            'INTERDIT de refinir pareil (surtout pas un "Haskill, note ça" recyclé) — change de chute.'
-        )
-    if recurrents:
-        formatted_mots = ", ".join(f'"{m}"' for m in recurrents)
-        consigne += (
-            f'\nCes mots reviennent DANS LE CORPS de tes dernières répliques : {formatted_mots}. '
-            'INTERDIT de les reprendre. Change de DÉCOR, pas seulement de phrase : '
-            'autre créature, autre objet, autre lubie.'
-        )
-
-    return consigne

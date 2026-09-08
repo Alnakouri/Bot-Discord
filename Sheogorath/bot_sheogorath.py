@@ -2279,6 +2279,34 @@ async def on_message(message):
     anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
     if anti_tic:
         system_instruction += "\n\n" + anti_tic
+
+    try:
+        from core.repartee_lessons import detect_defeat_signal, reflect_on_defeat, format_for_prompt
+        
+        bloc_lecons = format_for_prompt("Sheogorath")
+        if bloc_lecons:
+            system_instruction += bloc_lecons
+            
+        motif_defaite = detect_defeat_signal(user_message)
+        if motif_defaite and recent_responses:
+            asyncio.create_task(
+                reflect_on_defeat(
+                    bot_id="Sheogorath",
+                    guild_id=str(message.guild.id) if message.guild else "DM",
+                    categorie=motif_defaite,
+                    repliques=recent_responses,
+                    fournisseur="gemini",
+                    key_manager=key_manager,
+                    bot_label="Sheogorath",
+                    modele=GEMINI_FLASH,
+                    timeout=15,
+                    fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+                    methode="models.generate_content",
+                    model=GEMINI_FLASH,
+                )
+            )
+    except ImportError as e:
+        logger.warning(f"carnet de repartie indisponible : {e}")
     
     # Instruction for Extraction
     system_instruction += "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur l'utilisateur dans ce message (ex: il aime/déteste qqch, son métier, une peur), ajoute-le à la fin de ta réponse dans un bloc XML invisible : <fact>Le fait appris</fact>. Sinon, ne mets rien."

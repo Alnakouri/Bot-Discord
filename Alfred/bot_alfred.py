@@ -37,6 +37,7 @@ import asyncio
 import random
 import re
 from core.response_memory import ResponseMemory
+from core.anti_tic import build_anti_tic_consigne
 import json
 import logging
 from datetime import datetime, timedelta
@@ -1679,6 +1680,39 @@ async def on_message(message):
             anti_repeat_prompt += f"{i}. \"{snippet}\"\n"
         anti_repeat_prompt += "Évitez de vous répéter. Un bon majordome est toujours original."
 
+    # ANTI-TICS : les amorces/clôtures/mots récurrents des dernières répliques, interdits
+    # nommément. L'anti-répétition ci-dessus cite des phrases ; celui-ci vise le MOULE.
+    _consigne_anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
+    anti_tic = f"\n\n{_consigne_anti_tic}" if _consigne_anti_tic else ""
+
+    try:
+        from core.repartee_lessons import detect_defeat_signal, reflect_on_defeat, format_for_prompt
+        
+        bloc_lecons = format_for_prompt("Alfred")
+        if bloc_lecons:
+            anti_tic += bloc_lecons
+            
+        motif_defaite = detect_defeat_signal(user_message)
+        if motif_defaite and recent_responses:
+            asyncio.create_task(
+                reflect_on_defeat(
+                    bot_id="Alfred",
+                    guild_id=str(message.guild.id) if message.guild else "DM",
+                    categorie=motif_defaite,
+                    repliques=recent_responses,
+                    fournisseur="gemini",
+                    key_manager=key_manager,
+                    bot_label="Alfred",
+                    modele=GEMINI_FLASH,
+                    timeout=15,
+                    fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+                    methode="models.generate_content",
+                    model=GEMINI_FLASH,
+                )
+            )
+    except ImportError as e:
+        logger.warning(f"carnet de repartie indisponible : {e}")
+
     def _get_meme_addition():
         chan_id = message.channel.id
         consigne = build_meme_consigne(message.content or "", set(meme_recent[chan_id]))
@@ -1689,7 +1723,7 @@ async def on_message(message):
                 meme_recent[chan_id].append(m.group(1))
         return consigne
 
-    final_system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{user_context}\n{transcript}{anti_repeat_prompt}{_get_meme_addition()}"
+    final_system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}\n{user_context}\n{transcript}{anti_repeat_prompt}{anti_tic}{_get_meme_addition()}"
     
     # GENERATION
     response_text = None

@@ -23,7 +23,9 @@ import base64
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.boucles import installer_anti_rattrapage
 from core.chrono import Chrono
-from core.models import groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
+from core.response_memory import ResponseMemory
+from core.anti_tic import build_anti_tic_consigne
+from core.models import GEMINI_FLASH, groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
 from core.api_tracking import tracer_appel
 # ⚠️ Ces deux garde-fous etaient RECOPIES ici. Le 2026-09-05, `_fuite_de_raisonnement()`
 # a gagne une seconde forme de detection (le meta-discours dans `content`, la seule qui
@@ -98,6 +100,10 @@ except ImportError:
 
 # Configuration du Logger
 logger = setup_logger("malena", "logs")
+
+# Malena n'avait aucune trace de ses propres repliques : sans elle, l'anti-tics ne
+# peut rien interdire. Meme role que chez les cinq autres bots.
+response_memory = ResponseMemory()
 if not DATABASE_AVAILABLE:
     logger.warning(
         f"⚠️ [CORE] shared/ absent ({_DB_IMPORT_ERROR}) : reputation, salons ignores, "
@@ -190,13 +196,14 @@ def build_expression_hint(mood):
 
 
 
-async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None, mime_type=None, meme_consigne=""):
+async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None,
+                                  mime_type=None, meme_consigne="", anti_tic=""):
     """Essaie selon le Smart Router : Gemini (Image/Audio) -> Groq (Texte) -> Mistral (Fallback)."""
     
     # SYSTEM PROMPT COMMUN + HUMEUR + EXPRESSIONS CIBLÉES
     mood_instruction = data.MOODS[mood]["prompt"]
     expression_hint = build_expression_hint(mood)
-    sys_prompt = data.PERSONALITY_PROMPT + f"\n\n{mood_instruction}{expression_hint}\n\nET SURTOUT : FAIS COURT (Max 3-4 phrases).{meme_consigne}"
+    sys_prompt = data.PERSONALITY_PROMPT + f"\n\n{mood_instruction}{expression_hint}\n\nET SURTOUT : FAIS COURT (Max 3-4 phrases).{meme_consigne}{anti_tic}"
 
     cascade = get_model_cascade(routing["type"] if routing else RequestType.TEXT, "malena")
     
@@ -730,8 +737,40 @@ async def on_message(message):
                             meme_recent[chan_id].append(m.group(1))
                     return consigne
 
+                # ANTI-TICS : amorces/clotures/mots recurrents des dernieres repliques.
+                _recent = response_memory.get_recent(message.guild.id if message.guild else 0)
+                _consigne_anti_tic = build_anti_tic_consigne(_recent, message_utilisateur=user_msg)
+                _anti_tic = f"\n\n{_consigne_anti_tic}" if _consigne_anti_tic else ""
+
+                # CARNET DE REPARTIE : les lecons deja tirees entrent dans le prompt,
+                # et une defaite reconnue en declenche une nouvelle (debit borne).
+                try:
+                    from core.repartee_lessons import (
+                        detect_defeat_signal, reflect_on_defeat, format_for_prompt)
+                    _anti_tic += format_for_prompt("Malena")
+                    _categorie = detect_defeat_signal(user_msg)
+                    if _categorie and _recent:
+                        asyncio.create_task(
+                            reflect_on_defeat(
+                                bot_id="Malena",
+                                guild_id=str(message.guild.id) if message.guild else "DM",
+                                categorie=_categorie,
+                                repliques=_recent,
+                                fournisseur="gemini",
+                                key_manager=key_manager,
+                                bot_label="Malena",
+                                modele=GEMINI_FLASH,
+                                timeout=15,
+                                fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+                                methode="models.generate_content",
+                                model=GEMINI_FLASH,
+                            )
+                        )
+                except ImportError as e:
+                    logger.warning(f"carnet de repartie indisponible : {e}")
+
                 _chrono = Chrono("malena", message.channel.id)
-                reply_text = await generate_response_hybrid(prompt, current_mood, routing, media_data, mime_type, meme_consigne=_get_meme_addition())
+                reply_text = await generate_response_hybrid(prompt, current_mood, routing, media_data, mime_type, meme_consigne=_get_meme_addition(), anti_tic=_anti_tic)
                 _chrono.etape("llm")
                 
                 if not reply_text and (has_image or has_audio):
@@ -758,6 +797,7 @@ async def on_message(message):
                 
                 # ENREGISTRER L'INTERACTION DANS LA MÉMOIRE
                 malena_brain.add_interaction(message.author.id, message.author.name, user_msg, reply_text)
+                response_memory.add(message.guild.id if message.guild else 0, reply_text)
                 asyncio.create_task(malena_brain.refresh_daily_read(message.author.id, _daily_llm_call))
 
             except Exception as e:

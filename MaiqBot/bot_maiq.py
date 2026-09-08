@@ -21,6 +21,7 @@ import re
 import json
 import os
 from core.response_memory import ResponseMemory
+from core.anti_tic import build_anti_tic_consigne
 from core.boucles import installer_anti_rattrapage
 import logging
 from datetime import datetime
@@ -1364,6 +1365,39 @@ async def on_message(message):
             anti_repeat_prompt += f"{i}. \"{snippet}\"\n"
         anti_repeat_prompt += "⚠️ INTERDICTION de répéter ces phrases. M'aiq dit toujours quelque chose de NOUVEAU !"
 
+    # ANTI-TICS : amorces/clotures/mots recurrents des dernieres repliques, interdits
+    # nommement. L'anti-repetition ci-dessus cite des PHRASES ; celui-ci vise le MOULE.
+    _consigne_anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
+    anti_tic = f"\n\n{_consigne_anti_tic}" if _consigne_anti_tic else ""
+
+    try:
+        from core.repartee_lessons import detect_defeat_signal, reflect_on_defeat, format_for_prompt
+        
+        bloc_lecons = format_for_prompt("M'aiq")
+        if bloc_lecons:
+            anti_tic += bloc_lecons
+            
+        motif_defaite = detect_defeat_signal(user_message)
+        if motif_defaite and recent_responses:
+            asyncio.create_task(
+                reflect_on_defeat(
+                    bot_id="M'aiq",
+                    guild_id=str(message.guild.id) if message.guild else "DM",
+                    categorie=motif_defaite,
+                    repliques=recent_responses,
+                    fournisseur="gemini",
+                    key_manager=key_manager,
+                    bot_label="M'aiq le Menteur",
+                    modele=GEMINI_FLASH,
+                    timeout=15,
+                    fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+                    methode="models.generate_content",
+                    model=GEMINI_FLASH,
+                )
+            )
+    except ImportError as e:
+        logger.warning(f"carnet de repartie indisponible : {e}")
+
     # Limite de taille max pour les images (sécurité)
     MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
     
@@ -1396,7 +1430,7 @@ async def on_message(message):
     response_text = None
     
     # Construire le payload Gemini (unifié pour éviter l'erreur 400 des messages "user" consécutifs)
-    last_turn_parts = [types.Part(text=f"SYSTEM: {current_personality_prompt}\nCONTEXT: {transcript}{anti_repeat_prompt}{duel_context}\n\nDernier message : {user_message}")]
+    last_turn_parts = [types.Part(text=f"SYSTEM: {current_personality_prompt}\nCONTEXT: {transcript}{anti_repeat_prompt}{anti_tic}{duel_context}\n\nDernier message : {user_message}")]
     if media_data:
         last_turn_parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=media_data)))
     gemini_messages = [types.Content(role="user", parts=last_turn_parts)]
@@ -1510,7 +1544,7 @@ async def on_message(message):
                 if _saut:
                     _raison = _saut
                     continue
-                msgs = [{"role": "system", "content": f"{current_personality_prompt}\n{transcript}{anti_repeat_prompt}{duel_context}"}]
+                msgs = [{"role": "system", "content": f"{current_personality_prompt}\n{transcript}{anti_repeat_prompt}{anti_tic}{duel_context}"}]
                 for msg in conversation_history[channel_id]:
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})
@@ -1539,7 +1573,7 @@ async def on_message(message):
                     continue
                 if media_data is not None:
                     logger.warning(f"⚠️ [NVIDIA] Média reçu mais ignoré par {model_name}. Perte silencieuse évitée.")
-                msgs = [{"role": "system", "content": f"{current_personality_prompt}\n{transcript}{anti_repeat_prompt}{duel_context}"}]
+                msgs = [{"role": "system", "content": f"{current_personality_prompt}\n{transcript}{anti_repeat_prompt}{anti_tic}{duel_context}"}]
                 for msg in conversation_history[channel_id]:
                     r = "user" if msg["role"] == "user" else "assistant"
                     msgs.append({"role": r, "content": msg["parts"][0]})

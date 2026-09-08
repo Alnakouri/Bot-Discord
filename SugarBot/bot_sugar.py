@@ -19,6 +19,7 @@ import re
 import json
 import os
 from core.response_memory import ResponseMemory, merge_recent_responses
+from core.anti_tic import build_anti_tic_consigne
 from core.boucles import installer_anti_rattrapage
 import logging
 from datetime import datetime
@@ -191,7 +192,7 @@ load_secure_env(Path(__file__).parent)
 
 # IMPORT LLM CASCADE
 from core.llm_cascade import generate_response
-from core.models import NVIDIA_BASE_URL
+from core.models import GEMINI_FLASH, NVIDIA_BASE_URL
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
 
@@ -922,6 +923,40 @@ async def on_message(message):
             "encore par une question. Prends un angle, un rythme et une chute différents. "
             "Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images, "
             "métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs.")
+
+    # ANTI-TICS : les amorces/clôtures/mots récurrents des dernières répliques, interdits
+    # nommément. L'anti-répétition ci-dessus cite des phrases ; celui-ci vise le MOULE.
+    _consigne_anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
+    anti_tic = f"\n\n{_consigne_anti_tic}" if _consigne_anti_tic else ""
+
+    try:
+        from core.repartee_lessons import detect_defeat_signal, reflect_on_defeat, format_for_prompt
+        from core.safe_client import get_client as get_safe_genai_client
+        
+        bloc_lecons = format_for_prompt("Sugar")
+        if bloc_lecons:
+            anti_tic += bloc_lecons
+            
+        motif_defaite = detect_defeat_signal(user_message)
+        if motif_defaite and recent_responses:
+            asyncio.create_task(
+                reflect_on_defeat(
+                    bot_id="Sugar",
+                    guild_id=str(message.guild.id) if message.guild else "DM",
+                    categorie=motif_defaite,
+                    repliques=recent_responses,
+                    fournisseur="gemini",
+                    key_manager=key_manager,
+                    bot_label="Sugar Bot",
+                    modele=GEMINI_FLASH,
+                    timeout=15,
+                    fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+                    methode="models.generate_content",
+                    model=GEMINI_FLASH,
+                )
+            )
+    except ImportError as e:
+        logger.warning(f"carnet de repartie indisponible : {e}")
     
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
@@ -953,7 +988,7 @@ async def on_message(message):
     # GÉNÉRATION (Smart Router)
     
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{_get_memory_addition()}{_get_meme_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{_get_memory_addition()}{_get_meme_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}{anti_tic}"
     
     async with message.channel.typing():
         

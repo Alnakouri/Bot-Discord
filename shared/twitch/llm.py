@@ -183,61 +183,18 @@ def _truncate_for_twitch(text: str, limit: int = 480) -> str:
 
 
 def _build_anti_tic_consigne(recent, n: int = 5) -> str:
-    """Liste les AMORCES (premiers mots) et CLÔTURES (derniers mots de la dernière phrase,
-    emoji de ton retiré) des dernières répliques et les interdit explicitement. Parité avec
-    le helper Discord `sheo_llm.build_anti_tic_consigne`, mais GÉNÉRIQUE (aucune logique
-    spécifique-bot, aucun import de bot) → réutilisable par tous les bots Twitch.
-    Retourne "" si rien d'exploitable (ne casse jamais la génération)."""
-    if not recent:
+    """Enveloppe : le filet vit dans `shared.anti_tic`, partagé avec le côté Discord.
+
+    ⚠️ Le `\\n\\n` est à CETTE enveloppe, pas au helper : l'appelant fait
+    `system_prompt += anti_tic` sans séparateur, et la consigne se soudait à la phrase
+    précédente quand le corps de la fonction est parti dans le module partagé."""
+    try:
+        from shared.anti_tic import build_anti_tic_consigne as _shared_anti_tic
+    except ImportError:
         return ""
+    consigne = _shared_anti_tic(recent, n=n, message_utilisateur=None)
+    return f"\n\n{consigne}" if consigne else ""
 
-    amorces, clotures = [], []
-    for resp in list(recent)[-n:]:
-        if not resp or not isinstance(resp, str):
-            continue
-        try:
-            clean = re.sub(r"\s+", " ", resp).strip()
-            if not clean:
-                continue
-            # Amorce : jusqu'à 5 premiers mots normalisés (minuscules, ponctuation de bord retirée)
-            words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in clean.split()]
-            words = [w for w in words if w]
-            if len(words) >= 2:
-                amorce = " ".join(words[:min(5, len(words))])
-                if amorce and amorce not in amorces:
-                    amorces.append(amorce)
-            # Clôture : dernière phrase (emoji de ton retiré), ~5 derniers mots normalisés
-            m = _TRAILING_EMOJI.search(clean)
-            base = clean[:m.start()].rstrip() if m else clean
-            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', base) if s.strip()]
-            if sentences:
-                last_words = [re.sub(r"^\W+|\W+$", "", w).lower() for w in sentences[-1].split()]
-                last_words = [w for w in last_words if w]
-                if last_words:
-                    cloture = " ".join(last_words[-min(5, len(last_words)):])
-                    if cloture and cloture not in clotures:
-                        clotures.append(cloture)
-        except Exception:
-            continue
-
-    if not amorces and not clotures:
-        return ""
-
-    consigne = "\n\n[ANTI-TICS — VARIE OU MEURS]"
-    if amorces:
-        consigne += (
-            "\nTu as OUVERT tes dernières répliques par : "
-            + ", ".join(f'"{a}"' for a in amorces)
-            + ". INTERDIT de rouvrir par une de ces amorces ou une variation proche — "
-            "trouve une entrée NEUVE (question sèche, non-sequitur, ordre, constat)."
-        )
-    if clotures:
-        consigne += (
-            "\nTu as CLÔTURÉ par : "
-            + ", ".join(f'"{c}"' for c in clotures)
-            + ". INTERDIT de refinir pareil — change de chute."
-        )
-    return consigne
 
 
 class LlmMixin:

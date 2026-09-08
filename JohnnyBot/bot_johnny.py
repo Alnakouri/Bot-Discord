@@ -18,13 +18,14 @@ import random
 import json
 import base64
 from core.response_memory import ResponseMemory, merge_recent_responses
+from core.anti_tic import build_anti_tic_consigne
 from core.boucles import installer_anti_rattrapage
 import logging
 from datetime import datetime
 from core.smart_router import classify_request, RequestType, download_media, resolve_media_attachments
 from core.media_handler import process_image_ollama
 from core.llm_cascade import generate_response
-from core.models import NVIDIA_BASE_URL
+from core.models import GEMINI_FLASH, NVIDIA_BASE_URL
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
 
@@ -996,6 +997,39 @@ async def on_message(message):
             "Ne réutilise AUCUN mot-clé saillant de ces répliques (mots en MAJUSCULES, images, "
             "métaphores, chutes) : si l'une d'elles crie ÉVALUATION, toi tu pars ailleurs.")
     
+    # ANTI-TICS : amorces/clotures/mots recurrents des dernieres repliques, interdits
+    # nommement. L'anti-repetition ci-dessus cite des PHRASES ; celui-ci vise le MOULE.
+    _consigne_anti_tic = build_anti_tic_consigne(recent_responses, message_utilisateur=user_message)
+    anti_tic = f"\n\n{_consigne_anti_tic}" if _consigne_anti_tic else ""
+
+    try:
+        from core.repartee_lessons import detect_defeat_signal, reflect_on_defeat, format_for_prompt
+        
+        bloc_lecons = format_for_prompt("Johnny")
+        if bloc_lecons:
+            anti_tic += bloc_lecons
+            
+        motif_defaite = detect_defeat_signal(user_message)
+        if motif_defaite and recent_responses:
+            asyncio.create_task(
+                reflect_on_defeat(
+                    bot_id="Johnny",
+                    guild_id=str(message.guild.id) if message.guild else "DM",
+                    categorie=motif_defaite,
+                    repliques=recent_responses,
+                    fournisseur="gemini",
+                    key_manager=key_manager,
+                    bot_label="Johnny Bot",
+                    modele=GEMINI_FLASH,
+                    timeout=15,
+                    fabrique=lambda cle: get_safe_genai_client(api_key=cle),
+                    methode="models.generate_content",
+                    model=GEMINI_FLASH,
+                )
+            )
+    except ImportError as e:
+        logger.warning(f"carnet de repartie indisponible : {e}")
+
     # ═══ SMART ROUTER — Classification du message ═══
     _addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
     routing = classify_request(user_message, atts, addressed=_addressed)
@@ -1042,7 +1076,7 @@ async def on_message(message):
         return consigne
 
     response_text = None
-    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}{_get_meme_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}"
+    system_prompt = f"SYSTEM: {PERSONALITY_PROMPT}{memory_prompt_addition}{_get_meme_addition()}\n{transcript}{keyword_boost}{anti_repeat_prompt}{anti_tic}"
     
     _chrono.etape("contexte")
     async with message.channel.typing():
