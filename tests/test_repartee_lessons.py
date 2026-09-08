@@ -61,6 +61,50 @@ def test_detect_defeat_signal():
         assert detect_defeat_signal(insulte) is None, insulte
 
 
+def test_les_formulations_REELLES_sont_reconnues():
+    """⚠️ Test live du 2026-09-08 : la liste d'origine ratait 10 declarations de victoire
+    parfaitement banales sur 10. Une liste trop etroite rend la fonctionnalite
+    indeclenchable — elle n'avait jamais produit une seule lecon."""
+    declarations = [
+        ("tu t'es fait avoir", CATEGORIE_CAPITULATION),
+        ("dans ta face", CATEGORIE_CAPITULATION),
+        ("t'as rien a repondre", CATEGORIE_CAPITULATION),
+        ("tu peux rien dire la", CATEGORIE_CAPITULATION),
+        ("je t'ai mouche", CATEGORIE_CAPITULATION),
+        ("tu t'inclines", CATEGORIE_CAPITULATION),
+        ("1-0 pour moi", CATEGORIE_CAPITULATION),
+        ("tu radotes", CATEGORIE_RENGAINE),
+        ("tu dis toujours la meme chose", CATEGORIE_RENGAINE),
+        ("tu tournes en rond", CATEGORIE_RENGAINE),
+    ]
+    for message, attendue in declarations:
+        assert detect_defeat_signal(message) == attendue, message
+
+
+def test_l_apostrophe_absente_ou_courbe_ne_fait_pas_rater():
+    """Personne ne tape l'apostrophe droite au telephone."""
+    for variante in ["tu t'es fait avoir", "tu t es fait avoir", "tu tes fait avoir",
+                     "t'as perdu", "t’as perdu", "tas perdu"]:
+        assert detect_defeat_signal(variante) is not None, variante
+
+
+def test_gagner_sur_le_FOND_ne_declenche_rien_et_c_est_assume():
+    """⚠️ Frontiere volontaire de la fonctionnalite, a ne pas prendre pour un bug.
+
+    Le 2026-09-08, « les papillons n'ont pas de plume, idiot » attrapait Sheo en pleine
+    absurdite : une vraie defaite, et rien ne s'est declenche. Reconnaitre celle-la
+    demanderait de faire juger CHAQUE message par un modele — un appel LLM par message,
+    quand la fonction en autorise six par jour. Le detecteur reconnait une DECLARATION
+    de victoire, pas une victoire ; c'est cette precision qui empeche une conversation
+    ordinaire de faire reecrire la persona d'un bot."""
+    for message in ["sa ressemble a un papier toilette",
+                    "ca reste mieux que ton parchemain",
+                    "les papillon n'ont pas de plume idiot",
+                    "j'ai perdu mes cles",
+                    "on gagne le match ce soir"]:
+        assert detect_defeat_signal(message) is None, message
+
+
 def test_la_detection_ne_rend_jamais_un_morceau_du_message():
     """⚠️ Ce qui sort d'ici finit dans un prompt. Si c'était du texte de l'utilisateur,
     il dicterait la leçon. Seules deux étiquettes de NOTRE vocabulaire ont le droit."""

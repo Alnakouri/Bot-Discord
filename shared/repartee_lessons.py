@@ -25,12 +25,30 @@ _MOTIFS = [
     (CATEGORIE_RENGAINE, [
         r"ta r[eé]partie est claqu[eé]e", r"t'es [aà] court", r"tu te r[eé]p[eè]tes",
         r"tu boucles", r"t'as plus d'arguments", r"r[eé]partie [eé]clat[eé]e",
+        r"tu radotes", r"tu tournes en rond", r"tu dis toujours la m[eê]me",
+        r"c'est toujours (la m[eê]me|pareil)", r"encore la m[eê]me",
+        r"t'es [aà] sec", r"tu rames",
     ]),
     (CATEGORIE_CAPITULATION, [
         r"je t'ai humili[eé]", r"t'as perdu", r"tu t'es couch[eé]",
         r"je t'ai eu", r"victoire pour moi", r"tu peux pas test",
         r"tu fais moins le malin", r"tu baisses les yeux", r"je gagne",
+        r"tu t'es fait (avoir|mouch[eé]|d[eé]fonc[eé])", r"je t'ai (mouch[eé]|mat[eé])",
+        r"dans ta face", r"t'as rien [aà] (r[eé]pondre|dire)", r"tu peux rien dire",
+        r"tu t'inclines", r"t'as pris cher", r"\d+\s*[-–]\s*0 pour moi",
     ]),
+]
+
+# Les apostrophes courbes que Discord et les claviers mobiles produisent : sans ce
+# rabattage, « t'as perdu » tape au clavier du telephone ne correspondait a rien.
+_APOSTROPHES = str.maketrans({"’": "'", "ʼ": "'", "`": "'"})
+
+# ⚠️ Et l'apostrophe simplement ABSENTE : « tu t es fait avoir », « tas perdu ». Les
+# motifs sont ecrits avec une apostrophe pour rester lisibles ; elle devient optionnelle
+# a la compilation. Sans ca, la moitie des formulations reelles ne correspondaient a rien.
+_MOTIFS_COMPILES = [
+    (categorie, [re.compile(motif.replace("'", "['’ ]?")) for motif in motifs])
+    for categorie, motifs in _MOTIFS
 ]
 
 
@@ -39,11 +57,20 @@ def detect_defeat_signal(message_utilisateur: str) -> Optional[str]:
 
     ⚠️ Rend une étiquette de notre vocabulaire, jamais un morceau du message. Ce qui
     remonte d'ici finit dans un prompt : si c'était du texte de l'utilisateur, il
-    dicterait la leçon. Voir `construire_prompt_de_reflexion`."""
-    msg = message_utilisateur.lower()
-    for categorie, motifs in _MOTIFS:
+    dicterait la leçon. Voir `construire_prompt_de_reflexion`.
+
+    ⚠️ CE QUE CETTE FONCTION NE VOIT PAS, ET C'EST VOLONTAIRE. Elle reconnaît une
+    DÉCLARATION de victoire, pas une victoire. Test live du 2026-09-08 : « les papillons
+    n'ont pas de plume, idiot » attrapait Sheo en flagrante absurdité — une vraie défaite,
+    et rien ne s'est déclenché. Reconnaître celle-là demanderait de faire juger chaque
+    message par un modèle : un appel LLM par message, alors que la fonction en autorise
+    six par jour. Le jour où on voudra ce comportement, ce sera un choix de coût assumé,
+    pas un elargissement de cette liste — qui, elle, doit rester precise : c'est ce qui
+    empeche une conversation ordinaire de faire reecrire la persona d'un bot."""
+    msg = message_utilisateur.lower().translate(_APOSTROPHES)
+    for categorie, motifs in _MOTIFS_COMPILES:
         for motif in motifs:
-            if re.search(motif, msg):
+            if motif.search(msg):
                 return categorie
     return None
 
