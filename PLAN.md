@@ -147,7 +147,10 @@ sondages, follows) exige le token du **PROPRIETAIRE de la chaine**, pas celui du
     python twitch_authorize.py --bot sheogorath_broadcaster ^
         --client-id <CLIENT_ID_SHEO> --client-secret <CLIENT_SECRET_SHEO>
 
-⚠️ **Se connecter avec le compte STREAMER**, pas avec le compte du bot. Le fichier ecrit
+⚠️ **Se connecter avec le compte STREAMER**, pas avec le compte du bot. Depuis le 08/09
+(`86710cb`), le helper le DIT lui-meme quand le nom finit par `_broadcaster`, et il
+refuse de proposer le token du streamer pour `TWITCH_OAUTH_TOKEN` — l'y coller aurait
+fait parler le bot sous l'identite du streamer. Le fichier ecrit
 (`data/twitch_chat_auth_sheogorath_broadcaster.json`) est repere tout seul.
 Puis cocher `chat.eventsub` pour Sheo (dashboard, ou `data/twitch_config.json` : il est a
 `false`), et redemarrer Sheo.
