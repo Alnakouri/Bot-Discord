@@ -1,3 +1,23 @@
+// Ordre d'affichage, glyphe et couleur de texte des bots.
+// L'autorite sur le nom et la couleur reste BOT_REGISTRY (backend/bot_manager.py),
+// servie par /api/bots : les champs display/color ci-dessous ne sont qu'un repli
+// pour les ecrans qui n'ont pas encore recu la reponse de l'API (charts.js).
+// Toute divergence avec bot_manager.py est un bug : les deux doivent rester egaux.
+const BOT_REGISTRY_JS = {
+  sheogorath: { name: "sheogorath", display: "🧀 Sheogorath", glyph: "🧀", color: "#d946ef" },
+  maiq: { name: "maiq", display: "🐱 M'aiq le Menteur", glyph: "🐱", color: "#f97316" },
+  alfred: { name: "alfred", display: "☕ Alfred Pennyworth", glyph: "☕", color: "#475569", textColor: "#94a3b8" },
+  johnny: { name: "johnny", display: "🔫 Johnny Silverbot", glyph: "🔫", color: "#22c55e" },
+  sugar: { name: "sugar", display: "Sugar Bot", glyph: "S", color: "#0ea5e9" },
+  malena: { name: "malena", display: "💃 Malena la Gitana", glyph: "💃", color: "#f43f5e" }
+};
+
+// Une couleur venue de l'API entre dans un attribut style : escapeHtml n'y suffit
+// pas. Seul un #RRGGBB passe, tout le reste retombe sur le repli.
+function safeColor(value, fallback) {
+    return (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) ? value : fallback;
+}
+
 const API_BASE = '/api';
 
 function escapeHtml(s) {
@@ -549,6 +569,7 @@ function renderBotsGrid(bots) {
         const statsHtml = isRunning ? `⚡ CPU: ${escapeHtml(bot.cpu)} | 💾 RAM: ${escapeHtml(bot.ram)}` : '';
 
         if (card) {
+            card.classList.toggle('offline', !isRunning);
             const badge = card.querySelector('.badge');
             if (badge) {
                 if (badge.textContent !== bot.status) {
@@ -588,10 +609,18 @@ function renderBotsGrid(bots) {
                 actions.innerHTML = actionsHtml;
             }
         } else {
+            const meta = BOT_REGISTRY_JS[bot.id] || {};
+            const botColor = safeColor(bot.color, safeColor(meta.color, '#ffffff'));
+            const botDisplay = bot.display || meta.display || bot.id;
+            const glyph = meta.glyph || bot.id.charAt(0).toUpperCase();
+            const glyphColor = safeColor(meta.textColor, botColor);
+            // Le suffixe d'alpha n'est valide que sur un #RRGGBB — safeColor le garantit.
+            const avatarBg = `${botColor}24`;
             const cardHtml = `
-                <div class="bot-card glass" id="${cardId}" style="--color: ${bot.color || '#fff'};">
+                <div class="bot-card glass${isRunning ? '' : ' offline'}" id="${cardId}" style="--color: ${botColor};">
                     <div class="bot-header">
-                        <span class="bot-name">${escapeHtml(bot.display)}</span>
+                        <span class="bot-avatar" style="background: ${avatarBg}; color: ${glyphColor};">${escapeHtml(glyph)}</span>
+                        <span class="bot-name">${escapeHtml(botDisplay)}</span>
                         <span class="${badgeClass}">${escapeHtml(bot.status)}</span>
                     </div>
                     <div class="bot-uptime">

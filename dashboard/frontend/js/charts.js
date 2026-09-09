@@ -4,14 +4,8 @@
 Chart.defaults.color = '#adb5bd';
 Chart.defaults.font.family = 'Inter';
 
-const BOT_REGISTRY_JS = {
-    "sheogorath": { name: "sheogorath", display: "🧀 Sheogorath", color: "#d946ef" },
-    "maiq": { name: "maiq", display: "🐱 M'aiq le Menteur", color: "#f97316" },
-    "alfred": { name: "alfred", display: "☕ Alfred Pennyworth", color: "#475569" },
-    "johnny": { name: "johnny", display: "🔫 Johnny Silverhand", color: "#22c55e" },
-    "sugar": { name: "sugar", display: "Sugar Bot", color: "#0ea5e9" },
-    "malena": { name: "malena", display: "💃 Malena la Gitana", color: "#f43f5e" }
-};
+// BOT_REGISTRY_JS est declare en tete de app.js (charge apres ce fichier) ;
+// il n'est lu ici que depuis des fonctions appelees une fois la page chargee.
 
 let mainActivityChart = null;
 let apiUsageChart = null;
