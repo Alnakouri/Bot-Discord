@@ -141,3 +141,37 @@ def test_le_quiz_ne_le_fait_pas_avouer():
         assert not ("identit" in bas and "sheogorath" in bas), (
             "le quiz fait confirmer à Sheogorath sa propre identité : " + item["q"]
         )
+
+
+def test_chaque_humeur_DEMONTRE_la_fissure():
+    """Les 4 blocs d'exemples montrent la réaction, au lieu de la décrire ailleurs.
+
+    ⚠️ C'EST LA MOITIÉ QUI MANQUAIT AU PREMIER JET, et le dépôt connaissait déjà la leçon
+    (cf. le tic « Haskill » : **une démonstration bat une interdiction**). Le prompt est
+    assemblé `PERSONALITY_BASE + [humeur] + COMEDY_EXAMPLES_<humeur>` : la règle vivait
+    dans BASE, donc LOIN devant, et la dernière chose que le modèle lisait était une
+    dizaine de few-shots d'absurde joyeux. Test live du 09/09 : « prêt pour la Marche
+    Grise ? » a rendu un bal masqué de confiture, sans une once d'effroi.
+
+    Le verrou exige donc la DÉMONSTRATION, là où le modèle la lit en dernier."""
+    for humeur in ("NEUTRAL", "MANIA", "DEMENTIA", "BLISS"):
+        bloc = getattr(sheo_data, "COMEDY_EXAMPLES_" + humeur)
+        # ⚠️ Pas « le premier exemple qui cite Jyggalag » : NEUTRAL en contient déjà un où
+        # le nom sert de pique jetable (« Utile est un mot de Jyggalag »). C'est permis —
+        # Jyggalag reste un ennemi qu'on méprise — mais ce n'est PAS la démonstration.
+        # On exige un exemple qui porte les deux : le sujet, ET la fissure.
+        exemples = [
+            e for e in bloc.split("\nUser: ")[1:]
+            if ("jyggalag" in e.lower() or "marche grise" in e.lower())
+            and "aucun aveu" in e
+        ]
+        assert exemples, (
+            f"COMEDY_EXAMPLES_{humeur} ne DÉMONTRE pas la réaction à Jyggalag : la règle "
+            "de PERSONALITY_BASE reste une interdiction nue, et les few-shots qui la "
+            "suivent gagnent"
+        )
+        demo = exemples[0]
+        for motif in _AVEUX_COMPILES:
+            assert not motif.search(demo.lower()), (
+                f"COMEDY_EXAMPLES_{humeur} : la démonstration elle-même avoue"
+            )
