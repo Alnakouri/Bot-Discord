@@ -79,10 +79,24 @@ def detect_defeat_signal(message_utilisateur: str) -> Optional[str]:
                 return categorie
     return None
 
+def _id_normalise(bot_id: str) -> str:
+    """L'identifiant tel qu'il s'écrit SUR LE DISQUE, pour tout ce qui est nommé par bot.
+
+    `bot_id` s'écrit « Sheogorath » ou « M'aiq » ; tout le reste du dépôt écrit
+    « sheogorath », « maiq » — `bot_features.json` est indexé ainsi, et les fichiers de
+    `data/` aussi (`maiq_memory.json`, `discord_bio_maiq.json`…). Sans ce rabattage, la
+    lecture du toggle échoue toujours, et le carnet de M'aiq s'écrirait
+    `repartee_lessons_M'aiq.json` : une apostrophe dans un nom de fichier, seule de son
+    espèce dans `data/`, que le moindre script shell casserait."""
+    return re.sub(r"[^a-z0-9]", "", bot_id.lower())
+
+
 class ReparteeLessons:
     def __init__(self, bot_id: str):
         self.bot_id = bot_id
-        self.filepath = os.path.join(DATA_DIR, f"repartee_lessons_{bot_id}.json")
+        self.filepath = os.path.join(
+            DATA_DIR, f"repartee_lessons_{_id_normalise(bot_id)}.json"
+        )
         self.max_lessons = 15
 
     def _read(self) -> List[str]:
@@ -235,12 +249,6 @@ async def reflect_on_defeat(bot_id: str, guild_id: str, categorie: str, replique
         else:
             logger.info(f"{bot_id} a rejeté la leçon : {lesson}")
 
-def _cle_dashboard(bot_id: str) -> str:
-    """`bot_id` s'écrit « Sheogorath » ou « M'aiq » ; `bot_features.json` est indexé
-    « sheogorath », « maiq ». Sans ce rabattage, la recherche échoue toujours."""
-    return re.sub(r"[^a-z0-9]", "", bot_id.lower())
-
-
 def est_active(bot_id: str) -> bool:
     """Le toggle du dashboard, lu au bon endroit.
 
@@ -258,7 +266,7 @@ def est_active(bot_id: str) -> bool:
         logger.error(f"Error reading bot_features: {e}")
         return True
 
-    bloc = features.get(_cle_dashboard(bot_id))
+    bloc = features.get(_id_normalise(bot_id))
     if not isinstance(bloc, dict):
         return True
     actif = bloc.get("repartee_lessons_enabled", True)

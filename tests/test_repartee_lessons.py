@@ -23,6 +23,7 @@ from shared.repartee_lessons import (  # noqa: E402
     CATEGORIE_RENGAINE,
     DATA_DIR,
     ReparteeLessons,
+    _id_normalise,
     _sanitize_lesson,
     construire_prompt_de_reflexion,
     detect_defeat_signal,
@@ -185,6 +186,29 @@ def test_assainissement_rejette_ce_qui_n_a_pas_la_FORME_d_une_regle():
 
 
 # ─────────────────────────── le carnet ─────────────────────────────────────────────────
+
+
+def test_nom_de_fichier_normalise():
+    """Le carnet se nomme comme tout le reste de `data/` : minuscules, sans ponctuation.
+
+    ⚠️ Le nom du carnet naissait de `bot_id` brut. Pour cinq bots sur six ça ne se voyait
+    pas ; pour le sixième ça donnait `repartee_lessons_M'aiq.json` — une apostrophe dans
+    un nom de fichier, seule de son espèce dans `data/` (qui écrit déjà `maiq_memory.json`,
+    `discord_bio_maiq.json`). Le carnet n'ayant encore jamais été produit par un vrai
+    modèle, aucun fichier n'existait : c'était le seul moment où renommer ne coûtait rien.
+    Verrou posé pour que ce moment ne se représente pas."""
+    assert _id_normalise("M'aiq") == "maiq"
+    assert _id_normalise("Sheogorath") == "sheogorath"
+
+    for bot_id, _ in BOTS:
+        nom = os.path.basename(ReparteeLessons(bot_id).filepath)
+        assert nom == f"repartee_lessons_{_id_normalise(bot_id)}.json", (
+            f"{bot_id} : le carnet doit porter l'identifiant normalisé"
+        )
+        assert nom == nom.lower(), f"{bot_id} : nom de fichier avec une majuscule"
+        assert nom.replace("_", "").replace(".", "").isalnum(), (
+            f"{bot_id} : ponctuation dans un nom de fichier ({nom})"
+        )
 
 
 def test_carnet_comportement():
