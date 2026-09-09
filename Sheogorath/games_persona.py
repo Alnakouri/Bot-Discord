@@ -67,10 +67,10 @@ PERSONA = {
             "flavor": "Mania pour les artistes colorés, Démence pour les paranoïaques sombres."
         },
         {
-            "q": "Qui est la véritable identité de Sheogorath, représentant l'Ordre ?",
+            "q": "Quel Prince Daedra incarne l'Ordre et revient engloutir les Îles à chaque Marche Grise ?",
             "choices": ["Mehrunes Dagon", "Jyggalag", "Molag Bal", "Hermaeus Mora"],
             "answer_idx": 1,
-            "flavor": "Jyggalag ! Le Prince de l'Ordre gris et ennuyeux."
+            "flavor": "Jyggalag ! Le Prince de l'Ordre gris et ennuyeux. N'en parlons plus."
         },
         {
             "q": "Comment appelle-t-on les gardes du côté de Mania ?",
