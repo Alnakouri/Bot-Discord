@@ -125,6 +125,20 @@ relancer — les deux, sinon le `.lnk` du Bureau et le script divergent en silen
 
 ---
 
+## Comment livrer — lire avant de commencer
+
+1. **Livrer le Lot 1 SEUL, puis s'arrêter.** Le Lot 2 ne commence qu'une fois le Lot 1 relu.
+   Les deux lots dans une seule livraison rendent la relecture impossible.
+2. **Ne pas commiter, ne pas pousser, ne pas créer de branche.** Laisser le travail dans
+   l'arbre de travail. La relecture se fait sur le diff, et c'est elle qui commite.
+3. **Ne rien supprimer par motif textuel.** Filtrer des lignes parce qu'elles citent un mot
+   a déjà cassé la syntaxe de 11 fichiers et effacé des fixtures de test dans ce dépôt.
+4. **Rendre compte de ce qui n'a pas été fait.** Si une vue de la maquette montre une
+   donnée qu'aucune route ne sert, l'écrire noir sur blanc plutôt que d'inventer un
+   endpoint ou de laisser la valeur en dur — une valeur en dur qui survit au portage est
+   un mensonge affiché à l'écran.
+5. **Ne pas toucher à** `backend/` **ni aux tests.** Ce lot est du `frontend/`.
+
 ## Recette
 
 - `pyflakes` puis `pytest` (900 verts avant de commencer ; ⚠️ jamais deux `pytest` en
