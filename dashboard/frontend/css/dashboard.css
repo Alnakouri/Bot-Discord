@@ -202,19 +202,14 @@ header {
     border-color: rgba(255,255,255,0.2);
 }
 
+/* Tuile v2 : l'icone est une pastille discrete en tete de tuile, pas le gros
+   medaillon de la v1. Sa couleur vient de l'attribut style de chaque tuile. */
 .stat-card i {
-    font-size: 2rem;
-    color: var(--accent);
-    padding: 1rem;
-    background: rgba(107, 76, 218, 0.1);
-    border-radius: 12px;
+    font-size: 1rem;
+    padding: 0;
+    background: none;
+    border-radius: 0;
 }
-
-.stat-card.warning i { color: var(--warning); background: rgba(245, 166, 35, 0.1);}
-.stat-card.success i { color: var(--success); background: rgba(32, 201, 151, 0.1);}
-
-.stat-card h3 { margin: 0; font-size: 0.9rem;}
-.stat-card p { font-size: 1.5rem; font-weight: 700;}
 
 /* Bots Grid */
 .bots-grid {
@@ -238,10 +233,10 @@ header {
 .bot-card.offline .bot-avatar { filter: grayscale(1); opacity: 0.55; }
 .bot-card.offline .bot-name { color: #a9b2c1; }
 
-.bot-card.running::after {
+.bot-card.running .bot-avatar::after {
     content: '';
     position: absolute;
-    top: 10px; right: 10px;
+    bottom: -2px; right: -2px;
     width: 8px; height: 8px;
     background: var(--success);
     border-radius: 50%;
@@ -276,6 +271,7 @@ header {
     height: 34px;
     flex: 0 0 34px;
     border-radius: 11px;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;

@@ -468,6 +468,8 @@ async function updateStatTiles() {
             const errCount = await errRes.json();
             const statErrorsEl = document.getElementById('stat-errors');
             if (statErrorsEl) statErrorsEl.textContent = errCount;
+            window.globalErrorCount24h = errCount;
+            updateOverviewAlertBanner();
         }
     } catch(e) { console.error("Error stat tile fetch error:", e); }
 
@@ -485,11 +487,15 @@ async function updateStatTiles() {
                         totalErrors += provider.errors || 0;
                     }
                 }
+                const barApi = document.getElementById('stat-bar-api');
                 if (totalCalls > 0) {
                     const rate = ((totalCalls - totalErrors) / totalCalls) * 100;
                     statApiEl.textContent = `${rate.toFixed(1)}%`;
+                    if (barApi) barApi.style.width = `${rate.toFixed(1)}%`;
                 } else {
                     statApiEl.textContent = '—';
+                    // Aucun appel : la barre ne montre pas 100 %, elle ne montre rien.
+                    if (barApi) barApi.style.width = '0%';
                 }
             }
         }
@@ -515,8 +521,12 @@ async function fetchBotsStatus() {
         renderBotsGrid(bots);
         
         const activeCount = bots.filter(b => b.status === 'running').length;
+        window.globalOfflineBotsCount = bots.length - activeCount;
+        if (typeof updateOverviewAlertBanner === 'function') updateOverviewAlertBanner();
         document.getElementById('stat-active-bots').textContent = `${activeCount} / ${bots.length}`;
-        
+        const barBots = document.getElementById('stat-bar-bots');
+        if (barBots) barBots.style.width = bots.length ? `${(activeCount / bots.length) * 100}%` : '0%';
+
         const indicatorEl = document.getElementById('system-status-indicator');
         const textEl = document.getElementById('system-status-text');
         if (indicatorEl && textEl) {
@@ -570,6 +580,7 @@ function renderBotsGrid(bots) {
 
         if (card) {
             card.classList.toggle('offline', !isRunning);
+            card.classList.toggle('running', isRunning);
             const badge = card.querySelector('.badge');
             if (badge) {
                 if (badge.textContent !== bot.status) {
@@ -617,7 +628,7 @@ function renderBotsGrid(bots) {
             // Le suffixe d'alpha n'est valide que sur un #RRGGBB — safeColor le garantit.
             const avatarBg = `${botColor}24`;
             const cardHtml = `
-                <div class="bot-card glass${isRunning ? '' : ' offline'}" id="${cardId}" style="--color: ${botColor};">
+                <div class="bot-card glass${isRunning ? ' running' : ' offline'}" id="${cardId}" style="--color: ${botColor};">
                     <div class="bot-header">
                         <span class="bot-avatar" style="background: ${avatarBg}; color: ${glyphColor};">${escapeHtml(glyph)}</span>
                         <span class="bot-name">${escapeHtml(botDisplay)}</span>
@@ -756,18 +767,22 @@ function appendLogLine(log) {
     if(!term) return;
     
     const time = log.timestamp ? log.timestamp.split('T')[1].substring(0,8) : '00:00:00';
-    let levelClass = 'log-info';
-    if(log.level === 'WARNING') levelClass = 'log-warning';
-    if(log.level === 'ERROR' || log.level === 'CRITICAL') levelClass = 'log-error';
+    let levelBg = 'rgba(96,165,250,0.1)';
+    let levelColor = 'var(--info)';
+    if(log.level === 'WARNING') { levelColor = 'var(--warning)'; levelBg = 'rgba(251,191,36,0.1)'; }
+    else if(log.level === 'ERROR' || log.level === 'CRITICAL') { levelColor = 'var(--danger)'; levelBg = 'rgba(248,113,113,0.1)'; }
+    else if(log.level === 'DEBUG') { levelColor = '#7c8699'; levelBg = 'transparent'; }
     
-    const botColor = BOT_REGISTRY_JS[log.bot]?.color || 'var(--text-secondary)';
+    const botObj = BOT_REGISTRY_JS[log.bot];
+    const botColor = botObj?.color || 'var(--text-secondary)';
+    const botDisplay = botObj?.display || log.bot || 'SYSTEM';
     
     const lineStr = `
-        <div class="log-line">
-            <span class="log-time">[${time}]</span>
-            <span class="log-bot" style="color: ${botColor}; font-weight: 600;">[${escapeHtml(log.bot || 'SYSTEM')}]</span>
-            <span class="${levelClass}">[${escapeHtml(log.level)}]</span> 
-            ${escapeHtml(log.message)}
+        <div class="log-line" style="display:flex; align-items:flex-start; gap:12px; padding:4px 0; border-left:2px solid ${levelColor}; padding-left:10px; font-family:'JetBrains Mono', monospace; font-size:0.85rem;">
+            <span style="color:#7c8699; width:62px; flex-shrink:0;">${escapeHtml(time)}</span>
+            <span style="color:${botColor}; font-weight:600; width:92px; flex-shrink:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(botDisplay)}">${escapeHtml(botDisplay)}</span>
+            <span style="color:${levelColor}; background:${levelBg}; border-radius:4px; width:74px; text-align:center; flex-shrink:0; font-size:0.75rem; padding:2px 0;">${escapeHtml(log.level)}</span> 
+            <span style="color:var(--text-primary); word-break:break-all;">${escapeHtml(log.message)}</span>
         </div>
     `;
     term.insertAdjacentHTML('beforeend', lineStr);
@@ -794,50 +809,106 @@ async function loadErrors() {
         
         container.innerHTML = '';
         if(errors.length === 0) {
-            container.innerHTML = `<li class="placeholder-text">Aucune erreur ${showResolved ? 'résolue' : 'récente'}.</li>`;
+            container.innerHTML = `<li class="placeholder-text" style="color:var(--text-secondary); text-align:center; padding:20px;">Aucune erreur ${showResolved ? 'résolue' : 'récente'}.</li>`;
             return;
         }
         
         errors.forEach(err => {
             const timeStr = err.timestamp.split('T').join(' ').substring(0, 16);
+            let bgClass = 'rgba(251,191,36,0.1)';
+            let borderColor = 'rgba(251,191,36,0.3)';
+            let textColor = 'var(--warning)';
+            if (err.severity === 'CRITICAL') {
+                bgClass = 'rgba(248,113,113,0.1)';
+                borderColor = 'rgba(248,113,113,0.3)';
+                textColor = 'var(--danger)';
+            }
+            
             const li = document.createElement('li');
             li.className = 'error-item';
+            // fond teinté par sévérité, bordure #43436b au survol
+            li.style.cssText = `background:${bgClass}; border:1px solid ${borderColor}; padding:12px; border-radius:8px; margin-bottom:8px; cursor:pointer; transition:all 0.2s;`;
+            li.onmouseenter = () => li.style.borderColor = '#43436b';
+            li.onmouseleave = () => li.style.borderColor = borderColor;
+            
             li.innerHTML = `
-                <div style="display:flex; justify-content:space-between;">
-                    <strong>[${escapeHtml(err.bot_name)}] ${escapeHtml(err.error_type)}</strong>
-                    <span class="badge ${err.severity === 'CRITICAL' ? 'stopped' : ''}">${escapeHtml(err.severity)}</span>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong style="color:var(--text-primary); font-size:0.95rem;">[${escapeHtml(err.bot_name)}] ${escapeHtml(err.error_type)}</strong>
+                    <span style="color:${textColor}; font-size:0.75rem; font-weight:bold; background:${bgClass}; padding:2px 6px; border-radius:4px;">${escapeHtml(err.severity)}</span>
                 </div>
-                <div style="font-size:0.85rem; color:#888; margin-top:5px;">${timeStr}</div>
+                <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:5px;">${escapeHtml(timeStr)}</div>
             `;
             li.onclick = () => showErrorDetail(err.id);
             container.appendChild(li);
         });
     } catch(e) {
-        container.innerHTML = "Erreur de chargement.";
+        container.innerHTML = `<div class="placeholder-text" style="color:var(--danger); text-align:center; padding:20px;">Erreur de chargement.</div>`;
     }
 }
 
 async function showErrorDetail(id) {
     const pane = document.getElementById('error-detail-pane');
     try {
-        pane.innerHTML = '<div class="loader">Analyse en cours...</div>';
+        pane.innerHTML = '<div class="loader" style="text-align:center; padding:40px; color:var(--text-secondary);">Analyse en cours...</div>';
         const res = await fetch(`${API_BASE}/errors/analyze?error_id=${id}`, {method: 'POST'});
         const data = await res.json();
         
+        let sevBg = 'rgba(251,191,36,0.1)';
+        let sevColor = 'var(--warning)';
+        if (data.severity === 'CRITICAL') {
+            sevBg = 'rgba(248,113,113,0.1)';
+            sevColor = 'var(--danger)';
+        }
+
+        let contextHtml = '';
+        if (data.context) {
+            let ctx = data.context;
+            if (typeof ctx === 'string') {
+                try { ctx = JSON.parse(ctx); } catch(e) {}
+            }
+            // Ce que `context` contient VRAIMENT, mesuré en base le 10/09 sur les
+            // 10 lignes existantes : {module, funcName, lineno} — le LogRecord Python.
+            // Ni occurrences 24 h, ni fichier source, ni trace : la maquette les
+            // montre, aucune route ne les sert.
+            if (ctx && typeof ctx === 'object') {
+                const origine = [ctx.module, ctx.funcName].filter(Boolean).join('.');
+                const ligne = ctx.lineno ? `:${ctx.lineno}` : '';
+                if (origine) {
+                    contextHtml += `<div style="background:#161628; padding:16px; border-radius:8px; border:1px solid var(--border-glass);">
+                        <h4 style="margin:0 0 10px 0; color:#7c8699; font-size:0.85rem; text-transform:uppercase;">Origine</h4>
+                        <div style="color:var(--text-primary); font-family:'JetBrains Mono', monospace; font-size:0.85rem;">${escapeHtml(origine + ligne)}</div>
+                    </div>`;
+                }
+            }
+        }
+        
         pane.innerHTML = `
-            <h2>Analyse Diagnostique</h2>
-            <div class="badge ${data.severity === 'CRITICAL' ? 'stopped' : ''}">${escapeHtml(data.severity)}</div>
-            
-            <div class="diagnostic-box">
-                <h4>🧠 Diagnostic Automatique (Sert de Base GenAI)</h4>
-                <p><strong>Catégorie :</strong> ${escapeHtml(data.category)}</p>
-                <p>Cause Probable : ${escapeHtml(data.auto_diagnosis)}</p>
-                <p>Correction Suggérée : ${escapeHtml(data.suggested_fix)}</p>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0; font-size:1.25rem; color:var(--text-primary);">Analyse Diagnostique</h2>
+                <span style="color:${sevColor}; background:${sevBg}; padding:4px 10px; border-radius:6px; font-weight:bold; font-size:0.85rem;">${escapeHtml(data.severity)}</span>
             </div>
-            <button class="btn btn-outline" onclick="resolveError(${id})"><i class="fa-solid fa-check"></i> Marquer comme résolu</button>
+            
+            <div class="diagnostic-box" style="display:flex; flex-direction:column; gap:12px;">
+                <div style="background:#161628; padding:16px; border-radius:8px; border:1px solid var(--border-glass);">
+                    <h4 style="margin:0 0 10px 0; color:#7c8699; font-size:0.85rem; text-transform:uppercase;">Catégorie</h4>
+                    <div style="color:var(--text-primary); font-size:0.95rem;">${escapeHtml(data.category || 'Inconnue')}</div>
+                </div>
+                <div style="background:#161628; padding:16px; border-radius:8px; border:1px solid var(--border-glass);">
+                    <h4 style="margin:0 0 10px 0; color:#7c8699; font-size:0.85rem; text-transform:uppercase;">Diagnostic</h4>
+                    <div style="color:var(--text-primary); font-size:0.95rem;">${escapeHtml(data.auto_diagnosis || 'Aucun diagnostic auto disponible.')}</div>
+                </div>
+                <div style="background:#161628; padding:16px; border-radius:8px; border:1px solid var(--border-glass);">
+                    <h4 style="margin:0 0 10px 0; color:#7c8699; font-size:0.85rem; text-transform:uppercase;">Correction suggérée</h4>
+                    <div style="color:var(--text-primary); font-size:0.95rem;">${escapeHtml(data.suggested_fix || 'Aucune correction proposée.')}</div>
+                </div>
+                ${contextHtml}
+            </div>
+            <div style="margin-top:24px;">
+                <button class="btn" style="background:rgba(52,211,153,0.15); color:var(--success); border:1px solid rgba(52,211,153,0.3); padding:10px 20px; border-radius:8px; font-weight:600;" onclick="resolveError(${id})"><i class="fa-solid fa-check"></i> Marquer comme résolu</button>
+            </div>
         `;
     } catch(e) {
-        pane.innerHTML = "Erreur lors de l'analyse.";
+        pane.innerHTML = `<div class="placeholder-text" style="color:var(--danger); text-align:center; padding:20px;">Erreur lors de l'analyse.</div>`;
     }
 }
 
@@ -868,9 +939,9 @@ window.resolveError = async function(id) {
 
 // --- API KEYS ---
 async function loadApiKeysStatus() {
-    const body = document.getElementById('keys-status-body');
+    // Par id : la classe .keys-table-container sert aussi au journal d'audit.
+    const container = document.getElementById('keys-panel');
     const grid = document.getElementById('keys-health-grid');
-    if(!body) return;
     
     try {
         const res = await fetch(`${API_BASE}/api-usage/keys`);
@@ -889,42 +960,73 @@ async function loadApiKeysStatus() {
                     dot.style.borderRadius = '50%';
                     dot.style.backgroundColor = statusColor;
                     dot.style.cursor = 'pointer';
-                    if (k.status === 'active') {
-                        dot.style.boxShadow = '0 0 8px var(--success)';
-                    } else if (k.status === 'cooldown') {
-                        dot.style.boxShadow = '0 0 8px var(--warning)';
-                    } else {
-                        dot.style.boxShadow = '0 0 8px var(--danger)';
-                    }
+                    dot.style.boxShadow = `0 0 8px ${statusColor}`;
                     dot.title = `Clé: ${k.api_key_display} | Statut: ${k.status.toUpperCase()} | Appels: ${k.total_calls} | Erreurs: ${k.error_count}`;
                     grid.appendChild(dot);
                 });
             }
         }
         
-        body.innerHTML = '';
-        if(!keys || keys.length === 0) {
-            body.innerHTML = '<tr><td colspan="6" class="placeholder-text">Aucune clé traquée.</td></tr>';
+        if (!container) return;
+        
+        if (!keys || keys.length === 0) {
+            container.innerHTML = '<div class="placeholder-text" style="text-align:center; padding:40px; color:var(--text-secondary);">Aucune clé traquée.</div>';
             return;
         }
         
+        const byProvider = {};
         keys.forEach(k => {
-            const statusClass = k.status === 'active' ? 'success' : (k.status === 'cooldown' ? 'warning' : 'stopped');
-            const row = `
-                <tr>
-                    <td><code class="glass-code">${escapeHtml(k.api_key_display)}</code></td>
-                    <td><span class="badge ${statusClass}">${escapeHtml(k.status.toUpperCase())}</span></td>
-                    <td>${k.error_count}</td>
-                    <td>${k.total_calls}</td>
-                    <td>${escapeHtml((k.last_used || '—').split('T')[0])}</td>
-                    <td class="log-error" title="${escapeHtml(k.last_error || '')}">${escapeHtml(k.last_error || '—')}</td>
-                </tr>
-            `;
-            body.insertAdjacentHTML('beforeend', row);
+            if (!byProvider[k.api_name]) byProvider[k.api_name] = [];
+            byProvider[k.api_name].push(k);
         });
+
+        let html = '<div style="display:flex; flex-direction:column; gap:16px;">';
+        for (const [provider, pKeys] of Object.entries(byProvider)) {
+            let totalCalls = 0;
+            pKeys.forEach(k => totalCalls += (k.total_calls || 0));
+
+            html += `<div style="background:#0f0f1c; border-radius:8px; border:1px solid var(--border-glass); padding:16px;">
+                <h4 style="margin:0 0 12px 0; color:var(--text-primary); font-size:1rem; display:flex; align-items:center; gap:8px;">
+                    <span style="background:#1c1c2f; padding:4px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold; color:var(--text-primary); border:1px solid #23233a;">${escapeHtml(provider)}</span>
+                </h4>
+                <div style="display:flex; flex-direction:column; gap:8px;">`;
+            
+            pKeys.forEach(k => {
+                const statusColor = k.status === 'active' ? 'var(--success)' : (k.status === 'cooldown' ? 'var(--warning)' : 'var(--danger)');
+                const statusText = k.status === 'active' ? 'ACTIVE' : (k.status === 'cooldown' ? 'COOLDOWN' : 'ARRÊT');
+                const ratio = totalCalls > 0 ? ((k.total_calls || 0) / totalCalls) * 100 : 0;
+                
+                html += `
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--bg-primary); border-radius:6px; border:1px solid #1c1c2f;">
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <div style="width:10px; height:10px; border-radius:50%; background:${statusColor}; box-shadow:0 0 8px ${statusColor};"></div>
+                            <code style="color:#c4b5fd; font-family:'JetBrains Mono', monospace; font-size:0.85rem; padding:2px 6px; background:rgba(196,181,253,0.1); border-radius:4px;">${escapeHtml(k.api_key_display)}</code>
+                            <span style="color:${statusColor}; font-size:0.75rem; font-weight:bold; background:rgba(0,0,0,0.2); padding:2px 6px; border-radius:4px; border:1px solid ${statusColor}33;">${statusText}</span>
+                        </div>
+                        
+                        <div style="display:flex; align-items:center; gap:20px; font-size:0.85rem; color:var(--text-secondary);">
+                            <div style="display:flex; flex-direction:column; align-items:flex-end; width:100px;">
+                                <span style="color:var(--text-primary); font-weight:600;">${k.total_calls || 0} appels</span>
+                                <span style="color:var(--danger); font-size:0.75rem;">${k.error_count || 0} erreurs</span>
+                            </div>
+                            <div style="width:100px; height:6px; background:var(--bg-secondary); border-radius:3px; overflow:hidden;" title="${ratio.toFixed(1)}% des appels du fournisseur">
+                                <div style="height:100%; width:${ratio}%; background:var(--accent);"></div>
+                            </div>
+                            <div style="width:120px; text-align:right; font-size:0.75rem; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(k.last_error || '')}">
+                                ${k.last_error ? `<span style="color:var(--danger);"><i class="fa-solid fa-triangle-exclamation"></i> ${escapeHtml(k.last_error)}</span>` : 'Aucune erreur'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `</div></div>`;
+        }
+        html += `</div>`;
+        container.innerHTML = html;
+        
     } catch(e) {
-        body.innerHTML = '<tr><td colspan="6" class="log-error">Erreur de chargement.</td></tr>';
-        if (grid) grid.innerHTML = '<span class="log-error">Erreur.</span>';
+        if (container) container.innerHTML = '<div class="log-error" style="padding:20px; text-align:center;">Erreur de chargement des clés.</div>';
     }
 }
 
@@ -932,7 +1034,7 @@ window.loadAuditLogs = async function() {
     const body = document.getElementById('audit-logs-body');
     if (!body) return;
     
-    body.innerHTML = '<tr><td colspan="5" class="loader">Chargement...</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="loader" style="text-align:center; padding:40px; color:var(--text-secondary);">Chargement...</td></tr>';
     
     try {
         const res = await fetch(`${API_BASE}/audit-logs?limit=100`);
@@ -941,25 +1043,29 @@ window.loadAuditLogs = async function() {
         
         body.innerHTML = '';
         if (logs.length === 0) {
-            body.innerHTML = '<tr><td colspan="5" class="placeholder-text">Aucun log d\'audit enregistré pour le moment.</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" class="placeholder-text" style="color:var(--text-secondary); text-align:center; padding:20px;">Aucun log d\'audit enregistré pour le moment.</td></tr>';
             return;
         }
         
         logs.forEach(log => {
             const timeStr = log.timestamp.split('T').join(' ').substring(0, 19);
+            const botObj = log.bot_name ? Object.values(BOT_REGISTRY_JS).find(b => b.name === log.bot_name || b.display.includes(log.bot_name)) : null;
+            const botColor = botObj ? botObj.color : 'var(--info)';
+            const botDisplay = botObj ? botObj.display : log.bot_name;
+            
             const row = `
-                <tr>
-                    <td style="white-space: nowrap;">${escapeHtml(timeStr)}</td>
-                    <td><span class="badge warning">${escapeHtml(log.user)}</span></td>
-                    <td style="font-weight: 600; color: #a78bfa;">${escapeHtml(log.action)}</td>
-                    <td>${log.bot_name ? `<span class="badge info">${escapeHtml(log.bot_name)}</span>` : '—'}</td>
-                    <td>${escapeHtml(log.details || '—')}</td>
+                <tr style="border-bottom:1px solid #1c1c2f; background:transparent; transition:background 0.2s;" onmouseenter="this.style.background='rgba(255,255,255,0.02)'" onmouseleave="this.style.background='transparent'">
+                    <td style="white-space:nowrap; color:var(--text-secondary); font-size:0.85rem;">${escapeHtml(timeStr)}</td>
+                    <td><span style="color:var(--text-primary); font-weight:500;">${escapeHtml(log.user)}</span></td>
+                    <td><span style="background:rgba(139,92,246,0.15); color:var(--accent); padding:4px 8px; border-radius:4px; font-size:0.8rem; font-weight:600;">${escapeHtml(log.action)}</span></td>
+                    <td>${log.bot_name ? `<span style="background:rgba(255,255,255,0.05); color:${botColor}; padding:4px 8px; border-radius:4px; font-size:0.8rem; font-weight:600;">${escapeHtml(botDisplay)}</span>` : '<span style="color:var(--text-secondary);">—</span>'}</td>
+                    <td style="color:var(--text-secondary); font-size:0.85rem;">${escapeHtml(log.details || '—')}</td>
                 </tr>
             `;
             body.insertAdjacentHTML('beforeend', row);
         });
     } catch(e) {
-        body.innerHTML = '<tr><td colspan="5" class="log-error">Erreur lors de la récupération des logs d\'audit.</td></tr>';
+        body.innerHTML = '<tr><td colspan="5" class="placeholder-text" style="color:var(--danger); text-align:center; padding:20px;">Erreur lors du chargement des logs d\'audit.</td></tr>';
     }
 };
 
@@ -1461,14 +1567,14 @@ function renderRewardsTable() {
     
     const keys = Object.keys(currentRewardMap);
     if (keys.length === 0) {
-        body.innerHTML = '<tr><td colspan="3" style="text-align:center;opacity:0.5;">Aucun mappage de récompense défini pour ce bot.</td></tr>';
+        body.innerHTML = '<tr><td colspan="3" class="placeholder-text" style="color:var(--text-secondary); text-align:center; padding:20px;">Aucun mappage de récompense défini pour ce bot.</td></tr>';
         return;
     }
     
     keys.forEach(title => {
         const action = currentRewardMap[title];
         const row = `
-            <tr>
+            <tr style="border-bottom:1px solid #1c1c2f; background:transparent; transition:background 0.2s;" onmouseenter="this.style.background=\'rgba(255,255,255,0.02)\'" onmouseleave="this.style.background=\'transparent\'">
                 <td style="color:#a78bfa; font-weight:600;"><i class="fa-solid fa-gift"></i> ${escapeHtml(title)}</td>
                 <td><code style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:monospace;">!${escapeHtml(action)}</code></td>
                 <td>
@@ -1799,5 +1905,25 @@ async function attendreRetourDashboard() {
     if (bouton) {
         bouton.disabled = false;
         bouton.innerHTML = '<i class="fa-solid fa-gauge-high"></i> Redémarrer le Dashboard';
+    }
+}
+
+window.globalOfflineBotsCount = 0;
+window.globalErrorCount24h = 0;
+function updateOverviewAlertBanner() {
+    const banner = document.getElementById('overview-alert-banner');
+    const textEl = document.getElementById('overview-alert-text');
+    if (!banner || !textEl) return;
+    const parts = [];
+    const bots = window.globalOfflineBotsCount;
+    const errs = window.globalErrorCount24h;
+    // « erreur » et non « erreur critique » : stat-errors compte TOUTES les erreurs 24 h.
+    if (bots > 0) parts.push(`${bots} bot${bots > 1 ? 's' : ''} hors ligne`);
+    if (errs > 0) parts.push(`${errs} erreur${errs > 1 ? 's' : ''} sur 24 h`);
+    if (parts.length > 0) {
+        textEl.textContent = parts.join(' · ');
+        banner.style.display = 'flex';
+    } else {
+        banner.style.display = 'none';
     }
 }

@@ -22,17 +22,17 @@
 
     <!-- Écran de connexion (verrou d'accès au dashboard) -->
     <div id="login-overlay" style="position:fixed;inset:0;z-index:9999;display:none;
-         align-items:center;justify-content:center;background:rgba(10, 10, 20, 0.92);backdrop-filter:blur(6px);">
+         align-items:center;justify-content:center;background:var(--bg-primary);backdrop-filter:blur(6px);">
         <form id="login-form" class="glass" style="display:flex;flex-direction:column;gap:16px;
-             padding:32px;min-width:320px;border-radius:14px;">
-            <h2 style="margin:0;display:flex;align-items:center;gap:10px;">
-                <i class="fa-solid fa-lock"></i> Accès sécurisé
+             padding:32px;min-width:320px;border-radius:14px;background:#141426;border:1px solid var(--border-glass);">
+            <h2 style="margin:0;display:flex;align-items:center;gap:10px;color:var(--text-primary);">
+                <i class="fa-solid fa-lock" style="color:var(--accent);"></i> Accès sécurisé
             </h2>
-            <p style="margin:0;opacity:.7;font-size:.9em;">Dashboard de contrôle des bots</p>
+            <p style="margin:0;color:var(--text-secondary);font-size:.9rem;">Dashboard de contrôle des bots</p>
             <input type="password" id="login-password" placeholder="Mot de passe" autocomplete="current-password"
                    class="form-input">
-            <button type="submit" class="btn btn-primary"><i class="fa-solid fa-right-to-bracket"></i> Se connecter</button>
-            <div id="login-error" style="color:var(--danger);font-size:.85em;min-height:1em;"></div>
+            <button type="submit" class="btn btn-primary" style="background:var(--accent);color:#fff;border:none;"><i class="fa-solid fa-right-to-bracket"></i> Se connecter</button>
+            <div id="login-error" style="color:var(--danger);font-size:.85rem;min-height:1rem;"></div>
         </form>
     </div>
 
@@ -103,36 +103,62 @@
 
         <!-- SECTION: VUE D'ENSEMBLE -->
         <section id="overview" class="view active">
-            
+            <div id="overview-alert-banner" style="display:none; background:linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.05) 100%); border:1px solid #4a2230; border-radius:8px; padding:16px 20px; margin-bottom:20px; align-items:center; justify-content:space-between;">
+                <div style="display:flex; align-items:center; gap:12px; color:var(--text-primary);">
+                    <i class="fa-solid fa-triangle-exclamation" style="color:var(--danger); font-size:1.2rem;"></i>
+                    <span id="overview-alert-text" style="font-weight:500;"></span>
+                </div>
+                <button class="btn" style="background:rgba(239,68,68,0.15); color:var(--danger); border:1px solid rgba(239,68,68,0.3); padding:6px 12px; border-radius:6px; font-size:0.85rem;" onclick="document.querySelector('[data-target=\'errors\']').click();">
+                    Voir les erreurs
+                </button>
+            </div>
             <!-- Statistiques rapides -->
             <div class="stats-grid">
-                <div class="stat-card glass">
-                    <i class="fa-solid fa-robot"></i>
-                    <div>
-                        <h3>Bots Actifs</h3>
-                        <p id="stat-active-bots">0 / 6</p>
+                <div class="stat-card glass" style="padding:20px; display:flex; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; color:#7c8699; font-size:0.85rem; font-variant:small-caps;">
+                        <span>Bots Actifs</span>
+                        <i class="fa-solid fa-robot" style="color:var(--success);"></i>
                     </div>
+                    <div style="font-size:1.7rem; font-weight:bold; color:var(--text-primary); line-height:1;">
+                        <span id="stat-active-bots">0 / 6</span>
+                    </div>
+                    <div style="height:4px; background:var(--bg-primary); border-radius:2px; overflow:hidden;">
+                        <div id="stat-bar-bots" style="height:100%; width:0%; background:var(--success); transition:width 0.3s;"></div>
+                    </div>
+                    <div style="font-size:0.75rem; color:#7c8699;">En cours d'exécution</div>
                 </div>
-                <div class="stat-card glass warning">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    <div>
-                        <h3>Erreurs (24h)</h3>
-                        <p id="stat-errors">0</p>
+                <div class="stat-card glass" style="padding:20px; display:flex; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; color:#7c8699; font-size:0.85rem; font-variant:small-caps;">
+                        <span>Erreurs (24h)</span>
+                        <i class="fa-solid fa-triangle-exclamation" style="color:var(--danger);"></i>
                     </div>
+                    <div style="font-size:1.7rem; font-weight:bold; color:var(--danger); line-height:1;">
+                        <span id="stat-errors">0</span>
+                    </div>
+                    <div style="font-size:0.75rem; color:#7c8699;">Nécessitant une attention</div>
                 </div>
-                <div class="stat-card glass success">
-                    <i class="fa-solid fa-bolt"></i>
-                    <div>
-                        <h3>Taux Succès API</h3>
-                        <p id="stat-api-success">100%</p>
+                <div class="stat-card glass" style="padding:20px; display:flex; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; color:#7c8699; font-size:0.85rem; font-variant:small-caps;">
+                        <span>Taux Succès API</span>
+                        <i class="fa-solid fa-bolt" style="color:var(--accent);"></i>
                     </div>
+                    <div style="font-size:1.7rem; font-weight:bold; color:var(--text-primary); line-height:1;">
+                        <span id="stat-api-success">100%</span>
+                    </div>
+                    <div style="height:4px; background:var(--bg-primary); border-radius:2px; overflow:hidden;">
+                        <div id="stat-bar-api" style="height:100%; width:100%; background:var(--accent); transition:width 0.3s;"></div>
+                    </div>
+                    <div style="font-size:0.75rem; color:#7c8699;">Volume traité correctement</div>
                 </div>
-                <div class="stat-card glass">
-                    <i class="fa-solid fa-users"></i>
-                    <div>
-                        <h3>Utilisateurs (7j)</h3>
-                        <p id="stat-users">0</p>
+                <div class="stat-card glass" style="padding:20px; display:flex; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; color:#7c8699; font-size:0.85rem; font-variant:small-caps;">
+                        <span>Utilisateurs (7j)</span>
+                        <i class="fa-solid fa-users" style="color:var(--info);"></i>
                     </div>
+                    <div style="font-size:1.7rem; font-weight:bold; color:var(--text-primary); line-height:1;">
+                        <span id="stat-users">0</span>
+                    </div>
+                    <div style="font-size:0.75rem; color:#7c8699;">Activité globale mesurée</div>
                 </div>
             </div>
 
@@ -237,23 +263,11 @@
                 <div class="chart-container glass" style="flex: 2;">
                     <h3>État des clés (Multimodal & Round-Robin)</h3>
                     <div id="keys-health-grid" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 1.5rem; padding: 10px; background: var(--bg-panel-inner); border-radius: 8px; border: 1px solid var(--border-glass);"></div>
-                    <div class="keys-table-container">
-                        <table class="keys-table" id="keys-table">
-                            <thead>
-                                <tr>
-                                    <th>Clé (Masquée)</th>
-                                    <th>Statut</th>
-                                    <th>Erreurs</th>
-                                    <th>Appels</th>
-                                    <th>Dernière util.</th>
-                                    <th>Dernière erreur</th>
-                                </tr>
-                            </thead>
-                            <tbody id="keys-status-body">
-                                <!-- Populated via JS -->
-                                <tr><td colspan="6" class="loader">Chargement...</td></tr>
-                            </tbody>
-                        </table>
+                    <!-- Rempli par loadApiKeysStatus() : une carte par FOURNISSEUR.
+                         api_key_status n'a pas de colonne bot — le groupement par bot de
+                         la maquette n'est pas servable. -->
+                    <div class="keys-table-container" id="keys-panel">
+                        <div class="loader" style="text-align:center; padding:40px; color:var(--text-secondary);">Chargement...</div>
                     </div>
                 </div>
             </div>
@@ -277,8 +291,8 @@
                     <p style="margin-bottom: 1.5rem; opacity: 0.8; line-height: 1.5;">Générez un rapport détaillé parfait pour être copié-collé dans Gemini, ChatGPT ou Claude.</p>
                     
                     <div class="form-group" style="margin-bottom: 1rem;">
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Périmètre d'analyse</label>
-                        <select id="report-scope" class="form-input">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500; color:#7c8699; font-variant:small-caps;">Périmètre d'analyse</label>
+                        <select id="report-scope" class="form-input" style="background:#1c1c2f; border:1px solid #23233a; border-radius:999px; padding:8px 16px; color:var(--text-primary); cursor:pointer;">
                             <option value="all">Écosystème complet</option>
                             <option value="errors">Erreurs uniquement</option>
                             <option value="api">Clés API uniquement</option>
@@ -286,8 +300,8 @@
                     </div>
                     
                     <div class="form-group" style="margin-bottom: 1.5rem;">
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Fenêtre de temps</label>
-                        <select id="report-timeframe" class="form-input">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500; color:#7c8699; font-variant:small-caps;">Fenêtre de temps</label>
+                        <select id="report-timeframe" class="form-input" style="background:#1c1c2f; border:1px solid #23233a; border-radius:999px; padding:8px 16px; color:var(--text-primary); cursor:pointer;">
                             <option value="1">Dernière Heure</option>
                             <option value="6">Dernières 6 Heures</option>
                             <option value="24" selected>Dernières 24 Heures</option>
@@ -295,7 +309,7 @@
                         </select>
                     </div>
                     
-                    <button class="btn btn-primary btn-large" id="btn-generate-report" style="width: 100%; padding: 12px; font-size: 1rem; justify-content: center;">
+                    <button class="btn btn-primary" id="btn-generate-report" style="width: 100%; padding: 12px; font-size: 1rem; justify-content: center; background:var(--accent); color:#fff; border:none; border-radius:8px;">
                         <i class="fa-solid fa-wand-magic-sparkles"></i> Générer le Rapport .MD
                     </button>
                 </div>
@@ -312,7 +326,7 @@
                             </button>
                         </div>
                     </div>
-                    <textarea id="report-preview-text" class="form-textarea" style="flex-grow: 1; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; background: var(--bg-primary); border: 1px solid var(--border-glass); padding: 1rem; border-radius: 8px; color: var(--text-primary); resize: none; overflow-y: auto;" readonly></textarea>
+                    <textarea id="report-preview-text" class="form-textarea" style="flex-grow: 1; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; background: #0c0c16; border: 1px solid var(--border-glass); padding: 1rem; border-radius: 8px; color: var(--text-primary); resize: none; overflow-y: auto;" readonly></textarea>
                 </div>
             </div>
         </section>
