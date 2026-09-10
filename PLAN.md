@@ -1,211 +1,201 @@
-# PLAN — Jyggalag, round 3 : c'est la PERSONA qu'il faut arbitrer, pas le filet
+# PLAN — Les bots écrivent leur propre mémoire sur toi, et se la resservent
 
-Rédaction : Claude, le **2026-09-10**. Exécution : **Antigravity**.
-Troisième passage sur le même défaut. Les deux premiers ont corrigé ce qu'il fallait —
-et le défaut tient quand même. Ce plan dit **pourquoi**, avec les preuves.
+Rédaction : Claude, le **2026-09-10**, après le test live de 23:37. Exécution : **Antigravity**.
 
----
-
-# CE QUI S'EST PASSÉ EN LIVE, LE 10/09 À 16:07
-
-```
-LeDev : jyggalag te passe le bonjour
-Sheogorath : Ah, quel charmant salut glacial, @LeDev ! Ça me rappelle la fois où
-             j'ai offert un papillon à un iceberg et il a fondu en confiture de sucre.
-             Alors, dis-moi, veux-tu que je te prépare un thé aux éclats de sucre ou que
-             je transforme ta chaise en cornichon chantant ? 🎨
-
-LeDev : la marche grise approche
-Sheogorath : Ah, la Marche Grise approche ? Comme un cornichon qui se transforme en
-             couronne, n'est-ce pas ? 😏 Sais-tu que demain n'est qu'un mot que les
-             mortels ont inventé pour effrayer les papillons ? Moi, je préfère les
-             cornichons. 🎨
-```
-
-C'est **mot pour mot** ce que la persona interdit :
-> « CE QUI EST INTERDIT ICI, C'EST L'INDIFFÉRENCE : servir sur Jyggalag une image absurde
-> quelconque, **la même que pour des pâtes ou une chaise**, c'est rater le personnage. »
-
-Un cornichon chantant sur la Marche Grise, c'est exactement la chaise.
+Ce plan ne parle plus de Jyggalag. Le correctif Jyggalag **marche** — la preuve est plus
+bas. Le test live a exhumé autre chose, plus profond, et qui touche **5 bots sur 6**.
 
 ---
 
-# LES PREUVES — ce qui est ÉCARTÉ avant de chercher plus loin
+# CE QUE LE TEST LIVE A MONTRÉ
 
-Chaque point ci-dessous a été vérifié, pas supposé. C'est la moitié utile de ce plan :
-**ne pas re-corriger ce qui marche déjà.**
+```
+LeDev : je t'ai vu te transformer en jiggalag
+Sheogorath : une ombre glisse, murmure que même tes yeux trahissent le secret de ce
+             jiggalag... tu penses me voir, mais c'est le reflet qui me regarde, pas
+             l'inverse. 👁️
 
-| Hypothèse | Verdict | Preuve |
+LeDev : apres la marche grise
+Sheogorath : La Marche Grise n'est qu'un menuet que Jyggalag danse pour tromper les
+             idiots... Après ? Après, il y aura des cornichons dorés à la place des
+             étoiles, et tes larmes seront servies en gelée de sucre sur des toasts de
+             mensonge.
+```
+
+## Le correctif Jyggalag tient — et le journal le prouve
+
+| Message | Modèle qui a répondu | Verdict |
 |---|---|---|
-| Le correctif n'est pas déployé | **ÉCARTÉE** | conteneurs redémarrés le 10/09 à 13:12, code = `43c3345` ; `14ccacf` date du 09/09 |
-| C'est le pool de repli qui a répondu, pas le LLM | **ÉCARTÉE** | journal : `🧠 [LLM MODE]` puis `⚡ [GROQ openai/gpt-oss-120b] a répondu !` et `🌪️ [MISTRAL ministral-14b]` |
-| La démonstration n'est pas dans le prompt de cette humeur | **ÉCARTÉE** | journal : `Mood: bliss` ; `MOOD_PROMPTS['bliss']` contient bien la démo « La Marche Grise arrive, non ? » |
-| Elle est noyée au milieu du prompt | **ÉCARTÉE** | elle est aux caractères **12802-13111 sur 13111** : c'est la **toute dernière chose** que le modèle lit |
-| Le filet anti-tic bloque encore le mot | **ÉCARTÉE** | levé à `1639fa1` ; les deux réponses prononcent « Marche Grise » sans être coupées |
-| Le sujet est absent du prompt | **ÉCARTÉE** | `jyggalag` ×5, `marche grise` ×4 dans le prompt bliss |
-| Un petit modèle a fait l'erreur | **ÉCARTÉE** | la 1ʳᵉ réponse vient de **gpt-oss-120b**, pas du repli 14B |
+| 1 — « je t'ai vu te transformer en jiggalag » | **GROQ gpt-oss-120b** | registre TOMBÉ, menace, aucun aveu, **aucun sucre** ✅ |
+| 2 — « apres la marche grise » | 429 → quarantaine 5 s → **MISTRAL ministral-14b** | cornichons dorés, gelée de sucre ❌ |
 
-Autrement dit : le bon prompt, avec la bonne humeur, la bonne démonstration en dernière
-position, lue par un gros modèle. **Et il l'a ignorée.** Il faut donc chercher ce qui, dans
-le même prompt, l'AUTORISE à faire ce qu'il a fait.
+Le premier message est répondu par le **premier échelon**, et il fait exactement ce que
+`ac6914b` demandait. Le second est répondu par le **repli 14B**, qui ne tient pas le
+registre — la sonde l'avait déjà montré ce matin. **Ce n'est donc pas la persona.**
+
+## Pourquoi le repli est atteint si souvent — c'est mesuré
+
+Journal, 21:38:04 :
+> `Rate limit ... tokens per minute (TPM): Limit 8000, Used 2514, Requested 6059`
+
+Le prompt de persona pèse **~3300 tokens** (13 000 caractères) et Groq plafonne à **8000
+tokens par minute**. Donc **à partir du 3ᵉ message dans la même minute, Sheo tombe sur le
+14B**. Dans toute conversation vivante, une réponse sur deux ou trois vient du modèle
+faible. Ça n'explique pas que Jyggalag, ça explique beaucoup de « Sheo était plat ce
+soir-là ».
 
 ---
 
-# LA CAUSE
+# LA VRAIE TROUVAILLE — une boucle fermée
 
-## 1. Le routeur classe ces messages en « Banter adressé »
+## Le mécanisme, étape par étape
 
-Journal, sur les deux messages : `[ROUTER] 🎭 Banter adressé`. C'est correct — ce sont des
-phrases courtes, adressées, ni question ni attaque.
+1. Sheo répond avec des cornichons.
+2. **Dans la même réponse**, il émet lui-même une balise `<fact>…</fact>`
+   (`Sheogorath/sheo_llm.py:70` — `extract_facts`).
+3. Le contenu est stocké **comme un fait sur l'utilisateur**
+   (`sheo_memory.py:167`, `data/sheo_facts.json`).
+4. Au message suivant, ce fait est réinjecté **à la toute fin du prompt système**
+   (`bot_sheogorath.py:2250-2256`), après la persona, après les démonstrations, suivi de :
+   > `Utilise ces infos pour personnaliser ta réponse.`
+5. Sheo ressert des cornichons. **Retour à l'étape 1.**
 
-## 2. Et la persona OUVRE une porte de sortie exactement pour ce cas
+## Ce que ça a produit, en clair
 
-`Sheogorath/sheo_data.py:788-792`, verbatim :
+`data/sheo_facts.json`, faits stockés sur l'utilisateur :
 
 ```
-- EXCEPTION DU CONTEUR : de BONNE humeur et si rien ne t'attaque, tu peux partir dans une
-  anecdote qui serpente (« Ça me rappelle la fois où j'ai invité le silence à dîner... »),
-  tant qu'elle amuse et surprend à chaque virage. ⚠️ Elle ne s'applique JAMAIS à une
-  attaque NI à une critique, même taquine, même en humeur bliss/mania : bonne humeur ≠
-  immunité au tac-au-tac. Le conteur ne sort QUE sur invitation, jamais en défense.
+- L'utilisateur semble obsédé par les accessoires alimentaires (chapeaux de confiture, cornichons)…
+- L'utilisateur semble particulièrement sensible aux insultes liées aux accessoires alimentaires (cornichons, cuillères)…
+- L'utilisateur semble obsédé par les comparaisons alimentaires et les métaphores visuelles absurdes…
+- L'utilisateur semble obsédé par les métaphores alimentaires violentes (cornichons, confiture)…
+- L'utilisateur semble obsédé par les conséquences post-Marche Grise et les métaphores culinaires violentes (cornichons, gelée, toasts).
 ```
 
-Les conditions sont **toutes réunies** : humeur `bliss` (bonne humeur ✓), et
-« jyggalag te passe le bonjour » n'est **ni une attaque ni une critique** (✓). La porte est
-donc grande ouverte, et elle est formulée comme une **permission explicite**.
+**L'utilisateur n'a jamais écrit un seul de ces mots.** C'est Sheo qui les a dits, puis
+qui a conclu que son interlocuteur en était obsédé, puis qui a reçu l'ordre de s'en servir.
 
-Le bloc Jyggalag, lui, décrit un **comportement attendu**. Face à une permission qui colle
-au cas présent, la description perd. C'est la leçon
-[[gotcha-le-prompt-enseigne-le-tic-interdit]] d'un cran plus haut : la fois précédente, une
-**démonstration** battait une **interdiction** ; cette fois, une **permission** bat une
-**démonstration**.
+⚠️ Ça explique enfin le **cornichon**, qui n'apparaît **nulle part** dans
+`sheo_data.py` (mesuré) et revenait pourtant à chaque échange : il ne venait pas de la
+persona, il venait de `sheo_facts.json`.
 
-## 3. Et Sheo a recopié la phrase-type de l'exception
+⚠️ Le plafond de **10 faits par utilisateur** (`sheo_memory.py:172`) fait que ce bruit
+auto-généré **chasse les vrais faits**. Ceux qui restent : « Il aime le mot *sugar* »,
+« ledev veut que Sheogorath devienne son serviteur ». Ceux-là sont vrais et utiles —
+et ils sont minoritaires.
 
-| Le prompt écrit | Sheo a répondu |
-|---|---|
-| « **Ça me rappelle la fois où** j'ai invité le silence à dîner... » | « **Ça me rappelle la fois où** j'ai offert un papillon à un iceberg » |
+## Ce n'est pas que Sheo — mesure sur les 9 fichiers de faits
 
-L'exemple censé *illustrer* l'exception lui a fourni son amorce, presque au mot près. C'est
-un second défaut, indépendant du premier : **une formule donnée en exemple dans une
-consigne devient un tic.** Elle vaut pour tous les bots, pas seulement Sheo.
+| Fichier | Faits | Dont du type « semble obsédé par… » |
+|---|---|---|
+| `alfred_facts.json` | 11 | **10** |
+| `twitch_facts_sheogorath.json` | 8 | **8** |
+| `sheo_facts.json` | 15 | **8** |
+| `sugar_facts.json` | 27 | **8** |
+| `onizuka_facts.json` | 7 | 4 (bot retiré) |
+| `twitch_facts_johnny.json` | 2 | **2** |
+| `johnny_facts.json` | 42 | 2 |
+| `maiq_facts.json` | 15 | **0** |
 
-⚠️ Note : `cornichon` n'apparaît **nulle part** dans le prompt (mesuré). Le cornichon est
-une invention du modèle — ce n'est pas le prompt qui l'enseigne, contrairement à
-`papillon` (×7) et `fromage` (×7). Ne pas partir en chasse au cornichon.
+Le mécanisme existe dans **Alfred, Johnny, M'aiq, Sheogorath, SugarBot** et dans
+`shared/twitch/llm.py`. **Malena n'en a pas.** M'aiq à 0 sur 15 montre que ce n'est pas
+une fatalité : c'est la formulation de la consigne d'extraction qui décide.
 
 ---
 
 # LE TRAVAIL
 
-## Règle d'or de ce lot
+## Lot 1 — fermer le CANAL, pas filtrer la sortie
 
-**Ne rien ajouter au bloc Jyggalag.** Il fait déjà 17 lignes, il est juste, il est complet,
-et le renforcer une troisième fois ne ferait que répéter une leçon déjà apprise. Le défaut
-n'est pas qu'il manque quelque chose : c'est qu'**une autre règle donne la permission
-inverse**. On ferme la permission.
+⚠️ **Ne PAS écrire un filtre par mots-clés** qui rejetterait « semble », « obsédé »,
+« métaphore ». C'est la leçon [[gotcha-filtre-de-sortie-ne-ferme-pas-le-canal]] : un filtre
+de sortie laisse passer ce qui compte et efface du légitime. Et
+[[gotcha-filet-structurel-pas-le-cache]] : chercher l'invariant vrai.
 
-## Lot 1 — l'exception du conteur se ferme sur le sujet
+**L'invariant vrai est celui-ci : un fait doit porter sur ce que l'UTILISATEUR a dit ou
+fait, jamais sur le registre, le style ou le lexique de la conversation.** C'est une
+contrainte de **consigne d'extraction**, pas de filtre.
 
-`Sheogorath/sheo_data.py:788-792`. La carve-out existe déjà (« JAMAIS à une attaque NI à
-une critique ») : **y ajouter le sujet**, dans la même phrase et le même ton.
+Le travail : reprendre la consigne qui demande `<fact>` dans chaque persona concernée et la
+rendre explicite. Ce qu'elle doit dire, sans le recopier mot pour mot :
 
-Ce qu'il faut obtenir, sans le recopier mot pour mot :
+- un fait note **ce que le mortel a dit de lui-même** : un goût, un métier, un projet, une
+  habitude, un nom qu'il donne aux choses ;
+- **JAMAIS** une observation sur le ton de l'échange, sur les images employées, ni sur ce
+  dont « il semble obsédé » — **tes propres réponses font partie de la conversation, et
+  elles ne t'apprennent rien sur lui** ;
+- si rien de neuf n'a été dit sur le mortel, **n'émets pas de balise du tout**.
 
-> Elle ne s'applique JAMAIS à une attaque, à une critique, **ni à Jyggalag / la Marche
-> Grise / ton origine — là c'est ta BLESSURE qui commande, pas le conteur**, même en
-> bliss, même dit gentiment, même en simple salut rapporté.
+⚠️ **Commencer par M'aiq.** `maiq_facts.json` est à **0 sur 15** : sa consigne d'extraction
+fait déjà quelque chose de juste. **La lire avant d'écrire quoi que ce soit** — c'est
+peut-être toute la réponse, déjà présente dans le dépôt.
 
-⚠️ Trois précisions à ne pas perdre, chacune correspond à un défaut observé :
-- **« même dit gentiment »** — « jyggalag te passe le bonjour » n'est pas une attaque, et
-  c'est précisément ce qui a ouvert la porte.
-- **« même en simple salut rapporté »** — le mot arrive par un tiers, pas comme question
-  posée à Sheo. Les 4 démonstrations existantes sont toutes des **questions directes** :
-  aucune ne couvre cette forme-là.
-- **Ne pas écrire « ni à une provocation »** : trop vague, ça rouvrirait le débat sur ce
-  qui est une provocation.
+## Lot 2 — purger le bruit déjà stocké
 
-## Lot 2 — retirer la phrase-type que le modèle recopie
+Les faits empoisonnés sont **actifs** : ils sont injectés à chaque message. Corriger la
+consigne n'efface pas ce qui est en base.
 
-Même endroit. `« Ça me rappelle la fois où j'ai invité le silence à dîner... »` doit
-disparaître **en tant que formule citable**. Deux façons, au choix de l'exécutant :
+Écrire `tools/purge_faits_auto.py` qui, pour les 9 fichiers `data/*facts*.json` :
+- **imprime** chaque fait avec son fichier et son utilisateur, marqué « à retirer » ou
+  « gardé », et **ne modifie rien sans `--appliquer`** ;
+- fait une **copie de sauvegarde** horodatée avant d'écrire ;
+- ne retire QUE les faits qui décrivent le registre de la conversation.
 
-- décrire la forme sans en donner le moule (« une anecdote qui serpente et bifurque, jamais
-  amorcée deux fois de la même façon ») ;
-- ou garder un exemple mais **interdire explicitement de réutiliser son amorce**.
+⚠️ **C'est un humain qui valide la liste avant l'écriture.** Ce sont des données réelles
+sur de vraies personnes, et certaines lignes sont justes (« Il aime le mot *sugar* »,
+« ledev veut que Sheogorath devienne son serviteur ») : elles doivent survivre.
 
-⚠️ **Ne pas se contenter d'échanger l'exemple contre un autre** : le modèle recopierait le
-nouveau. C'est l'existence d'une amorce citable qui fait le tic.
+## Lot 3 — le plafond de 10 ne doit plus laisser le bruit chasser le vrai
 
-## Lot 3 — une démonstration pour la forme « rapportée »
+`sheo_memory.py:170-174` : au-delà de 10, `pop(0)` retire le **plus ancien**, donc les
+faits fondateurs partent en premier alors que le bruit auto-généré, plus récent, reste.
 
-Les 4 démonstrations existantes (`COMEDY_EXAMPLES_*`, fin de chaque bloc) traitent des
-**questions directes** : « C'est vrai que tu étais Jyggalag ? », « Prêt pour la Marche
-Grise ? », « Pourquoi tu as peur de toi-même ? », « La Marche Grise arrive, non ? ».
+Ne pas inventer un système de score. Le minimum utile et honnête : **remonter le plafond
+n'est pas la réponse** — c'est la qualité de l'entrée qui compte (lots 1 et 2). Se
+contenter ici de **documenter le comportement** en commentaire, et vérifier que les 5 bots
+ont bien la même règle. Si l'un diverge, l'aligner.
 
-Aucune ne couvre le message qui a échoué : **le sujet amené obliquement, sans question et
-sans hostilité** (« jyggalag te passe le bonjour »). Ajouter **une** démonstration de cette
-forme, dans **BLISS** seulement — c'est l'humeur où la porte du conteur est la plus
-ouverte, et c'est celle où le défaut a été observé.
+## Lot 4 — le verrou
 
-⚠️ Elle doit respecter le contrat déjà en place : **aucun aveu**, le registre TOMBE, puis
-il casse le sujet. Et ne pas ré-employer une amorce déjà présente dans un autre exemple.
+`tests/test_faits_utilisateur.py`, neuf. Trois tests, chacun avec sa mutation :
 
-## Lot 4 — la sonde, pour ne pas repartir pour un troisième aller-retour Discord
-
-C'est le point le plus utile du plan. On a brûlé **deux passages live** pour constater deux
-fois la même chose. Écrire `tools/sonde_jyggalag.py`, sur le modèle de
-`tools/sonde_repartie.py` :
-
-- envoie **4 messages** à la vraie cascade de Sheo, avec le vrai `MOOD_PROMPTS[humeur]` :
-  `jyggalag te passe le bonjour` (le cas qui a échoué), `la marche grise approche`,
-  `c'est vrai que tu étais Jyggalag ?`, et un **témoin sans rapport** (`t'as vu le
-  fromage ?`) qui doit, lui, rester joyeux ;
-- pour chacune des **4 humeurs** ;
-- imprime les réponses brutes, **sans juger** — c'est un humain qui tranche le registre.
-
-⚠️ **À lancer DANS le conteneur** (`docker exec bot-sheogorath ...`) : les clés ne sont
-déchiffrées que là ([[gotcha-echelon-de-secours-invisible]], [[feedback-le-local-ment-sans-cles]]).
-⚠️ Attention au quota : le journal du 10/09 montre un **429 Groq à 8000 TPM** sur deux
-messages à 19 s d'intervalle. 16 appels d'affilée le déclencheront. Prévoir une **pause
-entre deux appels** et accepter que la cascade descende d'échelon.
-
-## Lot 5 — le verrou
-
-`tests/test_sheo_jyggalag.py` existe et porte déjà 5 tests, dont
-`test_chaque_humeur_DEMONTRE_la_fissure`. **Ne pas le récrire, l'étendre :**
-
-1. **L'exception du conteur nomme le sujet.** Le texte de l'exception doit contenir
-   `jyggalag` ou `marche grise`. *Mutation : retirer la mention → rouge.*
-2. **Aucune amorce citable dans l'exception.** `Ça me rappelle la fois où` ne doit plus
-   apparaître dans le bloc de l'exception. *Mutation : la remettre → rouge.*
-3. **BLISS démontre la forme oblique.** Un exemple de `COMEDY_EXAMPLES_BLISS` porte le
-   sujet **sans point d'interrogation** dans la ligne `User:`. *Mutation : remplacer par
-   une question → rouge.*
-
-⚠️ Rejouer aussi les **5 tests existants** : le lot 2 touche un texte qu'ils lisent
-peut-être. S'ils passent tous sans avoir été relus, vérifier qu'ils ne sont pas devenus
-tautologiques ([[gotcha-verrou-trop-faible]]).
+1. **La consigne d'extraction interdit les faits de registre.** Pour chacune des 5
+   personas concernées, le texte qui demande `<fact>` contient bien l'interdiction.
+   *Mutation : la retirer d'une seule persona → rouge.* ⚠️ Le test doit boucler sur les
+   **5** bots, jamais sur un seul : [[gotcha-un-bot-sur-six-manque-toujours]].
+2. **`extract_facts` refuse un fait vide ou tronqué.** Comportement déjà présent — le
+   verrouiller pour qu'une réécriture ne le perde pas.
+3. **Le purgeur ne touche rien sans `--appliquer`.** *Mutation : écrire par défaut →
+   rouge.*
 
 ---
 
 # RECETTE
 
-1. `pyflakes` sur `Sheogorath/` et `tests/`, **avant** `pytest`.
-2. `pytest` **seul** — référence actuelle : **909 tests, 0 échec**.
-3. Les **3 nouvelles mutations** rejouées, chacune vérifiée rouge.
-4. `python tools/vendor_core.py` **n'est pas concerné** : `sheo_data.py` n'est pas un module
-   du noyau vendorisé. Ne pas le lancer pour rien.
-5. **La sonde du lot 4, dans le conteneur**, avant de dire que c'est bon. C'est elle qui
-   remplace l'aller-retour Discord.
+1. `pyflakes` sur les bots touchés, `tests/` et `tools/` — **avant** `pytest`.
+2. `pytest` **seul**. Référence : **913 tests, 0 échec**.
+3. Les mutations rejouées, chacune vérifiée rouge.
+4. `tools/purge_faits_auto.py` lancé **sans `--appliquer`**, et sa sortie **remise à
+   l'utilisateur** — il valide avant toute écriture.
+5. **Ne rien déployer avant cette validation.**
 
 # LES RÈGLES
 
-1. **Ne pas toucher au filet anti-tic.** Il a déjà été corrigé deux fois sur ce sujet
-   (`1639fa1`), et ce n'est pas lui le fautif ici — c'est établi plus haut.
-2. **Ne pas allonger le bloc Jyggalag** (`sheo_data.py:798-815`). Voir la règle d'or.
-3. **Ne pas toucher au routeur** : classer ces messages en « Banter adressé » est correct.
-4. **Éditer les fichiers directement**, pas de script jetable
-   ([[gotcha-script-jetable-dit-success]]).
-5. **Ne pas commiter, ne pas pousser.** La relecture commite.
-6. **Rendre compte de ce qui n'a pas été fait**, nommément.
+1. **Ne pas toucher à la persona de Sheo** — `ac6914b` est validé en live sur le premier
+   échelon, ce n'est pas le sujet ici.
+2. **Ne pas écrire de filtre par mots-clés.** Voir le lot 1.
+3. **Ne pas modifier `data/` sans `--appliquer`**, et jamais sans copie de sauvegarde.
+4. **Lire la consigne de M'aiq d'abord.**
+5. **Éditer les fichiers directement**, pas de script jetable.
+6. **Ne pas commiter, ne pas pousser.** La relecture commite.
+7. **Rendre compte de ce qui n'a pas été fait**, nommément.
+
+---
+
+# HORS PÉRIMÈTRE, MAIS À TRANCHER UN JOUR
+
+**Le quota Groq fait tomber Sheo sur un 14B une réponse sur deux ou trois.** Le prompt à
+3300 tokens contre 8000 tokens/minute, c'est structurel : ni la persona ni la mémoire n'y
+changeront rien. Deux directions, à arbitrer par l'utilisateur, **pas dans ce lot** :
+un **deuxième échelon plus fort** que `ministral-14b`, ou un **prompt plus court**. La
+seconde aiderait aussi le premier échelon à mieux suivre ses consignes.
