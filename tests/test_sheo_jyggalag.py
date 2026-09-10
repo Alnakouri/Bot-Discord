@@ -175,3 +175,71 @@ def test_chaque_humeur_DEMONTRE_la_fissure():
             assert not motif.search(demo.lower()), (
                 f"COMEDY_EXAMPLES_{humeur} : la démonstration elle-même avoue"
             )
+
+
+def test_exception_conteur_bloque_le_sujet():
+    """L'exception du conteur doit mentionner Jyggalag ou la Marche Grise."""
+    base = sheo_data.PERSONALITY_BASE
+    lignes = [l for l in base.split('\n') if 'EXCEPTION DU CONTEUR' in l]
+    assert lignes, "L'exception du conteur a disparu de PERSONALITY_BASE"
+    exception = lignes[0].lower()
+    assert "jyggalag" in exception or "marche grise" in exception, (
+        "L'exception du conteur ne nomme pas le sujet pour le bloquer"
+    )
+
+
+def test_aucune_amorce_citable_dans_tout_le_prompt():
+    """L'amorce du conteur ne doit être citable NULLE PART dans ce que Sheo lit.
+
+    ⚠️ La première version de ce test ne regardait que la ligne de l'EXCEPTION DU
+    CONTEUR. Elle était verte alors que la formule vivait encore, en toutes lettres,
+    dans un exemple de COMEDY_EXAMPLES_BLISS — et c'est l'exemple, pas la consigne,
+    que le modèle a recopié en live le 10/09 (« Ça me rappelle la fois où j'ai offert
+    un papillon à un iceberg »). Une démonstration bat une consigne : le verrou doit
+    donc balayer le prompt ENTIER de chaque humeur, few-shots compris.
+    """
+    for humeur, prompt in sheo_data.MOOD_PROMPTS.items():
+        assert "ça me rappelle la fois où" not in prompt.lower(), (
+            f"MOOD_PROMPTS[{humeur}] contient encore l'amorce citable qui devient un tic"
+        )
+
+
+def test_bliss_demontre_forme_oblique():
+    """BLISS démontre la mention du sujet sans point d'interrogation."""
+    bloc = sheo_data.COMEDY_EXAMPLES_BLISS
+    exemples = [e for e in bloc.split("\nUser: ")[1:]]
+    obliques = []
+    for e in exemples:
+        lignes = e.split("\n")
+        if not lignes: continue
+        prompt_user = lignes[0]
+        if "jyggalag" in prompt_user.lower() or "marche grise" in prompt_user.lower():
+            if "?" not in prompt_user:
+                obliques.append(e)
+    assert obliques, "BLISS n'a aucune démonstration pour une forme oblique/sans question"
+
+
+def test_aucune_demo_ne_pivote_sur_l_image_archetype():
+    """Une démonstration Jyggalag ne finit pas sur l'image que la règle donne en CONTRE-exemple.
+
+    ⚠️ PERSONALITY_BASE dit mot pour mot qu'une image absurde interchangeable, « la même
+    que pour des pâtes ou une chaise », rate le personnage. Une démonstration qui casse le
+    sujet en faisant « pleuvoir des chaises » ENSEIGNE donc précisément le raté qu'elle
+    est censée corriger — et le live du 10/09 a rendu « transforme ta chaise en cornichon
+    chantant ». Le pivot doit rester spécifique.
+    """
+    for humeur in ("NEUTRAL", "MANIA", "DEMENTIA", "BLISS"):
+        bloc = getattr(sheo_data, "COMEDY_EXAMPLES_" + humeur)
+        demos = [
+            e for e in bloc.split("\nUser: ")[1:]
+            if ("jyggalag" in e.lower() or "marche grise" in e.lower())
+            and "aucun aveu" in e
+        ]
+        for demo in demos:
+            # On ne regarde que la RÉPLIQUE, pas la ligne `User:` ni la pensée.
+            replique = demo.split("</thought>")[-1].lower()
+            for archetype in ("chaise", "pâtes"):
+                assert archetype not in replique, (
+                    f"COMEDY_EXAMPLES_{humeur} : la démonstration Jyggalag pivote sur "
+                    f"« {archetype} », l'image que la règle cite comme le raté type"
+                )
