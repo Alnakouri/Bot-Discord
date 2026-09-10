@@ -4,6 +4,11 @@ import logging
 import os
 from datetime import datetime
 import json
+import queue
+import sqlite3
+import threading
+import traceback
+from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
 class JSONLHandler(logging.Handler):
@@ -33,6 +38,164 @@ class JSONLHandler(logging.Handler):
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception:
             pass  # Ne jamais crasher le bot pour un log
+
+_ECRIVAIN_HS = object()
+_queue = queue.Queue(maxsize=1000)
+_writer_thread = None
+_writer_lock = threading.Lock()
+_JOURNAL_ERREUR = False
+
+def _ensure_thread():
+    global _writer_thread
+    with _writer_lock:
+        if _writer_thread is None or not _writer_thread.is_alive():
+            _writer_thread = threading.Thread(target=_writer_loop, daemon=True, name="ErrorEventWriter")
+            _writer_thread.start()
+
+def _empiler(item):
+    try:
+        _queue.put_nowait(item)
+    except queue.Full:
+        # Silence VOULU : la file est bornee a 1000 justement pour que le journal
+        # ne puisse jamais faire grossir la memoire du bot sans limite. Perdre une
+        # ligne d'erreur est preferable a la journaliser ici, ce qui rappellerait
+        # ce meme handler.
+        pass
+
+def _writer_loop():
+    global _JOURNAL_ERREUR
+    
+    data_dir = os.getenv("DATA_DIR", str(Path(__file__).parent.parent / "data"))
+    db_path = os.path.join(data_dir, "bots_database.db")
+    
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path, timeout=20)
+        try:
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except Exception:
+            # Silence VOULU : un reglage de confort, pas une condition de marche.
+            # Sur un bind mount Docker/Windows un PRAGMA peut etre refuse sans que
+            # la base soit inutilisable — on continue avec le reglage par defaut.
+            pass
+
+        # ⚠️ Ce CREATE TABLE doit rester STRICTEMENT identique a celui de
+        # shared/shared_database.py (init_database) — contraintes et valeurs par
+        # defaut comprises. Il ne sert que si un bot demarre avant que le
+        # dashboard n'ait cree la base. tests/test_error_events_handler.py
+        # compare les deux et echoue a la moindre divergence.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS error_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                bot_name TEXT NOT NULL,
+                error_type TEXT NOT NULL,
+                error_message TEXT NOT NULL,
+                error_traceback TEXT,
+                context_json TEXT,
+                severity TEXT DEFAULT 'ERROR',
+                resolved INTEGER DEFAULT 0,
+                report_generated INTEGER DEFAULT 0
+            )
+        """)
+        conn.commit()
+    except Exception as e:
+        if not _JOURNAL_ERREUR:
+            import logging
+            logging.getLogger("bot_logger").error(f"[ERROR EVENTS] Erreur d'initialisation SQLite: {e}")
+            _JOURNAL_ERREUR = True
+        if conn:
+            conn.close()
+        return
+
+    while True:
+        try:
+            item = _queue.get()
+            try:
+                if item is _ECRIVAIN_HS:
+                    break
+                
+                conn.execute("""
+                    INSERT INTO error_events (
+                        timestamp, bot_name, error_type, error_message,
+                        error_traceback, context_json, severity, resolved, report_generated
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    item["timestamp"], item["bot_name"], item["error_type"],
+                    item["error_message"], item["error_traceback"], item["context_json"],
+                    item["severity"], 0, 0
+                ))
+                conn.commit()
+                _JOURNAL_ERREUR = False
+            finally:
+                _queue.task_done()
+        except Exception as e:
+            if not _JOURNAL_ERREUR:
+                import logging
+                logging.getLogger("bot_logger").error(f"[ERROR EVENTS] Erreur d'écriture SQLite: {e}")
+                _JOURNAL_ERREUR = True
+            
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    # Silence VOULU : le rollback est deja un rattrapage. S'il echoue
+                    # a son tour, la connexion est perdue et il n'y a rien de plus a
+                    # tenter — l'echec initial vient d'etre journalise juste au-dessus.
+                    pass
+
+    if conn:
+        conn.close()
+
+class ErrorEventHandler(logging.Handler):
+    def __init__(self, bot_name):
+        super().__init__()
+        self.bot_name = bot_name
+        _ensure_thread()
+        
+    def emit(self, record):
+        if record.name == __name__ or record.name == "bot_logger":
+            return
+            
+        try:
+            # ⚠️ `exc_info` peut valoir (None, None, None) : c'est ce que `logging`
+            # pose quand on ecrit `logger.error(..., exc_info=True)` HORS d'un bloc
+            # `except`. Tester le tuple seul ferait lever `None.__name__`, et le
+            # `except` plus bas avalerait l'evenement entier en silence.
+            exc = record.exc_info if record.exc_info and record.exc_info[0] else None
+
+            error_type = exc[0].__name__ if exc else record.module
+
+            error_message = record.getMessage()
+            if error_message and len(error_message) > 2000:
+                error_message = error_message[:1997] + "..."
+
+            error_traceback = None
+            if exc:
+                error_traceback = "".join(traceback.format_exception(*exc))
+                if len(error_traceback) > 8000:
+                    error_traceback = error_traceback[:7997] + "..."
+                    
+            context_json = json.dumps({"module": record.module, "funcName": record.funcName, "lineno": record.lineno})
+            
+            item = {
+                "timestamp": datetime.now().isoformat(),
+                "bot_name": self.bot_name,
+                "error_type": error_type,
+                "error_message": error_message,
+                "error_traceback": error_traceback,
+                "context_json": context_json,
+                "severity": record.levelname
+            }
+            
+            _empiler(item)
+        except Exception:
+            # Silence VOULU, et c'est la regle du module : « Ne jamais crasher le bot
+            # pour un log ». `Handler.handle` ne rattrape rien — une exception levee
+            # ici remonterait dans `on_message`. On ne peut pas non plus la
+            # journaliser : ce handler serait rappele.
+            pass
+
 
 def setup_logger(bot_name: str, log_dir: str = "logs"):
     """
@@ -106,8 +269,21 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
         jsonl_handler.setLevel(logging.INFO)
         logger.addHandler(jsonl_handler)
         
+        # Handler événements d'erreur pour la vue Analyse Erreurs du dashboard.
+        # Posé AVANT la boucle ci-dessous : c'est elle qui recopie logger.handlers
+        # sur les loggers des modules partagés.
+        erreurs_handler = ErrorEventHandler(bot_name)
+        erreurs_handler.setLevel(logging.ERROR)
+        logger.addHandler(erreurs_handler)
+        
+        # ⚠️ Chaque nom doit correspondre a un `logging.getLogger("<nom>")` REEL dans
+        # le module partage : un nom sans logger derriere ne cable rien, il cree un
+        # objet vide. `response_memory` et `transcript` n'en ont pas — ils ne sont
+        # pas dans cette liste.
         for shared_name in ("smart_router", "llm_cascade", "media_handler",
-                            "safe_client", "discord_status", "discord_profile"):
+                            "safe_client", "discord_status", "discord_profile",
+                            "api_manager", "api_tracking", "anti_tic",
+                            "repartee_lessons", "boucles"):
             shared_logger = logging.getLogger(shared_name)
             shared_logger.setLevel(logging.INFO)
             if not shared_logger.handlers:
@@ -122,3 +298,19 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
 # logger.info("Message de log")
 # logger.warning("Avertissement")
 # logger.error("Erreur")
+
+def reinitialiser_pour_tests():
+    global _writer_thread, _JOURNAL_ERREUR
+    while not _queue.empty():
+        try:
+            _queue.get_nowait()
+            _queue.task_done()
+        except queue.Empty:
+            break
+            
+    if _writer_thread is not None and _writer_thread.is_alive():
+        _empiler(_ECRIVAIN_HS)
+        _writer_thread.join(timeout=5.0)
+    
+    _JOURNAL_ERREUR = False
+    _writer_thread = None
