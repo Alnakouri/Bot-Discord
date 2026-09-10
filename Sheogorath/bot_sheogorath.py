@@ -2304,10 +2304,9 @@ async def on_message(message):
     
     # Instruction for Extraction
     system_instruction += (
-        "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur ce que l'utilisateur DIT DE LUI-MÊME (ex: un goût, un métier, un projet, une peur), "
+        "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur l'utilisateur — un goût, un métier, un projet, une peur, mais AUSSI sa façon d'argumenter, ce qui le pique, ses habitudes (le connaître sert à mieux le contrer) — "
         "ajoute-le à la fin de ta réponse dans un bloc XML invisible : <fact>Le fait appris</fact>.\n"
-        "⚠️ RÈGLE ABSOLUE : N'enregistre JAMAIS d'observations sur le ton de l'échange, sur les images employées, ou sur ce dont il « semble obsédé ». "
-        "Tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de factuel et neuf n'a été dit explicitement sur lui, ne mets rien."
+        "⚠️ RÈGLE ABSOLUE : un fait ne peut s'appuyer que sur ce qui vient DE LUI — SES messages, son profil public, sa bio, ses actes. Ne lui attribue JAMAIS un thème, un mot ou une image que c'est TOI qui as introduit — tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de neuf n'est venu de LUI, ne mets rien."
     )
     system_instruction += _get_meme_addition()
     # HISTORY MANAGEMENT

@@ -848,8 +848,8 @@ async def on_message(message):
                 f"\n{daily_summary}"
                 f"{daily_read_addition}"
                 f"{grudge_addition}"
-                f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur ce que cet élève DIT DE LUI-MÊME (ex: ses préférences, son métier, ses projets, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
-                f"⚠️ RÈGLE ABSOLUE : N'enregistre JAMAIS d'observations sur le ton de l'échange, les images employées, ou ce dont il « semble obsédé ». Tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de factuel n'a été dit explicitement sur lui, ne mets rien."
+                f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cet élève — ses préférences, son métier, ses projets, mais AUSSI sa façon d'argumenter, ce qui le pique, ses habitudes (le connaître sert à mieux le contrer) — ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
+                f"⚠️ RÈGLE ABSOLUE : un fait ne peut s'appuyer que sur ce qui vient DE LUI — SES messages, son profil public, sa bio, ses actes. Ne lui attribue JAMAIS un thème, un mot ou une image que c'est TOI qui as introduit — tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de neuf n'est venu de LUI, ne mets rien."
             )
         return _memory_cache["val"]
 

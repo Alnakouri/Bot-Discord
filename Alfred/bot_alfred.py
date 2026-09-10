@@ -200,8 +200,8 @@ class AlfredBrainAdapter:
             fact_context = f"\n[CE QUE VOUS SAVEZ SUR CE MONSIEUR (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
             
         memory_instruction = (
-            f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si vous apprenez un fait durable, important et nouveau sur ce que ce Monsieur DIT DE LUI-MÊME (ex: ses préférences, son métier, ses projets, etc.), vous DEVEZ l'ajouter discrètement à la fin de votre réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
-            f"⚠️ RÈGLE ABSOLUE : N'enregistrez JAMAIS d'observations sur le ton de l'échange, les images employées, ou ce dont il « semble obsédé ». Vos propres réponses font partie de la conversation et ne vous apprennent rien sur lui. Si rien de factuel n'a été dit explicitement sur lui, ne mettez rien."
+            f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si vous apprenez un fait durable, important et nouveau sur ce Monsieur — ses préférences, son métier, ses projets, mais AUSSI sa façon d'argumenter, ce qui le pique, ses habitudes (le connaître sert à mieux le remettre à sa place) — vous DEVEZ l'ajouter discrètement à la fin de votre réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
+            f"⚠️ RÈGLE ABSOLUE : un fait ne peut s'appuyer que sur ce qui vient DE LUI — SES messages, son profil public, sa bio, ses actes. Ne lui attribuez JAMAIS un thème, un mot ou une image que c'est VOUS qui avez introduit — vos propres réponses font partie de la conversation et ne vous apprennent rien sur lui. Si rien de neuf n'est venu de lui, ne mettez rien."
         )
         return f"{daily_summary}{daily_read_addition}{fact_context}{memory_instruction}"
 

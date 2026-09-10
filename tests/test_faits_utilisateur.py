@@ -19,10 +19,29 @@ def test_consigne_extraction_interdit_registre():
         assert fichier.exists(), f"Fichier non trouvé : {fichier}"
         content = fichier.read_text(encoding="utf-8")
         
-        # On cherche la mention de l'interdiction
-        # "N'enregistre JAMAIS d'observations sur le ton de l'échange, les images employées, ou ce dont il « semble obsédé »"
-        assert "semble obsédé" in content or "semble obsédé" in content.lower(), f"L'interdiction 'semble obsédé' est absente de {fichier.name}"
-        assert "ton de l'échange" in content or "ton de l'échange" in content.lower(), f"L'interdiction 'ton de l'échange' est absente de {fichier.name}"
+        # ⚠️ CE QUI EST VERROUILLE ICI A ETE RESSERRE LE 11/09, ET LE PREMIER JET
+        # INTERDISAIT UNE FONCTIONNALITE VOULUE. L'utilisateur a concu ces bots pour
+        # qu'ils dressent un profil de comportement de leur interlocuteur — comment il
+        # argumente, ce qui le pique — afin de mieux le contrer. Le premier correctif
+        # interdisait « les observations sur le ton de l'echange » : il tuait ca.
+        # Le seul invariant a tenir est l'AUTO-ATTRIBUTION : un fait ne peut s'appuyer
+        # que sur les messages de l'interlocuteur, jamais sur ce que le bot a dit
+        # lui-meme. C'est la boucle des « cornichons » du 10/09.
+        # La source autorisee est TOUT ce qui vient de l'interlocuteur — ses messages,
+        # son profil public, sa bio, ses actes. C'est la precision de l'utilisateur du
+        # 11/09 : les bots s'appuient aussi sur les infos publiques, pas seulement sur
+        # le texte du salon.
+        assert "qui vient DE LUI" in content, (
+            f"la regle « un fait ne s'appuie que sur ce qui vient DE LUI » est absente de {fichier.name}"
+        )
+        assert "que c'est TOI qui as introduit" in content or "que c'est VOUS qui avez introduit" in content, (
+            f"l'interdiction d'auto-attribution est absente de {fichier.name}"
+        )
+        # Et le profil de comportement doit rester AUTORISE.
+        assert "sa façon d'argumenter" in content, (
+            f"{fichier.name} n'autorise plus le profil de comportement — c'est une "
+            "fonctionnalite voulue, pas un defaut"
+        )
 
 # 2. extract_facts refuse un fait vide ou tronqué
 def test_extract_facts_refuse_vide_ou_tronque():
