@@ -243,7 +243,10 @@ class LlmMixin:
                 facts_block = f"\n\n[CE QUE TU SAIS SUR {author}]:\n- " + "\n- ".join(facts) + "\nUtilise ces infos pour personnaliser ta réponse."
                 system_prompt += facts_block
             
-            system_prompt += f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur {author} dans cette interaction (ex: ses préférences, ses opinions, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+            system_prompt += (
+                f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur ce que {author} DIT DE LUI-MÊME (ex: ses préférences, ses projets, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
+                f"⚠️ RÈGLE ABSOLUE : N'enregistre JAMAIS d'observations sur le ton de l'échange, les images employées, ou ce dont il « semble obsédé ». Tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de factuel n'a été dit explicitement sur lui, ne mets rien."
+            )
 
         # ANTI-RÉPÉTITION (parité Discord) : on rappelle au bot ses dernières répliques
         # sur ce salon et on lui interdit de les ressortir / les paraphraser.
@@ -344,6 +347,12 @@ class LlmMixin:
                                     self.viewer_facts[author_lower] = []
                                 if clean_fact not in self.viewer_facts[author_lower]:
                                     self.viewer_facts[author_lower].append(clean_fact)
+                                    # ⚠️ Plafond = self.viewer_memory_max, dont la valeur par defaut est 8
+                                    # (shared/twitch_chat.py:109). Ne pas la deviner : elle est
+                                    # passee en argument et peut differer par appelant.
+                                    # Au-delà, pop(0) retire le fait le plus ancien. Les faits fondateurs
+                                    # partent donc en premier si l'on laisse entrer du bruit récent. C'est pourquoi
+                                    # la qualité de l'extraction (interdiction des faits de registre) est critique.
                                     if len(self.viewer_facts[author_lower]) > self.viewer_memory_max:
                                         self.viewer_facts[author_lower].pop(0)
                                     self._save_viewer_facts_debounced()

@@ -934,7 +934,8 @@ async def on_message(message):
         f"{fact_context}"
         f"\n{daily_summary}"
         f"{daily_read_addition}"
-        f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cette personne dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+        f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur ce que cette personne DIT D'ELLE-MÊME (ex: ses préférences, son métier, un projet, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
+        f"⚠️ RÈGLE ABSOLUE : N'enregistre JAMAIS d'observations sur le ton de l'échange, les images employées, ou ce dont il « semble obsédé ». Tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de factuel n'a été dit explicitement sur lui, ne mets rien."
     )
 
     # Détection mots-clés

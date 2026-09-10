@@ -170,7 +170,10 @@ class FactMemory:
             self.facts[uid] = []
         if fact not in self.facts[uid]:
             self.facts[uid].append(fact)
-            # Limit to 10 key facts per user to avoid token explosion
+            # ATTENTION : Plafond à 10 faits.
+            # Au-delà de 10, pop(0) retire le fait le plus ancien. Les faits fondateurs
+            # partent donc en premier si l'on laisse entrer du bruit récent. C'est pourquoi
+            # la qualité de l'extraction (interdiction des faits de registre) est critique.
             if len(self.facts[uid]) > 10:
                 self.facts[uid].pop(0)
             self.save_facts()

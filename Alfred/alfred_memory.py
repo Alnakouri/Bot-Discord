@@ -183,7 +183,12 @@ class FactMemory:
             }
             self.facts[uid].append(new_fact)
             
-            # Éviction si > 30 faits
+            # ⚠️ Plafond à 30, DELIBEREMENT plus haut que les 10 de Sheogorath.
+            # Ne pas « aligner » vers le bas : ces quatre bots evincent par `last_used`
+            # (le moins RECEMMENT SERVI), la ou Sheo fait un `pop(0)` aveugle sur le plus
+            # ANCIEN. La regle est meilleure ici, c'est Sheo qui devrait la rejoindre.
+            # Dans les deux cas, un fait fondateur peut sortir si l'on laisse entrer du
+            # bruit : c'est la QUALITE de l'extraction qui protege, pas le plafond.
             if len(self.facts[uid]) > 30:
                 # Trier par last_used croissant (le plus ancien en premier)
                 self.facts[uid].sort(key=lambda x: x.get("last_used", ""))

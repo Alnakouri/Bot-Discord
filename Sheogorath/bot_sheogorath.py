@@ -2303,7 +2303,12 @@ async def on_message(message):
         logger.warning(f"carnet de repartie indisponible : {e}")
     
     # Instruction for Extraction
-    system_instruction += "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur l'utilisateur dans ce message (ex: il aime/déteste qqch, son métier, une peur), ajoute-le à la fin de ta réponse dans un bloc XML invisible : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+    system_instruction += (
+        "\n\n[INSTRUCTION SECRÈTE]: Si tu apprends un FAIT NOUVEAU et IMPORTANT sur ce que l'utilisateur DIT DE LUI-MÊME (ex: un goût, un métier, un projet, une peur), "
+        "ajoute-le à la fin de ta réponse dans un bloc XML invisible : <fact>Le fait appris</fact>.\n"
+        "⚠️ RÈGLE ABSOLUE : N'enregistre JAMAIS d'observations sur le ton de l'échange, sur les images employées, ou sur ce dont il « semble obsédé ». "
+        "Tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de factuel et neuf n'a été dit explicitement sur lui, ne mets rien."
+    )
     system_instruction += _get_meme_addition()
     # HISTORY MANAGEMENT
     channel_id = message.channel.id

@@ -848,7 +848,8 @@ async def on_message(message):
                 f"\n{daily_summary}"
                 f"{daily_read_addition}"
                 f"{grudge_addition}"
-                f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cet élève/interlocuteur dans cette interaction (ex: ses préférences, ses opinions, sa localisation, son métier, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>. Sinon, ne mets rien."
+                f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur ce que cet élève DIT DE LUI-MÊME (ex: ses préférences, son métier, ses projets, etc.), ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
+                f"⚠️ RÈGLE ABSOLUE : N'enregistre JAMAIS d'observations sur le ton de l'échange, les images employées, ou ce dont il « semble obsédé ». Tes propres réponses font partie de la conversation et ne t'apprennent rien sur lui. Si rien de factuel n'a été dit explicitement sur lui, ne mets rien."
             )
         return _memory_cache["val"]
 
