@@ -72,8 +72,23 @@ soir-là ».
 - L'utilisateur semble obsédé par les conséquences post-Marche Grise et les métaphores culinaires violentes (cornichons, gelée, toasts).
 ```
 
-**L'utilisateur n'a jamais écrit un seul de ces mots.** C'est Sheo qui les a dits, puis
-qui a conclu que son interlocuteur en était obsédé, puis qui a reçu l'ordre de s'en servir.
+**Ce qui est PROUVÉ, et ce qui ne l'est pas** — l'utilisateur a soulevé l'objection
+lui-même, elle est juste et elle borne la conclusion.
+
+*Prouvé*, sur le fait du 10/09 : il a été appris à **21:38:08**, dans la même seconde que
+la réponse Mistral, et le message qui l'a déclenché est **« apres la marche grise »** —
+quatre mots. Aucun des quatre messages de l'utilisateur ce jour-là ne contient cornichon,
+confiture, gelée, toast, sucre, papillon ni fromage. Ces mots ne vivent que dans les
+réponses de Sheo, produites à cet instant. **Le bot a donc bien attribué son propre lexique
+à son interlocuteur.**
+
+*Non vérifiable* : les quatre faits « cornichons » antérieurs. **Le contenu des messages
+n'est stocké nulle part** — `interactions` ne garde que le type et l'horodatage. Le tout
+premier peut très bien être légitime.
+
+⚠️ Et ça ne change pas le correctif : **la boucle est prouvée, sa graine ne l'est pas.** Un
+seul fait de départ — vrai ou faux — suffit à lancer l'auto-alimentation, puisque le bot
+ressert le thème, s'observe le resservir, et en conclut que le mortel en est obsédé.
 
 ⚠️ Ça explique enfin le **cornichon**, qui n'apparaît **nulle part** dans
 `sheo_data.py` (mesuré) et revenait pourtant à chaque échange : il ne venait pas de la
