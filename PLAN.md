@@ -1,168 +1,135 @@
-# PLAN — Dashboard v2, Lot 3 : les 5 vues Twitch
+# PLAN — Dashboard v2 : le Lot 3 est livré et relu
 
-Rédaction : Claude, le **2026-09-10**. Exécution : **Antigravity**.
-Fait suite au Lot 2, livré par Antigravity et **repris à la relecture** le même jour.
+Rédaction : Claude, le **2026-09-10**. Exécution du Lot 3 : **Antigravity**, relu et
+corrigé le même jour. Le Lot 3 était le dernier du portage : **le dashboard v2 est
+complet.**
 
 ---
 
-# ANNEXE D'ABORD — rapport de relecture du Lot 2 (10/09)
+# RAPPORT DE RELECTURE DU LOT 3 (10/09)
 
-À lire avant d'écrire une ligne du Lot 3 : ce sont les mêmes pièges.
+## Le réflexe qui a servi, et ce qu'il a dit cette fois
 
-## Ce qui était cassé, et qui l'était en silence
+Diff annoncé : « les 5 vues Twitch ». Diff réel : **36 insertions dans `app.js` seul**.
+C'est exactement le signal de [[gotcha-portage-maquette-roles-couleurs]] — comparer la
+taille du diff au périmètre annoncé avant de relire ligne à ligne.
 
-**La page ne se chargeait pas du tout.** `app.js` ne passait pas `node --check` — trois
-ruptures de syntaxe, dont une seule visible à la fois puisque l'analyseur s'arrête à la
-première :
+**Mais cette fois le signal était un faux positif, et c'est le plan qui avait tort.**
+Vérification faite fonction par fonction : la quasi-totalité du balisage des vues Twitch
+vit dans **`index.html`**, pas dans `app.js`. Ce que `app.js` sert vraiment, c'est cinq
+gabarits — la carte d'abonnement, la rangée de liens, la rangée de récompenses, la rangée
+de classement — et des remplissages de formulaire sans balisage du tout. Le Lot 3 les a
+tous touchés. **Il n'a pas sous-livré : le plan surestimait la surface JS.**
 
-1. une accolade fermante en trop après `loadApiKeysStatus` (ligne 1017) ;
-2. une accolade fermante en trop dans `loadAuditLogs` (ligne 1056) ;
-3. `updateOverviewAlertBanner` : les **accents graves** des deux gabarits avaient disparu —
-   `parts.push(${window.globalOfflineBotsCount} bot hors ligne)` n'est pas du JavaScript.
+Deux conséquences à retenir pour la prochaine fois :
 
-Un fichier JS qui ne parse pas ne lève rien de visible : le navigateur **n'exécute rien**,
-et le dashboard reste un squelette HTML muet. Aucun test ne le voit. La recette du Lot 2
-disait `node --check` **avant** de dire que c'est fini ; elle n'a pas été jouée.
+- `loadTwitchListen` **n'a aucun gabarit** : cinq `getElementById(...).value = ...`. Le
+  plan lui demandait « les mêmes tableaux » — il n'y a pas de tableau. Ne pas reprocher à
+  une livraison de ne pas avoir fait ce qui n'existe pas.
+- `loadTwitchEvents` **délègue entièrement** à `renderRewardsTable`, que le plan disait de
+  ne PAS refaire. Refait quand même — mais l'ajout (`padding:12px`, action alignée à
+  droite) est cohérent avec les autres tableaux. Gardé.
 
-## Ce que le mécanisme d'exécution a caché
+Et la peau des panneaux Twitch était **déjà bonne** sans y toucher : le Lot 1 a récrit
+`.glass` en `--bg-card` opaque et posé `--bg-panel-inner: #161628` / `--border-glass:
+#23233a`. Les vues Twitch les héritent par les jetons. Il n'y avait pas d'ossature à
+porter.
 
-Le portage a été appliqué par **9 scripts Python jetables** déposés dans
-`dashboard/frontend/` (`update_*.py`). Deux conséquences :
+## Les défauts corrigés à la relecture
 
-- `update_twitch.py` imprime `Success` **sans condition**, alors que 2 de ses 3 expressions
-  régulières n'ont **rien** remplacé. La sortie disait que les vues Twitch étaient portées ;
-  le diff dit qu'une seule ligne de tableau l'a été. C'est le même défaut que
-  [[gotcha-import-ajoute-mais-pas-cable]] : la sortie confirme le **nom** de l'opération,
-  pas son **effet**.
-- ces scripts étaient posés dans le répertoire **servi en statique** par le dashboard, avec
-  des chemins absolus `I:\IA\...` en dur. Déplacés hors du dépôt à la relecture. Un fichier
-  `.env.example.md` **vide** traînait aussi à la racine : parti avec.
+**1. Le badge de présence annonçait une connexion que rien ne mesure.** Le libellé est
+passé de « Active / Inactive » à **« CONNECTÉ / DÉCONNECTÉ »**, sous un titre « Statut de
+Connexion ». Or la valeur lue est `configData[botId].enabled` de `/api/twitch` : c'est le
+toggle **« Activer la surveillance Twitch »** des annonces, pas un état de connexion au
+chat. Vérifié côté backend : `/api/twitch/chat/{bot}` renvoie `cfg.get("chat", {})`, qui
+n'a **aucun** champ de connexion — **aucune route ne sert cet état**. Un bot au chat
+connecté mais aux annonces coupées se serait affiché « DÉCONNECTÉ ». C'est la règle 1 du
+plan : ce qu'aucune route ne sert ne s'invente pas. Libellé rendu exact
+(« Surveillance active / inactive »), titre du panneau corrigé en « Surveillance Twitch ».
 
-## Les cinq défauts de fond corrigés à la relecture
+**2. Le même badge perdait sa pastille.** `badgeEl.className = ""` effaçait **toutes** les
+classes, dont `.badge` — qui porte à lui seul le `padding`, le `border-radius: 20px`, la
+taille et les majuscules. Restaient un fond et une couleur inline sans géométrie : un
+liseré coloré derrière le texte, pas une pastille. Corrigé en réutilisant les pastilles
+**qui existent déjà** dans le dashboard, `.badge.running` / `.badge.stopped` — ce que le
+plan demandait mot pour mot.
+⚠️ Au passage : `badge-success` et `badge-secondary`, utilisées ici depuis toujours, ne
+sont **définies nulle part** dans `dashboard.css`. Le bascule de classe de la v1 ne
+changeait donc rien à l'écran. Références mortes retirées.
 
-1. **Deux barres de progression qui mentaient.** `stat-bar-bots` et `stat-bar-api` ont été
-   ajoutées à `index.html` et **jamais** mises à jour par le JS : la barre des bots restait
-   à `0 %` pendant que la valeur affichait « 5 / 6 », celle de l'API à `100 %` quoi qu'il
-   arrive. Câblées dans `fetchBotsStatus` et `updateStatTiles` ; sans appel du tout, la
-   barre API affiche **0 %**, pas 100 %.
-2. **L'ancienne règle CSS de l'icône écrasait la nouvelle tuile.** `.stat-card i` posait
-   `font-size: 2rem`, un fond violet et `padding: 1rem` — le gros médaillon de la v1, qui
-   s'appliquait toujours à la petite icône de tête du gabarit v2. Récrite. `.stat-card h3`,
-   `.stat-card p` et `.stat-card.warning/.success i` ne visaient plus aucun élément :
-   retirées.
-3. **Le bloc `context` du détail d'erreur devinait ses clés.** Le plan disait de **regarder
-   ce que `context` contient vraiment**. Il n'a pas été regardé : le code cherchait
-   `occurrences_24h`, `source_file`, `trace`. Mesuré en base sur les 10 lignes existantes,
-   `context_json` contient `{module, funcName, lineno}` — le `LogRecord` de Python. Les
-   trois blocs n'auraient **jamais** rien affiché. Remplacés par un bloc « Origine »
-   (`module.fonction:ligne`), qui est ce qui existe.
-4. **`document.querySelector('.keys-table-container')`** : cette classe porte **deux**
-   éléments dans `index.html` — les clés API et le journal d'audit. Le rendu ne tombait dans
-   le bon panneau que parce que celui des clés vient en premier dans le fichier. Ancré sur
-   un `id` dédié, `keys-panel`, et l'ancien `<table>` mort (`keys-status-body`) est remplacé
-   par son état de chargement.
-5. **Le bandeau d'alerte disait « 1 erreur critique »** pour un compteur qui est celui de
-   **toutes** les erreurs sur 24 h, et sans accord au pluriel. Corrigé en
-   « N erreur(s) sur 24 h ».
+**3. Trois boutons en `all:unset`.** Le rapport du Lot 2 listait « aucun `all:unset` »
+parmi les choses **à ne pas défaire** ; le Lot 3 en a réintroduit trois. Sur un `<button>`,
+`all:unset` est une déclaration d'auteur qui s'applique dans tous les états : elle supprime
+l'anneau de focus de l'agent utilisateur, et le bouton devient **invisible au clavier** —
+sans que rien ne casse, ni à l'écran ni dans un test. Remplacé par une remise à zéro qui ne
+touche qu'à ce qu'il faut (`appearance`, `background`, `margin`, `padding`, `font`).
 
-Deux détails de la même passe : les quatre valeurs de tuile étaient en `27px` fixes alors
-que le plan demandait des `rem` (la page cessait de répondre au zoom) ; et `${time}` /
-`${timeStr}`, seules interpolations non échappées des nouveaux gabarits, passent maintenant
-par `escapeHtml`.
+**4. Le message d'annonce personnalisé est devenu illisible.** La carte d'abonnement
+affichait le message en clair ; le portage l'a réduit à une pastille « Perso » avec le
+texte en `title`, donc **au survol seulement**. Or c'est le seul endroit du dashboard où ce
+message se lit : il n'existe aucune route d'édition d'un abonnement. Invisible au tactile,
+invisible au clavier, invisible à la lecture d'écran. La pastille est gardée (densité de la
+maquette) et la ligne en clair revient sous la carte quand un message existe.
 
-## Ce que ce lot a bien fait, et qu'il ne faut pas défaire
+**5. Un survol qui ne suivait pas la règle.** Le classement économique éclaircissait ses
+rangées en `#1c1c2f` là où le journal d'audit et les récompenses utilisent
+`rgba(255,255,255,0.02)`. Aligné.
 
-Le reste du portage est juste : `#7c8699` partout où la maquette écrivait `#5f6880` (le
-contraste a été respecté), aucun `all:unset`, aucun `https://` chargé, `insertAdjacentHTML`
-conservé dans `appendLogLine`, `escapeHtml` et `safeColor` respectés ailleurs, les trois
-états (chargement / vide / erreur) conservés sur chaque gabarit porté, et la pastille d'état
-de l'avatar tranchée dans le bon sens — la règle morte `.bot-card.running::after` est
-**déplacée** sur `.bot-avatar::after`, la classe `running` est enfin posée, et elle l'est
-dans **les deux** branches de `renderBotsGrid`.
+## Ce que ce lot a bien fait
+
+Livré **en éditant les fichiers directement** — aucun script Python jetable dans
+`dashboard/frontend/`, et `node --check` vert **à la livraison**, pas après réparation.
+C'est la leçon du Lot 2 ([[gotcha-script-jetable-dit-success]]) appliquée. `escapeHtml`
+respecté partout dans les nouveaux gabarits, y compris dans les attributs (il échappe bien
+`"` et `'`), `insertAdjacentHTML` conservé, aucun `https://` chargé, les confirmations
+destructives intactes (`confirmDialog` sur `deleteTwitchSubscription`), et les **13 `id`**
+des blocs touchés vérifiés un par un : tous présents dans `index.html`, exactement une
+fois chacun.
 
 ## Ce qui n'a pas été porté, faute de route — la liste à garder
 
-- `msgs` par bot et statut `degraded` sur la carte de bot : `/api/bots` ne les sert pas.
-- « Top interlocuteurs » de la vue conversations : `get_stats` ne renvoie aucune liste.
-- Groupement des clés **par bot** : `api_key_status` a pour clé `(api_name, key_index)`,
-  **aucune colonne bot**. Groupé par fournisseur. Voir [[regle-une-cle-api-par-bot]].
-- Barres sous les tuiles « Erreurs 24 h » et « Utilisateurs 7 j » : pas de dénominateur.
-- Occurrences 24 h, fichier source, trace dans le détail d'erreur : voir le point 3.
+- **État de connexion réelle au chat Twitch** : n'existe dans aucune route. Voir le point 1.
+- Les listes de la vue Lot 2 restent valables : `msgs` par bot, statut `degraded`,
+  « Top interlocuteurs », groupement des clés par bot, dénominateurs des tuiles
+  « Erreurs 24 h » et « Utilisateurs 7 j ».
 
-## Ce qu'il faut décider, et qui n'est pas du portage
+## Détail annexe
 
-**Plus rien n'écrit dans `error_events`.** `shared/shared_database.py:916` définit
-`log_error_event(...)` et **aucun appelant n'existe dans le dépôt**. Les 10 lignes en base
-datent du **8-9 juin 2026**. Conséquence : la vue « Analyse Erreurs » est vide en
-permanence, la tuile « Erreurs (24 h) » affiche `0` quoi qu'il arrive, et la moitié erreurs
-du bandeau d'alerte ne peut pas se déclencher. Ce n'est **pas** un défaut du Lot 2 — c'est
-antérieur, et hors de son périmètre (« ne pas toucher au backend »). C'est un chantier à
-part : soit rebrancher un `logging.Handler` sur `log_error_event`, soit retirer la vue.
+`dashboard/design_v2/extract.py` portait un chemin absolu `I:\IA\...` en dur — le motif
+même que le rapport du Lot 2 reprochait aux scripts jetables, mais celui-ci est **commité**.
+Ancré sur `Path(__file__).parent`. Sa sortie `template_extracted.json` (215 Ko,
+régénérable, jamais suivie) est sortie de l'arbre.
 
-## Recette encore due
+## Recette jouée
 
-`pyflakes` : propre (rien de nouveau ; le bruit existant est antérieur et hors Python
-touché). `node --check` : vert sur les deux fichiers JS. **Le parcours au clic des 8 vues
-n'a toujours pas été fait** — il demande le mot de passe du dashboard et un humain.
+- `node --check` : **vert** sur `app.js` et `charts.js`, avant et après la relecture.
+- `pyflakes` : **inchangé** (le bruit listé est antérieur, aucun Python de production
+  touché).
+- `pytest` seul : **900 tests, 0 échec**, code de sortie 0.
+- Les 13 `getElementById` des blocs touchés : cibles vérifiées dans `index.html`.
+
+## ⚠️ Ce qui reste dû, et qui demande un humain
+
+**Le parcours au clic des 5 onglets Twitch n'a pas été fait** — il demande le mot de passe
+du dashboard. C'est là que vivent le plus de gestionnaires. À faire par le raccourci du
+Bureau, sur les cinq sous-onglets : Présence & connexion, Événements & Rewards, Habitués &
+éco, Écoute live, Annonces.
+
+**Et la CI n'a pas encore vu ce commit.** Ne pas dire « c'est bon » avant qu'elle soit
+verte ([[feedback-le-local-ment-sans-cles]]).
 
 ---
 
-# LE LOT 3
+# CE QUI RESTE APRÈS LE PORTAGE
 
-## Où on en est
+Le dashboard v2 est complet : les 8 vues du Lot 2 et les 5 onglets Twitch du Lot 3.
 
-Lots 1 et 2 sont dans l'**arbre de travail** (`index.html`, `css/dashboard.css`,
-`js/app.js`), relus et réparés, **non commités**. Le Lot 1 est commité à part (`a0be86e`),
-**non poussé**.
+## Le chantier à trancher, hors portage
 
-Il reste **une seule chose** : le balisage des vues Twitch, que le Lot 2 devait porter
-(point 9 de son plan) et n'a pas porté.
-
-## Les règles n'ont pas changé
-
-1. **Le backend ne change pas.** Aucune route, aucun schéma. Ce que la maquette montre et
-   qu'aucune route ne sert est **retiré de la vue** et listé dans le rapport.
-2. **Pas de React, pas de build**, pas de `npm`/`pnpm`, pas de CDN. JS vanille.
-3. **Tout reste hors-ligne** : aucun `https://` chargé dans la page.
-4. **Aucune fonction ne disparaît** : les 5 onglets Twitch, leurs `id` d'ancrage, leurs
-   `onclick`, le toggle `chat.eventsub`, les confirmations destructives.
-5. **Ne pas toucher à** `backend/` **ni aux tests.**
-
-## Les fonctions, une par une
-
-Toutes dans `js/app.js`. Référence visuelle : `dashboard/design_v2/template_pretty.html`.
-
-1. **`renderTwitchBotView`** — l'ossature des onglets : panneaux `--bg-card` opaques, blocs
-   imbriqués `#161628`, bordure `#23233a`, survol `#43436b`. C'est elle qui porte le plus
-   d'`id` : les recopier **un par un**.
-2. **`loadTwitchPresence`** — mêmes pastilles d'état que le reste du dashboard.
-3. **`loadTwitchEvents`** — rangées de tableau comme `loadAuditLogs` : séparateur `#1c1c2f`,
-   survol `rgba(255,255,255,0.02)`, action en pastille.
-4. **`loadTwitchEconomy`** et **`loadTwitchListen`** — mêmes tableaux. ⚠️ Ce sont exactement
-   les deux que `update_twitch.py` a prétendu porter sans y toucher : les **relire** avant
-   de dire qu'elles sont faites.
-5. **`renderRewardsTable`** — déjà porté au Lot 2, ne pas le refaire.
-
-Chaque gabarit garde ses **trois états** : chargement, vide, erreur — habillés à la D.A., et
-l'état vide doit dire *pourquoi* il est vide.
-
-## Comment livrer
-
-1. **Éditer les fichiers directement.** Pas de script Python jetable qui récrit `app.js` :
-   c'est ce mécanisme qui a produit les trois ruptures de syntaxe du Lot 2, et son `Success`
-   inconditionnel qui a caché ce qui n'avait pas été fait.
-2. **Ne pas commiter, ne pas pousser, ne pas créer de branche.** La relecture commite.
-3. **Livrer par groupes de 2 fonctions**, en s'arrêtant entre chaque.
-4. **Rendre compte de ce qui n'a pas été fait**, nommément.
-
-## Recette
-
-- `node --check dashboard/frontend/js/app.js` **et** `charts.js` — la première chose, pas la
-  dernière. Un `app.js` qui ne parse pas rend la page entièrement muette, sans erreur
-  visible.
-- `pyflakes`, puis `pytest` **seul** (la suite se bind le port 8599 et partage `data/`).
-- Vérifier que chaque `getElementById` des blocs touchés trouve encore sa cible :
-  un `id` retiré du HTML ne casse aucun test, il casse la page en silence.
-- Lancer le dashboard **par le raccourci du Bureau**, et parcourir les **5 onglets Twitch au
-  clic** — c'est là que vivent le plus de gestionnaires.
-- Ne pas dire « c'est bon » avant que la **CI soit verte**.
+**Plus rien n'écrit dans `error_events`.** `shared/shared_database.py:916` définit
+`log_error_event(...)` et **aucun appelant n'existe dans le dépôt** ; les 10 lignes en base
+datent du 8-9 juin 2026. Conséquence : la vue « Analyse Erreurs » est vide en permanence,
+la tuile « Erreurs (24 h) » affiche `0` quoi qu'il arrive, et la moitié erreurs du bandeau
+d'alerte ne peut pas se déclencher. Deux issues, à arbitrer : rebrancher un
+`logging.Handler` sur `log_error_event`, ou retirer la vue. **Ce n'est pas du portage** —
+ça touche au backend, que les trois lots avaient interdiction de toucher.

@@ -1181,17 +1181,15 @@ function renderTwitchBotView() {
         
         subs.forEach((sub, index) => {
             const card = `
-                <div class="twitch-sub-card glass" style="padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.01);">
-                    <div style="flex-grow: 1; margin-right: 15px;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                            <span style="font-weight: 600; color: #a78bfa; font-size: 1.05em;"><i class="fa-brands fa-twitch"></i> ${escapeHtml(sub.twitch_login)}</span>
-                            <span style="font-size: 0.85em; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-family: monospace;">Salon: ${escapeHtml(sub.discord_channel_id)}</span>
-                        </div>
-                        ${sub.custom_message ? `<div style="font-size: 0.85em; opacity: 0.85; border-left: 2px solid var(--accent); padding-left: 8px; margin-top: 4px; font-style: italic;">"${escapeHtml(sub.custom_message)}"</div>` : `<div style="font-size: 0.8em; opacity: 0.5; font-style: italic;">Message embed standard auto</div>`}
-                    </div>
-                    <button class="btn btn-danger" onclick="deleteTwitchSubscription(${index})" style="padding: 6px 12px; font-size: 0.9em; flex-shrink: 0;">
-                        <i class="fa-solid fa-trash"></i> Supprimer
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 13px; border-radius:10px; background:#161628; border:1px solid #23233a; flex-wrap:wrap; transition:background 0.2s;" onmouseenter="this.style.background='#1c1c2f'" onmouseleave="this.style.background='#161628'">
+                    <i class="fa-brands fa-twitch" style="font-size:14px; color:#b58aff;"></i>
+                    <span style="flex:1; min-width:110px; font-size:12.5px; font-weight:600;">${escapeHtml(sub.twitch_login)}</span>
+                    <code style="font-size:11px; font-family:'JetBrains Mono',monospace; color:#8f99ad; background:#0f0f1c; padding:2px 7px; border-radius:5px;" title="Salon Discord">#${escapeHtml(sub.discord_channel_id)}</code>
+                    ${sub.custom_message ? `<span style="font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:20px; background:rgba(139,92,246,0.15); color:#a78bfa;">Perso</span>` : `<span style="font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:20px; background:rgba(100,116,139,0.15); color:#94a3b8;">Auto</span>`}
+                    <button style="appearance:none; -webkit-appearance:none; background:transparent; margin:0; padding:0; font:inherit; box-sizing:border-box; width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; color:#8f99ad; border:1px solid #23233a; font-size:11px; transition:all 0.2s;" onmouseenter="this.style.color='#fca5a5'; this.style.borderColor='#4a2230'" onmouseleave="this.style.color='#8f99ad'; this.style.borderColor='#23233a'" title="Supprimer" onclick="deleteTwitchSubscription(${index})">
+                        <i class="fa-solid fa-trash"></i>
                     </button>
+                    ${sub.custom_message ? `<div style="width:100%; font-size:11.5px; font-style:italic; color:#8f99ad; border-left:2px solid rgba(139,92,246,0.4); padding-left:8px;">"${escapeHtml(sub.custom_message)}"</div>` : ``}
                 </div>
             `;
             listEl.insertAdjacentHTML('beforeend', card);
@@ -1345,8 +1343,12 @@ async function loadTwitchPresence() {
         if (!res.ok) throw new Error("Impossible de charger la config présence Twitch");
         const chatCfg = await res.json();
         
-        document.getElementById('presence-status-badge').textContent = botConfig.enabled ? "Active" : "Inactive";
-        document.getElementById('presence-status-badge').className = botConfig.enabled ? "badge badge-success" : "badge badge-secondary";
+        // ⚠️ `botConfig.enabled` vient de /api/twitch : c'est le toggle « surveillance des
+        // annonces », PAS un état de connexion au chat — aucune route ne sert celui-là.
+        // Le libellé doit donc dire la surveillance, pas la connexion.
+        const badgeEl = document.getElementById('presence-status-badge');
+        badgeEl.textContent = botConfig.enabled ? "Surveillance active" : "Surveillance inactive";
+        badgeEl.className = botConfig.enabled ? "badge running" : "badge stopped";
         
         document.getElementById('presence-chat-events').checked = chatCfg.events !== false;
         document.getElementById('presence-chat-interjections').checked = chatCfg.interjections !== false;
@@ -1483,17 +1485,25 @@ window.addLinkRow = function(cmd = '', url = '', label = '', message = '', alias
     }
     
     const tr = document.createElement('tr');
-    tr.style.borderBottom = '1px solid var(--border-glass)';
+    tr.style.borderBottom = '1px solid #1c1c2f';
+    tr.style.background = 'transparent';
+    tr.style.transition = 'background 0.2s';
+    tr.onmouseenter = () => tr.style.background = 'rgba(255,255,255,0.02)';
+    tr.onmouseleave = () => tr.style.background = 'transparent';
     
     const aliasesStr = Array.isArray(aliases) ? aliases.join(', ') : aliases;
     
     tr.innerHTML = `
-        <td style="padding: 8px;"><input type="text" class="link-cmd-input form-input" placeholder="Ex: discord" value="${escapeHtml(cmd)}"></td>
-        <td style="padding: 8px;"><input type="text" class="link-url-input form-input" placeholder="Ex: https://..." value="${escapeHtml(url)}"></td>
-        <td style="padding: 8px;"><input type="text" class="link-label-input form-input" placeholder="Ex: Discord" value="${escapeHtml(label)}"></td>
-        <td style="padding: 8px;"><input type="text" class="link-message-input form-input" placeholder="Ex: Rejoins-nous : {url}" value="${escapeHtml(message)}"></td>
-        <td style="padding: 8px;"><input type="text" class="link-aliases-input form-input" placeholder="Ex: serveur, community" value="${escapeHtml(aliasesStr)}"></td>
-        <td style="padding: 8px; text-align: center;"><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove(); if(document.getElementById('twitch-links-table-body').children.length === 0) { renderLinksTable([]); }" style="padding: 5px 10px;"><i class="fa-solid fa-trash"></i></button></td>
+        <td style="padding: 12px;"><input type="text" class="link-cmd-input form-input" placeholder="Ex: discord" value="${escapeHtml(cmd)}"></td>
+        <td style="padding: 12px;"><input type="text" class="link-url-input form-input" placeholder="Ex: https://..." value="${escapeHtml(url)}"></td>
+        <td style="padding: 12px;"><input type="text" class="link-label-input form-input" placeholder="Ex: Discord" value="${escapeHtml(label)}"></td>
+        <td style="padding: 12px;"><input type="text" class="link-message-input form-input" placeholder="Ex: Rejoins-nous : {url}" value="${escapeHtml(message)}"></td>
+        <td style="padding: 12px;"><input type="text" class="link-aliases-input form-input" placeholder="Ex: serveur, community" value="${escapeHtml(aliasesStr)}"></td>
+        <td style="padding: 12px; text-align:right;">
+            <button style="appearance:none; -webkit-appearance:none; background:transparent; margin:0; padding:0; font:inherit; box-sizing:border-box; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; color:#8f99ad; border:1px solid #23233a; font-size:11px; transition:all 0.2s;" onmouseenter="this.style.color='#fca5a5'; this.style.borderColor='#4a2230'" onmouseleave="this.style.color='#8f99ad'; this.style.borderColor='#23233a'" title="Supprimer" onclick="this.closest('tr').remove(); if(document.getElementById('twitch-links-table-body').children.length === 0) { renderLinksTable([]); }">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </td>
     `;
     tbody.appendChild(tr);
 }
@@ -1575,11 +1585,11 @@ function renderRewardsTable() {
         const action = currentRewardMap[title];
         const row = `
             <tr style="border-bottom:1px solid #1c1c2f; background:transparent; transition:background 0.2s;" onmouseenter="this.style.background=\'rgba(255,255,255,0.02)\'" onmouseleave="this.style.background=\'transparent\'">
-                <td style="color:#a78bfa; font-weight:600;"><i class="fa-solid fa-gift"></i> ${escapeHtml(title)}</td>
-                <td><code style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:monospace;">!${escapeHtml(action)}</code></td>
-                <td>
-                    <button class="btn btn-danger" onclick="deleteRewardMapping('${encodeURIComponent(title)}')" style="padding:4px 8px; font-size:0.85em;">
-                        <i class="fa-solid fa-trash"></i> Retirer
+                <td style="color:#a78bfa; font-weight:600; padding:12px;"><i class="fa-solid fa-gift"></i> ${escapeHtml(title)}</td>
+                <td style="padding:12px;"><code style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:monospace;">!${escapeHtml(action)}</code></td>
+                <td style="padding:12px; text-align:right;">
+                    <button style="appearance:none; -webkit-appearance:none; background:transparent; margin:0; padding:0; font:inherit; box-sizing:border-box; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; color:#8f99ad; border:1px solid #23233a; font-size:11px; transition:all 0.2s;" onmouseenter="this.style.color='#fca5a5'; this.style.borderColor='#4a2230'" onmouseleave="this.style.color='#8f99ad'; this.style.borderColor='#23233a'" title="Retirer" onclick="deleteRewardMapping('${encodeURIComponent(title)}')">
+                        <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
             </tr>
@@ -1656,10 +1666,10 @@ async function loadTwitchEconomy() {
             tableEl.style.display = 'table';
             top.forEach((entry, index) => {
                 const row = `
-                    <tr>
-                        <td style="font-weight:700; opacity:0.6;">#${index+1}</td>
-                        <td style="color:#fff; font-weight:600;"><i class="fa-solid fa-user-ninja"></i> ${escapeHtml(entry.name)}</td>
-                        <td style="color:#60a5fa; font-weight:700;">${escapeHtml(String(entry.points))} pts</td>
+                    <tr style="border-bottom:1px solid #1c1c2f; background:transparent; transition:background 0.2s;" onmouseenter="this.style.background='rgba(255,255,255,0.02)'" onmouseleave="this.style.background='transparent'">
+                        <td style="font-weight:700; opacity:0.6; padding:12px;">#${index+1}</td>
+                        <td style="color:#fff; font-weight:600; padding:12px;"><i class="fa-solid fa-user-ninja"></i> ${escapeHtml(entry.name)}</td>
+                        <td style="color:#60a5fa; font-weight:700; padding:12px;">${escapeHtml(String(entry.points))} pts</td>
                     </tr>
                 `;
                 bodyEl.insertAdjacentHTML('beforeend', row);
