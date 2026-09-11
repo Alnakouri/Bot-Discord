@@ -183,6 +183,20 @@ def init_database():
         )
     """)
     
+    # Table des réactions sur les répliques des bots
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reactions_repliques (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            bot_name TEXT NOT NULL,
+            message_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            emoji TEXT NOT NULL,
+            retiree INTEGER DEFAULT 0
+        )
+    """)
+    
     # Table des logs d'audit (pour tracer les actions sur le dashboard)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS audit_logs (
@@ -951,6 +965,25 @@ def get_error_events(bot_name=None, severity=None, resolved=None, limit=100):
     query += " ORDER BY timestamp DESC LIMIT ?"
     params.append(limit)
     
+    cursor.execute(query, tuple(params))
+    results = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return results
+
+def get_reactions_repliques(bot_name=None, message_id=None, limit=100):
+    """Récupère les réactions enregistrées sur les répliques des bots."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    query = "SELECT * FROM reactions_repliques WHERE 1=1"
+    params = []
+    if bot_name:
+        query += " AND bot_name = ?"
+        params.append(bot_name)
+    if message_id:
+        query += " AND message_id = ?"
+        params.append(message_id)
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(limit)
     cursor.execute(query, tuple(params))
     results = [dict(row) for row in cursor.fetchall()]
     conn.close()

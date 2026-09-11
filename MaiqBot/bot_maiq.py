@@ -37,6 +37,7 @@ from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
+from core.profil_interlocuteur import construire_profil_discord
 try:
     from shared.games import setup_games
     from games_persona import PERSONA
@@ -55,7 +56,7 @@ import collections
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
 
 # LOGGING STRUCTURÉ
-from core.bot_logger import setup_logger
+from core.bot_logger import setup_logger, enregistrer_reaction
 logger = setup_logger("maiq")
 
 # FILE PATHS
@@ -99,7 +100,7 @@ try:
         get_reputation, get_reputation_level, get_next_rank_info, get_user_interactions,
         is_riddle_duplicate, add_to_riddle_history, add_riddle_participant, add_riddle_winner,
         get_riddle_winners, delete_active_riddle, add_riddle_streak,
-        reset_riddle_streak, get_all_active_riddles
+        reset_riddle_streak, get_all_active_riddles, get_daily_quests
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
@@ -531,6 +532,32 @@ async def on_member_join(member):
 async def on_member_remove(member):
     if DATABASE_AVAILABLE:
         await handle_member_remove(bot, member, "M'aiq")
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    """Enregistre les réactions des utilisateurs sur les répliques du bot."""
+    if not bot.user or payload.user_id == bot.user.id:
+        return
+    message_author_id = getattr(payload, "message_author_id", None)
+    if message_author_id is None:
+        try:
+            channel = bot.get_channel(payload.channel_id)
+            if channel:
+                msg = await channel.fetch_message(payload.message_id)
+                message_author_id = msg.author.id
+        except Exception:
+            # Silence VOULU : impossible de recuperer le message pour verifier l'auteur
+            return
+    if message_author_id != bot.user.id:
+        return
+    enregistrer_reaction(
+        bot_name="maiq",
+        message_id=payload.message_id,
+        channel_id=payload.channel_id,
+        user_id=payload.user_id,
+        emoji=str(payload.emoji),
+        retiree=0
+    )
 
 daily_rumor_published = False  # Flag pour éviter les doublons
 
@@ -1335,9 +1362,17 @@ async def on_message(message):
     if relevant_facts:
         fact_context = f"\n[CE QUE TU SAIS SUR {user_name} (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
         
+    profile_context = ""
+    rep = get_reputation(user_id) if DATABASE_AVAILABLE else None
+    quests = get_daily_quests(user_id) if DATABASE_AVAILABLE else None
+    profile = construire_profil_discord(message.author, reputation_data=rep, quests_data=quests)
+    if profile:
+        profile_context = f"\n\n{profile}"
+
     memory_prompt_addition = (
         f"\n\n[CONTEXTE DE MÉMOIRE]"
         f"{fact_context}"
+        f"{profile_context}"
         f"\n{daily_summary}"
         f"{daily_read_addition}"
         f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur le voyageur {user_name} — ses préférences, son métier, ses projets, mais AUSSI sa façon d'argumenter, ce qui le pique, ses habitudes (le connaître sert à mieux le contrer) — ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"

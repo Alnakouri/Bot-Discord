@@ -46,6 +46,7 @@ from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
+from core.profil_interlocuteur import construire_profil_discord
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -68,7 +69,7 @@ except ImportError:
     save = None
 
 # LOGGING STRUCTURÉ
-from core.bot_logger import setup_logger
+from core.bot_logger import setup_logger, enregistrer_reaction
 logger = setup_logger("alfred")
 
 if ElevenLabs is None:
@@ -87,7 +88,7 @@ from core.safe_client import get_client as get_safe_genai_client
 
 try:
     from shared.shared_database import (
-        is_maintenance_mode, is_ignored_channel, get_reputation, get_reputation_level
+        is_maintenance_mode, is_ignored_channel, get_reputation, get_reputation_level, get_daily_quests
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
@@ -189,7 +190,7 @@ async def _daily_llm_call(system_prompt, user_message):
         bot_label="Alfred", temperature=0.5, max_tokens=60)
 
 class AlfredBrainAdapter:
-    def get_user_context(self, user_id, message_content=""):
+    def get_user_context(self, user_id, message_content="", member=None, reputation_data=None, quests_data=None):
         daily_summary = daily_memory.get_context_summary(user_id)
         relevant_facts = fact_memory.get_relevant_facts(user_id, message_content, k=3)
         dr = daily_memory.get_daily_read(user_id)
@@ -198,12 +199,18 @@ class AlfredBrainAdapter:
         fact_context = ""
         if relevant_facts:
             fact_context = f"\n[CE QUE VOUS SAVEZ SUR CE MONSIEUR (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
+
+        profile_context = ""
+        if member:
+            profile = construire_profil_discord(member, reputation_data=reputation_data, quests_data=quests_data)
+            if profile:
+                profile_context = f"\n\n{profile}"
             
         memory_instruction = (
             f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si vous apprenez un fait durable, important et nouveau sur ce Monsieur — ses préférences, son métier, ses projets, mais AUSSI sa façon d'argumenter, ce qui le pique, ses habitudes (le connaître sert à mieux le remettre à sa place) — vous DEVEZ l'ajouter discrètement à la fin de votre réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
             f"⚠️ RÈGLE ABSOLUE : un fait ne peut s'appuyer que sur ce qui vient DE LUI — SES messages, son profil public, sa bio, ses actes. Ne lui attribuez JAMAIS un thème, un mot ou une image que c'est VOUS qui avez introduit — vos propres réponses font partie de la conversation et ne vous apprennent rien sur lui. Si rien de neuf n'est venu de lui, ne mettez rien."
         )
-        return f"{daily_summary}{daily_read_addition}{fact_context}{memory_instruction}"
+        return f"{daily_summary}{daily_read_addition}{fact_context}{profile_context}{memory_instruction}"
 
     def update_user(self, user_id, user_name, topic=None):
         pass
@@ -570,6 +577,32 @@ async def on_member_join(member):
 async def on_member_remove(member):
     if DATABASE_AVAILABLE:
         await handle_member_remove(bot, member, "Alfred")
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    """Enregistre les réactions des utilisateurs sur les répliques du bot."""
+    if not bot.user or payload.user_id == bot.user.id:
+        return
+    message_author_id = getattr(payload, "message_author_id", None)
+    if message_author_id is None:
+        try:
+            channel = bot.get_channel(payload.channel_id)
+            if channel:
+                msg = await channel.fetch_message(payload.message_id)
+                message_author_id = msg.author.id
+        except Exception:
+            # Silence VOULU : impossible de recuperer le message pour verifier l'auteur
+            return
+    if message_author_id != bot.user.id:
+        return
+    enregistrer_reaction(
+        bot_name="alfred",
+        message_id=payload.message_id,
+        channel_id=payload.channel_id,
+        user_id=payload.user_id,
+        emoji=str(payload.emoji),
+        retiree=0
+    )
 
 # COMMANDES ADMINISTRATIVES (ALFRED)
 
@@ -1387,7 +1420,12 @@ async def on_message(message):
     is_bot_talking = message.author.bot
     
     # Check Memory
-    user_context = alfred_brain.get_user_context(message.author.id, message.content or "")
+    rep = get_reputation(message.author.id) if DATABASE_AVAILABLE else None
+    quests = get_daily_quests(message.author.id) if DATABASE_AVAILABLE else None
+    user_context = alfred_brain.get_user_context(
+        message.author.id, message.content or "", member=message.author,
+        reputation_data=rep, quests_data=quests
+    )
 
     # VOCABULAIRE & TRIGGERS
     keywords_service = ["thé", "alfred", "majordome", "servir", "nettoyer", "dîner", "batman", "wayne", "aide", "soins", "merci"]

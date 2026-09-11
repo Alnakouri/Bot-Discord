@@ -29,6 +29,7 @@ from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
+from core.profil_interlocuteur import construire_profil_discord
 
 from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, nvidia_kwargs, details_de_quota, NVIDIA_BASE_URL
 # ⚠️ La cascade inline de Sheogorath n'avait NI garde anti-fuite NI garde de reponse
@@ -119,7 +120,7 @@ except ImportError:
     from Sheogorath.sheo_decrees import generate_decree_image, apply_decree_role, cleanup_old_decree_roles
 
 # LOGGING STRUCTURÉ
-from core.bot_logger import setup_logger
+from core.bot_logger import setup_logger, enregistrer_reaction
 logger = setup_logger("sheogorath")
 
 # IMPORT DES SYSTÈMES (locaux pour Discloud)
@@ -128,7 +129,7 @@ try:
     from shared.shared_database import (
         get_or_create_user, is_maintenance_mode, is_ignored_channel,
         get_active_riddle, delete_active_riddle, get_reputation, get_reputation_level,
-        add_reputation
+        add_reputation, get_daily_quests
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
@@ -1450,6 +1451,32 @@ async def on_member_remove(member):
     if DATABASE_AVAILABLE:
         await handle_member_remove(bot, member, "Sheogorath")
 
+@bot.event
+async def on_raw_reaction_add(payload):
+    """Enregistre les réactions des utilisateurs sur les répliques du bot."""
+    if not bot.user or payload.user_id == bot.user.id:
+        return
+    message_author_id = getattr(payload, "message_author_id", None)
+    if message_author_id is None:
+        try:
+            channel = bot.get_channel(payload.channel_id)
+            if channel:
+                msg = await channel.fetch_message(payload.message_id)
+                message_author_id = msg.author.id
+        except Exception:
+            # Silence VOULU : impossible de recuperer le message pour verifier l'auteur
+            return
+    if message_author_id != bot.user.id:
+        return
+    enregistrer_reaction(
+        bot_name="sheogorath",
+        message_id=payload.message_id,
+        channel_id=payload.channel_id,
+        user_id=payload.user_id,
+        emoji=str(payload.emoji),
+        retiree=0
+    )
+
 # COMMANDES SPÉCIALES
 
 @bot.command(name="quete")
@@ -2254,7 +2281,14 @@ async def on_message(message):
     if user_facts:
         fact_context = f"\n[CE QUE TU SAIS SUR {message.author.name}]:\n- " + "\n- ".join(user_facts) + "\nUtilise ces infos pour personnaliser ta réponse."
     
-    system_instruction = f"{system_instruction}\n{fact_context}"
+    profile_context = ""
+    rep = get_reputation(message.author.id) if DATABASE_AVAILABLE else None
+    quests = get_daily_quests(message.author.id) if DATABASE_AVAILABLE else None
+    profile = construire_profil_discord(message.author, reputation_data=rep, quests_data=quests)
+    if profile:
+        profile_context = f"\n\n{profile}"
+
+    system_instruction = f"{system_instruction}\n{fact_context}{profile_context}"
     
     # FAVEUR DU PRINCE — Contexte de rang
     faveur_context = faveur_system.get_rank_context(message.author.id)

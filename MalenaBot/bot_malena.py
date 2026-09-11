@@ -53,11 +53,12 @@ from core.secure_env import load_secure_env
 load_secure_env(Path(__file__).parent)
 
 # Import modules partagés
-from core.bot_logger import setup_logger
+from core.bot_logger import setup_logger, enregistrer_reaction
+from core.profil_interlocuteur import construire_profil_discord
 # shared/ = etat commun entre bots (reputation, anniversaires). Optionnel : le bot doit
 # demarrer et repondre sans, chaque appel est garde par DATABASE_AVAILABLE.
 try:
-    from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel
+    from shared.shared_database import get_or_create_user, log_interaction, is_ignored_channel, get_reputation, get_daily_quests
     from shared.server_events import check_and_send_birthdays, handle_member_join, handle_member_remove
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     DATABASE_AVAILABLE = True
@@ -697,6 +698,11 @@ async def on_message(message):
                 dr = malena_brain.get_daily_read(message.author.id)
                 if dr:
                     memory_context += f"\n[CONSIGNE DU JOUR] {dr}"
+                rep = get_reputation(message.author.id) if DATABASE_AVAILABLE else None
+                quests = get_daily_quests(message.author.id) if DATABASE_AVAILABLE else None
+                profile = construire_profil_discord(message.author, reputation_data=rep, quests_data=quests)
+                if profile:
+                    memory_context += f"\n\n{profile}"
                 
 
                 # SMART ROUTER (Media & Intention)
@@ -1020,6 +1026,32 @@ async def on_member_remove(member):
     if not DATABASE_AVAILABLE:
         return
     await handle_member_remove(bot, member, "Malena")
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    """Enregistre les réactions des utilisateurs sur les répliques du bot."""
+    if not bot.user or payload.user_id == bot.user.id:
+        return
+    message_author_id = getattr(payload, "message_author_id", None)
+    if message_author_id is None:
+        try:
+            channel = bot.get_channel(payload.channel_id)
+            if channel:
+                msg = await channel.fetch_message(payload.message_id)
+                message_author_id = msg.author.id
+        except Exception:
+            # Silence VOULU : impossible de recuperer le message pour verifier l'auteur
+            return
+    if message_author_id != bot.user.id:
+        return
+    enregistrer_reaction(
+        bot_name="malena",
+        message_id=payload.message_id,
+        channel_id=payload.channel_id,
+        user_id=payload.user_id,
+        emoji=str(payload.emoji),
+        retiree=0
+    )
 
 if __name__ == "__main__":
     # Un `tasks.loop` rejoue TOUTES les iterations manquees quand l'horloge saute

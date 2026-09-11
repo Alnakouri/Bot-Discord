@@ -98,6 +98,18 @@ def _writer_loop():
                 report_generated INTEGER DEFAULT 0
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reactions_repliques (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                bot_name TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                emoji TEXT NOT NULL,
+                retiree INTEGER DEFAULT 0
+            )
+        """)
         conn.commit()
     except Exception as e:
         if not _JOURNAL_ERREUR:
@@ -115,16 +127,28 @@ def _writer_loop():
                 if item is _ECRIVAIN_HS:
                     break
                 
-                conn.execute("""
-                    INSERT INTO error_events (
-                        timestamp, bot_name, error_type, error_message,
-                        error_traceback, context_json, severity, resolved, report_generated
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    item["timestamp"], item["bot_name"], item["error_type"],
-                    item["error_message"], item["error_traceback"], item["context_json"],
-                    item["severity"], 0, 0
-                ))
+                if item.get("_type") == "reaction" or "emoji" in item:
+                    conn.execute("""
+                        INSERT INTO reactions_repliques (
+                            timestamp, bot_name, message_id, channel_id,
+                            user_id, emoji, retiree
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        item["timestamp"], item["bot_name"], item["message_id"],
+                        item["channel_id"], item["user_id"], item["emoji"],
+                        item.get("retiree", 0)
+                    ))
+                else:
+                    conn.execute("""
+                        INSERT INTO error_events (
+                            timestamp, bot_name, error_type, error_message,
+                            error_traceback, context_json, severity, resolved, report_generated
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        item["timestamp"], item["bot_name"], item["error_type"],
+                        item["error_message"], item["error_traceback"], item["context_json"],
+                        item["severity"], 0, 0
+                    ))
                 conn.commit()
                 _JOURNAL_ERREUR = False
             finally:
@@ -195,6 +219,26 @@ class ErrorEventHandler(logging.Handler):
             # ici remonterait dans `on_message`. On ne peut pas non plus la
             # journaliser : ce handler serait rappele.
             pass
+
+
+def enregistrer_reaction(bot_name: str, message_id: int, channel_id: int, user_id: int, emoji: str, retiree: int = 0):
+    """Enregistre une réaction sur une réplique du bot via la file d'attente (thread écrivain)."""
+    try:
+        _ensure_thread()
+        item = {
+            "_type": "reaction",
+            "timestamp": datetime.now().isoformat(),
+            "bot_name": bot_name,
+            "message_id": int(message_id),
+            "channel_id": int(channel_id),
+            "user_id": int(user_id),
+            "emoji": str(emoji),
+            "retiree": int(retiree),
+        }
+        _empiler(item)
+    except Exception:
+        # Silence VOULU : ne jamais bloquer ou crasher le bot pour une réaction.
+        pass
 
 
 def setup_logger(bot_name: str, log_dir: str = "logs"):

@@ -46,5 +46,51 @@ class TestStripStageDirections(unittest.TestCase):
         self.assertEqual(strip(""), "")
 
 
+class TestSymboleImporteParLesBots(unittest.TestCase):
+    """Verrou : les 6 bots font `from shared.discord_profile import DiscordDailyBio`,
+    dans un try/except ImportError qui AVALE la disparition du symbole — la bio
+    quotidienne meurt alors en silence, sans une ligne de journal.
+
+    Le 11/09 un module homonyme a ecrase ce fichier entier : import toujours vert,
+    fonctionnalite morte sur les 6 bots, suite de tests verte.
+    """
+
+    _BOTS = ("Alfred/bot_alfred.py", "JohnnyBot/bot_johnny.py", "MaiqBot/bot_maiq.py",
+             "MalenaBot/bot_malena.py", "Sheogorath/bot_sheogorath.py",
+             "SugarBot/bot_sugar.py")
+
+    def test_le_symbole_existe_toujours(self):
+        import shared.discord_profile as mod
+        self.assertTrue(hasattr(mod, "DiscordDailyBio"),
+                        "shared/discord_profile.py ne fournit plus DiscordDailyBio : "
+                        "les 6 bots retombent silencieusement sur daily_bio = None.")
+
+    def test_les_6_bots_importent_le_symbole(self):
+        import ast
+        racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for chemin in self._BOTS:
+            src = open(os.path.join(racine, chemin), encoding="utf-8").read()
+            trouve = any(
+                isinstance(n, ast.ImportFrom)
+                and n.module == "shared.discord_profile"
+                and any(a.name == "DiscordDailyBio" for a in n.names)
+                for n in ast.walk(ast.parse(src))
+            )
+            self.assertTrue(trouve, f"{chemin} n'importe plus DiscordDailyBio")
+
+    def test_les_6_bots_instancient_le_symbole(self):
+        import ast
+        racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for chemin in self._BOTS:
+            src = open(os.path.join(racine, chemin), encoding="utf-8").read()
+            trouve = any(
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "DiscordDailyBio"
+                for n in ast.walk(ast.parse(src))
+            )
+            self.assertTrue(trouve, f"{chemin} n'instancie plus DiscordDailyBio")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,7 @@ from core.llm_cascade import generate_response
 from core.models import GEMINI_FLASH, NVIDIA_BASE_URL
 from core.transcript import ligne_de_contexte
 from core.chrono import Chrono
+from core.profil_interlocuteur import construire_profil_discord
 
 try:
     from shared.memes_fr import build_meme_consigne
@@ -40,7 +41,7 @@ import collections
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
 
 # LOGGING STRUCTURÉ
-from core.bot_logger import setup_logger
+from core.bot_logger import setup_logger, enregistrer_reaction
 logger = setup_logger("johnny")
 
 # FILE PATHS
@@ -75,7 +76,8 @@ from core.safe_client import get_client as get_safe_genai_client
 try:
     from shared.shared_database import (
         get_or_create_user, add_reputation, log_interaction,
-        is_maintenance_mode, is_ignored_channel
+        is_maintenance_mode, is_ignored_channel,
+        get_reputation, get_daily_quests
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
@@ -637,6 +639,32 @@ async def on_member_remove(member):
     if DATABASE_AVAILABLE:
         await handle_member_remove(bot, member, bot_name="Johnny")
 
+@bot.event
+async def on_raw_reaction_add(payload):
+    """Enregistre les réactions des utilisateurs sur les répliques du bot."""
+    if not bot.user or payload.user_id == bot.user.id:
+        return
+    message_author_id = getattr(payload, "message_author_id", None)
+    if message_author_id is None:
+        try:
+            channel = bot.get_channel(payload.channel_id)
+            if channel:
+                msg = await channel.fetch_message(payload.message_id)
+                message_author_id = msg.author.id
+        except Exception:
+            # Silence VOULU : impossible de recuperer le message pour verifier l'auteur
+            return
+    if message_author_id != bot.user.id:
+        return
+    enregistrer_reaction(
+        bot_name="johnny",
+        message_id=payload.message_id,
+        channel_id=payload.channel_id,
+        user_id=payload.user_id,
+        emoji=str(payload.emoji),
+        retiree=0
+    )
+
 # Tâche quotidienne : anniversaires
 @tasks.loop(hours=24)
 async def daily_birthday_check():
@@ -928,10 +956,18 @@ async def on_message(message):
     fact_context = ""
     if relevant_facts:
         fact_context = f"\n[CE QUE TU SAIS SUR CETTE PERSONNE (MÉMOIRE LONG TERME)]:\n- " + "\n- ".join(relevant_facts)
+
+    profile_context = ""
+    rep = get_reputation(user_id) if DATABASE_AVAILABLE else None
+    quests = get_daily_quests(user_id) if DATABASE_AVAILABLE else None
+    profile = construire_profil_discord(message.author, reputation_data=rep, quests_data=quests)
+    if profile:
+        profile_context = f"\n\n{profile}"
         
     memory_prompt_addition = (
         f"\n\n[CONTEXTE DE MÉMOIRE]"
         f"{fact_context}"
+        f"{profile_context}"
         f"\n{daily_summary}"
         f"{daily_read_addition}"
         f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si tu apprends un fait durable, important et nouveau sur cette personne — ses préférences, son métier, ses projets, mais AUSSI sa façon d'argumenter, ce qui la pique, ses habitudes (la connaître sert à mieux la contrer) — ajoute-le discrètement à la fin de ta réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
