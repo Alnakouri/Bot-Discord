@@ -309,6 +309,8 @@ daily_status = DiscordDailyStatus(
 
 # EVENTS
 
+_ready_setup_done = False  # `on_ready` refire a chaque RESUME
+
 @bot.event
 async def on_ready():
     # MODE TEST (dashboard) — garde de publication + remontee des serveurs pour le
@@ -387,8 +389,15 @@ async def on_ready():
     except Exception as e:
         logger.error(f"❌ [RIDDLE CHECK] Erreur: {e}")
 
+    # Enregistrement des commandes : une seule fois. `on_ready` refire a chaque
+    # RESUME, et `@bot.tree.command` leve alors `CommandAlreadyRegistered` — ce qui
+    # avorte le `try` AVANT `sync_slash_commands`, donc sans resynchronisation.
+    global _ready_setup_done
+    run_command_setup = not _ready_setup_done
+    _ready_setup_done = True
+
     # INITIALISATION DES COMMANDES SLASH
-    if DATABASE_AVAILABLE:
+    if run_command_setup and DATABASE_AVAILABLE:
         try:
             setup_slash_commands(bot, "M'aiq")
             await sync_slash_commands(bot)
@@ -399,7 +408,7 @@ async def on_ready():
             logger.error(f"[SLASH] Erreur: {e}")
 
     # INITIALISATION DES MINI-JEUX
-    if GAMES_AVAILABLE:
+    if run_command_setup and GAMES_AVAILABLE:
         try:
             setup_games(bot, logger, PERSONA)
         except Exception as e:

@@ -369,6 +369,8 @@ async def _daily_llm_call(system_prompt, user_message):
         groq_client=groq_client,  nvidia_client=nvidia_client,
         bot_label="Johnny", temperature=0.5, max_tokens=60)
 
+_ready_setup_done = False  # `on_ready` refire a chaque RESUME
+
 @bot.event
 async def on_ready():
     logger.info("=" * 60)
@@ -411,8 +413,14 @@ async def on_ready():
     logger.info(f'🏰 Serveurs: {len(bot.guilds)}')
     logger.info(f'👥 Utilisateurs visibles: {len(bot.users)}')
     
+    # Enregistrement des commandes : une seule fois. `on_ready` refire a chaque
+    # RESUME, et `@bot.tree.command` leve alors `CommandAlreadyRegistered` — ce qui
+    # avorte le `try` AVANT `sync_slash_commands`, donc sans resynchronisation.
+    global _ready_setup_done
+    run_command_setup = not _ready_setup_done
+    _ready_setup_done = True
     # Setup Slash Commands
-    if DATABASE_AVAILABLE:
+    if run_command_setup and DATABASE_AVAILABLE:
         try:
             setup_slash_commands(bot, "Johnny Silverhand")
             await sync_slash_commands(bot)
@@ -420,7 +428,7 @@ async def on_ready():
             logger.error(f"[SLASH] Erreur: {e}")
             
     # Setup Mini-Games
-    if DATABASE_AVAILABLE and GAMES_AVAILABLE:
+    if run_command_setup and DATABASE_AVAILABLE and GAMES_AVAILABLE:
         try:
             setup_games(bot, logger, PERSONA)
             logger.info("🎸 [GAMES] Mini-jeux initialisés pour Johnny")
