@@ -363,6 +363,7 @@ faveur_system = FaveurSystem()
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 intents.voice_states = True  # Voice channel support (TTS Piper)
 
 bot = commands.Bot(command_prefix='!', intents=intents)

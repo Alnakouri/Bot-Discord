@@ -259,3 +259,39 @@ def test_10_lecture_depuis_base_reelle(tmp_path, monkeypatch):
     bloc = construire_profil_discord(mock_member, now=now, reputation_data=rep, quests_data=quests)
     assert "Réputation sur le serveur : Apprenti 🕯️ (120 points)" in bloc
     assert "série d'énigmes : 2 victoires d'affilée" in bloc
+
+
+def test_11_tous_les_6_bots_ont_intents_members():
+    """Lot 4 : les 6 bots posent `intents.members = True` — verrou AST, jamais textuel.
+
+    `"intents.members = True" in src` etait vert sur une ligne COMMENTEE : le motif
+    textuel survit au `#`. Or `members` est un intent privilegie — sans lui,
+    on_member_join est du code mort (c'etait le cas de M'aiq et Sheogorath).
+    """
+    import ast
+    racine = Path(__file__).resolve().parent.parent
+    bots = {
+        "Alfred": "Alfred/bot_alfred.py",
+        "JohnnyBot": "JohnnyBot/bot_johnny.py",
+        "MaiqBot": "MaiqBot/bot_maiq.py",
+        "MalenaBot": "MalenaBot/bot_malena.py",
+        "Sheogorath": "Sheogorath/bot_sheogorath.py",
+        "SugarBot": "SugarBot/bot_sugar.py",
+    }
+    for nom, rel in bots.items():
+        chemin = racine / rel
+        arbre = ast.parse(chemin.read_text(encoding="utf-8"), filename=str(chemin))
+        trouve = any(
+            isinstance(n, ast.Assign)
+            and isinstance(n.value, ast.Constant) and n.value.value is True
+            and any(
+                isinstance(c, ast.Attribute) and c.attr == "members"
+                and isinstance(c.value, ast.Name) and c.value.id == "intents"
+                for c in n.targets
+            )
+            for n in ast.walk(arbre)
+        )
+        assert trouve, (
+            f"{nom} ({rel}) ne pose pas `intents.members = True` : on_member_join y est "
+            "du code mort."
+        )
