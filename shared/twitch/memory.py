@@ -13,9 +13,15 @@ class ViewerMemoryMixin:
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    content = f.read().strip()
+                # Fichier vide = aucun viewer connu encore : état NORMAL, pas une erreur.
+                # `_load_viewer_facts` juste en dessous avait déjà ce garde ; celui-ci
+                # l'avait manqué et criait ERROR au tableau de bord pour du nominal.
+                if not content:
+                    return {}
+                return json.loads(content)
             except Exception as e:
-                self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur lecture viewers JSON: {e}")
+                self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] Viewers JSON illisible (ignoré) : {e}")
         return {}
 
     def _save_viewers_state_debounced(self):
