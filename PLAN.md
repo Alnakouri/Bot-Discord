@@ -1,216 +1,209 @@
-# PLAN — Les bots écrivent leur propre mémoire sur toi, et se la resservent
+# PLAN — Élargir ce que les bots savent de leur interlocuteur, sans rien inventer
 
-Rédaction : Claude, le **2026-09-10**, après le test live de 23:37. Exécution : **Antigravity**.
+Rédaction : Claude, le **2026-09-11**. Exécution : **Antigravity**.
+Fait suite à `c3887a9` (mémoire des faits resserrée sur l'auto-attribution, déployée).
 
-Ce plan ne parle plus de Jyggalag. Le correctif Jyggalag **marche** — la preuve est plus
-bas. Le test live a exhumé autre chose, plus profond, et qui touche **5 bots sur 6**.
+**L'idée directrice** : tous les faits ajoutés ici sont **structurels** — calculés à partir
+de données que Discord fournit, jamais extraits par un LLM. Ils ne peuvent donc **pas**
+être hallucinés, et ils sont immunisés par construction contre la boucle d'auto-attribution
+qu'on vient de fermer. Ils ne passent **jamais** par la balise `<fact>`.
 
 ---
 
-# CE QUE LE TEST LIVE A MONTRÉ
+# DEUX VÉRIFICATIONS QUI ONT CHANGÉ L'ORDRE DES LOTS
 
-```
-LeDev : je t'ai vu te transformer en jiggalag
-Sheogorath : une ombre glisse, murmure que même tes yeux trahissent le secret de ce
-             jiggalag... tu penses me voir, mais c'est le reflet qui me regarde, pas
-             l'inverse. 👁️
+J'avais classé « le profil Discord » en premier en le croyant gratuit. Vérification faite :
 
-LeDev : apres la marche grise
-Sheogorath : La Marche Grise n'est qu'un menuet que Jyggalag danse pour tromper les
-             idiots... Après ? Après, il y aura des cornichons dorés à la place des
-             étoiles, et tes larmes seront servies en gelée de sucre sur des toasts de
-             mensonge.
-```
+1. **Les réactions marchent déjà.** `Intents.default()` inclut `reactions` : `on_reaction_add`
+   fonctionne sur les 6 bots **sans toucher à un seul intent**. Aucun des six ne l'écoute.
+   C'est donc le lot le moins cher, pas le deuxième.
+2. **Une partie du profil est déjà accessible, l'autre non.** `message.author` est un
+   `Member` livré dans la charge utile du message : **`roles`, `joined_at`, `nick`,
+   `premium_since` sont lisibles aujourd'hui**, sans intent supplémentaire. En revanche
+   **`activities`** (ce qu'il est en train de jouer) exige l'intent privilégié
+   `presences` — **hors périmètre**, voir la fin.
 
-## Le correctif Jyggalag tient — et le journal le prouve
+## ⚠️ Et un vrai défaut trouvé en chemin
 
-| Message | Modèle qui a répondu | Verdict |
+**`on_member_join` ne s'est JAMAIS déclenché sur M'aiq ni sur Sheogorath.** Les six bots
+déclarent ce gestionnaire, mais seuls Alfred, Johnny, Malena et Sugar posent
+`intents.members = True` :
+
+| Bot | `intents.members` | `on_member_join` |
 |---|---|---|
-| 1 — « je t'ai vu te transformer en jiggalag » | **GROQ gpt-oss-120b** | registre TOMBÉ, menace, aucun aveu, **aucun sucre** ✅ |
-| 2 — « apres la marche grise » | 429 → quarantaine 5 s → **MISTRAL ministral-14b** | cornichons dorés, gelée de sucre ❌ |
+| Alfred, Johnny, Malena, Sugar | ✅ | fonctionne |
+| **M'aiq** (`MaiqBot/bot_maiq.py`) | ❌ | **code mort** |
+| **Sheogorath** (`Sheogorath/bot_sheogorath.py:1442`) | ❌ | **code mort** |
 
-Le premier message est répondu par le **premier échelon**, et il fait exactement ce que
-`ac6914b` demandait. Le second est répondu par le **repli 14B**, qui ne tient pas le
-registre — la sonde l'avait déjà montré ce matin. **Ce n'est donc pas la persona.**
-
-## Pourquoi le repli est atteint si souvent — c'est mesuré
-
-Journal, 21:38:04 :
-> `Rate limit ... tokens per minute (TPM): Limit 8000, Used 2514, Requested 6059`
-
-Le prompt de persona pèse **~3300 tokens** (13 000 caractères) et Groq plafonne à **8000
-tokens par minute**. Donc **à partir du 3ᵉ message dans la même minute, Sheo tombe sur le
-14B**. Dans toute conversation vivante, une réponse sur deux ou trois vient du modèle
-faible. Ça n'explique pas que Jyggalag, ça explique beaucoup de « Sheo était plat ce
-soir-là ».
+C'est le lot 4, et il porte un piège de déploiement décrit là-bas.
 
 ---
 
-# LA VRAIE TROUVAILLE — une boucle fermée
+# LOT 1 — Les réactions : le seul retour honnête sur leurs propres répliques
 
-## Le mécanisme, étape par étape
+**Pourquoi en premier** : zéro configuration, zéro intent, et c'est le seul signal de
+**qualité mesurée** au lieu de déclarée. Aujourd'hui, aucun bot ne sait si une vanne a fait
+rire ou est tombée à plat.
 
-1. Sheo répond avec des cornichons.
-2. **Dans la même réponse**, il émet lui-même une balise `<fact>…</fact>`
-   (`Sheogorath/sheo_llm.py:70` — `extract_facts`).
-3. Le contenu est stocké **comme un fait sur l'utilisateur**
-   (`sheo_memory.py:167`, `data/sheo_facts.json`).
-4. Au message suivant, ce fait est réinjecté **à la toute fin du prompt système**
-   (`bot_sheogorath.py:2250-2256`), après la persona, après les démonstrations, suivi de :
-   > `Utilise ces infos pour personnaliser ta réponse.`
-5. Sheo ressert des cornichons. **Retour à l'étape 1.**
+## Le travail
 
-## Ce que ça a produit, en clair
+Ajouter `on_reaction_add` dans les 6 bots. Ne compter **que** les réactions posées sur un
+message **du bot lui-même** (`reaction.message.author.id == bot.user.id`), et ignorer les
+réactions du bot.
 
-`data/sheo_facts.json`, faits stockés sur l'utilisateur :
+Stocker dans une nouvelle table de `shared/shared_database.py`, sur le modèle de
+`error_events` :
 
 ```
-- L'utilisateur semble obsédé par les accessoires alimentaires (chapeaux de confiture, cornichons)…
-- L'utilisateur semble particulièrement sensible aux insultes liées aux accessoires alimentaires (cornichons, cuillères)…
-- L'utilisateur semble obsédé par les comparaisons alimentaires et les métaphores visuelles absurdes…
-- L'utilisateur semble obsédé par les métaphores alimentaires violentes (cornichons, confiture)…
-- L'utilisateur semble obsédé par les conséquences post-Marche Grise et les métaphores culinaires violentes (cornichons, gelée, toasts).
+reactions_repliques(id, timestamp, bot_name, message_id, channel_id,
+                    user_id, emoji, retiree)
 ```
 
-**Ce qui est PROUVÉ, et ce qui ne l'est pas** — l'utilisateur a soulevé l'objection
-lui-même, elle est juste et elle borne la conclusion.
+⚠️ Écrire via la **file + thread écrivain** de `shared/bot_logger.py` ou
+`shared/api_tracking.py` — **pas** de `sqlite3.connect` depuis `on_reaction_add`, qui vit
+dans la boucle asyncio. C'est le montage exact du `disk I/O error` documenté dans
+`api_tracking.py`.
 
-*Prouvé*, sur le fait du 10/09 : il a été appris à **21:38:08**, dans la même seconde que
-la réponse Mistral, et le message qui l'a déclenché est **« apres la marche grise »** —
-quatre mots. Aucun des quatre messages de l'utilisateur ce jour-là ne contient cornichon,
-confiture, gelée, toast, sucre, papillon ni fromage. Ces mots ne vivent que dans les
-réponses de Sheo, produites à cet instant. **Le bot a donc bien attribué son propre lexique
-à son interlocuteur.**
+⚠️ `on_reaction_add` ne se déclenche que sur les messages **en cache**. Pour les anciens,
+il faut `on_raw_reaction_add`. **Prendre `on_raw_reaction_add`** : sinon le signal
+disparaît dès que le bot redémarre, et personne ne s'en apercevra.
 
-*Non vérifiable* : les quatre faits « cornichons » antérieurs. **Le contenu des messages
-n'est stocké nulle part** — `interactions` ne garde que le type et l'horodatage. Le tout
-premier peut très bien être légitime.
+## Ce qu'on en fait — et ce qu'on n'en fait PAS
 
-⚠️ Et ça ne change pas le correctif : **la boucle est prouvée, sa graine ne l'est pas.** Un
-seul fait de départ — vrai ou faux — suffit à lancer l'auto-alimentation, puisque le bot
-ressert le thème, s'observe le resservir, et en conclut que le mortel en est obsédé.
-
-⚠️ Ça explique enfin le **cornichon**, qui n'apparaît **nulle part** dans
-`sheo_data.py` (mesuré) et revenait pourtant à chaque échange : il ne venait pas de la
-persona, il venait de `sheo_facts.json`.
-
-⚠️ Le plafond de **10 faits par utilisateur** (`sheo_memory.py:172`) fait que ce bruit
-auto-généré **chasse les vrais faits**. Ceux qui restent : « Il aime le mot *sugar* »,
-« ledev veut que Sheogorath devienne son serviteur ». Ceux-là sont vrais et utiles —
-et ils sont minoritaires.
-
-## Ce n'est pas que Sheo — mesure sur les 9 fichiers de faits
-
-| Fichier | Faits | Dont du type « semble obsédé par… » |
-|---|---|---|
-| `alfred_facts.json` | 11 | **10** |
-| `twitch_facts_sheogorath.json` | 8 | **8** |
-| `sheo_facts.json` | 15 | **8** |
-| `sugar_facts.json` | 27 | **8** |
-| `onizuka_facts.json` | 7 | 4 (bot retiré) |
-| `twitch_facts_johnny.json` | 2 | **2** |
-| `johnny_facts.json` | 42 | 2 |
-| `maiq_facts.json` | 15 | **0** |
-
-Le mécanisme existe dans **Alfred, Johnny, M'aiq, Sheogorath, SugarBot** et dans
-`shared/twitch/llm.py`. **Malena n'en a pas.** M'aiq à 0 sur 15 montre que ce n'est pas
-une fatalité : c'est la formulation de la consigne d'extraction qui décide.
+- **Ce lot ne change AUCUN prompt.** Il ne fait que **collecter**. On regarde les chiffres
+  d'abord, on décide ensuite.
+- **Ne pas** brancher ça sur le carnet de répartie dans le même lot, même si c'est la
+  suite évidente. Un lot, une chose.
 
 ---
 
-# LE TRAVAIL
+# LOT 2 — Le profil Discord, lisible aujourd'hui
 
-## Lot 1 — fermer le CANAL, pas filtrer la sortie
+## Ce qui est disponible sans toucher aux intents
 
-⚠️ **Ne PAS écrire un filtre par mots-clés** qui rejetterait « semble », « obsédé »,
-« métaphore ». C'est la leçon [[gotcha-filtre-de-sortie-ne-ferme-pas-le-canal]] : un filtre
-de sortie laisse passer ce qui compte et efface du légitime. Et
-[[gotcha-filet-structurel-pas-le-cache]] : chercher l'invariant vrai.
+Depuis `message.author` (un `Member` en salon serveur) :
 
-**L'invariant vrai est celui-ci : un fait doit porter sur ce que l'UTILISATEUR a dit ou
-fait, jamais sur le registre, le style ou le lexique de la conversation.** C'est une
-contrainte de **consigne d'extraction**, pas de filtre.
+| Donnée | Ce qu'elle vaut |
+|---|---|
+| `joined_at` | ancienneté sur le serveur — « tu traînes ici depuis deux ans » |
+| `roles` | ses rôles, hors `@everyone` |
+| `nick` vs `name` | s'il se donne un surnom, et lequel |
+| `premium_since` | booster du serveur |
+| `created_at` | ancienneté du **compte** Discord |
 
-Le travail : reprendre la consigne qui demande `<fact>` dans chaque persona concernée et la
-rendre explicite. Ce qu'elle doit dire, sans le recopier mot pour mot :
+## Le travail
 
-- un fait note **ce que le mortel a dit de lui-même** : un goût, un métier, un projet, une
-  habitude, un nom qu'il donne aux choses ;
-- **JAMAIS** une observation sur le ton de l'échange, sur les images employées, ni sur ce
-  dont « il semble obsédé » — **tes propres réponses font partie de la conversation, et
-  elles ne t'apprennent rien sur lui** ;
-- si rien de neuf n'a été dit sur le mortel, **n'émets pas de balise du tout**.
+Une fonction dans chaque bot — ou mieux, **une seule dans `shared/`, vendorisée** — qui
+rend un bloc court, injecté dans le prompt **à côté** du bloc `[CE QUE TU SAIS SUR …]`,
+jamais dedans. Points d'ancrage du bloc existant, vérifiés :
 
-⚠️ **Commencer par M'aiq.** `maiq_facts.json` est à **0 sur 15** : sa consigne d'extraction
-fait déjà quelque chose de juste. **La lire avant d'écrire quoi que ce soit** — c'est
-peut-être toute la réponse, déjà présente dans le dépôt.
+| Bot | Ligne |
+|---|---|
+| Alfred | `bot_alfred.py:200` |
+| Johnny | `bot_johnny.py:930` |
+| M'aiq | `bot_maiq.py:1336` |
+| Sheogorath | `bot_sheogorath.py:2255` |
+| Sugar | `bot_sugar.py:843` |
+| Twitch | `shared/twitch/llm.py:243` |
 
-## Lot 2 — purger le bruit déjà stocké
+⚠️ **Le module Twitch n'a pas de `Member` Discord.** Ne pas y câbler ce lot — il a ses
+propres signaux (ancienneté de suivi, abonné, modérateur), qui sont un autre chantier.
 
-Les faits empoisonnés sont **actifs** : ils sont injectés à chaque message. Corriger la
-consigne n'efface pas ce qui est en base.
+⚠️ **`message.author` est un `User` et non un `Member` en message privé** : `roles` et
+`joined_at` n'existent pas. Garder le bloc vide dans ce cas, sans lever.
 
-Écrire `tools/purge_faits_auto.py` qui, pour les 9 fichiers `data/*facts*.json` :
-- **imprime** chaque fait avec son fichier et son utilisateur, marqué « à retirer » ou
-  « gardé », et **ne modifie rien sans `--appliquer`** ;
-- fait une **copie de sauvegarde** horodatée avant d'écrire ;
-- ne retire QUE les faits qui décrivent le registre de la conversation.
+⚠️ **Ne pas stocker ces données.** Elles se relisent à chaque message, elles sont toujours
+à jour, et les écrire en base créerait une copie qui diverge. C'est le défaut de la grille
+des bots du dashboard, corrigé au Lot 1 du portage v2.
 
-⚠️ **C'est un humain qui valide la liste avant l'écriture.** Ce sont des données réelles
-sur de vraies personnes, et certaines lignes sont justes (« Il aime le mot *sugar* »,
-« ledev veut que Sheogorath devienne son serviteur ») : elles doivent survivre.
+---
 
-## Lot 3 — le plafond de 10 ne doit plus laisser le bruit chasser le vrai
+# LOT 3 — Ce qui dort déjà en base
 
-`sheo_memory.py:170-174` : au-delà de 10, `pop(0)` retire le **plus ancien**, donc les
-faits fondateurs partent en premier alors que le bruit auto-généré, plus récent, reste.
+`reputation` (6 lignes) et `quests` (3 lignes) existent, et **ne sont injectés dans aucun
+prompt**. Les accesseurs sont déjà écrits dans `shared/shared_database.py` :
+`get_reputation` (l. 492), `get_reputation_level` (l. 529), `get_daily_quests` (l. 695).
 
-Ne pas inventer un système de score. Le minimum utile et honnête : **remonter le plafond
-n'est pas la réponse** — c'est la qualité de l'entrée qui compte (lots 1 et 2). Se
-contenter ici de **documenter le comportement** en commentaire, et vérifier que les 5 bots
-ont bien la même règle. Si l'un diverge, l'aligner.
+Les ajouter au même bloc que le lot 2 : niveau, points, `riddle_streak`, quêtes du jour
+faites ou non.
 
-## Lot 4 — le verrou
+⚠️ **Zéro nouveau mécanisme dans ce lot** : que du câblage. Si l'exécution ajoute une
+table, une colonne ou un calcul, c'est qu'elle a dérivé.
 
-`tests/test_faits_utilisateur.py`, neuf. Trois tests, chacun avec sa mutation :
+⚠️ `shared_database.py` **n'est pas vendorisé** : les bots l'importent dans un
+`try/except ImportError`. Respecter ce montage — un bot déployé sans `shared/` doit
+continuer à tourner, simplement sans ce bloc.
 
-1. **La consigne d'extraction interdit les faits de registre.** Pour chacune des 5
-   personas concernées, le texte qui demande `<fact>` contient bien l'interdiction.
-   *Mutation : la retirer d'une seule persona → rouge.* ⚠️ Le test doit boucler sur les
-   **5** bots, jamais sur un seul : [[gotcha-un-bot-sur-six-manque-toujours]].
-2. **`extract_facts` refuse un fait vide ou tronqué.** Comportement déjà présent — le
-   verrouiller pour qu'une réécriture ne le perde pas.
-3. **Le purgeur ne touche rien sans `--appliquer`.** *Mutation : écrire par défaut →
-   rouge.*
+---
+
+# LOT 4 — Le gestionnaire mort de M'aiq et Sheogorath
+
+Ajouter `intents.members = True` dans `MaiqBot/bot_maiq.py` et
+`Sheogorath/bot_sheogorath.py`, à côté de `intents.message_content` (respectivement vers
+les lignes 363-365 pour Sheo).
+
+## ⚠️⚠️ LE PIÈGE — À LIRE AVANT DE TOUCHER À CETTE LIGNE
+
+`members` est un **intent privilégié**. Le poser dans le code **sans l'avoir activé dans le
+Discord Developer Portal** pour cette application fait **échouer la connexion au
+démarrage** (`PrivilegedIntentsRequired`) : **le bot ne démarre plus du tout.**
+
+Donc :
+1. **C'est l'utilisateur qui doit d'abord cocher « SERVER MEMBERS INTENT »** dans le portail
+   Discord, pour l'application de M'aiq **et** celle de Sheogorath.
+2. **Ne pas livrer ce lot avant d'avoir sa confirmation.** Le livrer en avance, c'est
+   casser deux bots au prochain redémarrage.
+3. **Le signaler dans le rapport de livraison** même si le reste est fait.
 
 ---
 
 # RECETTE
 
-1. `pyflakes` sur les bots touchés, `tests/` et `tools/` — **avant** `pytest`.
+1. `pyflakes` sur les bots touchés, `shared/`, `tests/` — **avant** `pytest`.
 2. `pytest` **seul**. Référence : **913 tests, 0 échec**.
-3. Les mutations rejouées, chacune vérifiée rouge.
-4. `tools/purge_faits_auto.py` lancé **sans `--appliquer`**, et sa sortie **remise à
-   l'utilisateur** — il valide avant toute écriture.
-5. **Ne rien déployer avant cette validation.**
+3. `python tools/vendor_core.py` **si et seulement si** le lot 2 crée un module dans
+   `shared/` destiné aux bots — et dans ce cas **l'ajouter aux DEUX listes**
+   (`tools/vendor_core.py` et `tools/sonde_core_drift.py`), puis
+   `python tools/sonde_core_drift.py`.
+4. Les mutations rejouées, chacune vérifiée rouge.
+5. **Ne pas déployer le lot 4** sans la confirmation du portail.
+
+## Verrous attendus
+
+- Le bloc de profil est **absent** quand `message.author` est un `User` (message privé) —
+  *mutation : le construire quand même → rouge*.
+- Les 6 bots écoutent `on_raw_reaction_add` — *mutation : le retirer d'UN SEUL → rouge*
+  ([[gotcha-un-bot-sur-six-manque-toujours]]).
+- Une réaction sur le message **d'un autre** n'est pas comptée — *mutation : retirer le
+  test d'auteur → rouge*.
+- Le profil structurel **ne passe pas** par `<fact>` — *mutation : l'y faire passer →
+  rouge*.
+
+---
 
 # LES RÈGLES
 
-1. **Ne pas toucher à la persona de Sheo** — `ac6914b` est validé en live sur le premier
-   échelon, ce n'est pas le sujet ici.
-2. **Ne pas écrire de filtre par mots-clés.** Voir le lot 1.
-3. **Ne pas modifier `data/` sans `--appliquer`**, et jamais sans copie de sauvegarde.
-4. **Lire la consigne de M'aiq d'abord.**
-5. **Éditer les fichiers directement**, pas de script jetable.
-6. **Ne pas commiter, ne pas pousser.** La relecture commite.
+1. **Aucun de ces faits ne passe par le LLM.** Ils sont calculés, jamais extraits. C'est
+   toute leur valeur.
+2. **Le lot 1 ne modifie aucun prompt** — il collecte, on décide après.
+3. **Ne pas toucher à la consigne `<fact>`** : elle vient d'être resserrée et déployée.
+4. **Éditer les fichiers directement**, pas de script jetable
+   ([[gotcha-script-jetable-dit-success]]).
+5. **Ne pas commiter, ne pas pousser.** La relecture commite.
+6. **Livrer lot par lot, en s'arrêtant entre chaque.**
 7. **Rendre compte de ce qui n'a pas été fait**, nommément.
 
 ---
 
-# HORS PÉRIMÈTRE, MAIS À TRANCHER UN JOUR
+# HORS PÉRIMÈTRE, ET POURQUOI
 
-**Le quota Groq fait tomber Sheo sur un 14B une réponse sur deux ou trois.** Le prompt à
-3300 tokens contre 8000 tokens/minute, c'est structurel : ni la persona ni la mémoire n'y
-changeront rien. Deux directions, à arbitrer par l'utilisateur, **pas dans ce lot** :
-un **deuxième échelon plus fort** que `ministral-14b`, ou un **prompt plus court**. La
-seconde aiderait aussi le premier échelon à mieux suivre ses consignes.
+- **`member.activities`** (ce qu'il joue en ce moment) : exige l'intent privilégié
+  `presences` sur les 6 applications, plus une case à cocher par bot dans le portail. Gros
+  coût de configuration manuelle pour un signal volatil. À rouvrir si le reste plaît.
+- **La mémoire inter-bots** (M'aiq sait que tu compares Sheo à de la nourriture, Sheo
+  l'ignore) : c'est le plus puissant, et le seul qui demande une **décision
+  d'architecture** — il heurte [[bots-independants]]. Voir
+  [[idee-memoire-partagee-discord-twitch]], jamais démarrée. À arbitrer séparément.
+- **Le 2ᵉ échelon de Sheogorath** : à 3300 tokens de prompt contre 8000 tokens/minute chez
+  Groq, il tombe sur `ministral-14b` une réponse sur deux ou trois. Rien de ce plan n'y
+  change quoi que ce soit.
