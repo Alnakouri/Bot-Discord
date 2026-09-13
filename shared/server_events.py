@@ -4,6 +4,7 @@ Gestionnaire d'événements serveur pour les bots Discord.
 Messages de bienvenue/départ et anniversaires.
 """
 import discord
+import logging
 import random
 
 # Import de la base de données (local)
@@ -11,6 +12,12 @@ from shared.shared_database import (
     get_todays_birthdays, has_user_interacted,
     log_event
 )
+
+# ⚠️ Ce nom doit rester dans la liste des `shared_name` de `bot_logger.setup_logger`,
+# sinon ces lignes ne partent NI dans logs/<bot>_<date>.log NI dans le JSONL du
+# tableau de bord : elles ne survivraient que par le `lastResort` de `logging`,
+# qui ignore INFO.
+logger = logging.getLogger("server_events")
 
 
 # MESSAGES DE BIENVENUE
@@ -101,16 +108,53 @@ GOODBYE_MESSAGES = {
 }
 
 
-def get_welcome_message(bot_name: str, user: discord.Member) -> str:
-    """Retourne un message de bienvenue personnalisé."""
-    messages = WELCOME_MESSAGES.get(bot_name.lower(), WELCOME_MESSAGES["sheogorath"])
-    return random.choice(messages).format(user=user.mention)
+# ⚠️ Le nom que chaque bot passe a ces fonctions n'est PAS la cle de ses pools.
+# « M'aiq » donne "m'aiq" et « Sugar Bot » donne "sugar bot" : ni l'un ni l'autre
+# n'existe dans les dictionnaires ci-dessus, et le repli `.get(cle, ...["sheogorath"])`
+# leur faisait dire les repliques de SHEOGORATH — « NOUVEAU MORTEL ! Bienvenue dans mon
+# royaume de folie ». Johnny, lui, n'a aucun pool du tout. Le defaut ne s'etait jamais
+# vu parce que `on_member_join` etait du code mort sur M'aiq jusqu'au 11/09 et qu'une
+# arrivee est rare ET tiree au sort.
+#
+# Cette table est donc la SEULE traduction autorisee. Un nom absent rend None : le bot
+# se TAIT (et le journal le dit). Se taire est correct ; parler avec la voix d'un autre
+# ne l'est pas.
+_CLE_PAR_BOT = {
+    "sheogorath": "sheogorath",
+    "m'aiq": "maiq",
+    "alfred": "alfred",
+    "malena": "malena",
+    "sugar bot": "sugar",
+}
 
 
-def get_goodbye_message(bot_name: str, user: discord.Member) -> str:
-    """Retourne un message de départ personnalisé."""
-    messages = GOODBYE_MESSAGES.get(bot_name.lower(), GOODBYE_MESSAGES["sheogorath"])
-    return random.choice(messages).format(user=user.display_name)
+def cle_persona(bot_name: str):
+    """Cle de pool pour ce bot, ou None s'il n'a pas de repliques a lui."""
+    return _CLE_PAR_BOT.get((bot_name or "").strip().lower())
+
+
+def _tirer(pools: dict, bot_name: str, gabarit: str, **format_kwargs):
+    """Tire une replique dans le pool du bot. None s'il n'en a pas."""
+    cle = cle_persona(bot_name)
+    messages = pools.get(cle) if cle else None
+    if not messages:
+        logger.warning(
+            f"⚠️ [EVENEMENTS] Aucune replique {gabarit} pour '{bot_name}' — "
+            "il se tait. Ajouter ses repliques plutot que de le laisser "
+            "emprunter la voix d'un autre."
+        )
+        return None
+    return random.choice(messages).format(**format_kwargs)
+
+
+def get_welcome_message(bot_name: str, user: discord.Member):
+    """Retourne un message de bienvenue personnalisé, ou None."""
+    return _tirer(WELCOME_MESSAGES, bot_name, "de bienvenue", user=user.mention)
+
+
+def get_goodbye_message(bot_name: str, user: discord.Member):
+    """Retourne un message de départ personnalisé, ou None."""
+    return _tirer(GOODBYE_MESSAGES, bot_name, "de depart", user=user.display_name)
 
 
 # MESSAGES D'ANNIVERSAIRE
@@ -158,16 +202,21 @@ BIRTHDAY_MESSAGES = {
 }
 
 
-def get_birthday_message(bot_name: str, user: discord.Member) -> str:
-    """Retourne un message d'anniversaire personnalisé."""
-    messages = BIRTHDAY_MESSAGES.get(bot_name.lower(), BIRTHDAY_MESSAGES["sheogorath"])
-    return random.choice(messages).format(user=user.mention)
+def get_birthday_message(bot_name: str, user: discord.Member):
+    """Retourne un message d'anniversaire personnalisé, ou None."""
+    return _tirer(BIRTHDAY_MESSAGES, bot_name, "d'anniversaire", user=user.mention)
 
 
 # FONCTIONS POUR LES ÉVÉNEMENTS
 
 async def handle_member_join(bot, member: discord.Member, bot_name: str):
     """Gère l'arrivée d'un nouveau membre."""
+    # ⚠️ Cette ligne est la seule preuve que le gestionnaire a TOURNE. L'envoi qui suit
+    # est tire au sort (20-30 %), donc l'absence de message ne dit RIEN — sans cette
+    # trace on ne peut pas distinguer « le dé a dit non » de « l'evenement n'est jamais
+    # arrive » (le cas de M'aiq et Sheogorath jusqu'au 11/09 : intent manquant).
+    logger.info(f"👋 [ARRIVEE] {member} sur '{member.guild.name}' — vu par {bot_name}")
+
     # Chercher le canal de bienvenue ou la taverne des bots
     target_channel = None
     for channel in member.guild.text_channels:
@@ -176,15 +225,27 @@ async def handle_member_join(bot, member: discord.Member, bot_name: str):
             break
         elif "bienvenue" in channel.name.lower() or "welcome" in channel.name.lower():
             target_channel = channel
-    
-    if target_channel:
-        # Probabilité de message (pour éviter le spam si plusieurs bots)
-        # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Sugar Bot: 30%
-        probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "sugar": 0.3}
-        if random.random() < probs.get(bot_name.lower(), 0.3):
-            message = get_welcome_message(bot_name, member)
-            await target_channel.send(message)
-            log_event(bot_name, "INFO", f"Message de bienvenue envoyé pour {member.name}")
+
+    if not target_channel:
+        logger.info(
+            f"[ARRIVEE] Aucun salon d'accueil sur '{member.guild.name}' "
+            "(cherche : « taverne »+« bot », « bienvenue », « welcome ») — rien d'envoye."
+        )
+        return
+
+    # Probabilité de message (pour éviter le spam si plusieurs bots)
+    # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Sugar Bot: 30%
+    probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "sugar": 0.3}
+    seuil = probs.get(cle_persona(bot_name), 0.3)
+    if random.random() >= seuil:
+        logger.info(f"[ARRIVEE] {bot_name} se tait (tirage, seuil {seuil:.0%}).")
+        return
+
+    message = get_welcome_message(bot_name, member)
+    if not message:
+        return          # pool absent : deja journalise par _tirer, et on se TAIT
+    await target_channel.send(message)
+    log_event(bot_name, "INFO", f"Message de bienvenue envoyé pour {member.name}")
 
 
 async def handle_member_remove(bot, member: discord.Member, bot_name: str):
@@ -204,6 +265,8 @@ async def handle_member_remove(bot, member: discord.Member, bot_name: str):
         # Probabilité plus faible pour les départs
         if random.random() < 0.2:  # 20% de chance
             message = get_goodbye_message(bot_name, member)
+            if not message:
+                return      # pool absent : deja journalise par _tirer, et on se TAIT
             await target_channel.send(message)
             log_event(bot_name, "INFO", f"Message de départ pour {member.name}")
 
@@ -240,7 +303,9 @@ async def check_and_send_birthdays(bot, bot_name: str):
             # Probabilité pour éviter les doublons entre bots
             # Un seul bot envoie le message
             probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "sugar": 0.2}
-            if random.random() < probs.get(bot_name.lower(), 0.33):
+            if random.random() < probs.get(cle_persona(bot_name), 0.33):
                 message = get_birthday_message(bot_name, member)
+                if not message:
+                    continue   # pool absent : deja journalise, et on se TAIT
                 await target_channel.send(message)
                 log_event(bot_name, "INFO", f"Anniversaire souhaité à {member.name}")

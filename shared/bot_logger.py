@@ -327,7 +327,7 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
         for shared_name in ("smart_router", "llm_cascade", "media_handler",
                             "safe_client", "discord_status", "discord_profile",
                             "api_manager", "api_tracking", "anti_tic",
-                            "repartee_lessons", "boucles"):
+                            "repartee_lessons", "boucles", "server_events"):
             shared_logger = logging.getLogger(shared_name)
             shared_logger.setLevel(logging.INFO)
             if not shared_logger.handlers:
