@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import pytest
 import random
 
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,15 +22,38 @@ def test_sheo_cheese_dose():
     assert "DOSE DU FROMAGE" in sheo_data.PERSONALITY_BASE
 
 def test_get_smart_string_response_knowledge_randomization():
-    responses = []
-    for _ in range(100):
-        res = bot_sheogorath.get_smart_string_response("sais-tu un truc ?", "test_guild")
-        responses.append(res)
-        
+    """Le pool du savoir tire entre cheese_facts / madness / philosophy.
+
+    Deux pieges scelles ici :
+    - l'entree doit REELLEMENT atteindre cette branche. « sais-tu » (avec le trait
+      d'union) ne contient pas le mot-cle « sais tu » : le test tombait dans la
+      branche par defaut, ou cheese_facts n'a que 5 % de chance de sortir — d'ou
+      un echec aleatoire d'environ une execution sur 170.
+    - le tirage est seme, donc la suite ne depend plus d'un coup de des.
+    """
+    savoir = (set(sheo_data.SHEO_BRAIN["cheese_facts"])
+              | set(sheo_data.SHEO_BRAIN["madness"])
+              | set(sheo_data.SHEO_BRAIN["philosophy"]))
+
+    etat = random.getstate()
+    try:
+        random.seed(20260913)
+        responses = [
+            bot_sheogorath.get_smart_string_response("sais tu un truc ?", "test_guild")
+            for _ in range(100)
+        ]
+    finally:
+        random.setstate(etat)
+
+    # Garde de branche : une reponse hors de ces trois pools (un « insult », par
+    # exemple) signifie que l'entree n'atteint plus la branche du savoir.
+    intrus = [r for r in responses if r not in savoir]
+    assert not intrus, f"branche du savoir non atteinte, reponse hors pool : {intrus[0]!r}"
+
     facts_count = sum(1 for r in responses if r in sheo_data.SHEO_BRAIN["cheese_facts"])
     madness_count = sum(1 for r in responses if r in sheo_data.SHEO_BRAIN["madness"])
     philosophy_count = sum(1 for r in responses if r in sheo_data.SHEO_BRAIN["philosophy"])
-    
+
     assert facts_count > 0, "No cheese_facts response was returned"
     assert madness_count > 0, "No madness response was returned"
     assert philosophy_count > 0, "No philosophy response was returned"
