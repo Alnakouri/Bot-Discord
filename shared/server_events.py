@@ -27,28 +27,32 @@ WELCOME_MESSAGES = {
         "🤵 Bienvenue, {user}. Je suis Alfred, le majordome de ce serveur. "
         "Si vous avez besoin de quoi que ce soit... eh bien, débrouillez-vous d'abord, puis demandez-moi.",
         
-        "☕ Ah, {user}. *soupir* Un autre invité à servir. "
+        "☕ Ah, {user}. Un autre invité à servir. "
         "Bienvenue. Le thé sera prêt quand je l'aurai décidé.",
         
         "🎩 {user}, je présume ? Bienvenue. Tâchez de ne pas faire de désordre. "
         "Je viens juste de nettoyer.",
     ],
     "sugar": [
-        "Bonjour {user}, bienvenue sur le serveur.",
-        "Bienvenue, {user} ! Heureux de t'accueillir parmi nous."
+        "Un nouveau visage, et déjà plus d'allure que la moyenne par ici. "
+        "Bienvenue {user}, tu vas te plaire. 🍬",
+
+        "{user} débarque. Installe-toi, sers-toi, "
+        "et ne crois pas un mot de ce qu'on te racontera sur moi.",
     ],
 }
 
 GOODBYE_MESSAGES = {
     "alfred": [
-        "🤵 {user} nous quitte. *range un verre* Bonne continuation, Monsieur/Madame.",
+        "🤵 {user} nous quitte. Je rangerai son verre. Bonne continuation.",
         
         "👋 Au revoir, {user}. N'oubliez pas : la porte est toujours... fermée. "
         "Mais on peut toujours la rouvrir.",
     ],
     "sugar": [
-        "Au revoir {user}. Bonne continuation.",
-        "{user} a quitté le serveur. Au revoir !"
+        "{user} s'en va. On garde la place au chaud, on ne touche à rien. ✨",
+
+        "Partir, c'est mourir un peu — mais {user} reviendra. Ils reviennent tous.",
     ],
 }
 
@@ -133,11 +137,14 @@ BIRTHDAY_MESSAGES = {
         "Non, vous ne pouvez pas choisir la saveur. C'est Earl Grey. Comme le thé.",
         
         "🤵 {user}, il semblerait que ce soit votre anniversaire. "
-        "*pose une bougie sur un scone* Voilà. Faites un vœu. Rapidement.",
+        "Une bougie sur un scone fera l'affaire. Faites un vœu. Rapidement.",
     ],
     "sugar": [
-        "Joyeux anniversaire, {user} ! Passe une excellente journée.",
-        "Bon anniversaire {user} !"
+        "Un an de plus au compteur pour {user}, et ça ne se voit toujours pas. "
+        "C'est ta journée, profites-en. 🍬",
+
+        "C'est l'anniversaire de {user} : aujourd'hui tout lui est permis. "
+        "Demain, on reparlera de ses goûts en musique.",
     ],
 }
 

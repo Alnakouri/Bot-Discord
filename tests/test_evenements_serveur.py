@@ -211,3 +211,36 @@ def test_le_logger_du_module_est_cable_sur_les_handlers_du_bot():
     assert '"server_events"' in bloc, (
         "server_events n'est pas dans la liste des shared_name de setup_logger"
     )
+
+def _toutes_les_repliques():
+    for dictionnaire in (ev.WELCOME_MESSAGES, ev.GOODBYE_MESSAGES, ev.BIRTHDAY_MESSAGES):
+        for cle, messages in dictionnaire.items():
+            for message in messages:
+                yield cle, message
+
+
+def test_aucune_didascalie_dans_les_repliques():
+    """Alfred ET Sugar interdisent les gestes narres dans leur propre prompt — celui
+    d'Alfred donne meme « *soupir* » comme contre-exemple. Trois de ses repliques en
+    portaient : elles ne passent NI par le prompt NI par le LLM, donc rien ne les
+    rattrapait."""
+    import re
+
+    fautifs = [
+        f"{cle} : {message[:70]}"
+        for cle, message in _toutes_les_repliques()
+        if re.search(r"\*[^*]+\*", message)
+    ]
+    assert not fautifs, "didascalie (geste narre entre asterisques) : " + " | ".join(fautifs)
+
+
+def test_les_repliques_de_sugar_restent_breves():
+    """« ~30 mots, jamais plus » est une REGLE ABSOLUE de son prompt, pas un gout.
+    Ses anciennes repliques etaient courtes mais sans voix ; en lui en donnant une,
+    le risque bascule de l'autre cote."""
+    trop_longues = [
+        f"{len(message.split())} mots : {message[:60]}"
+        for cle, message in _toutes_les_repliques()
+        if cle == "sugar" and len(message.split()) > 30
+    ]
+    assert not trop_longues, "Sugar depasse ses 30 mots : " + " | ".join(trop_longues)
