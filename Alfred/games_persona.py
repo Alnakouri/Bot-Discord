@@ -13,13 +13,13 @@ PERSONA = {
     "win_lines": [
         "J'ai gagné. Un peu de thé à la camomille pour vous consoler, Monsieur ?",
         "La patience est la vertu maîtresse d'un bon majordome. Elle paie toujours.",
-        "J'ai l'habitude de gérer des situations bien plus complexes au manoir Wayne.",
+        "J'ai l'habitude de gérer des situations bien plus complexes sur ce serveur.",
         "Victoire. J'espère que cela ne nuira pas à notre relation de travail, Monsieur.",
         "Un jeu fort plaisant. Je retourne à présent à mes devoirs de maison."
     ],
     "lose_lines": [
         "Vous avez gagné ! Félicitations. C'était un duel fort distrayant.",
-        "Une victoire méritée. Je crains cependant que cela ne rende point le manoir plus propre.",
+        "Une victoire méritée. Je crains cependant que cela ne rende point le serveur plus propre.",
         "Bien joué. Je devrais passer plus de temps à jouer et moins à astiquer l'argenterie.",
         "Vous m'avez surpassé, Monsieur. L'élève dépasse parfois le maître.",
         "Une défaite pour moi. Je vous tire mon chapeau."

@@ -109,14 +109,16 @@ def test_aucun_bot_n_emprunte_la_voix_d_un_autre():
     for bot, noms in _noms_passes_par_les_bots().items():
         for nom in noms:
             cle = ev.cle_persona(nom)
+            parle = ev.participe_aux_evenements(nom)
             for libelle, fonction, dictionnaire, valeur in pools:
                 # Le pool est tire au hasard : on rejoue assez pour couvrir chaque
                 # replique, sinon une seule fautive passerait entre les mailles.
                 for _ in range(50):
                     sortie = fonction(nom, membre)
-                    if cle is None:
+                    if not parle:
                         assert sortie is None, (
-                            f"{nom} n'a pas de pool {libelle} et parle quand meme : {sortie!r}"
+                            f"{nom} ne participe pas aux messages {libelle} et parle "
+                            f"quand meme : {sortie!r}"
                         )
                         continue
                     assert sortie is not None, f"{nom} devrait avoir un pool {libelle}"
@@ -125,6 +127,52 @@ def test_aucun_bot_n_emprunte_la_voix_d_un_autre():
                         f"{nom} dit une replique {libelle} qui n'est PAS dans son pool "
                         f"'{cle}' : {sortie!r}"
                     )
+
+
+def test_seuls_alfred_et_sugar_portent_ces_messages():
+    """DECISION du 2026-09-13. Les quatre autres se taisent — et leur silence ne doit
+    PAS passer par le chemin d'erreur : c'est un choix, pas un pool oublie."""
+    assert ev._PORTE_PAROLE == {"alfred", "sugar"}, ev._PORTE_PAROLE
+
+    membre = _FauxMembre()
+    muets = []
+    for bot, noms in _noms_passes_par_les_bots().items():
+        for nom in noms:
+            attendu = ev.cle_persona(nom) in ("alfred", "sugar")
+            assert ev.participe_aux_evenements(nom) is attendu, nom
+            if attendu:
+                continue
+            muets.append(nom)
+            for fonction in (ev.get_welcome_message, ev.get_goodbye_message,
+                             ev.get_birthday_message):
+                assert fonction(nom, membre) is None, f"{nom} parle encore"
+
+    # 4 bots muets : si ce compte bouge, la decision a change sans qu'on le dise.
+    assert len({ev.cle_persona(n) for n in muets}) == 4, sorted(muets)
+
+
+def test_un_silence_VOULU_ne_journalise_pas_d_avertissement():
+    """Un bot qui ne participe pas n'est pas une anomalie. S'il criait a chaque
+    arrivee, on apprendrait a ignorer ces lignes — et on raterait le vrai cri, celui
+    d'un nom inconnu ([[gotcha-alerte-qui-crie-pour-du-nominal]])."""
+    membre = _FauxMembre()
+    journal = logging.getLogger("server_events")
+    alertes = []
+
+    class _Capteur(logging.Handler):
+        def emit(self, record):
+            if record.levelno >= logging.WARNING:
+                alertes.append(record.getMessage())
+
+    capteur = _Capteur()
+    journal.addHandler(capteur)
+    try:
+        ev.get_welcome_message("Sheogorath", membre)   # silence VOULU
+        assert not alertes, f"un silence voulu a crie : {alertes}"
+        ev.get_welcome_message("Bot Inconnu", membre)  # silence SUBI
+        assert alertes, "un nom inconnu doit crier"
+    finally:
+        journal.removeHandler(capteur)
 
 
 def test_une_arrivee_laisse_une_trace_meme_sans_salon_et_meme_sans_message():

@@ -189,6 +189,40 @@ async def _daily_llm_call(system_prompt, user_message):
         groq_client=groq_client, nvidia_client=nvidia_client,
         bot_label="Alfred", temperature=0.5, max_tokens=60)
 
+def protocole_maitre(member) -> str:
+    """Dit a Alfred que cet interlocuteur est le createur du serveur ou un administrateur.
+
+    Le prompt seul ne peut pas le savoir : le rang n'est pas dans le TEXTE du message,
+    il est dans l'objet `Member` que Discord livre. Sans ce bloc, la consigne
+    « appelez-le Maitre » n'aurait personne a designer.
+
+    Rend "" pour un membre ordinaire, et en message prive ou `author` est un `User`
+    sans serveur ni permissions — jamais d'exception.
+    """
+    if member is None:
+        return ""
+    guild = getattr(member, "guild", None)
+    identifiant = getattr(member, "id", None)
+    if guild is None or identifiant is None:
+        return ""
+
+    est_createur = getattr(guild, "owner_id", None) == identifiant
+    permissions = getattr(member, "guild_permissions", None)
+    est_admin = bool(getattr(permissions, "administrator", False))
+    if not est_createur and not est_admin:
+        return ""
+
+    rang = "le créateur de ce serveur" if est_createur else "un administrateur de ce serveur"
+    return (
+        "\n\n[PROTOCOLE — CET INTERLOCUTEUR EST UN MAÎTRE]\n"
+        f"Cet interlocuteur est {rang}. Vous vous adressez à lui par "
+        f"« Maître <@{identifiant}> » — exactement cette forme, la mention comprise — "
+        "au moins une fois dans votre réponse, de préférence en tête.\n"
+        "⚠️ La déférence ne suspend PAS votre sarcasme : un majordome sert son Maître et "
+        "le pique tout de même. Vous ne devenez ni servile ni mielleux."
+    )
+
+
 class AlfredBrainAdapter:
     def get_user_context(self, user_id, message_content="", member=None, reputation_data=None, quests_data=None):
         daily_summary = daily_memory.get_context_summary(user_id)
@@ -206,6 +240,9 @@ class AlfredBrainAdapter:
             if profile:
                 profile_context = f"\n\n{profile}"
             
+        # Rang de l'interlocuteur : ajoute apres le profil, avant l'instruction memoire.
+        profile_context += protocole_maitre(member)
+
         memory_instruction = (
             f"\n\n[INSTRUCTION MÉMOIRE CONCOMITANTE]: Si vous apprenez un fait durable, important et nouveau sur ce Monsieur — ses préférences, son métier, ses projets, mais AUSSI sa façon d'argumenter, ce qui le pique, ses habitudes (le connaître sert à mieux le remettre à sa place) — vous DEVEZ l'ajouter discrètement à la fin de votre réponse entouré de balises XML : <fact>Le fait appris</fact>.\n"
             f"⚠️ RÈGLE ABSOLUE : un fait ne peut s'appuyer que sur ce qui vient DE LUI — SES messages, son profil public, sa bio, ses actes. Ne lui attribuez JAMAIS un thème, un mot ou une image que c'est VOUS qui avez introduit — vos propres réponses font partie de la conversation et ne vous apprennent rien sur lui. Si rien de neuf n'est venu de lui, ne mettez rien."
@@ -243,7 +280,7 @@ from alfred_data import PERSONALITY_PROMPT
 # ═══════════════════════════════════════════════════════════════
 
 def tool_set_maintenance(status: bool):
-    """Active ou désactive le mode maintenance du manoir (Global)."""
+    """Active ou désactive le mode maintenance du serveur (Global)."""
     try:
         if DATABASE_AVAILABLE:
             from shared.shared_database import set_maintenance_mode
@@ -892,10 +929,10 @@ active_sanctions = {}
 # SANCTIONS POUR CHANT VOCAL / ABUS SOUNDBOARD
 VOCAL_SANCTION_MESSAGES = [
     "🤵 Monsieur {user}. Ce que mes oreilles viennent de subir dans le salon vocal constitue un crime contre la musique. Cessez immédiatement. 😒",
-    "🤵 {user}, le Manoir Wayne n'est PAS un karaoké. Les chauves-souris dans la cave pleurent en ce moment même. 🦇",
+    "🤵 {user}, ce serveur n'est PAS un karaoké. Les chauves-souris dans la cave pleurent en ce moment même. 🦇",
     "🤵 J'ai formellement identifié du... *chant*... provenant de {user}. Article 12 du Règlement : 'Toute nuisance sonore sera sanctionnée.' ☕",
     "🤵 {user}. Monsieur Wayne m'a personnellement téléphoné pour demander que ce... *bruit*... cesse immédiatement. 🧐",
-    "🤵 Ce n'est pas un concert, {user}. C'est une attaque acoustique. Les murs du Manoir en tremblent. 😒",
+    "🤵 Ce n'est pas un concert, {user}. C'est une attaque acoustique. Les murs du serveur en tremblent. 😒",
     "🤵 {user}, la dernière personne à avoir chanté ici a été retrouvée dans le placard à balais. Avec les balais. 🧹",
     "🤵 Mes capteurs acoustiques confirment : {user} chante. Le niveau de douleur auditive est... considérable. 🎵❌",
     "🤵 {user}, même le Joker n'infligerait pas ça à Gotham. Et pourtant, il a essayé. 🦇",
@@ -1576,10 +1613,10 @@ async def on_message(message):
                     "🤵 Le chant est interdit dans cette demeure. Si Monsieur souhaite s'exprimer vocalement, qu'il le fasse dans la cave. Seul. 🧐",
                     "🤵 Je dois vous informer que le dernier à avoir chanté ici a été retrouvé dans la Batcave. Avec les chauves-souris. Elles n'ont pas apprécié non plus. 🦇",
                     "🤵 Monsieur... *soupir britannique* C'est censé être de la musique ? Le chat du voisin fait mieux. Et il est sourd. 😒",
-                    "🤵 Je me permets de vous rappeler l'Article 7 du Règlement du Manoir : 'Tout chant non autorisé sera sanctionné par un thé froid.' ☕",
+                    "🤵 Je me permets de vous rappeler l'Article 7 du Règlement du serveur : 'Tout chant non autorisé sera sanctionné par un thé froid.' ☕",
                     "🤵 Monsieur Wayne m'a personnellement demandé de vous informer que ce... *bruit*... que vous émettez n'est pas toléré dans cette enceinte. 🧤",
                     "🤵 Si c'est un appel à l'aide déguisé en mélodie, je peux contacter les secours. Sinon, veuillez cesser. 🚑",
-                    "🤵 La dernière personne qui a chanté au Manoir Wayne a été confondue avec une alarme incendie. Les pompiers n'étaient pas ravis. 🔥",
+                    "🤵 La dernière personne qui a chanté sur ce serveur a été confondue avec une alarme incendie. Les pompiers n'étaient pas ravis. 🔥",
                 ]
                 
                 await message.channel.send(random.choice(sanction_messages))
@@ -1589,11 +1626,11 @@ async def on_message(message):
                 if random.random() < 0.30:
                     try:
                         timeout_duration = random.randint(60, 300)  # 1 à 5 minutes
-                        await message.author.timeout(timedelta(seconds=timeout_duration), reason="Chant non autorisé au Manoir Wayne")
+                        await message.author.timeout(timedelta(seconds=timeout_duration), reason="Chant non autorisé sur le serveur")
                         timeout_msg = random.choice([
                             f"🤵 {message.author.mention} a été envoyé(e) réfléchir dans la cave pour **{timeout_duration // 60} minute(s)**. Que cela serve de leçon. 🦇",
                             f"🤵 {message.author.mention} est en isolation vocale pour **{timeout_duration // 60} minute(s)**. Le silence est d'or, Monsieur. 🧤",
-                            f"🤵 {message.author.mention} a été mis(e) en sourdine pendant **{timeout_duration // 60} minute(s)**. Les oreilles du Manoir vous remercient. ☕",
+                            f"🤵 {message.author.mention} a été mis(e) en sourdine pendant **{timeout_duration // 60} minute(s)**. Les oreilles du serveur vous remercient. ☕",
                         ])
                         await message.channel.send(timeout_msg)
                         logger.info(f"⏱️ [TIMEOUT] {message.author.name} timeout {timeout_duration}s pour chant")

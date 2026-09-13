@@ -23,27 +23,6 @@ logger = logging.getLogger("server_events")
 # MESSAGES DE BIENVENUE
 
 WELCOME_MESSAGES = {
-    "sheogorath": [
-        "🧀 **NOUVEAU MORTEL !** Bienvenue dans mon royaume de folie, {user} ! "
-        "Prends un fromage, assieds-toi sur ce crâne, et PARLE-MOI DE TES RÊVES LES PLUS ÉTRANGES !",
-        
-        "🎭 Ah ! {user} a osé entrer ! ES-TU FOU ? Non ? EH BIEN TU LE DEVIENDRAS ! "
-        "Bienvenue dans le chaos, mortel !",
-        
-        "✨ {user} ! Le destin t'a mené ici, ou peut-être était-ce juste un mauvais virage. "
-        "BIENVENUE ! N'oublie pas : ici, les règles sont... optionnelles.",
-    ],
-    
-    "maiq": [
-        "🐱 M'aiq a vu beaucoup de nouveaux visages... {user} en est un de plus. "
-        "Khajiit espère que tu as des histoires intéressantes à raconter.",
-        
-        "👀 Certains disent que {user} est nouveau ici. M'aiq pense que c'est vrai... ou pas.",
-        
-        "🗨️ {user} arrive ! M'aiq connaît beaucoup de rumeurs sur les nouveaux arrivants... "
-        "mais M'aiq est discret. Pour l'instant.",
-    ],
-    
     "alfred": [
         "🤵 Bienvenue, {user}. Je suis Alfred, le majordome de ce serveur. "
         "Si vous avez besoin de quoi que ce soit... eh bien, débrouillez-vous d'abord, puis demandez-moi.",
@@ -54,17 +33,6 @@ WELCOME_MESSAGES = {
         "🎩 {user}, je présume ? Bienvenue. Tâchez de ne pas faire de désordre. "
         "Je viens juste de nettoyer.",
     ],
-    
-    "malena": [
-        "💅 Oh mais c'est {user} ! Bienvenue ma vie ! Ici c'est chez moi, "
-        "fais comme chez toi mais touche à rien ooh ! Bénissou bénissou !",
-        
-        "✨ Wesh {user} ! T'es nouveau ici toi ? Viens viens, "
-        "chui Malena, la seule et unique ! T'as du style ou pas ? 😏",
-        
-        "🌟 Ay {user} ! Bienvenue dans le quartier ma vie ! "
-        "Ici c'est Marseille bébé, et moi chui la reine du Vieux-Port ooh !",
-    ],
     "sugar": [
         "Bonjour {user}, bienvenue sur le serveur.",
         "Bienvenue, {user} ! Heureux de t'accueillir parmi nous."
@@ -72,34 +40,11 @@ WELCOME_MESSAGES = {
 }
 
 GOODBYE_MESSAGES = {
-    "sheogorath": [
-        "👋 {user} nous quitte ? NON ! Attends, si en fait... AU REVOIR ! "
-        "Ou pas. Reviens quand la folie te manquera !",
-        
-        "🧀 {user} part ? Prends un fromage pour la route ! "
-        "...Non en fait, laisse-le. Plus de fromage pour MOI !",
-    ],
-    
-    "maiq": [
-        "🐱 M'aiq a entendu dire que {user} partait... "
-        "Certains reviennent toujours. Ou pas.",
-        
-        "👋 {user} s'en va. M'aiq se souviendra de cette personne... peut-être.",
-    ],
-    
     "alfred": [
         "🤵 {user} nous quitte. *range un verre* Bonne continuation, Monsieur/Madame.",
         
         "👋 Au revoir, {user}. N'oubliez pas : la porte est toujours... fermée. "
         "Mais on peut toujours la rouvrir.",
-    ],
-    
-    "malena": [
-        "👋 Oh {user} sen va ? Beng t'façon ciao ma vie ! "
-        "Reviens quand tu veux, y'a toujours de la place ici ooh !",
-        
-        "😢 Ay {user} nous quitte ! Peuchère... Allez bonne route ! "
-        "Mais oublie pas, ici c'est chez toi hein !",
     ],
     "sugar": [
         "Au revoir {user}. Bonne continuation.",
@@ -123,25 +68,48 @@ _CLE_PAR_BOT = {
     "sheogorath": "sheogorath",
     "m'aiq": "maiq",
     "alfred": "alfred",
+    "johnny": "johnny",
     "malena": "malena",
     "sugar bot": "sugar",
 }
 
+# DECISION du 2026-09-13 : seuls Alfred et Sugar accueillent, saluent les departs et
+# souhaitent les anniversaires. Les quatre autres se taisent — ce n'est PAS un defaut,
+# c'est un choix, et il ne doit donc rien journaliser d'alarmant
+# ([[gotcha-alerte-qui-crie-pour-du-nominal]]).
+#
+# C'est ce qui separe les deux silences :
+#   - nom connu, hors de cet ensemble  -> silence VOULU  (journal : debug)
+#   - nom inconnu, ou pool manquant    -> silence SUBI   (journal : warning)
+# Sans cette distinction, la seule facon de se taire serait de sortir le bot de
+# `_CLE_PAR_BOT`, et on perdrait le cri qui rattrape une faute de nom.
+_PORTE_PAROLE = {"alfred", "sugar"}
+
 
 def cle_persona(bot_name: str):
-    """Cle de pool pour ce bot, ou None s'il n'a pas de repliques a lui."""
+    """Cle de pool pour ce bot, ou None si ce nom n'est pas celui d'un des 6 bots."""
     return _CLE_PAR_BOT.get((bot_name or "").strip().lower())
 
 
+def participe_aux_evenements(bot_name: str) -> bool:
+    """Ce bot dit-il bienvenue / au revoir / bon anniversaire ?"""
+    return cle_persona(bot_name) in _PORTE_PAROLE
+
+
 def _tirer(pools: dict, bot_name: str, gabarit: str, **format_kwargs):
-    """Tire une replique dans le pool du bot. None s'il n'en a pas."""
+    """Tire une replique dans le pool du bot. None s'il ne doit pas parler."""
     cle = cle_persona(bot_name)
+    if cle is not None and cle not in _PORTE_PAROLE:
+        # Silence VOULU : ce bot ne participe pas a ces evenements.
+        logger.debug(f"[EVENEMENTS] {bot_name} ne participe pas aux messages {gabarit}.")
+        return None
+
     messages = pools.get(cle) if cle else None
     if not messages:
         logger.warning(
             f"⚠️ [EVENEMENTS] Aucune replique {gabarit} pour '{bot_name}' — "
-            "il se tait. Ajouter ses repliques plutot que de le laisser "
-            "emprunter la voix d'un autre."
+            "il se tait. Nom inconnu, ou pool manquant pour un porte-parole : "
+            "dans les deux cas c'est un defaut, pas une decision."
         )
         return None
     return random.choice(messages).format(**format_kwargs)
@@ -160,40 +128,12 @@ def get_goodbye_message(bot_name: str, user: discord.Member):
 # MESSAGES D'ANNIVERSAIRE
 
 BIRTHDAY_MESSAGES = {
-    "sheogorath": [
-        "🎂🧀 **JOYEUX ANNIVERSAIRE {user} !** Voici un fromage GÉANT pour toi ! "
-        "Qu'est-ce ? Tu n'aimes pas le fromage ? TOO BAD ! C'EST TON ANNIVERSAIRE, TU MANGES DU FROMAGE !",
-        
-        "🎉 {user} ! C'est ton jour de naissance ! Ou comme je l'appelle : "
-        "le jour où le chaos a reçu un nouveau serviteur ! FÉLICITATIONS !",
-    ],
-    
-    "maiq": [
-        "🎂 M'aiq a entendu une rumeur... {user} serait né(e) aujourd'hui ! "
-        "Si c'est vrai, Khajiit te souhaite un joyeux anniversaire.",
-        
-        "🐱 {user}, certains disent que c'est ton anniversaire. "
-        "M'aiq espère que tu recevras de nombreux cadeaux... et des rumeurs.",
-    ],
-    
     "alfred": [
         "🎂 Joyeux anniversaire, {user}. J'ai préparé un gâteau. "
         "Non, vous ne pouvez pas choisir la saveur. C'est Earl Grey. Comme le thé.",
         
         "🤵 {user}, il semblerait que ce soit votre anniversaire. "
         "*pose une bougie sur un scone* Voilà. Faites un vœu. Rapidement.",
-    ],
-    
-    "malena": [
-        "🎂✨ JOYEUX ANNIVERSAIRE {user} !! Oh la la c'est la fête ma vie ! "
-        "Viens là que je te fasse la bise ! T'as tarpin grandi ooh ! 🎉💅",
-        
-        "🌟 {user} C'EST TON ANNIVERSAIRE CON !! Beng viens, "
-        "chui tarpin contente pour toi ! Que Dieu te bénisse ma vie ! Bénissou bénissou ! ❤️",
-        
-        "🎉 Ay {user} ! Bon anniversaire le sang ! "
-        "J'espère que t'as un gâteau avec des paillettes et du rose dessus ! "
-        "Sinon c'est pas un vrai anniversaire ooh ! 💅✨",
     ],
     "sugar": [
         "Joyeux anniversaire, {user} ! Passe une excellente journée.",
@@ -216,6 +156,10 @@ async def handle_member_join(bot, member: discord.Member, bot_name: str):
     # trace on ne peut pas distinguer « le dé a dit non » de « l'evenement n'est jamais
     # arrive » (le cas de M'aiq et Sheogorath jusqu'au 11/09 : intent manquant).
     logger.info(f"👋 [ARRIVEE] {member} sur '{member.guild.name}' — vu par {bot_name}")
+
+    if not participe_aux_evenements(bot_name):
+        logger.debug(f"[ARRIVEE] {bot_name} ne participe pas aux messages d'accueil.")
+        return
 
     # Chercher le canal de bienvenue ou la taverne des bots
     target_channel = None
