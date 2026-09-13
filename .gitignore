@@ -127,6 +127,7 @@ sheo_faveurs.json
 
 # Rapports générés temporaires
 maintenance_report.md
+/dashboard/reports/
 
 # Twitch chat auth tokens
 twitch_chat_auth_*.json

@@ -33,33 +33,42 @@ _JOURNAL_POSE = False
 
 
 def _poser_journal(conn) -> None:
-    """Choisit le mode de journalisation, une seule fois par processus.
+    """Pose TRUNCATE. **Jamais WAL** — et ce n'est pas negociable ici.
 
-    WAL est le bon mode ici (6 bots ecrivent dans le meme fichier), mais il exige un
-    fichier de memoire partagee `-shm`, que les montages Docker sous Windows ne servent
-    pas toujours : d'ou les « disk I/O error » vus le 2026-08-26. Quand WAL echoue, on
-    ne laisse PAS le mode au hasard — on bascule explicitement sur TRUNCATE, qui n'a
-    besoin d'aucune memoire partagee et reste correct entre processus.
+    Ce fichier est partage entre l'HOTE Windows (le tableau de bord, les sondes, les
+    scripts de `tools/`) et les 6 conteneurs Linux, a travers un bind mount Docker
+    Desktop. WAL exige un fichier de memoire partagee `-shm` mappe en memoire, et les
+    deux mondes ne peuvent pas se le partager : des qu'un processus de l'hote ouvre la
+    base en WAL, les conteneurs recoivent `unable to open database file`.
+
+    Le piege est que WAL **reussit** vu du conteneur : l'ancien code ne basculait sur
+    TRUNCATE que si WAL echouait, donc le repli ne se declenchait jamais. Et comme le
+    mode est une propriete PERSISTANTE du fichier, la panne survit au redemarrage.
+
+    Constate en live le 2026-09-13 : les 6 bots muets sur un salon, `is_maintenance_mode()`
+    levant en tete de `on_message`. TRUNCATE n'a besoin d'aucune memoire partagee et
+    reste correct entre processus ; poser TRUNCATE sort aussi le fichier de WAL, donc
+    ce chemin repare une base deja empoisonnee.
     """
     global _JOURNAL_POSE
     if _JOURNAL_POSE:
         return
     _JOURNAL_POSE = True
     try:
-        mode = conn.execute("PRAGMA journal_mode=WAL;").fetchone()[0]
-        if str(mode).lower() != "wal":
-            raise sqlite3.Error(f"mode obtenu : {mode}")
-        logger.debug("[DB] journalisation WAL active.")
+        mode = conn.execute("PRAGMA journal_mode=TRUNCATE;").fetchone()[0]
+        if str(mode).lower() not in ("truncate", "delete", "persist"):
+            logger.warning(
+                f"⚠️ [DB] mode de journalisation inattendu : {mode}. "
+                "Attendu TRUNCATE (ou un equivalent sans memoire partagee). "
+                "Si c'est WAL, les conteneurs ne pourront plus ouvrir la base."
+            )
+        else:
+            logger.debug(f"[DB] journalisation {mode} active (jamais WAL : base partagee hote/conteneurs).")
     except sqlite3.Error as e:
         logger.warning(
-            f"⚠️ [DB] WAL indisponible ({e}) — repli sur TRUNCATE. "
-            "Attendu sur un montage Docker/Windows : la base reste correcte, "
-            "les ecritures serialisent simplement davantage."
+            f"⚠️ [DB] impossible de poser TRUNCATE ({e}) — la base garde son mode "
+            "actuel. Si c'est WAL, les conteneurs seront ejectes : voir _poser_journal."
         )
-        try:
-            conn.execute("PRAGMA journal_mode=TRUNCATE;")
-        except sqlite3.Error as e2:
-            logger.error(f"❌ [DB] impossible de poser un mode de journalisation : {e2}")
 
 
 def get_connection() -> sqlite3.Connection:

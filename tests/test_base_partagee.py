@@ -32,13 +32,13 @@ class _FauxConnexion:
 
     def execute(self, requete):
         self.pragmas.append(requete)
-        if "journal_mode=WAL" in requete:
+        if "journal_mode=TRUNCATE" in requete:
             if self.wal_echoue:
                 raise sqlite3.Error("disk I/O error")
             if self.wal_silencieux:
                 # SQLite ne leve pas toujours : il rend simplement un autre mode.
-                return _Resultat("delete")
-            return _Resultat("wal")
+                return _Resultat("wal")
+            return _Resultat("truncate")
         return _Resultat("ok")
 
 
@@ -56,27 +56,55 @@ def _remettre_le_drapeau(monkeypatch):
     monkeypatch.setattr(db, "_JOURNAL_POSE", False)
 
 
-def test_wal_est_pose_quand_il_marche():
+def test_wal_n_est_JAMAIS_pose():
+    """WAL est incompatible avec ce fichier : il est partage entre l'hote Windows
+    (dashboard, sondes) et les 6 conteneurs Linux via un bind mount. WAL exige un
+    `-shm` mappe en memoire que les deux mondes ne peuvent pas partager.
+
+    Live du 2026-09-13 : la base etait en WAL, les 6 bots recevaient
+    `unable to open database file` sur `is_maintenance_mode()` et restaient MUETS."""
     conn = _FauxConnexion()
     db._poser_journal(conn)
-    assert any("journal_mode=WAL" in p for p in conn.pragmas)
-    assert not any("TRUNCATE" in p for p in conn.pragmas)
+    assert not any("WAL" in p.upper() for p in conn.pragmas), (
+        f"WAL a ete pose sur une base partagee hote/conteneurs : {conn.pragmas}"
+    )
+    assert any("journal_mode=TRUNCATE" in p for p in conn.pragmas), (
+        "aucun mode sans memoire partagee n'a ete pose"
+    )
 
 
-def test_l_echec_de_wal_bascule_sur_truncate():
-    """Sans ce repli, le mode restait celui du fichier — c'est-à-dire au hasard."""
-    conn = _FauxConnexion(wal_echoue=True)
-    db._poser_journal(conn)
-    assert any("journal_mode=TRUNCATE" in p for p in conn.pragmas), \
-        "aucun mode de repli posé après l'échec de WAL"
+def test_le_mot_WAL_n_apparait_plus_dans_le_code():
+    """Verrou sur le FICHIER, pas sur une reconstitution : tant que le PRAGMA existe
+    quelque part, un chemin peut le rejouer et re-empoisonner la base pour de bon
+    (le mode est une propriete PERSISTANTE du fichier, il survit au redemarrage)."""
+    src = open(os.path.join(_parent_dir, "shared", "shared_database.py"),
+               encoding="utf-8").read()
+    lignes = [
+        ligne for ligne in src.splitlines()
+        if "journal_mode" in ligne and not ligne.strip().startswith("#")
+    ]
+    code = chr(10).join(lignes)
+    assert "journal_mode=WAL" not in code, (
+        "shared_database.py pose encore journal_mode=WAL"
+    )
 
 
-def test_un_wal_refuse_en_silence_bascule_aussi():
-    """SQLite ne lève pas toujours : il rend simplement un autre mode. Se fier à
-    l'absence d'exception laisserait croire que WAL est actif alors qu'il ne l'est pas."""
+def test_un_TRUNCATE_refuse_en_silence_est_signale():
+    """SQLite ne leve pas toujours : il rend simplement un autre mode. Si la base
+    reste en WAL, il faut au moins que ca CRIE — sinon les conteneurs tombent et
+    plus rien n'explique pourquoi."""
     conn = _FauxConnexion(wal_silencieux=True)
-    db._poser_journal(conn)
-    assert any("journal_mode=TRUNCATE" in p for p in conn.pragmas)
+    db._poser_journal(conn)          # ne doit pas lever
+    bloc = open(os.path.join(_parent_dir, "shared", "shared_database.py"),
+                encoding="utf-8").read()
+    bloc = bloc.split("def _poser_journal")[1].split("def get_connection")[0]
+    assert "logger.warning" in bloc, "un mode inattendu doit etre journalise"
+
+
+def test_l_echec_du_pragma_ne_fait_pas_planter():
+    """Une base degradee doit rester utilisable : c'est un bot, pas une banque."""
+    conn = _FauxConnexion(wal_echoue=True)
+    db._poser_journal(conn)          # ne doit lever aucune exception
 
 
 def test_le_mode_n_est_pose_qu_une_fois():
