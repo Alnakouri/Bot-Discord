@@ -1,209 +1,205 @@
-# PLAN — Élargir ce que les bots savent de leur interlocuteur, sans rien inventer
+# PLAN — Rendre une panne de base AUDIBLE, et ne plus dépendre du ramasse-miettes
 
-Rédaction : Claude, le **2026-09-11**. Exécution : **Antigravity**.
-Fait suite à `c3887a9` (mémoire des faits resserrée sur l'auto-attribution, déployée).
+Rédaction : Claude, le **2026-09-13**. Exécution : **Antigravity**.
+Fait suite à `cbe0a06` (WAL interdit sur `bots_database.db`, déployé et vérifié).
 
-**L'idée directrice** : tous les faits ajoutés ici sont **structurels** — calculés à partir
-de données que Discord fournit, jamais extraits par un LLM. Ils ne peuvent donc **pas**
-être hallucinés, et ils sont immunisés par construction contre la boucle d'auto-attribution
-qu'on vient de fermer. Ils ne passent **jamais** par la balise `<fact>`.
-
----
-
-# DEUX VÉRIFICATIONS QUI ONT CHANGÉ L'ORDRE DES LOTS
-
-J'avais classé « le profil Discord » en premier en le croyant gratuit. Vérification faite :
-
-1. **Les réactions marchent déjà.** `Intents.default()` inclut `reactions` : `on_reaction_add`
-   fonctionne sur les 6 bots **sans toucher à un seul intent**. Aucun des six ne l'écoute.
-   C'est donc le lot le moins cher, pas le deuxième.
-2. **Une partie du profil est déjà accessible, l'autre non.** `message.author` est un
-   `Member` livré dans la charge utile du message : **`roles`, `joined_at`, `nick`,
-   `premium_since` sont lisibles aujourd'hui**, sans intent supplémentaire. En revanche
-   **`activities`** (ce qu'il est en train de jouer) exige l'intent privilégié
-   `presences` — **hors périmètre**, voir la fin.
-
-## ⚠️ Et un vrai défaut trouvé en chemin
-
-**`on_member_join` ne s'est JAMAIS déclenché sur M'aiq ni sur Sheogorath.** Les six bots
-déclarent ce gestionnaire, mais seuls Alfred, Johnny, Malena et Sugar posent
-`intents.members = True` :
-
-| Bot | `intents.members` | `on_member_join` |
-|---|---|---|
-| Alfred, Johnny, Malena, Sugar | ✅ | fonctionne |
-| **M'aiq** (`MaiqBot/bot_maiq.py`) | ❌ | **code mort** |
-| **Sheogorath** (`Sheogorath/bot_sheogorath.py:1442`) | ❌ | **code mort** |
-
-C'est le lot 4, et il porte un piège de déploiement décrit là-bas.
+Le correctif WAL a fermé **la cause**. Ce plan ferme **les deux défauts qui ont laissé
+la panne courir deux jours sans que personne ne la voie** — ce sont eux, et non WAL,
+qui expliquent qu'on ait mis 48 h à comprendre que les 6 bots étaient muets.
 
 ---
 
-# LOT 1 — Les réactions : le seul retour honnête sur leurs propres répliques
+## LA PREUVE, relevée le 13/09 avant d'écrire ce plan
 
-**Pourquoi en premier** : zéro configuration, zéro intent, et c'est le seul signal de
-**qualité mesurée** au lieu de déclarée. Aujourd'hui, aucun bot ne sait si une vanne a fait
-rire ou est tombée à plat.
+Les journaux Docker de `bot-maiq` couvrent **du 25/08 au 13/09** (ils survivent au
+redémarrage de Docker Desktop). Sur toute cette période :
 
-## Le travail
+| Motif cherché | Occurrences |
+|---|---|
+| `unable to open database file` | **23** |
+| `[ERROR EVENTS]` (le seul cri du thread écrivain) | **0** |
 
-Ajouter `on_reaction_add` dans les 6 bots. Ne compter **que** les réactions posées sur un
-message **du bot lui-même** (`reaction.message.author.id == bot.user.id`), et ignorer les
-réactions du bot.
+Et la même recherche dans `logs/` sur l'hôte : **0** également.
 
-Stocker dans une nouvelle table de `shared/shared_database.py`, sur le modèle de
-`error_events` :
+Autrement dit : pendant que la base refusait toute écriture, **le composant dont le
+métier est de journaliser les erreurs n'a pas produit une seule ligne**. Les 23 lignes
+visibles venaient toutes d'ailleurs (`[HINT LOOP]`, toutes les 5 min, classées
+« inexpliqué » le 11/09 — c'était le symptôme).
 
-```
-reactions_repliques(id, timestamp, bot_name, message_id, channel_id,
-                    user_id, emoji, retiree)
+---
+
+# LOT 1 — La panne doit CRIER, et continuer de crier
+
+**Fichier : `shared/bot_logger.py`.** Trois défauts distincts, à corriger ensemble.
+
+### 1.1 — Le verrou `_JOURNAL_ERREUR` mute tout, définitivement
+
+```python
+except Exception as e:
+    if not _JOURNAL_ERREUR:
+        logging.getLogger("bot_logger").error(...)
+        _JOURNAL_ERREUR = True      # <- plus jamais un mot
 ```
 
-⚠️ Écrire via la **file + thread écrivain** de `shared/bot_logger.py` ou
-`shared/api_tracking.py` — **pas** de `sqlite3.connect` depuis `on_reaction_add`, qui vit
-dans la boucle asyncio. C'est le montage exact du `disk I/O error` documenté dans
-`api_tracking.py`.
+Le drapeau n'est remis à `False` **que par une écriture réussie**. Quand la base est
+morte, aucune écriture ne réussit : **une seule ligne est émise, pour toute la durée de
+la panne**. C'est exactement l'inverse de ce qu'on attend d'une alarme.
 
-⚠️ `on_reaction_add` ne se déclenche que sur les messages **en cache**. Pour les anciens,
-il faut `on_raw_reaction_add`. **Prendre `on_raw_reaction_add`** : sinon le signal
-disparaît dès que le bot redémarre, et personne ne s'en apercevra.
+**À faire** : remplacer le verrou définitif par une **répétition espacée**. Au plus une
+ligne toutes les 5 minutes, et cette ligne **porte le nombre d'échecs avalés depuis la
+précédente** :
 
-## Ce qu'on en fait — et ce qu'on n'en fait PAS
+> `[ERROR EVENTS] Écriture SQLite en échec depuis 47 min (312 événements perdus) : <erreur>`
 
-- **Ce lot ne change AUCUN prompt.** Il ne fait que **collecter**. On regarde les chiffres
-  d'abord, on décide ensuite.
-- **Ne pas** brancher ça sur le carnet de répartie dans le même lot, même si c'est la
-  suite évidente. Un lot, une chose.
+Garder le compteur et l'horodatage du dernier cri dans des globales du module, à côté
+de `_JOURNAL_ERREUR`. Le but n'est pas de tout journaliser — c'est qu'une panne longue
+laisse une **trace périodique** au lieu d'un unique message noyé deux jours plus tôt.
 
----
+### 1.2 — L'échec d'initialisation tue le thread, et on en relance un par événement
 
-# LOT 2 — Le profil Discord, lisible aujourd'hui
+```python
+except Exception as e:          # connexion / CREATE TABLE impossibles
+    ...
+    return                      # le thread MEURT
+```
 
-## Ce qui est disponible sans toucher aux intents
+`_ensure_thread()` est appelé **à chaque `enregistrer_reaction`** et relance un thread
+dès que le précédent n'est plus vivant. Base morte = **un thread créé, une connexion
+tentée et un abandon silencieux par réaction reçue**.
 
-Depuis `message.author` (un `Member` en salon serveur) :
+**À faire** : poser un **délai de reprise**. Mémoriser l'instant du dernier échec
+d'initialisation ; `_ensure_thread()` ne retente pas avant **60 s**. Et l'échec
+d'initialisation suit la règle 1.1 (répétition espacée), pas le silence.
 
-| Donnée | Ce qu'elle vaut |
-|---|---|
-| `joined_at` | ancienneté sur le serveur — « tu traînes ici depuis deux ans » |
-| `roles` | ses rôles, hors `@everyone` |
-| `nick` vs `name` | s'il se donne un surnom, et lequel |
-| `premium_since` | booster du serveur |
-| `created_at` | ancienneté du **compte** Discord |
+⚠️ Ne PAS supprimer la relance : elle est utile, c'est elle qui fait repartir le
+journal tout seul quand la base redevient saine. C'est sa **fréquence** qui est fautive.
 
-## Le travail
+### 1.3 — Le logger `bot_logger` n'est branché sur rien
 
-Une fonction dans chaque bot — ou mieux, **une seule dans `shared/`, vendorisée** — qui
-rend un bloc court, injecté dans le prompt **à côté** du bloc `[CE QUE TU SAIS SUR …]`,
-jamais dedans. Points d'ancrage du bloc existant, vérifiés :
+`setup_logger` recopie les handlers du bot sur une liste de loggers partagés
+(`smart_router`, `llm_cascade`, …). **`bot_logger` n'y est pas.** Ses messages ne
+partent donc ni dans `logs/<bot>_<date>.log`, ni dans le JSONL que lit le tableau de
+bord : ils ne survivent que par le `lastResort` de `logging`, sur stderr. C'est la
+raison technique du `0` dans le tableau de preuve ci-dessus.
 
-| Bot | Ligne |
-|---|---|
-| Alfred | `bot_alfred.py:200` |
-| Johnny | `bot_johnny.py:930` |
-| M'aiq | `bot_maiq.py:1336` |
-| Sheogorath | `bot_sheogorath.py:2255` |
-| Sugar | `bot_sugar.py:843` |
-| Twitch | `shared/twitch/llm.py:243` |
+**À faire** : ajouter `"bot_logger"` à la liste des `shared_name`.
 
-⚠️ **Le module Twitch n'a pas de `Member` Discord.** Ne pas y câbler ce lot — il a ses
-propres signaux (ancienneté de suivi, abonné, modérateur), qui sont un autre chantier.
+✅ **Vérifié avant d'écrire ceci — pas de boucle** : `ErrorEventHandler.emit` commence
+par `if record.name == __name__ or record.name == "bot_logger": return`. Le handler
+peut donc être recopié sur ce logger sans se rappeler lui-même. Ne pas « améliorer »
+cette garde : c'est elle qui rend le lot possible.
 
-⚠️ **`message.author` est un `User` et non un `Member` en message privé** : `roles` et
-`joined_at` n'existent pas. Garder le bloc vide dans ce cas, sans lever.
+### Verrous attendus (lot 1)
 
-⚠️ **Ne pas stocker ces données.** Elles se relisent à chaque message, elles sont toujours
-à jour, et les écrire en base créerait une copie qui diverge. C'est le défaut de la grille
-des bots du dashboard, corrigé au Lot 1 du portage v2.
+Dans `tests/test_error_events_handler.py` (le fichier existe) :
 
----
+1. **La répétition espacée crie deux fois.** Faux temps (monkeypatch de l'horloge du
+   module), écritures en échec en continu : au moins **2** lignes émises, et la 2e
+   **contient le nombre d'événements perdus**. ⚠️ Le verrou porte sur le comptage réel
+   du module — ne pas retaper la logique de temporisation dans le test
+   (voir le gotcha « un test qui retape la logique s'auto-valide »).
+2. **La reprise est espacée.** N appels d'affilée à `enregistrer_reaction` avec une
+   initialisation qui échoue toujours ⇒ **un seul** thread créé, pas N.
+3. **`bot_logger` est câblé.** Verrou sur le fichier : `"bot_logger"` figure bien dans
+   la liste des `shared_name` de `setup_logger`.
 
-# LOT 3 — Ce qui dort déjà en base
-
-`reputation` (6 lignes) et `quests` (3 lignes) existent, et **ne sont injectés dans aucun
-prompt**. Les accesseurs sont déjà écrits dans `shared/shared_database.py` :
-`get_reputation` (l. 492), `get_reputation_level` (l. 529), `get_daily_quests` (l. 695).
-
-Les ajouter au même bloc que le lot 2 : niveau, points, `riddle_streak`, quêtes du jour
-faites ou non.
-
-⚠️ **Zéro nouveau mécanisme dans ce lot** : que du câblage. Si l'exécution ajoute une
-table, une colonne ou un calcul, c'est qu'elle a dérivé.
-
-⚠️ `shared_database.py` **n'est pas vendorisé** : les bots l'importent dans un
-`try/except ImportError`. Respecter ce montage — un bot déployé sans `shared/` doit
-continuer à tourner, simplement sans ce bloc.
+**Rejouer la mutation sur chacun** : remettre le code fautif, vérifier que le test
+crie. Un verrou qu'on n'a pas vu échouer ne verrouille rien.
 
 ---
 
-# LOT 4 — Le gestionnaire mort de M'aiq et Sheogorath
+# LOT 2 — Aucune connexion ne doit dépendre du ramasse-miettes
 
-Ajouter `intents.members = True` dans `MaiqBot/bot_maiq.py` et
-`Sheogorath/bot_sheogorath.py`, à côté de `intents.message_content` (respectivement vers
-les lignes 363-365 pour Sheo).
+**Fichier : `shared/shared_database.py`.** Sur **42** fonctions qui ouvrent une
+connexion, **40** l'écrivent ainsi :
 
-## ⚠️⚠️ LE PIÈGE — À LIRE AVANT DE TOUCHER À CETTE LIGNE
+```python
+conn = get_connection()
+cursor.execute(...)      # <- si ça lève, la ligne suivante n'est jamais atteinte
+conn.close()
+```
 
-`members` est un **intent privilégié**. Le poser dans le code **sans l'avoir activé dans le
-Discord Developer Portal** pour cette application fait **échouer la connexion au
-démarrage** (`PrivilegedIntentsRequired`) : **le bot ne démarre plus du tout.**
+Il n'y a **ni `try/finally` ni `with`**. La fermeture n'a lieu que sur le chemin
+heureux ; sur le chemin d'erreur elle ne tient qu'au comptage de références de CPython,
+c'est-à-dire à un détail d'implémentation et au moment où la trace d'exception est
+libérée.
 
-Donc :
-1. **C'est l'utilisateur qui doit d'abord cocher « SERVER MEMBERS INTENT »** dans le portail
-   Discord, pour l'application de M'aiq **et** celle de Sheogorath.
-2. **Ne pas livrer ce lot avant d'avoir sa confirmation.** Le livrer en avance, c'est
-   casser deux bots au prochain redémarrage.
-3. **Le signaler dans le rapport de livraison** même si le reste est fait.
+Ce n'est pas théorique : `is_maintenance_mode()` → `get_config()` est dans cette liste,
+et c'est **la première chose qu'appelle `on_message`** sur les 6 bots. Pendant la panne,
+chaque message reçu passait par ce chemin d'erreur. La mesure du 13/09 — **15** handles
+ouverts sur `bots_database.db` pour M'aiq contre **2** pour les cinq autres — est
+cohérente avec ce défaut, **sans que le chemin de rétention soit prouvé** : M'aiq est le
+seul à appeler `shared_database` sur une boucle de 5 min (`riddle_passive_hint_loop`),
+donc le seul à emprunter ce chemin même sans trafic.
+
+**À faire** : un gestionnaire de contexte unique dans le module, et les 40 fonctions
+passent dessus.
+
+```python
+@contextmanager
+def connexion():
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+```
+
+⚠️ **Refactor mécanique, 40 fois. Aucune requête SQL ne change, aucun `commit()` ne se
+déplace.** Si une fonction fait autre chose que ce qui est décrit ici, la laisser en
+l'état et le signaler plutôt que de l'adapter.
+
+Les 40 fonctions, relevées par `ast` le 13/09 : `init_database`,
+`add_riddle_participant`, `add_riddle_winner`, `get_or_create_user`,
+`has_user_interacted`, `get_user_interactions`, `log_interaction`, `get_reputation`,
+`add_reputation`, `add_riddle_streak`, `reset_riddle_streak`, `get_riddle_streak`,
+`get_reputation_leaderboard`, `set_birthday`, `get_todays_birthdays`,
+`get_daily_quests`, `create_daily_quests`, `complete_quest`, `get_config`, `set_config`,
+`log_event`, `get_recent_logs`, `log_bot_interaction`, `get_bot_interaction_stats`,
+`log_error_event`, `get_error_events`, `get_reactions_repliques`,
+`get_conversation_stats`, `set_active_riddle`, `get_active_riddle`,
+`get_all_active_riddles`, `delete_active_riddle`, `is_riddle_duplicate`,
+`add_to_riddle_history`, `get_game_cooldown`, `set_game_cooldown`,
+`get_game_daily_points`, `add_game_daily_points`, `get_game_pvp_cooldown`,
+`set_game_pvp_cooldown`.
+
+### Verrous attendus (lot 2)
+
+1. **Mesure AVANT/APRÈS, dans le conteneur** — c'est elle qui décide si le défaut est
+   réellement celui qu'on croit :
+   `docker exec bot-maiq sh -c 'for f in /proc/[0-9]*/fd/*; do readlink "$f"; done | grep -c bots_database.db'`
+   Relever le chiffre **avant** le correctif et **24 h après** déploiement. Il vaut 1
+   par bot sur une instance fraîche (mesuré le 13/09 à 16 min d'uptime) : la fuite ne se
+   voit qu'avec de la durée.
+2. **Verrou AST**, dans `tests/test_base_partagee.py` : *aucune* fonction de
+   `shared_database.py` n'appelle `get_connection()` sans que la fermeture soit
+   couverte par un `finally` ou un `with`. **Jamais une regex** (voir le gotcha
+   « des appels fournisseur HORS cascade »).
+3. **Un test de fuite qui reproduit le chemin d'erreur** : une base rendue illisible, la
+   fonction appelée, et on vérifie que la connexion est fermée. Sans le correctif, il
+   échoue.
 
 ---
 
-# RECETTE
+## Ce qu'il ne faut PAS faire
 
-1. `pyflakes` sur les bots touchés, `shared/`, `tests/` — **avant** `pytest`.
-2. `pytest` **seul**. Référence : **913 tests, 0 échec**.
-3. `python tools/vendor_core.py` **si et seulement si** le lot 2 crée un module dans
-   `shared/` destiné aux bots — et dans ce cas **l'ajouter aux DEUX listes**
-   (`tools/vendor_core.py` et `tools/sonde_core_drift.py`), puis
-   `python tools/sonde_core_drift.py`.
-4. Les mutations rejouées, chacune vérifiée rouge.
-5. **Ne pas déployer le lot 4** sans la confirmation du portail.
+- **Ne pas toucher aux `except: pass` de `_empiler` et de `ErrorEventHandler.emit`.**
+  Ils sont **voulus** et commentés : un journal ne doit jamais faire tomber `on_message`,
+  et la file est bornée exprès. Le lot 1 rend audible le thread **écrivain**, pas les
+  producteurs (voir « un défaut peut être une fonctionnalité »).
+- **Ne pas reposer WAL**, sous aucun prétexte, ni ici ni dans une copie vendorisée.
+  Deux tests l'interdisent déjà.
+- **Ne pas fusionner les deux lots en un commit.** Ils portent sur deux fichiers et deux
+  défauts sans rapport ; le lot 2 est un refactor de 40 fonctions qu'on doit pouvoir
+  relire seul.
 
-## Verrous attendus
+## Déploiement
 
-- Le bloc de profil est **absent** quand `message.author` est un `User` (message privé) —
-  *mutation : le construire quand même → rouge*.
-- Les 6 bots écoutent `on_raw_reaction_add` — *mutation : le retirer d'UN SEUL → rouge*
-  ([[gotcha-un-bot-sur-six-manque-toujours]]).
-- Une réaction sur le message **d'un autre** n'est pas comptée — *mutation : retirer le
-  test d'auteur → rouge*.
-- Le profil structurel **ne passe pas** par `<fact>` — *mutation : l'y faire passer →
-  rouge*.
-
----
-
-# LES RÈGLES
-
-1. **Aucun de ces faits ne passe par le LLM.** Ils sont calculés, jamais extraits. C'est
-   toute leur valeur.
-2. **Le lot 1 ne modifie aucun prompt** — il collecte, on décide après.
-3. **Ne pas toucher à la consigne `<fact>`** : elle vient d'être resserrée et déployée.
-4. **Éditer les fichiers directement**, pas de script jetable
-   ([[gotcha-script-jetable-dit-success]]).
-5. **Ne pas commiter, ne pas pousser.** La relecture commite.
-6. **Livrer lot par lot, en s'arrêtant entre chaque.**
-7. **Rendre compte de ce qui n'a pas été fait**, nommément.
-
----
-
-# HORS PÉRIMÈTRE, ET POURQUOI
-
-- **`member.activities`** (ce qu'il joue en ce moment) : exige l'intent privilégié
-  `presences` sur les 6 applications, plus une case à cocher par bot dans le portail. Gros
-  coût de configuration manuelle pour un signal volatil. À rouvrir si le reste plaît.
-- **La mémoire inter-bots** (M'aiq sait que tu compares Sheo à de la nourriture, Sheo
-  l'ignore) : c'est le plus puissant, et le seul qui demande une **décision
-  d'architecture** — il heurte [[bots-independants]]. Voir
-  [[idee-memoire-partagee-discord-twitch]], jamais démarrée. À arbitrer séparément.
-- **Le 2ᵉ échelon de Sheogorath** : à 3300 tokens de prompt contre 8000 tokens/minute chez
-  Groq, il tombe sur `ministral-14b` une réponse sur deux ou trois. Rien de ce plan n'y
-  change quoi que ce soit.
+- `shared/bot_logger.py` est **vendorisé** : après correction, relancer
+  `python tools/vendor_core.py`, puis `python tools/sonde_core_drift.py` — les 6 copies
+  `*/core/bot_logger.py` doivent être identiques, et les deux listes de vendoring aussi.
+- `shared/shared_database.py` n'est **pas** vendorisé : il est bind-monté, un
+  `docker restart` suffit.
+- **Vérifier DANS le conteneur**, jamais depuis l'hôte, et borner tout `docker logs`
+  avec `--since <ISO>Z` (sans le `Z`, le filtre est lu en heure locale et ne filtre rien).
+- Compter **6 bots**, pas 5.
