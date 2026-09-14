@@ -12,6 +12,7 @@ import json
 import queue
 import sqlite3
 import threading
+import time
 import traceback
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
@@ -48,14 +49,88 @@ _ECRIVAIN_HS = object()
 _queue = queue.Queue(maxsize=1000)
 _writer_thread = None
 _writer_lock = threading.Lock()
-_JOURNAL_ERREUR = False
+
+# --- Alarme de panne du journal --------------------------------------------
+# Une panne de base ne doit pas produire UNE ligne au tout debut puis plus rien :
+# c'est exactement ce qui a laisse les 6 bots muets deux jours (11-13/09) sans
+# que `[ERROR EVENTS]` apparaisse une seule fois. On crie donc de facon ESPACEE,
+# et chaque cri porte le nombre d'evenements avales depuis le precedent.
+_INTERVALLE_CRI = 300.0    # au plus une ligne toutes les 5 min
+_DELAI_REPRISE = 60.0      # base morte : on ne retente pas un thread avant 60 s
+
+_JOURNAL_ERREUR = False       # une panne est-elle en cours ?
+_DEBUT_PANNE = None           # instant du premier echec de la panne en cours
+_DERNIER_CRI = None           # instant du dernier cri emis
+_ECHECS_AVALES = 0            # echecs encaisses depuis ce dernier cri
+_DERNIER_ECHEC_INIT = None    # instant du dernier echec d'initialisation
+
+def _maintenant():
+    """Horloge du module. Indirection VOULUE : les tests la remplacent pour
+    verifier la temporisation sans dormir."""
+    return time.monotonic()
+
+def _duree_lisible(secondes):
+    minutes = int(secondes // 60)
+    if minutes < 1:
+        return f"{int(secondes)} s"
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60} h {minutes % 60:02d} min"
+
+def _crier_panne(quoi, erreur):
+    """Journalise l'echec au plus une fois toutes les `_INTERVALLE_CRI` secondes,
+    en portant la duree de la panne et le nombre d'evenements perdus depuis le
+    cri precedent.
+
+    N'est appele QUE depuis le thread ecrivain, et il n'y en a qu'un a la fois
+    (`_writer_lock` dans `_ensure_thread`) : pas de verrou supplementaire ici.
+    """
+    global _JOURNAL_ERREUR, _DEBUT_PANNE, _DERNIER_CRI, _ECHECS_AVALES
+
+    maintenant = _maintenant()
+    if not _JOURNAL_ERREUR:
+        _JOURNAL_ERREUR = True
+        _DEBUT_PANNE = maintenant
+        _DERNIER_CRI = None
+        _ECHECS_AVALES = 0
+
+    _ECHECS_AVALES += 1
+    if _DERNIER_CRI is not None and (maintenant - _DERNIER_CRI) < _INTERVALLE_CRI:
+        return
+
+    perdus = _ECHECS_AVALES
+    accord = "s" if perdus > 1 else ""
+    logging.getLogger("bot_logger").error(
+        f"[ERROR EVENTS] {quoi} en échec depuis "
+        f"{_duree_lisible(maintenant - _DEBUT_PANNE)} "
+        f"({perdus} événement{accord} perdu{accord}) : {erreur}"
+    )
+    _DERNIER_CRI = maintenant
+    _ECHECS_AVALES = 0
+
+def _fin_de_panne():
+    """Une ecriture a reussi : la panne est close, le prochain echec criera
+    immediatement au lieu d'attendre la fin de l'intervalle en cours."""
+    global _JOURNAL_ERREUR, _DEBUT_PANNE, _DERNIER_CRI, _ECHECS_AVALES
+    _JOURNAL_ERREUR = False
+    _DEBUT_PANNE = None
+    _DERNIER_CRI = None
+    _ECHECS_AVALES = 0
 
 def _ensure_thread():
     global _writer_thread
     with _writer_lock:
-        if _writer_thread is None or not _writer_thread.is_alive():
-            _writer_thread = threading.Thread(target=_writer_loop, daemon=True, name="ErrorEventWriter")
-            _writer_thread.start()
+        if _writer_thread is not None and _writer_thread.is_alive():
+            return
+        # ⚠️ Ne PAS supprimer la relance : c'est elle qui fait repartir le
+        # journal tout seul quand la base redevient saine. C'est sa FREQUENCE qui
+        # etait fautive — une base morte donnait un thread cree, une connexion
+        # tentee et un abandon silencieux PAR reaction recue.
+        if (_DERNIER_ECHEC_INIT is not None
+                and (_maintenant() - _DERNIER_ECHEC_INIT) < _DELAI_REPRISE):
+            return
+        _writer_thread = threading.Thread(target=_writer_loop, daemon=True, name="ErrorEventWriter")
+        _writer_thread.start()
 
 def _empiler(item):
     try:
@@ -68,7 +143,7 @@ def _empiler(item):
         pass
 
 def _writer_loop():
-    global _JOURNAL_ERREUR
+    global _DERNIER_ECHEC_INIT
     
     data_dir = os.getenv("DATA_DIR", str(Path(__file__).parent.parent / "data"))
     db_path = os.path.join(data_dir, "bots_database.db")
@@ -116,11 +191,12 @@ def _writer_loop():
             )
         """)
         conn.commit()
+        _DERNIER_ECHEC_INIT = None
     except Exception as e:
-        if not _JOURNAL_ERREUR:
-            import logging
-            logging.getLogger("bot_logger").error(f"[ERROR EVENTS] Erreur d'initialisation SQLite: {e}")
-            _JOURNAL_ERREUR = True
+        # Le thread meurt ici — c'est voulu — mais `_ensure_thread` ne doit pas en
+        # relancer un par evenement recu tant que la base est morte.
+        _DERNIER_ECHEC_INIT = _maintenant()
+        _crier_panne("Initialisation SQLite", e)
         if conn:
             conn.close()
         return
@@ -155,15 +231,13 @@ def _writer_loop():
                         item["severity"], 0, 0
                     ))
                 conn.commit()
-                _JOURNAL_ERREUR = False
+                if _JOURNAL_ERREUR:
+                    _fin_de_panne()
             finally:
                 _queue.task_done()
         except Exception as e:
-            if not _JOURNAL_ERREUR:
-                import logging
-                logging.getLogger("bot_logger").error(f"[ERROR EVENTS] Erreur d'écriture SQLite: {e}")
-                _JOURNAL_ERREUR = True
-            
+            _crier_panne("Écriture SQLite", e)
+
             if conn:
                 try:
                     conn.rollback()
@@ -332,7 +406,8 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
         for shared_name in ("smart_router", "llm_cascade", "media_handler",
                             "safe_client", "discord_status", "discord_profile",
                             "api_manager", "api_tracking", "anti_tic",
-                            "repartee_lessons", "boucles", "server_events"):
+                            "repartee_lessons", "boucles", "server_events",
+                            "bot_logger"):
             shared_logger = logging.getLogger(shared_name)
             shared_logger.setLevel(logging.INFO)
             if not shared_logger.handlers:
@@ -349,7 +424,7 @@ def setup_logger(bot_name: str, log_dir: str = "logs"):
 # logger.error("Erreur")
 
 def reinitialiser_pour_tests():
-    global _writer_thread, _JOURNAL_ERREUR
+    global _writer_thread, _DERNIER_ECHEC_INIT
     while not _queue.empty():
         try:
             _queue.get_nowait()
@@ -361,5 +436,6 @@ def reinitialiser_pour_tests():
         _empiler(_ECRIVAIN_HS)
         _writer_thread.join(timeout=5.0)
     
-    _JOURNAL_ERREUR = False
+    _fin_de_panne()
+    _DERNIER_ECHEC_INIT = None
     _writer_thread = None
