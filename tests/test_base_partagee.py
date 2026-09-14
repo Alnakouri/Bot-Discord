@@ -170,45 +170,81 @@ def test_l_avertissement_passe_par_le_logger():
 # ---------------------------------------------------------------------------
 
 def test_ast_aucune_connexion_sans_finally_ni_with():
-    """Verrou AST (lot 2) : aucune fonction de shared_database.py n'appelle
-    get_connection() sans que la fermeture soit couverte par un finally ou un with.
-    Jamais de fermeture reposant uniquement sur le ramasse-miettes de CPython."""
+    """Verrou AST (lot 2) : aucune connexion ne repose sur le ramasse-miettes.
+
+    L'invariant porte sur le NOM : un appel direct a `get_connection()` n'est
+    tolere que si la connexion qu'il rend est affectee a un nom, et que ce nom
+    precis est ferme dans un `finally`. Tout le reste doit passer par
+    `with connexion() as conn:`, qui ne l'appelle pas directement.
+
+    ⚠️ La premiere version de ce verrou se contentait de « la fonction contient
+    un `with` quelque part » : un `with open(...)` sans aucun rapport suffisait a
+    la faire taire sur une connexion nue. Mutation rejouee, elle est muette.
+    """
     import ast
 
     fichier = os.path.join(_parent_dir, "shared", "shared_database.py")
     with open(fichier, "r", encoding="utf-8") as f:
         arbre = ast.parse(f.read(), filename=fichier)
 
-    noms_fonctions = {n.name: n for n in arbre.body if isinstance(n, ast.FunctionDef)}
-    assert "connexion" in noms_fonctions, "connexion() doit être défini dans shared_database.py"
+    fonctions = [n for n in ast.walk(arbre)
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    noms = {n.name for n in fonctions}
+    assert "connexion" in noms, "connexion() doit etre defini dans shared_database.py"
+
+    def fermes_dans_un_finally(fn):
+        """Noms N tels qu'un `finally` de la fonction contient `N.close()`."""
+        fermes = set()
+        for t in ast.walk(fn):
+            if not isinstance(t, ast.Try):
+                continue
+            for stmt in t.finalbody:
+                for sub in ast.walk(stmt):
+                    if (isinstance(sub, ast.Call)
+                            and isinstance(sub.func, ast.Attribute)
+                            and sub.func.attr == "close"
+                            and isinstance(sub.func.value, ast.Name)):
+                        fermes.add(sub.func.value.id)
+        return fermes
 
     violations = []
-    for fn in noms_fonctions.values():
+    directes = []
+    for fn in fonctions:
         if fn.name == "get_connection":
             continue
 
-        appels_gc = [
-            node for node in ast.walk(fn)
-            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "get_connection"
-        ]
-        if not appels_gc:
+        # Les appels `get_connection()` affectes a un nom, et ce nom.
+        affectes = {}
+        for node in ast.walk(fn):
+            if (isinstance(node, ast.Assign)
+                    and isinstance(node.value, ast.Call)
+                    and getattr(node.value.func, "id", None) == "get_connection"):
+                for cible in node.targets:
+                    if isinstance(cible, ast.Name):
+                        affectes[id(node.value)] = cible.id
+
+        appels = [n for n in ast.walk(fn)
+                  if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "get_connection"]
+        if not appels:
             continue
+        directes.append(fn.name)
 
-        a_try_finally_close = False
-        for try_node in [n for n in ast.walk(fn) if isinstance(n, ast.Try)]:
-            for stmt in try_node.finalbody:
-                for sub in ast.walk(stmt):
-                    if isinstance(sub, ast.Call) and getattr(sub.func, "attr", None) == "close":
-                        a_try_finally_close = True
-                        break
-
-        a_with = any(isinstance(n, ast.With) for n in ast.walk(fn))
-
-        if not (a_try_finally_close or a_with):
-            violations.append(fn.name)
+        fermes = fermes_dans_un_finally(fn)
+        for appel in appels:
+            nom = affectes.get(id(appel))
+            if nom is None:
+                violations.append(f"{fn.name} (connexion non affectee a un nom)")
+            elif nom not in fermes:
+                violations.append(f"{fn.name} (`{nom}` jamais ferme dans un finally)")
 
     assert not violations, (
-        f"Fonctions appelant get_connection() sans couverture try/finally ou with: {violations}"
+        "Connexions dont la fermeture depend du ramasse-miettes : "
+        + ", ".join(violations)
+    )
+    # Le reste du module doit passer par `with connexion()`. Si cette liste
+    # s'allonge, c'est une decision, pas un oubli : elle doit se voir ici.
+    assert set(directes) == {"connexion", "marquer_utilisateur_bot"}, (
+        f"appels directs a get_connection() : {sorted(directes)}"
     )
 
 
