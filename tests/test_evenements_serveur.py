@@ -244,3 +244,36 @@ def test_les_repliques_de_sugar_restent_breves():
         if cle == "sugar" and len(message.split()) > 30
     ]
     assert not trop_longues, "Sugar depasse ses 30 mots : " + " | ".join(trop_longues)
+
+def test_aucun_bot_n_envoie_lui_meme_dans_les_evenements_serveur():
+    """Un `.send()` EN DUR dans `on_member_join` / `on_member_remove` court-circuite
+    tout le module partage : `_PORTE_PAROLE`, le tirage, la recherche du salon
+    d'accueil, et la journalisation.
+
+    Ce n'est pas theorique. Le 14/09, une arrivee REELLE l'a exhume : Johnny — qui
+    n'est pas porte-parole et n'a plus aucun pool depuis 13a5f6b — a accueilli
+    l'arrivant a 100 %, dans `guild.system_channel`, et **sans laisser une seule
+    ligne de journal**. Ses 5 voisins etaient propres : un bot sur six, mais cette
+    fois-ci un de TROP ([[gotcha-un-bot-sur-six-manque-toujours]]).
+
+    Le verrou porte sur les fichiers REELS des 6 bots, par `ast` : l'appel au
+    gestionnaire partage est une fonction, un envoi direct est un `.send(...)`.
+    """
+    violations = []
+    for bot, chemin in _FICHIERS_BOTS.items():
+        src = open(os.path.join(_parent_dir, chemin), encoding="utf-8").read()
+        for node in ast.walk(ast.parse(src)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name not in ("on_member_join", "on_member_remove"):
+                continue
+            for sous in ast.walk(node):
+                if (isinstance(sous, ast.Call)
+                        and isinstance(sous.func, ast.Attribute)
+                        and sous.func.attr == "send"):
+                    violations.append(f"{bot} → {node.name} (ligne {sous.lineno})")
+
+    assert not violations, (
+        "Envoi en dur dans un evenement serveur — il echappe a _PORTE_PAROLE, au "
+        "tirage et au journal : " + ", ".join(violations)
+    )

@@ -635,11 +635,6 @@ async def on_member_join(member):
     """Accueil de Johnny"""
     if DATABASE_AVAILABLE:
         await handle_member_join(bot, member, bot_name="Johnny")
-        # Message personnalisé
-        if member.guild.system_channel:
-            await member.guild.system_channel.send(
-                f"Bienvenue à Night City, {member.mention}. Essaie de pas finir en cyberpsycho avant vendredi. 🚬"
-            )
 
 @bot.event
 async def on_member_remove(member):
