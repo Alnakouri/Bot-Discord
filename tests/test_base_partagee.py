@@ -163,3 +163,86 @@ def test_l_avertissement_passe_par_le_logger():
     bloc = src.split("def _poser_journal")[1].split("def get_connection")[0]
     assert "logger.warning" in bloc
     assert "print(" not in bloc
+
+
+# ---------------------------------------------------------------------------
+# LOT 2 — Aucune connexion ne doit dépendre du ramasse-miettes
+# ---------------------------------------------------------------------------
+
+def test_ast_aucune_connexion_sans_finally_ni_with():
+    """Verrou AST (lot 2) : aucune fonction de shared_database.py n'appelle
+    get_connection() sans que la fermeture soit couverte par un finally ou un with.
+    Jamais de fermeture reposant uniquement sur le ramasse-miettes de CPython."""
+    import ast
+
+    fichier = os.path.join(_parent_dir, "shared", "shared_database.py")
+    with open(fichier, "r", encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=fichier)
+
+    noms_fonctions = {n.name: n for n in arbre.body if isinstance(n, ast.FunctionDef)}
+    assert "connexion" in noms_fonctions, "connexion() doit être défini dans shared_database.py"
+
+    violations = []
+    for fn in noms_fonctions.values():
+        if fn.name == "get_connection":
+            continue
+
+        appels_gc = [
+            node for node in ast.walk(fn)
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "get_connection"
+        ]
+        if not appels_gc:
+            continue
+
+        a_try_finally_close = False
+        for try_node in [n for n in ast.walk(fn) if isinstance(n, ast.Try)]:
+            for stmt in try_node.finalbody:
+                for sub in ast.walk(stmt):
+                    if isinstance(sub, ast.Call) and getattr(sub.func, "attr", None) == "close":
+                        a_try_finally_close = True
+                        break
+
+        a_with = any(isinstance(n, ast.With) for n in ast.walk(fn))
+
+        if not (a_try_finally_close or a_with):
+            violations.append(fn.name)
+
+    assert not violations, (
+        f"Fonctions appelant get_connection() sans couverture try/finally ou with: {violations}"
+    )
+
+
+def test_fuite_fermeture_garantie_sur_chemin_d_erreur(tmp_path, monkeypatch):
+    """Verrou fuite (lot 2) : sur un chemin d'erreur (base corrompue/illisible),
+    la connexion DOIT être fermée. Sans le gestionnaire de contexte connexion(),
+    la connexion fuit."""
+    fausse_db = tmp_path / "corrompue.db"
+    fausse_db.write_bytes(b"contenu non sqlite corrompu")
+
+    monkeypatch.setattr(db, "DB_PATH", fausse_db)
+
+    connexions_ouvertes = []
+    orig_connect = sqlite3.connect
+
+    def spy_connect(*args, **kwargs):
+        c = orig_connect(*args, **kwargs)
+        connexions_ouvertes.append(c)
+        return c
+
+    monkeypatch.setattr(sqlite3, "connect", spy_connect)
+
+    # get_config est la première fonction appelée par on_message (via is_maintenance_mode)
+    with pytest.raises(sqlite3.DatabaseError):
+        db.get_config("maintenance_mode")
+
+    assert len(connexions_ouvertes) == 1, "Une connexion aurait dû être tentée"
+    conn = connexions_ouvertes[0]
+
+    connexion_fermee = False
+    try:
+        conn.cursor()
+    except sqlite3.ProgrammingError:
+        connexion_fermee = True
+
+    assert connexion_fermee, "Fuite de connexion : la connexion n'a pas été fermée lors de l'erreur"
+
