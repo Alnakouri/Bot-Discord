@@ -97,7 +97,16 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
             groq_client=groq_client,
             bot_label=bot_label,
             temperature=0.8,
-            max_tokens=300
+            max_tokens=300,
+            # ⚠️ La borne par défaut de la cascade (`_BORNE_TEXTE`, 15 s) est calibrée
+            # pour un bot EN DIRECT : au-delà, l'utilisateur voit un silence, donc mieux
+            # vaut basculer d'échelon. Ici personne n'attend devant un écran, et la borne
+            # se retourne contre nous : un 429 Groq est absorbé par le SDK qui DORT ~36 s
+            # ([[gotcha-429-groq-dort-en-silence]]), et 15 s transforment cette attente
+            # légitime en `TimeoutError`. Mesuré le 2026-09-16 : 14 appels Groq d'affilée
+            # perdus ainsi, 0 réponse obtenue, alors que l'hôte joignait l'API en 0,3 s.
+            # Un lot patient mesure les bots ; un lot pressé ne mesure que sa propre borne.
+            call_timeout=90.0,
         )
         
         if response is None:

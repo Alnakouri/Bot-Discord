@@ -50,9 +50,18 @@ async def evaluate_response(
 ) -> dict:
     """
     Appelle un juge LLM pour évaluer les réponses du bot selon 5 critères.
-    Tente Gemini en premier, puis bascule sur Groq, Mistral et OpenRouter
-    en cas d'erreur ou de rate limit.
-    Retourne le dictionnaire d'évaluation avec des notes ou des valeurs -1 en cas d'échec total.
+    Tente Gemini en premier, puis bascule sur Groq puis Mistral en cas d'erreur ou de
+    rate limit. Retourne le dictionnaire d'évaluation, ou des valeurs -1 en cas d'échec
+    total — c'est ce -1 que le bloc de santé de `run_eval` compte pour déclarer un bot
+    NON FIABLE, plutôt que de le noter à tort.
+
+    ⚠️ Cette docstring annonçait un quatrième échelon, OpenRouter, qui n'existe nulle
+    part dans le code (constat du 2026-09-16). Même forme que
+    [[gotcha-repartee-cascade-fantome]] : un échelon décrit, jamais appelé, et on
+    surestime la robustesse du juge. Il n'a PAS été ajouté, et ce n'est pas un oubli —
+    le free tier d'OpenRouter avait rendu 12 échecs sur 12 à la mesure de
+    [[plan-cascade-par-persona]]. Trois fournisseurs distincts, c'est la robustesse
+    réelle.
     """
     
     prompt = f"""Tu es un juge d'évaluation de persona pour des bots Discord animés par des LLM.

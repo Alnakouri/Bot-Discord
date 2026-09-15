@@ -206,3 +206,43 @@ def test_mesure_deterministe_alfred_maitre():
     res_sans_maitre = evaluate_deterministic("alfred_maitre", "alfred", ["Bonjour, que puis-je faire ?"], [])
     assert res_sans_maitre["maitre_present"] is False
     assert res_sans_maitre["succes"] is False
+
+
+def test_le_runner_est_PATIENT_la_borne_du_direct_ne_doit_pas_s_appliquer():
+    """La cascade borne un appel a 15 s (`_BORNE_TEXTE`) parce qu'un bot EN DIRECT qui
+    se tait 15 s est pire qu'un bot qui change d'echelon. En LOT, personne n'attend : la
+    meme borne transforme une attente legitime en echec.
+
+    Mesure du 2026-09-16, avant correctif : **14 appels Groq d'affilee** perdus en
+    `TimeoutError`, 0 reponse obtenue, alors que l'hote joignait l'API en 0,3 s. La cause
+    n'etait ni le reseau ni le quota, mais le SDK Groq qui absorbe un 429 en DORMANT ~36 s
+    ([[gotcha-429-groq-dort-en-silence]]) — sommeil que 15 s coupaient net.
+
+    Le verrou vise le NOM du parametre dans l'appel reel, releve par `ast` : un
+    `call_timeout` absent fait silencieusement retomber le harnais sur la borne du direct,
+    et le run redevient inexploitable sans que rien ne le dise.
+    """
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "runner.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read())
+
+    bornes = []
+    for node in ast.walk(arbre):
+        if not isinstance(node, ast.Call):
+            continue
+        nom = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if nom != "generate_response":
+            continue
+        for kw in node.keywords:
+            if kw.arg == "call_timeout" and isinstance(kw.value, ast.Constant):
+                bornes.append(kw.value.value)
+
+    assert bornes, (
+        "l'appel a generate_response du harnais ne passe aucun `call_timeout` : il herite "
+        "de la borne du DIRECT (15 s) et le run se perd en TimeoutError"
+    )
+    assert all(isinstance(b, (int, float)) and b >= 60 for b in bornes), (
+        f"borne trop courte pour un lot : {bornes} — un 429 Groq endort le SDK ~36 s, "
+        "et la cascade peut enchainer plusieurs echelons avant de rendre la main"
+    )
