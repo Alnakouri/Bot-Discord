@@ -89,6 +89,12 @@ _CLE_PAR_BOT = {
 # `_CLE_PAR_BOT`, et on perdrait le cri qui rattrape une faute de nom.
 _PORTE_PAROLE = {"alfred", "sugar"}
 
+# Seuils de tirage au sort (probabilité d'envoi si le bot participe).
+# Seuls les porte-parole peuvent figurer dans ces tables (décision du 2026-09-13).
+SEUILS_BIENVENUE = {"alfred": 0.2, "sugar": 0.3}
+SEUILS_DEPART = {"alfred": 0.2, "sugar": 0.2}
+SEUILS_ANNIVERSAIRE = {"alfred": 0.2, "sugar": 0.2}
+
 
 def cle_persona(bot_name: str):
     """Cle de pool pour ce bot, ou None si ce nom n'est pas celui d'un des 6 bots."""
@@ -185,9 +191,7 @@ async def handle_member_join(bot, member: discord.Member, bot_name: str):
         return
 
     # Probabilité de message (pour éviter le spam si plusieurs bots)
-    # Sheogorath: 30%, M'aiq: 20%, Alfred: 20%, Sugar Bot: 30%
-    probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "sugar": 0.3}
-    seuil = probs.get(cle_persona(bot_name), 0.3)
+    seuil = SEUILS_BIENVENUE.get(cle_persona(bot_name), 0.2)
     if random.random() >= seuil:
         logger.info(f"[ARRIVEE] {bot_name} se tait (tirage, seuil {seuil:.0%}).")
         return
@@ -201,34 +205,56 @@ async def handle_member_join(bot, member: discord.Member, bot_name: str):
 
 async def handle_member_remove(bot, member: discord.Member, bot_name: str):
     """Gère le départ d'un membre (seulement s'il a interagi)."""
+    logger.info(f"👋 [DEPART] {member} a quitté '{member.guild.name}' — vu par {bot_name}")
+
+    if not participe_aux_evenements(bot_name):
+        logger.debug(f"[DEPART] {bot_name} ne participe pas aux messages de départ.")
+        return
+
     # Vérifier si le membre a interagi avec les bots
     if not has_user_interacted(member.id):
-        return  # Ne rien dire si l'utilisateur n'a jamais interagi
-    
+        logger.debug(f"[DEPART] {member} n'a jamais interagi — aucun message.")
+        return
+
     # Chercher le canal
     target_channel = None
     for channel in member.guild.text_channels:
         if "taverne" in channel.name.lower() and "bot" in channel.name.lower():
             target_channel = channel
             break
-    
-    if target_channel:
-        # Probabilité plus faible pour les départs
-        if random.random() < 0.2:  # 20% de chance
-            message = get_goodbye_message(bot_name, member)
-            if not message:
-                return      # pool absent : deja journalise par _tirer, et on se TAIT
-            await target_channel.send(message)
-            log_event(bot_name, "INFO", f"Message de départ pour {member.name}")
+
+    if not target_channel:
+        logger.info(
+            f"[DEPART] Aucun salon trouvé sur '{member.guild.name}' "
+            "(cherche : « taverne »+« bot ») — rien d'envoyé."
+        )
+        return
+
+    seuil = SEUILS_DEPART.get(cle_persona(bot_name), 0.2)
+    if random.random() >= seuil:
+        logger.info(f"[DEPART] {bot_name} se tait (tirage, seuil {seuil:.0%}).")
+        return
+
+    message = get_goodbye_message(bot_name, member)
+    if not message:
+        return      # pool absent : deja journalise par _tirer, et on se TAIT
+    await target_channel.send(message)
+    log_event(bot_name, "INFO", f"Message de départ pour {member.name}")
 
 
 async def check_and_send_birthdays(bot, bot_name: str):
     """Vérifie et envoie les messages d'anniversaire."""
     birthday_user_ids = get_todays_birthdays()
-    
+
     if not birthday_user_ids:
         return
-    
+
+    logger.info(f"🎂 [ANNIVERSAIRE] {len(birthday_user_ids)} anniversaire(s) — vu par {bot_name}")
+
+    if not participe_aux_evenements(bot_name):
+        logger.debug(f"[ANNIVERSAIRE] {bot_name} ne participe pas aux messages d'anniversaire.")
+        return
+
     # Chercher le canal
     target_channel = None
     for guild in bot.guilds:
@@ -238,10 +264,15 @@ async def check_and_send_birthdays(bot, bot_name: str):
                 break
         if target_channel:
             break
-    
+
     if not target_channel:
+        logger.info(
+            "[ANNIVERSAIRE] Aucun salon d'anniversaire trouvé "
+            "(cherche : « taverne »+« bot ») — rien d'envoyé."
+        )
         return
-    
+
+    seuil = SEUILS_ANNIVERSAIRE.get(cle_persona(bot_name), 0.2)
     for user_id in birthday_user_ids:
         # Récupérer le membre
         member = None
@@ -249,14 +280,15 @@ async def check_and_send_birthdays(bot, bot_name: str):
             member = guild.get_member(user_id)
             if member:
                 break
-        
+
         if member:
             # Probabilité pour éviter les doublons entre bots
             # Un seul bot envoie le message
-            probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "sugar": 0.2}
-            if random.random() < probs.get(cle_persona(bot_name), 0.33):
-                message = get_birthday_message(bot_name, member)
-                if not message:
-                    continue   # pool absent : deja journalise, et on se TAIT
-                await target_channel.send(message)
-                log_event(bot_name, "INFO", f"Anniversaire souhaité à {member.name}")
+            if random.random() >= seuil:
+                logger.info(f"[ANNIVERSAIRE] {bot_name} se tait (tirage, seuil {seuil:.0%}).")
+                continue
+            message = get_birthday_message(bot_name, member)
+            if not message:
+                continue   # pool absent : deja journalise, et on se TAIT
+            await target_channel.send(message)
+            log_event(bot_name, "INFO", f"Anniversaire souhaité à {member.name}")

@@ -69,6 +69,33 @@ def _noms_passes_par_les_bots():
     return trouves
 
 
+class _FauxSalon:
+    """Faux salon Discord qui enregistre les messages envoyes."""
+
+    def __init__(self, name="taverne-des-bots"):
+        self.name = name
+        self.messages = []
+
+    async def send(self, contenu):
+        self.messages.append(contenu)
+
+
+class _FauxBot:
+    """Faux bot Discord avec guildes et recherche de membre pour les anniversaires."""
+
+    def __init__(self, salons=(), membre=None):
+        class _Guilde:
+            name = "Serveur de test"
+            text_channels = list(salons)
+
+            def get_member(self, user_id):
+                if membre and membre.id == user_id:
+                    return membre
+                return None
+
+        self.guilds = [_Guilde()]
+
+
 class _FauxMembre:
     """Le strict minimum qu'utilisent les fonctions testees."""
 
@@ -175,11 +202,19 @@ def test_un_silence_VOULU_ne_journalise_pas_d_avertissement():
         journal.removeHandler(capteur)
 
 
-def test_une_arrivee_laisse_une_trace_meme_sans_salon_et_meme_sans_message():
-    """L'envoi est tire au sort (20-30 %) : sans cette trace, « aucun message » ne
-    permet pas de distinguer le dé de l'evenement jamais recu. C'est exactement
-    l'ambiguite qui a laisse `on_member_join` « a valider » pendant des jours."""
+def test_une_arrivee_laisse_une_trace_meme_sans_salon_et_meme_sans_message(monkeypatch):
+    """L'envoi est tire au sort : sans cette trace, « aucun message » ne permet pas
+    de distinguer le de de l'evenement jamais recu.
+    Verrou Lot 2 : generalise aux 3 gestionnaires (arrivee, depart, anniversaire).
+    Sans salon et sans message, chacun laisse sa trace d'entree dans le journal.
+    """
+    monkeypatch.setattr(ev, "get_todays_birthdays", lambda: [4070])
+    monkeypatch.setattr(ev, "has_user_interacted", lambda _id: True)
+    monkeypatch.setattr(ev, "log_event", lambda *args, **kwargs: None)
+
     membre = _FauxMembre(salons=())        # aucun salon d'accueil : rien ne sera envoye
+    faux_bot = _FauxBot(salons=(), membre=membre)
+
     journal = logging.getLogger("server_events")
     lignes = []
 
@@ -192,7 +227,9 @@ def test_une_arrivee_laisse_une_trace_meme_sans_salon_et_meme_sans_message():
     niveau = journal.level
     journal.setLevel(logging.INFO)
     try:
-        asyncio.run(ev.handle_member_join(None, membre, "M'aiq"))
+        asyncio.run(ev.handle_member_join(faux_bot, membre, "M'aiq"))
+        asyncio.run(ev.handle_member_remove(faux_bot, membre, "M'aiq"))
+        asyncio.run(ev.check_and_send_birthdays(faux_bot, "M'aiq"))
     finally:
         journal.removeHandler(capteur)
         journal.setLevel(niveau)
@@ -200,6 +237,60 @@ def test_une_arrivee_laisse_une_trace_meme_sans_salon_et_meme_sans_message():
     assert any("[ARRIVEE]" in ligne for ligne in lignes), (
         f"aucune trace d'arrivee dans le journal : {lignes}"
     )
+    assert any("[DEPART]" in ligne for ligne in lignes), (
+        f"aucune trace de depart dans le journal : {lignes}"
+    )
+    assert any("[ANNIVERSAIRE]" in ligne for ligne in lignes), (
+        f"aucune trace d'anniversaire dans le journal : {lignes}"
+    )
+
+
+def test_anniversaire_sans_fete_du_jour_reste_muet_sans_trace(monkeypatch):
+    """Lot 2.1 : si la liste d'anniversaires est vide, check_and_send_birthdays reste
+    muet et ne journalise rien (gotcha-alerte-qui-crie-pour-du-nominal).
+    """
+    monkeypatch.setattr(ev, "get_todays_birthdays", lambda: [])
+    faux_bot = _FauxBot(salons=())
+    journal = logging.getLogger("server_events")
+    lignes = []
+
+    class _Capteur(logging.Handler):
+        def emit(self, record):
+            lignes.append(record.getMessage())
+
+    capteur = _Capteur()
+    journal.addHandler(capteur)
+    niveau = journal.level
+    journal.setLevel(logging.INFO)
+    try:
+        asyncio.run(ev.check_and_send_birthdays(faux_bot, "Alfred"))
+    finally:
+        journal.removeHandler(capteur)
+        journal.setLevel(niveau)
+
+    assert not any("[ANNIVERSAIRE]" in ligne for ligne in lignes), (
+        f"check_and_send_birthdays a journalise alors qu'aucun anniversaire n'etait prevu : {lignes}"
+    )
+
+
+def test_depart_filtre_porte_parole_avant_appel_base(monkeypatch):
+    """Lot 2.3 : les 4 bots non porte-parole n'ouvrent aucune connexion a la base
+    sur un depart (has_user_interacted ne doit pas etre appele).
+    """
+    appels_db = []
+    monkeypatch.setattr(ev, "has_user_interacted", lambda _id: appels_db.append(_id))
+    membre = _FauxMembre(salons=())
+    faux_bot = _FauxBot(salons=(), membre=membre)
+
+    for bot_cle, noms in _noms_passes_par_les_bots().items():
+        for nom in noms:
+            if not ev.participe_aux_evenements(nom):
+                appels_db.clear()
+                asyncio.run(ev.handle_member_remove(faux_bot, membre, nom))
+                assert not appels_db, (
+                    f"{nom} a appele has_user_interacted alors qu'il n'est pas porte-parole"
+                )
+
 
 
 def test_le_logger_du_module_est_cable_sur_les_handlers_du_bot():
@@ -276,4 +367,129 @@ def test_aucun_bot_n_envoie_lui_meme_dans_les_evenements_serveur():
     assert not violations, (
         "Envoi en dur dans un evenement serveur — il echappe a _PORTE_PAROLE, au "
         "tirage et au journal : " + ", ".join(violations)
+    )
+
+
+def test_verrou_alfred_et_sugar_envoient_les_autres_se_taisent(monkeypatch):
+    """Verrou : sur tirage gagnant (random=0.0), Alfred et Sugar envoient exactement
+    un message de leur propre pool dans taverne-des-bots. Les quatre autres ne disent rien.
+    """
+    monkeypatch.setattr(ev.random, "random", lambda: 0.0)
+    monkeypatch.setattr(ev, "has_user_interacted", lambda _id: True)
+    monkeypatch.setattr(ev, "log_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ev, "get_todays_birthdays", lambda: [4070])
+
+    gestionnaires = [
+        ("arrivee", lambda bot, m, nom: ev.handle_member_join(bot, m, nom), ev.WELCOME_MESSAGES, "@nouveau"),
+        ("depart", lambda bot, m, nom: ev.handle_member_remove(bot, m, nom), ev.GOODBYE_MESSAGES, "nouveau"),
+        ("anniversaire", lambda bot, m, nom: ev.check_and_send_birthdays(bot, nom), ev.BIRTHDAY_MESSAGES, "@nouveau"),
+    ]
+
+    for bot_cle, noms in _noms_passes_par_les_bots().items():
+        for nom in noms:
+            parle = ev.participe_aux_evenements(nom)
+            persona = ev.cle_persona(nom)
+            for libelle, action, dictionnaire, valeur in gestionnaires:
+                salon = _FauxSalon(name="taverne-des-bots")
+                membre = _FauxMembre(salons=[salon])
+                faux_bot = _FauxBot(salons=[salon], membre=membre)
+
+                asyncio.run(action(faux_bot, membre, nom))
+
+                if parle:
+                    assert len(salon.messages) == 1, (
+                        f"{nom} ({libelle}) devait envoyer 1 message, reçu : {len(salon.messages)}"
+                    )
+                    siennes = {g.format(user=valeur) for g in dictionnaire[persona]}
+                    assert salon.messages[0] in siennes, (
+                        f"{nom} ({libelle}) a envoyé un message hors de son pool '{persona}' : "
+                        f"{salon.messages[0]!r}"
+                    )
+                else:
+                    assert len(salon.messages) == 0, (
+                        f"{nom} ({libelle}) ne devait rien envoyer, reçu : {salon.messages}"
+                    )
+
+
+def test_le_tirage_perdu_doit_rester_muet(monkeypatch):
+    """Verrou : sur tirage toujours perdant (random=0.99), aucun message n'est envoyé,
+    pour aucun des 6 bots, sur aucun des 3 gestionnaires.
+    """
+    monkeypatch.setattr(ev.random, "random", lambda: 0.99)
+    monkeypatch.setattr(ev, "has_user_interacted", lambda _id: True)
+    monkeypatch.setattr(ev, "log_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ev, "get_todays_birthdays", lambda: [4070])
+
+    gestionnaires = [
+        ("arrivee", lambda bot, m, nom: ev.handle_member_join(bot, m, nom)),
+        ("depart", lambda bot, m, nom: ev.handle_member_remove(bot, m, nom)),
+        ("anniversaire", lambda bot, m, nom: ev.check_and_send_birthdays(bot, nom)),
+    ]
+
+    for bot_cle, noms in _noms_passes_par_les_bots().items():
+        for nom in noms:
+            for libelle, action in gestionnaires:
+                salon = _FauxSalon(name="taverne-des-bots")
+                membre = _FauxMembre(salons=[salon])
+                faux_bot = _FauxBot(salons=[salon], membre=membre)
+
+                asyncio.run(action(faux_bot, membre, nom))
+
+                assert len(salon.messages) == 0, (
+                    f"{nom} ({libelle}) a envoyé un message sur tirage perdu : {salon.messages}"
+                )
+
+
+def test_aucun_bot_MUET_ne_figure_dans_un_dictionnaire_du_module():
+    """Lot 3, verrou sur le FICHIER. La decision du 13/09 doit etre VRAIE dans le code :
+    les tables de seuils portaient encore `sheogorath` et `maiq`, inatteignables depuis
+    `_PORTE_PAROLE` — le code mentait sur la decision.
+
+    ⚠️ La premiere version de ce verrou reperait une table de seuils a la FORME de ses
+    valeurs (« toutes des nombres entre 0 et 1 »). Mutation rejouee le 15/09 :
+
+        {"sheogorath": 0.3, "alfred": 0.2, "sugar": _SEUIL_SUGAR}   -> verrou MUET
+
+    Une seule valeur nommee au lieu d'un litteral, et la table entiere devenait
+    invisible : `sheogorath` rentrait sans un bruit. C'est [[gotcha-verrou-trop-faible]]
+    a l'identique — mesurer la PRESENCE d'une construction ne dit pas qu'elle COUVRE
+    l'objet. L'invariant porte donc sur le NOM et sur lui seul : **aucun dictionnaire
+    de ce module, hors `_CLE_PAR_BOT`, ne nomme un bot qui ne parle pas**. Seuil, pool
+    ou table a inventer demain : la valeur n'a aucune importance.
+    """
+    chemin = os.path.join(_parent_dir, "shared", "server_events.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read())
+
+    porte_parole, personas, table_des_cles = set(), set(), None
+    for node in ast.walk(arbre):
+        if not isinstance(node, ast.Assign):
+            continue
+        for cible in node.targets:
+            nom = getattr(cible, "id", None)
+            if nom == "_PORTE_PAROLE" and isinstance(node.value, (ast.Set, ast.List, ast.Tuple)):
+                porte_parole = {e.value for e in node.value.elts
+                                if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+            elif nom == "_CLE_PAR_BOT" and isinstance(node.value, ast.Dict):
+                table_des_cles = node.value
+                personas = {v.value for v in node.value.values
+                            if isinstance(v, ast.Constant) and isinstance(v.value, str)}
+
+    assert porte_parole, "_PORTE_PAROLE introuvable dans l'AST"
+    assert personas, "_CLE_PAR_BOT introuvable dans l'AST"
+    muets = personas - porte_parole
+    assert len(muets) == 4, f"4 bots muets attendus, releve : {sorted(muets)}"
+
+    fautifs = []
+    for node in ast.walk(arbre):
+        if not isinstance(node, ast.Dict) or node is table_des_cles:
+            continue
+        cles = {k.value for k in node.keys
+                if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+        intrus = cles & muets
+        if intrus:
+            fautifs.append(f"ligne {node.lineno} : {sorted(intrus)}")
+
+    assert not fautifs, (
+        "un bot qui ne parle JAMAIS est nomme dans un dictionnaire de server_events.py — "
+        "le code ment sur la decision du 2026-09-13 : " + " | ".join(fautifs)
     )
