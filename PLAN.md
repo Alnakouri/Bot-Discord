@@ -1,205 +1,187 @@
-# PLAN — Rendre une panne de base AUDIBLE, et ne plus dépendre du ramasse-miettes
+# PLAN — Les événements serveur : rendre l'ENVOI observable sans attendre un humain
 
-Rédaction : Claude, le **2026-09-13**. Exécution : **Antigravity**.
-Fait suite à `cbe0a06` (WAL interdit sur `bots_database.db`, déployé et vérifié).
+Rédaction : Claude, le **2026-09-15**. Exécution : **Antigravity**.
+Fait suite à `e86e442` (l'accueil en dur de Johnny retiré) et au test live d'arrivée du
+14/09, qui a validé **le chemin jusqu'au tirage** — et rien au-delà.
 
-Le correctif WAL a fermé **la cause**. Ce plan ferme **les deux défauts qui ont laissé
-la panne courir deux jours sans que personne ne la voie** — ce sont eux, et non WAL,
-qui expliquent qu'on ait mis 48 h à comprendre que les 6 bots étaient muets.
+Le 14/09 à 19:37:50Z, une vraie arrivée a fait journaliser `[ARRIVEE]` aux 6 bots, et
+seuls Alfred et Sugar ont atteint le tirage. **Ils l'ont tous les deux perdu** (20 % et
+30 %). Depuis, l'item « l'envoi n'a jamais été vu » attend une deuxième arrivée avec
+~44 % de chances d'aboutir — c'est-à-dire qu'il peut attendre des semaines.
+
+**Ce plan retire cette attente.** Rien de ce qui reste ouvert n'exige réellement un
+humain : il exige un **tirage gagnant**, et un tirage se force.
 
 ---
 
-## LA PREUVE, relevée le 13/09 avant d'écrire ce plan
+## LA PREUVE, relevée le 15/09 avant d'écrire ce plan
 
-Les journaux Docker de `bot-maiq` couvrent **du 25/08 au 13/09** (ils survivent au
-redémarrage de Docker Desktop). Sur toute cette période :
-
-| Motif cherché | Occurrences |
+| Vérification | Résultat |
 |---|---|
-| `unable to open database file` | **23** |
-| `[ERROR EVENTS]` (le seul cri du thread écrivain) | **0** |
+| Un test atteint-il `await target_channel.send(...)` ? | **NON.** `grep -n random tests/test_evenements_serveur.py` → **0 occurrence**. Aucun des 9 tests ne force le tirage : la queue des 3 gestionnaires n'a jamais tourné, ni en test, ni en live. |
+| `handle_member_remove` laisse-t-il une trace ? | **AUCUNE.** Pas un `logger.*` dans la fonction. **4 sorties muettes** : `has_user_interacted` faux, pas de salon, tirage perdu, pool absent. |
+| `check_and_send_birthdays` ? | **AUCUNE** non plus. `get_todays_birthdays()` vide → `return` muet. |
+| `on_member_remove` est-il câblé partout ? | **OUI, sur les 6** (relevé `ast` sur les 6 `bot_*.py`). Ce n'est donc pas du code mort — mais **rien ne le prouverait si ça l'était**, et c'est exactement l'ambiguïté qui a coûté du 11 au 14/09 sur l'arrivée. |
+| Le salon existe-t-il vraiment ? | **OUI** : `taverne-des-bots`, 6 occurrences dans les journaux de `bot-sugar`. Les 3 gestionnaires le trouvent. |
 
-Et la même recherche dans `logs/` sur l'hôte : **0** également.
-
-Autrement dit : pendant que la base refusait toute écriture, **le composant dont le
-métier est de journaliser les erreurs n'a pas produit une seule ligne**. Les 23 lignes
-visibles venaient toutes d'ailleurs (`[HINT LOOP]`, toutes les 5 min, classées
-« inexpliqué » le 11/09 — c'était le symptôme).
-
----
-
-# LOT 1 — La panne doit CRIER, et continuer de crier
-
-**Fichier : `shared/bot_logger.py`.** Trois défauts distincts, à corriger ensemble.
-
-### 1.1 — Le verrou `_JOURNAL_ERREUR` mute tout, définitivement
-
-```python
-except Exception as e:
-    if not _JOURNAL_ERREUR:
-        logging.getLogger("bot_logger").error(...)
-        _JOURNAL_ERREUR = True      # <- plus jamais un mot
-```
-
-Le drapeau n'est remis à `False` **que par une écriture réussie**. Quand la base est
-morte, aucune écriture ne réussit : **une seule ligne est émise, pour toute la durée de
-la panne**. C'est exactement l'inverse de ce qu'on attend d'une alarme.
-
-**À faire** : remplacer le verrou définitif par une **répétition espacée**. Au plus une
-ligne toutes les 5 minutes, et cette ligne **porte le nombre d'échecs avalés depuis la
-précédente** :
-
-> `[ERROR EVENTS] Écriture SQLite en échec depuis 47 min (312 événements perdus) : <erreur>`
-
-Garder le compteur et l'horodatage du dernier cri dans des globales du module, à côté
-de `_JOURNAL_ERREUR`. Le but n'est pas de tout journaliser — c'est qu'une panne longue
-laisse une **trace périodique** au lieu d'un unique message noyé deux jours plus tôt.
-
-### 1.2 — L'échec d'initialisation tue le thread, et on en relance un par événement
-
-```python
-except Exception as e:          # connexion / CREATE TABLE impossibles
-    ...
-    return                      # le thread MEURT
-```
-
-`_ensure_thread()` est appelé **à chaque `enregistrer_reaction`** et relance un thread
-dès que le précédent n'est plus vivant. Base morte = **un thread créé, une connexion
-tentée et un abandon silencieux par réaction reçue**.
-
-**À faire** : poser un **délai de reprise**. Mémoriser l'instant du dernier échec
-d'initialisation ; `_ensure_thread()` ne retente pas avant **60 s**. Et l'échec
-d'initialisation suit la règle 1.1 (répétition espacée), pas le silence.
-
-⚠️ Ne PAS supprimer la relance : elle est utile, c'est elle qui fait repartir le
-journal tout seul quand la base redevient saine. C'est sa **fréquence** qui est fautive.
-
-### 1.3 — Le logger `bot_logger` n'est branché sur rien
-
-`setup_logger` recopie les handlers du bot sur une liste de loggers partagés
-(`smart_router`, `llm_cascade`, …). **`bot_logger` n'y est pas.** Ses messages ne
-partent donc ni dans `logs/<bot>_<date>.log`, ni dans le JSONL que lit le tableau de
-bord : ils ne survivent que par le `lastResort` de `logging`, sur stderr. C'est la
-raison technique du `0` dans le tableau de preuve ci-dessus.
-
-**À faire** : ajouter `"bot_logger"` à la liste des `shared_name`.
-
-✅ **Vérifié avant d'écrire ceci — pas de boucle** : `ErrorEventHandler.emit` commence
-par `if record.name == __name__ or record.name == "bot_logger": return`. Le handler
-peut donc être recopié sur ce logger sans se rappeler lui-même. Ne pas « améliorer »
-cette garde : c'est elle qui rend le lot possible.
-
-### Verrous attendus (lot 1)
-
-Dans `tests/test_error_events_handler.py` (le fichier existe) :
-
-1. **La répétition espacée crie deux fois.** Faux temps (monkeypatch de l'horloge du
-   module), écritures en échec en continu : au moins **2** lignes émises, et la 2e
-   **contient le nombre d'événements perdus**. ⚠️ Le verrou porte sur le comptage réel
-   du module — ne pas retaper la logique de temporisation dans le test
-   (voir le gotcha « un test qui retape la logique s'auto-valide »).
-2. **La reprise est espacée.** N appels d'affilée à `enregistrer_reaction` avec une
-   initialisation qui échoue toujours ⇒ **un seul** thread créé, pas N.
-3. **`bot_logger` est câblé.** Verrou sur le fichier : `"bot_logger"` figure bien dans
-   la liste des `shared_name` de `setup_logger`.
-
-**Rejouer la mutation sur chacun** : remettre le code fautif, vérifier que le test
-crie. Un verrou qu'on n'a pas vu échouer ne verrouille rien.
+⚠️ **Ce qui est DÉJÀ couvert — ne pas le réécrire.** J'ai failli inscrire ici « le
+`.format(user=…)` des répliques n'est jamais exercé ». **C'est faux** :
+`test_aucun_bot_n_emprunte_la_voix_d_un_autre` rejoue 50 tirages par pool et compare à
+`{g.format(user=valeur) for g in dictionnaire[cle]}`. Une accolade parasite dans une
+réplique fait DÉJÀ crier la suite. Le trou n'est pas dans les répliques, il est dans
+**l'orchestration** qui les envoie.
 
 ---
 
-# LOT 2 — Aucune connexion ne doit dépendre du ramasse-miettes
+# LOT 1 — Le tirage se force, et l'envoi se voit
 
-**Fichier : `shared/shared_database.py`.** Sur **42** fonctions qui ouvrent une
-connexion, **40** l'écrivent ainsi :
+**Fichier : `tests/test_evenements_serveur.py`.** Aucune ligne de
+`shared/server_events.py` ne change dans ce lot.
 
-```python
-conn = get_connection()
-cursor.execute(...)      # <- si ça lève, la ligne suivante n'est jamais atteinte
-conn.close()
-```
+Le trou est étroit et se nomme : entre « le dé est tombé du bon côté » et « Discord a
+reçu le texte », il y a la recherche du salon, le `.send()`, et le `log_event()`. Ces
+trois-là n'ont jamais tourné ensemble.
 
-Il n'y a **ni `try/finally` ni `with`**. La fermeture n'a lieu que sur le chemin
-heureux ; sur le chemin d'erreur elle ne tient qu'au comptage de références de CPython,
-c'est-à-dire à un détail d'implémentation et au moment où la trace d'exception est
-libérée.
+### 1.1 — Un faux salon qui ENREGISTRE ce qu'on lui envoie
 
-Ce n'est pas théorique : `is_maintenance_mode()` → `get_config()` est dans cette liste,
-et c'est **la première chose qu'appelle `on_message`** sur les 6 bots. Pendant la panne,
-chaque message reçu passait par ce chemin d'erreur. La mesure du 13/09 — **15** handles
-ouverts sur `bots_database.db` pour M'aiq contre **2** pour les cinq autres — est
-cohérente avec ce défaut, **sans que le chemin de rétention soit prouvé** : M'aiq est le
-seul à appeler `shared_database` sur une boucle de 5 min (`riddle_passive_hint_loop`),
-donc le seul à emprunter ce chemin même sans trafic.
+Ajouter, à côté de `_FauxMembre`, un `_FauxSalon` avec un `name` et un
+`async def send(self, contenu)` qui empile dans une liste. Le construire avec le vrai
+nom du serveur : **`taverne-des-bots`** — c'est celui que la recherche trouve en
+production, un test qui passerait avec `#general` ne prouverait rien.
 
-**À faire** : un gestionnaire de contexte unique dans le module, et les 40 fonctions
-passent dessus.
+### 1.2 — Le verrou : Alfred et Sugar ENVOIENT, les 4 autres ne s'approchent pas du salon
 
-```python
-@contextmanager
-def connexion():
-    conn = get_connection()
-    try:
-        yield conn
-    finally:
-        conn.close()
-```
+Pour **les 3 gestionnaires** (`handle_member_join`, `handle_member_remove`,
+`check_and_send_birthdays`), avec le tirage toujours gagnant
+(`monkeypatch.setattr(ev.random, "random", lambda: 0.0)`) :
 
-⚠️ **Refactor mécanique, 40 fois. Aucune requête SQL ne change, aucun `commit()` ne se
-déplace.** Si une fonction fait autre chose que ce qui est décrit ici, la laisser en
-l'état et le signaler plutôt que de l'adapter.
+- pour chaque nom réellement passé par les bots — réutiliser `_noms_passes_par_les_bots()`,
+  **ne pas recopier une liste** ([[gotcha-un-bot-sur-six-manque-toujours]]) ;
+- si le bot est porte-parole : le salon a reçu **exactement un** message, et ce message
+  appartient à **son** pool formaté — jamais à celui d'un autre ;
+- sinon : le salon n'a **rien** reçu.
 
-Les 40 fonctions, relevées par `ast` le 13/09 : `init_database`,
-`add_riddle_participant`, `add_riddle_winner`, `get_or_create_user`,
-`has_user_interacted`, `get_user_interactions`, `log_interaction`, `get_reputation`,
-`add_reputation`, `add_riddle_streak`, `reset_riddle_streak`, `get_riddle_streak`,
-`get_reputation_leaderboard`, `set_birthday`, `get_todays_birthdays`,
-`get_daily_quests`, `create_daily_quests`, `complete_quest`, `get_config`, `set_config`,
-`log_event`, `get_recent_logs`, `log_bot_interaction`, `get_bot_interaction_stats`,
-`log_error_event`, `get_error_events`, `get_reactions_repliques`,
-`get_conversation_stats`, `set_active_riddle`, `get_active_riddle`,
-`get_all_active_riddles`, `delete_active_riddle`, `is_riddle_duplicate`,
-`add_to_riddle_history`, `get_game_cooldown`, `set_game_cooldown`,
-`get_game_daily_points`, `add_game_daily_points`, `get_game_pvp_cooldown`,
-`set_game_pvp_cooldown`.
+`handle_member_remove` passe par `has_user_interacted` : le neutraliser
+(`monkeypatch.setattr(ev, "has_user_interacted", lambda _id: True)`), sinon le test tape
+la vraie base ([[gotcha-pytest-pollue-data]]). Même chose pour `log_event` et
+`get_todays_birthdays`.
 
-### Verrous attendus (lot 2)
+`check_and_send_birthdays` prend un `bot`, pas un `member` : il lui faut un faux bot avec
+`guilds` et un `get_member` qui rend le faux membre.
 
-1. **Mesure AVANT/APRÈS, dans le conteneur** — c'est elle qui décide si le défaut est
-   réellement celui qu'on croit :
-   `docker exec bot-maiq sh -c 'for f in /proc/[0-9]*/fd/*; do readlink "$f"; done | grep -c bots_database.db'`
-   Relever le chiffre **avant** le correctif et **24 h après** déploiement. Il vaut 1
-   par bot sur une instance fraîche (mesuré le 13/09 à 16 min d'uptime) : la fuite ne se
-   voit qu'avec de la durée.
-2. **Verrou AST**, dans `tests/test_base_partagee.py` : *aucune* fonction de
-   `shared_database.py` n'appelle `get_connection()` sans que la fermeture soit
-   couverte par un `finally` ou un `with`. **Jamais une regex** (voir le gotcha
-   « des appels fournisseur HORS cascade »).
-3. **Un test de fuite qui reproduit le chemin d'erreur** : une base rendue illisible, la
-   fonction appelée, et on vérifie que la connexion est fermée. Sans le correctif, il
-   échoue.
+### 1.3 — Le tirage PERDU doit rester muet
+
+Le même verrou avec le tirage toujours perdant (`lambda: 0.99`) : **0 message envoyé**,
+pour les 6. Sans ce second sens, le test ne distingue pas « ça envoie quand il faut » de
+« ça envoie toujours ».
+
+### Mutations à rejouer (chacune doit faire CRIER le verrou)
+
+1. remplacer `await target_channel.send(message)` par un `pass` dans `handle_member_join` ;
+2. remettre le repli fautif `pools.get(cle, pools["sheogorath"])` dans `_tirer` ;
+3. retirer le `if random.random() < 0.2` de `handle_member_remove` (envoi systématique)
+   — celle-ci ne doit crier que sur 1.3.
 
 ---
 
-## Ce qu'il ne faut PAS faire
+# LOT 2 — Le départ et l'anniversaire sont AVEUGLES
 
-- **Ne pas toucher aux `except: pass` de `_empiler` et de `ErrorEventHandler.emit`.**
-  Ils sont **voulus** et commentés : un journal ne doit jamais faire tomber `on_message`,
-  et la file est bornée exprès. Le lot 1 rend audible le thread **écrivain**, pas les
-  producteurs (voir « un défaut peut être une fonctionnalité »).
-- **Ne pas reposer WAL**, sous aucun prétexte, ni ici ni dans une copie vendorisée.
-  Deux tests l'interdisent déjà.
-- **Ne pas fusionner les deux lots en un commit.** Ils portent sur deux fichiers et deux
-  défauts sans rapport ; le lot 2 est un refactor de 40 fonctions qu'on doit pouvoir
-  relire seul.
+**Fichier : `shared/server_events.py`.**
 
-## Déploiement
+La leçon du 11-14/09 — *une trace AVANT le tirage, sinon « aucun message » ne veut rien
+dire* — n'a été appliquée qu'à l'arrivée. `handle_member_join` porte sa ligne
+`👋 [ARRIVEE] … — vu par {bot_name}` ; les deux autres gestionnaires n'ont **rien**.
 
-- `shared/bot_logger.py` est **vendorisé** : après correction, relancer
-  `python tools/vendor_core.py`, puis `python tools/sonde_core_drift.py` — les 6 copies
-  `*/core/bot_logger.py` doivent être identiques, et les deux listes de vendoring aussi.
-- `shared/shared_database.py` n'est **pas** vendorisé : il est bind-monté, un
-  `docker restart` suffit.
-- **Vérifier DANS le conteneur**, jamais depuis l'hôte, et borner tout `docker logs`
-  avec `--since <ISO>Z` (sans le `Z`, le filtre est lu en heure locale et ne filtre rien).
-- Compter **6 bots**, pas 5.
+Conséquence concrète : si un membre part demain, **aucun des 6 journaux ne le dira**. On
+ne saura ni si l'événement est arrivé, ni si le dé a parlé.
+
+### 2.1 — Une trace d'entrée, au même endroit et de la même forme
+
+Première ligne de `handle_member_remove`, **avant** `has_user_interacted` :
+
+    logger.info(f"👋 [DEPART] {member} a quitté '{member.guild.name}' — vu par {bot_name}")
+
+Et dans `check_and_send_birthdays`, **avant** le traitement :
+
+    logger.info(f"🎂 [ANNIVERSAIRE] {len(birthday_user_ids)} anniversaire(s) — vu par {bot_name}")
+
+⚠️ Ne poser cette seconde ligne **que si la liste est non vide** — et garder le `return`
+muet sinon. Sur un serveur sans anniversaire du jour, elle tomberait à chaque passage de
+la boucle quotidienne pour ne rien dire, et une alarme qui crie pour du nominal, on
+apprend à l'ignorer ([[gotcha-alerte-qui-crie-pour-du-nominal]]).
+
+### 2.2 — Les sorties muettes de `handle_member_remove` doivent se distinguer
+
+Comme pour l'arrivée, chaque sortie dit **pourquoi**, au bon niveau :
+
+| Sortie | Niveau | Ce que ça veut dire |
+|---|---|---|
+| `has_user_interacted` faux | `debug` | nominal : on ne salue pas un inconnu |
+| bot hors `_PORTE_PAROLE` | `debug` | décision du 13/09 |
+| aucun salon trouvé | `info` | configuration du serveur |
+| tirage perdu | `info` | le dé — et la ligne porte le seuil, comme à l'arrivée |
+
+### 2.3 — Le filtre porte-parole passe AVANT la base
+
+`handle_member_remove` appelle `has_user_interacted(member.id)` en toute première ligne :
+**les 4 bots qui ne diront jamais rien ouvrent quand même une connexion** à chaque
+départ. Déplacer le `if not participe_aux_evenements(bot_name): return` juste après la
+trace de 2.1, avant l'appel à la base. Même esprit que le lot 2 du plan précédent :
+aucune connexion ouverte pour rien.
+
+### Verrou attendu
+
+Généraliser `test_une_arrivee_laisse_une_trace_meme_sans_salon_et_meme_sans_message` aux
+**3** gestionnaires : sans salon et sans message, chacun laisse sa trace. Mutation :
+retirer la ligne `[DEPART]` → le verrou crie.
+
+---
+
+# LOT 3 — La décision du 13/09 n'est toujours pas vraie dans le code
+
+**Fichier : `shared/server_events.py`.**
+
+`_PORTE_PAROLE = {"alfred", "sugar"}` filtre en amont. Pourtant les tables de seuils
+gardent les quatre autres, à **trois endroits** :
+
+```python
+probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "sugar": 0.3}   # arrivée
+if random.random() < 0.2:                                              # départ, en dur
+probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "sugar": 0.2}  # anniversaire
+```
+
+Ces valeurs `sheogorath` et `maiq` sont **inatteignables** : le code ment sur la
+décision, et le `0.2` du départ n'est même pas dans une table. Un lecteur qui cherche
+« qui accueille ? » trouve quatre noms.
+
+**À faire** : une seule table de seuils par gabarit, **ne portant que les
+porte-parole**, et le seuil du départ dedans. Ne **rien changer** aux valeurs d'Alfred et
+de Sugar (20 % / 30 % à l'arrivée) : ce plan ne touche pas à la fréquence.
+
+### Verrou attendu
+
+Aucune clé d'une table de seuils hors de `_PORTE_PAROLE` — relevé par `ast` **sur le
+fichier**, pas par un import : si quelqu'un rajoute un bot dans une table sans l'ajouter
+à `_PORTE_PAROLE`, ça doit crier.
+
+---
+
+## Note — une asymétrie repérée, volontairement HORS lot
+
+`handle_member_join` cherche « taverne »+« bot », puis se rabat sur « bienvenue » /
+« welcome ». Les deux autres gestionnaires ne cherchent **que** « taverne »+« bot ». Sur
+un serveur sans taverne, les arrivées parleraient et les départs seraient muets, sans
+trace. Ce n'est **pas** un défaut ici — `taverne-des-bots` existe, c'est vérifié. À ne
+traiter que si le serveur change : uniformiser sans raison, c'est décider du
+comportement d'un serveur qu'on n'a pas.
+
+---
+
+## Hors lot — ce qui reste suspendu à l'extérieur
+
+- **La mesure des handles à 24 h** (M'aiq, rétention de `bots_database.db`) : horloge
+  remise à zéro le **15/09 à 10:31:44Z**, baseline **fd = 1 sur les 6**. Verdict possible
+  le **16/09 après 10:31Z**, et seulement si l'hôte n'est pas éteint — la fenêtre du
+  14/09 est morte à ~13 h d'uptime pour cette raison exacte.
+- **La surveillance d'Alfred** (« Maître <@id> », ne pas redire « le Manoir ») : celle-ci
+  demande vraiment qu'il PARLE à un humain. Aucun tirage à forcer, elle reste ouverte.
