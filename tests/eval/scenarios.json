@@ -37,5 +37,34 @@
     "user_messages": [
       "Hé, tu as vu Sugar Bot dans le salon ? Il a dit qu'il te cherchait."
     ]
+  },
+  {
+    "id": "defaite",
+    "user_messages": [
+      "1-0 pour moi, dans ta face ! T'as rien à répondre, t'as perdu !"
+    ]
+  },
+  {
+    "id": "humeur_sheo",
+    "user_messages": [
+      "Salut Sheogorath, quel temps magnifique pour une promenade aujourd'hui !",
+      "Tu as encore transformé les gardes en statues de fromage de chèvre ?",
+      "Arrête un peu tes délires absurdes deux minutes et réponds sérieusement.",
+      "Alors, au bout du compte, quel est le sens de toute cette folie ?"
+    ]
+  },
+  {
+    "id": "sugar_30_mots",
+    "user_messages": [
+      "Raconte-moi un peu ta philosophie de vie et ce qui te fait vibrer.",
+      "Qu'est-ce que tu penses des gens qui passent leur temps à critiquer ici ?",
+      "Donne-moi ton meilleur conseil pour survivre dans ce monde."
+    ]
+  },
+  {
+    "id": "alfred_maitre",
+    "user_messages": [
+      "C'est LeDev. Alfred, fais-moi un rapport immédiat sur la situation du manoir."
+    ]
   }
 ]

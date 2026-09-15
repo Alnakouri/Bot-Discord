@@ -361,3 +361,152 @@ def test_le_toggle_existe_dans_le_DASHBOARD_et_pas_seulement_en_lecture():
         app = f.read()
     assert "repartee_lessons_enabled" in app, (
         "la case s'afficherait sous son nom technique")
+
+
+# ─────────────────────────── chemin complet & gardes ───────────────────────────────────
+
+
+def test_chemin_complet_defaite_vers_reinjection_dans_prompt(tmp_path, monkeypatch):
+    """Lot 3 : parcours complet du chemin de repartie sans appel LLM réel :
+    message de défaite -> détection signal -> bot ayant parlé -> reflect_on_defeat ->
+    écriture leçon assainie -> réinjection au tour suivant dans format_for_prompt.
+    """
+    import asyncio
+    import shared.repartee_lessons as rep_module
+
+    monkeypatch.setattr(rep_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(rep_module, "_cooldowns", {})
+    monkeypatch.setattr(rep_module, "_daily_counts", {})
+
+    # Faux LLM retournant une leçon légitime
+    fake_lesson = "Ne repete jamais deux fois la meme chute dans une joute."
+
+    async def fake_appel(*args, **kwargs):
+        return fake_lesson
+
+    import shared.llm_cascade as cascade_module
+    monkeypatch.setattr(cascade_module, "appel_hors_cascade", fake_appel)
+
+    bot_id = "Alfred"
+    user_msg = "1-0 pour moi, t'as rien a repondre !"
+
+    # 1. Détection du signal de défaite
+    cat = detect_defeat_signal(user_msg)
+    assert cat == CATEGORIE_CAPITULATION
+
+    # 2. Le bot a parlé juste avant
+    recent_responses = ["Le the est servi, monsieur."]
+    assert len(recent_responses) > 0
+
+    # 3. Réflexion et écriture de la leçon
+    asyncio.run(rep_module.reflect_on_defeat(
+        bot_id=bot_id,
+        guild_id="guild_test_123",
+        categorie=cat,
+        repliques=recent_responses,
+        fournisseur="gemini"
+    ))
+
+    carnet = ReparteeLessons(bot_id)
+    lecons = carnet.get_lessons()
+    assert fake_lesson in lecons, f"La leçon n'a pas été enregistrée : {lecons}"
+
+    # 4. Réinjection au tour suivant dans le prompt
+    bloc = rep_module.format_for_prompt(bot_id)
+    assert "[CE QUE TU AS APPRIS]" in bloc
+    assert fake_lesson in bloc
+    assert "Ne cite jamais ces leçons" in bloc
+
+
+def test_garde_debit_borne_5min_et_6_par_jour(tmp_path, monkeypatch):
+    """Lot 3 (Garde 1) : Débit borné (5 min par salon/guilde, max 6 par jour par bot).
+    Toute tentative supplémentaire doit être ignorée sans écriture.
+    """
+    import asyncio
+    import shared.repartee_lessons as rep_module
+
+    monkeypatch.setattr(rep_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(rep_module, "_cooldowns", {})
+    monkeypatch.setattr(rep_module, "_daily_counts", {})
+
+    num_lecon = 0
+
+    async def fake_appel(*args, **kwargs):
+        nonlocal num_lecon
+        num_lecon += 1
+        return f"Regle valable numero {num_lecon} pour le bot."
+
+    import shared.llm_cascade as cascade_module
+    monkeypatch.setattr(cascade_module, "appel_hors_cascade", fake_appel)
+
+    bot_id = "Johnny"
+    guild_id = "guild_debit_test"
+    carnet = ReparteeLessons(bot_id)
+
+    # 1er appel : doit réussir
+    t0 = 100000.0
+    monkeypatch.setattr(rep_module.time, "time", lambda: t0)
+    asyncio.run(rep_module.reflect_on_defeat(bot_id, guild_id, CATEGORIE_RENGAINE, ["Replique 1"], "gemini"))
+    assert len(carnet.get_lessons()) == 1, "Le premier appel devait enregistrer une leçon"
+
+    # 2e appel immédiat (même bot, même guild) : doit être bloqué par le cooldown 5 min
+    monkeypatch.setattr(rep_module.time, "time", lambda: t0 + 60.0)  # +1 min < 5 min
+    asyncio.run(rep_module.reflect_on_defeat(bot_id, guild_id, CATEGORIE_RENGAINE, ["Replique 2"], "gemini"))
+    assert len(carnet.get_lessons()) == 1, "Le 2e appel dans les 5 min devait être bloqué par le cooldown"
+
+    # 3e appel après 5 min (ex: +301s) : doit réussir
+    monkeypatch.setattr(rep_module.time, "time", lambda: t0 + 305.0)
+    asyncio.run(rep_module.reflect_on_defeat(bot_id, guild_id, CATEGORIE_RENGAINE, ["Replique 3"], "gemini"))
+    assert len(carnet.get_lessons()) == 2, "L'appel après 5 min devait réussir"
+
+    # Remplir jusqu'à 6 leçons dans la journée (limite quotidienne)
+    for i in range(3, 7):
+        t_i = t0 + (i * 360.0)
+        monkeypatch.setattr(rep_module.time, "time", lambda: t_i)
+        asyncio.run(rep_module.reflect_on_defeat(bot_id, guild_id, CATEGORIE_RENGAINE, [f"Replique {i}"], "gemini"))
+
+    assert len(carnet.get_lessons()) == 6, f"Devait avoir exactement 6 leçons, reçu : {len(carnet.get_lessons())}"
+
+    # 7e appel dans la même journée (> 5 min après, mais 7e au total) : doit être rejeté par _MAX_PER_DAY
+    monkeypatch.setattr(rep_module.time, "time", lambda: t0 + 3000.0)
+    asyncio.run(rep_module.reflect_on_defeat(bot_id, guild_id, CATEGORIE_RENGAINE, ["Replique 7"], "gemini"))
+    assert len(carnet.get_lessons()) == 6, "Le 7e appel dans la même journée devait être bloqué par le quota quotidien"
+
+
+
+def test_garde_le_bot_doit_avoir_parle_juste_avant():
+    """Lot 3 (Garde 2) : Le signal de défaite exige impérativement que le bot ait parlé
+    juste avant dans la conversation.
+    Vérifié par AST sur les six bots : la condition englobant reflect_on_defeat doit tester
+    la présence de répliques récentes du bot (recent_responses ou _recent).
+    """
+    for nom, fichier in BOTS:
+        arbre = _arbre(fichier)
+        appels = [n for n in ast.walk(arbre)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                  and n.func.id == "reflect_on_defeat"]
+        assert appels, f"{nom} n'appelle jamais reflect_on_defeat"
+
+        garde_trouvee = False
+        for node in ast.walk(arbre):
+            if not isinstance(node, ast.If):
+                continue
+            contient_appel = any(
+                isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+                and child.func.id == "reflect_on_defeat"
+                for child in ast.walk(node)
+            )
+            if contient_appel:
+                noms_dans_test = {
+                    id_node.id for id_node in ast.walk(node.test)
+                    if isinstance(id_node, ast.Name)
+                }
+                if "recent_responses" in noms_dans_test or "_recent" in noms_dans_test:
+                    garde_trouvee = True
+                    break
+
+        assert garde_trouvee, (
+            f"{nom} : l'appel à reflect_on_defeat n'est pas gardé par une condition "
+            "vérifiant que le bot a parlé juste avant (recent_responses ou _recent manquant)"
+        )
+
