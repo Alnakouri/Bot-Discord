@@ -119,19 +119,56 @@ class FeaturesConfigManager:
         self._save_raw(cfg)
         return cfg[CLE_GLOBALE]
 
+    def _blocs_remontes(self) -> dict:
+        """{bot_id: bloc} en fusionnant les fichiers écrits par chaque bot.
+
+        ⚠️ Un fichier PAR bot (`bot_guilds_<bot>.json`), jamais un fichier commun : six
+        conteneurs qui font lire-modifier-écrire sur le même JSON s'écrasent l'un
+        l'autre, et c'est ainsi que Johnny a disparu du menu déroulant le 2026-09-15.
+        La fusion appartient au LECTEUR — il n'y a qu'un dashboard, il ne peut pas se
+        faire concurrence à lui-même.
+        """
+        brut = {}
+
+        # Transitoire : l'ancien fichier commun, tant que les 6 bots n'ont pas tous
+        # redémarré. Les fichiers par bot le supplantent, entrée par entrée.
+        ancien = self.data_dir / "bot_guilds.json"
+        if ancien.exists():
+            try:
+                with open(ancien, "r", encoding="utf-8") as f:
+                    hérité = json.load(f) or {}
+                if isinstance(hérité, dict):
+                    brut.update(hérité)
+            except Exception:
+                # Silence VOULU : ce fichier est un vestige transitoire, et il a
+                # justement pu être laissé à moitié écrit par l'ancienne écriture
+                # concurrente. Les fichiers par bot font autorité — s'il est illisible,
+                # il n'y a rien à signaler, seulement rien à hériter.
+                pass
+
+        for chemin in sorted(self.data_dir.glob("bot_guilds_*.json")):
+            bot_id = chemin.stem[len("bot_guilds_"):]
+            if not bot_id:
+                continue
+            try:
+                with open(chemin, "r", encoding="utf-8") as f:
+                    bloc = json.load(f)
+            except Exception:
+                # Un fichier illisible ne doit pas faire disparaître les cinq autres.
+                continue
+            if isinstance(bloc, dict):
+                brut[bot_id] = bloc
+
+        return brut
+
     def get_guilds(self) -> dict:
         """Serveurs remontés par les bots (shared/test_mode.enregistrer_serveurs).
 
         Le dashboard n'est pas un client Discord : sans cette remontée, il faudrait
         coller un identifiant à la main.
         """
-        chemin = self.data_dir / "bot_guilds.json"
-        if not chemin.exists():
-            return {"guilds": [], "bots_vus": []}
-        try:
-            with open(chemin, "r", encoding="utf-8") as f:
-                brut = json.load(f) or {}
-        except Exception:
+        brut = self._blocs_remontes()
+        if not brut:
             return {"guilds": [], "bots_vus": []}
 
         fusion, bots_vus = {}, []

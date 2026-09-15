@@ -8,6 +8,7 @@ parle partout ».
 """
 import json
 import os
+import pathlib
 import sys
 
 import pytest
@@ -247,9 +248,102 @@ def test_les_serveurs_sont_remontes_pour_le_dashboard(tmp_path, monkeypatch):
     _FauxBot.guilds[1].name = "Serveur public"
 
     assert tm.enregistrer_serveurs("sheogorath", _FauxBot()) is True
-    ecrit = json.loads((tmp_path / "bot_guilds.json").read_text(encoding="utf-8"))
-    assert ecrit["sheogorath"]["guilds"][0]["id"] == str(SERVEUR_PRIVE)
-    assert ecrit["sheogorath"]["guilds"][0]["name"] == "Mon serveur privé"
+    ecrit = json.loads((tmp_path / "bot_guilds_sheogorath.json").read_text(encoding="utf-8"))
+    assert ecrit["guilds"][0]["id"] == str(SERVEUR_PRIVE)
+    assert ecrit["guilds"][0]["name"] == "Mon serveur privé"
+
+
+def test_un_bot_n_ecrit_JAMAIS_dans_la_donnee_d_un_autre(tmp_path, monkeypatch):
+    """LE verrou. Le 2026-09-15, Johnny avait disparu du menu du dashboard : les 6 bots
+    faisaient lire-modifier-ecrire sur un `bot_guilds.json` COMMUN, dans la meme seconde
+    (13:13:01). Un autre bot avait lu le fichier avant l'ecriture de Johnny et l'avait
+    reecrit apres, depuis un cliche qui ne le contenait pas. `os.replace` rendait la
+    derniere etape atomique — ce qui ne protege rien, c'est le CYCLE qui doit l'etre.
+
+    ⚠️ Ce verrou ne lance PAS de fils d'execution : une course reproduite par des threads
+    ne tombe qu'une fois sur deux, et un test qui depend d'un tirage finit par etre
+    ignore ([[gotcha-test-qui-depend-d-un-tirage]]). L'invariant est plus fort et il est
+    deterministe : **ecrire pour un bot ne modifie AUCUN octet appartenant a un autre.**
+    Sans donnee partagee, il n'y a pas de course a reproduire.
+    """
+    import hashlib
+    import shared.test_mode as tm
+    monkeypatch.setattr(tm, "DATA_DIR", str(tmp_path))
+
+    class _FauxBot:
+        guilds = [_FauxServeur(SERVEUR_PRIVE)]
+
+    _FauxBot.guilds[0].name = "Serveur priver"
+
+    # Tout ce qu'alfred OUVRE en ecriture doit porter son nom — le fichier provisoire
+    # compris. Le regarder sur le disque APRES coup ne suffit pas : `os.replace` efface
+    # le tampon, donc un tampon commun aux 6 (le second defaut du 15/09, celui qui
+    # pouvait publier un JSON a moitie ecrit) resterait invisible.
+    import builtins
+    ouverts = []
+    _vrai_open = builtins.open
+
+    def _espion(fichier, mode="r", *args, **kwargs):
+        if any(lettre in mode for lettre in "wax"):
+            ouverts.append(os.path.basename(str(fichier)))
+        return _vrai_open(fichier, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", _espion)
+    assert tm.enregistrer_serveurs("alfred", _FauxBot()) is True
+    monkeypatch.undo()
+
+    assert ouverts, "alfred n'a rien ecrit du tout"
+    etrangers = [nom for nom in ouverts if "alfred" not in nom]
+    assert not etrangers, (
+        "alfred ouvre en ecriture des fichiers qui ne portent pas son nom : "
+        + ", ".join(etrangers)
+        + " — tampon compris, un ecrivain ne touche QUE ce qui lui appartient"
+    )
+
+    empreintes = {
+        chemin.name: hashlib.sha256(chemin.read_bytes()).hexdigest()
+        for chemin in tmp_path.iterdir() if chemin.is_file()
+    }
+
+    assert tm.enregistrer_serveurs("johnny", _FauxBot()) is True
+
+    for nom, avant in empreintes.items():
+        chemin = tmp_path / nom
+        assert chemin.exists(), f"johnny a SUPPRIME {nom}, qui portait la donnee d'alfred"
+        apres = hashlib.sha256(chemin.read_bytes()).hexdigest()
+        assert apres == avant, (
+            f"johnny a reecrit {nom}, qui portait la donnee d'alfred — "
+            "donnee partagee = course entre les 6 conteneurs"
+        )
+
+
+def test_le_dashboard_voit_les_6_bots_apres_leurs_ecritures(tmp_path, monkeypatch):
+    """L'autre moitie : la fusion appartient au LECTEUR. Il n'y a qu'un dashboard, il
+    ne peut pas se faire concurrence a lui-meme. Si un seul bot manque ici, le menu
+    deroulant ment sur qui est sur quel serveur — le symptome exact du 15/09."""
+    import shared.test_mode as tm
+    monkeypatch.setattr(tm, "DATA_DIR", str(tmp_path))
+
+    _backend = os.path.join(_parent_dir, "dashboard", "backend")
+    if _backend not in sys.path:
+        sys.path.insert(0, _backend)
+    from features_config import FeaturesConfigManager
+
+    class _FauxBot:
+        guilds = [_FauxServeur(SERVEUR_PRIVE)]
+
+    _FauxBot.guilds[0].name = "Serveur priver"
+
+    les_six = ["alfred", "johnny", "maiq", "malena", "sheogorath", "sugar"]
+    for bot_id in les_six:
+        assert tm.enregistrer_serveurs(bot_id, _FauxBot()) is True
+
+    vu = FeaturesConfigManager(pathlib.Path(tmp_path)).get_guilds()
+    assert sorted(vu["bots_vus"]) == les_six, (
+        f"le dashboard ne voit pas les 6 : {vu['bots_vus']}"
+    )
+    assert len(vu["guilds"]) == 1, vu["guilds"]
+    assert sorted(vu["guilds"][0]["bots"]) == les_six
 
 
 def test_une_remontee_impossible_ne_casse_pas_le_demarrage(monkeypatch):

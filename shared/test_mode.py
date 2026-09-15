@@ -97,22 +97,41 @@ def installer_garde_publication(bot_id: str, logger=None):
     return True
 
 
+def fichier_serveurs_du_bot(bot_id: str) -> str:
+    """Le fichier que CE bot, et lui seul, a le droit d'ecrire."""
+    # Le bot_id vient du code du bot, pas d'une entree : le filtre est une ceinture,
+    # pas une serrure. Il garantit surtout qu'aucun identifiant ne peut sortir du
+    # repertoire de donnees.
+    slug = "".join(c for c in (bot_id or "") if c.isalnum() or c in "-_") or "inconnu"
+    return os.path.join(DATA_DIR, f"bot_guilds_{slug}.json")
+
+
 def enregistrer_serveurs(bot_id: str, bot, logger=None):
     """Publie la liste des serveurs du bot pour le menu deroulant du dashboard.
 
     Le dashboard n'est pas un client Discord : sans cette remontee, il faudrait
     coller un identifiant de serveur a la main.
-    """
-    chemin = os.path.join(DATA_DIR, FICHIER_SERVEURS)
-    try:
-        donnees = {}
-        if os.path.exists(chemin):
-            with open(chemin, "r", encoding="utf-8") as f:
-                donnees = json.load(f) or {}
-        if not isinstance(donnees, dict):
-            donnees = {}
 
-        donnees[bot_id] = {
+    ⚠️ UN FICHIER PAR BOT, et jamais un fichier commun. La version precedente faisait
+    lire-modifier-ecrire sur un `bot_guilds.json` unique, partage par les 6 conteneurs.
+    `os.replace` rendait la DERNIERE etape atomique, ce qui ne protege rien : c'est le
+    CYCLE lire->modifier->ecrire qui doit l'etre. Le 2026-09-15, les 6 bots sont passes
+    la dedans dans la meme seconde (13:13:01) et **Johnny a disparu du dashboard** — un
+    autre bot avait lu le fichier avant son ecriture et l'a reecrit apres, depuis un
+    cliche qui ne le contenait pas. Aucune erreur, aucun journal : l'appel avait rendu
+    True. Detail et lecon : [[gotcha-ecriture-concurrente-fichier-partage]].
+
+    Le fichier provisoire etait lui aussi commun (`bot_guilds.json.tmp`) : deux bots
+    simultanes ecrivaient dans le MEME tampon avant que l'un d'eux ne le publie, ce qui
+    pouvait publier un JSON a moitie ecrit.
+
+    Ici chaque bot n'ecrit QUE son fichier, tampon compris. Il n'y a plus de donnee
+    partagee a perdre, donc plus de course — et c'est aussi ce que demande
+    l'independance des bots. La fusion est faite a la LECTURE, par le dashboard.
+    """
+    chemin = fichier_serveurs_du_bot(bot_id)
+    try:
+        contenu = {
             "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "guilds": [{"id": str(g.id), "name": g.name} for g in bot.guilds],
         }
@@ -120,7 +139,7 @@ def enregistrer_serveurs(bot_id: str, bot, logger=None):
         os.makedirs(DATA_DIR, exist_ok=True)
         provisoire = chemin + ".tmp"
         with open(provisoire, "w", encoding="utf-8") as f:
-            json.dump(donnees, f, indent=2, ensure_ascii=False)
+            json.dump(contenu, f, indent=2, ensure_ascii=False)
         os.replace(provisoire, chemin)
         return True
     except Exception as e:
