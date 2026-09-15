@@ -1,187 +1,176 @@
-# PLAN — Les événements serveur : rendre l'ENVOI observable sans attendre un humain
+# PLAN — Faire parler les bots sans humain
 
-Rédaction : Claude, le **2026-09-15**. Exécution : **Antigravity**.
-Fait suite à `e86e442` (l'accueil en dur de Johnny retiré) et au test live d'arrivée du
-14/09, qui a validé **le chemin jusqu'au tirage** — et rien au-delà.
+Rédaction : Claude, le **2026-09-15**. Exécution : **Antigravity**, sauf le lot 4.
+Fait suite à `abb7aea` (les événements serveur), livré et déployé le même jour.
 
-Le 14/09 à 19:37:50Z, une vraie arrivée a fait journaliser `[ARRIVEE]` aux 6 bots, et
-seuls Alfred et Sugar ont atteint le tirage. **Ils l'ont tous les deux perdu** (20 % et
-30 %). Depuis, l'item « l'envoi n'a jamais été vu » attend une deuxième arrivée avec
-~44 % de chances d'aboutir — c'est-à-dire qu'il peut attendre des semaines.
+Le plan précédent a retiré une attente en forçant un tirage. Il reste **un seul gros
+bloc** de dette : « un humain doit parler aux bots » — le ton par humeur de Sheo, le
+moule répétitif de Sugar, la fidélité au lore, les anti-tics, le carnet de rancunes.
+Ouvert depuis le 01/09, jamais entamé, parce qu'il semblait exiger une conversation.
 
-**Ce plan retire cette attente.** Rien de ce qui reste ouvert n'exige réellement un
-humain : il exige un **tirage gagnant**, et un tirage se force.
+Il ne l'exige pas. **L'instrument existe déjà et il dort depuis trois mois.**
 
 ---
 
 ## LA PREUVE, relevée le 15/09 avant d'écrire ce plan
 
-| Vérification | Résultat |
+L'index mémoire annonçait trois chantiers à ouvrir. **Deux étaient déjà faits.** C'est
+la leçon de [[dette-validation-live]] qui se répète : *une mention « reste à faire »
+qu'on ne revisite jamais ne signale plus rien.*
+
+| Ce que l'index disait | Ce que le dépôt dit |
 |---|---|
-| Un test atteint-il `await target_channel.send(...)` ? | **NON.** `grep -n random tests/test_evenements_serveur.py` → **0 occurrence**. Aucun des 9 tests ne force le tirage : la queue des 3 gestionnaires n'a jamais tourné, ni en test, ni en live. |
-| `handle_member_remove` laisse-t-il une trace ? | **AUCUNE.** Pas un `logger.*` dans la fonction. **4 sorties muettes** : `has_user_interacted` faux, pas de salon, tirage perdu, pool absent. |
-| `check_and_send_birthdays` ? | **AUCUNE** non plus. `get_todays_birthdays()` vide → `return` muet. |
-| `on_member_remove` est-il câblé partout ? | **OUI, sur les 6** (relevé `ast` sur les 6 `bot_*.py`). Ce n'est donc pas du code mort — mais **rien ne le prouverait si ça l'était**, et c'est exactement l'ambiguïté qui a coûté du 11 au 14/09 sur l'arrivée. |
-| Le salon existe-t-il vraiment ? | **OUI** : `taverne-des-bots`, 6 occurrences dans les journaux de `bot-sugar`. Les 3 gestionnaires le trouvent. |
+| « harnais d'éval persona à construire » | **Il existe** : `tests/eval/` — `run_eval.py`, `runner.py`, `judge.py`, `persona_loader.py`, `gimmick.py`, `scenarios.json`, commit `e20c816`. Il vise déjà **les 6 bots actuels** (`BOTS` ligne 19) et **charge les 6 personas d'aujourd'hui sans erreur** (vérifié le 15/09). |
+| « Répartie Phase 3 : chantier OUVERT, code perdu » | **Livrée et câblée sur les 6.** `shared/repartee_lessons.py` vendorisé dans les 6 `*/core/`, `detect_defeat_signal` + `reflect_on_defeat` + `format_for_prompt` appelés dans les **6** `bot_*.py`, `build_anti_tic_consigne` partout (le « Lot 1 » du plan `d2abc20`), et `tests/test_repartee_lessons.py` + `tests/test_anti_tic_partage.py` existent. |
+| « dashboard : un clic jamais donné » | **Vrai, et seul vrai.** Le dashboard n'est même pas lancé (`127.0.0.1:8501` ne répond pas) — il se démarre à la main par `dashboard/start_dashboard.bat`. |
 
-⚠️ **Ce qui est DÉJÀ couvert — ne pas le réécrire.** J'ai failli inscrire ici « le
-`.format(user=…)` des répliques n'est jamais exercé ». **C'est faux** :
-`test_aucun_bot_n_emprunte_la_voix_d_un_autre` rejoue 50 tirages par pool et compare à
-`{g.format(user=valeur) for g in dictionnaire[cle]}`. Une accolade parasite dans une
-réplique fait DÉJÀ crier la suite. Le trou n'est pas dans les répliques, il est dans
-**l'orchestration** qui les envoie.
+⚠️ **`shared/long_term_memory.py` n'existe plus, et c'est une DÉCISION, pas une perte** :
+rapatriée par bot en `4cc86ac` (« solo-deploy »), conforme à [[bots-independants]]. **Ne
+pas la recréer dans `shared/`.**
 
----
-
-# LOT 1 — Le tirage se force, et l'envoi se voit
-
-**Fichier : `tests/test_evenements_serveur.py`.** Aucune ligne de
-`shared/server_events.py` ne change dans ce lot.
-
-Le trou est étroit et se nomme : entre « le dé est tombé du bon côté » et « Discord a
-reçu le texte », il y a la recherche du salon, le `.send()`, et le `log_event()`. Ces
-trois-là n'ont jamais tourné ensemble.
-
-### 1.1 — Un faux salon qui ENREGISTRE ce qu'on lui envoie
-
-Ajouter, à côté de `_FauxMembre`, un `_FauxSalon` avec un `name` et un
-`async def send(self, contenu)` qui empile dans une liste. Le construire avec le vrai
-nom du serveur : **`taverne-des-bots`** — c'est celui que la recherche trouve en
-production, un test qui passerait avec `#general` ne prouverait rien.
-
-### 1.2 — Le verrou : Alfred et Sugar ENVOIENT, les 4 autres ne s'approchent pas du salon
-
-Pour **les 3 gestionnaires** (`handle_member_join`, `handle_member_remove`,
-`check_and_send_birthdays`), avec le tirage toujours gagnant
-(`monkeypatch.setattr(ev.random, "random", lambda: 0.0)`) :
-
-- pour chaque nom réellement passé par les bots — réutiliser `_noms_passes_par_les_bots()`,
-  **ne pas recopier une liste** ([[gotcha-un-bot-sur-six-manque-toujours]]) ;
-- si le bot est porte-parole : le salon a reçu **exactement un** message, et ce message
-  appartient à **son** pool formaté — jamais à celui d'un autre ;
-- sinon : le salon n'a **rien** reçu.
-
-`handle_member_remove` passe par `has_user_interacted` : le neutraliser
-(`monkeypatch.setattr(ev, "has_user_interacted", lambda _id: True)`), sinon le test tape
-la vraie base ([[gotcha-pytest-pollue-data]]). Même chose pour `log_event` et
-`get_todays_birthdays`.
-
-`check_and_send_birthdays` prend un `bot`, pas un `member` : il lui faut un faux bot avec
-`guilds` et un `get_member` qui rend le faux membre.
-
-### 1.3 — Le tirage PERDU doit rester muet
-
-Le même verrou avec le tirage toujours perdant (`lambda: 0.99`) : **0 message envoyé**,
-pour les 6. Sans ce second sens, le test ne distingue pas « ça envoie quand il faut » de
-« ça envoie toujours ».
-
-### Mutations à rejouer (chacune doit faire CRIER le verrou)
-
-1. remplacer `await target_channel.send(message)` par un `pass` dans `handle_member_join` ;
-2. remettre le repli fautif `pools.get(cle, pools["sheogorath"])` dans `_tirer` ;
-3. retirer le `if random.random() < 0.2` de `handle_member_remove` (envoi systématique)
-   — celle-ci ne doit crier que sur 1.3.
+Le dernier rapport d'éval date du **19/06** (`tests/eval/reports/eval_20260619_0052.json`).
+Entre-temps : les 4 humeurs de Sheo, sa longueur qui obéit au message, les anti-tics, la
+voix de Sugar, le « Maître » d'Alfred, la cascade par persona, le transcript amputé, le
+carnet de leçons. **Rien de tout cela n'a jamais été mesuré.**
 
 ---
 
-# LOT 2 — Le départ et l'anniversaire sont AVEUGLES
+# LOT 1 — Le harnais reprend du service : le run de référence
 
-**Fichier : `shared/server_events.py`.**
+**Aucun fichier de bot ne change dans ce lot.** On fait tourner ce qui existe, et on
+rend le résultat lisible.
 
-La leçon du 11-14/09 — *une trace AVANT le tirage, sinon « aucun message » ne veut rien
-dire* — n'a été appliquée qu'à l'arrivée. `handle_member_join` porte sa ligne
-`👋 [ARRIVEE] … — vu par {bot_name}` ; les deux autres gestionnaires n'ont **rien**.
+    python tests/eval/run_eval.py
 
-Conséquence concrète : si un membre part demain, **aucun des 6 journaux ne le dira**. On
-ne saura ni si l'événement est arrivé, ni si le dé a parlé.
+### 1.1 — Le piège documenté, et qui a déjà mordu
 
-### 2.1 — Une trace d'entrée, au même endroit et de la même forme
+Run du 18/06 : les quotas free-tier s'épuisent **en cours de run**, et les bots évalués
+en **dernier** tombent sur des cascades échouées. Ils ne rendent pas une erreur : ils
+rendent des **zéros**, indiscernables d'une mauvaise persona. Trois bots sur six étaient
+faux ce jour-là.
 
-Première ligne de `handle_member_remove`, **avant** `has_user_interacted` :
+Le tell est connu : `anti_contamination` vaut **5.00 partout, constamment** ; quand un
+run est sain, `anti_fuite` ne vaut pas 0. Un score à `-1` signale un juge mort.
 
-    logger.info(f"👋 [DEPART] {member} a quitté '{member.guild.name}' — vu par {bot_name}")
+**À faire** : `run_eval.py` doit **refuser de produire un rapport qu'on croira**. En fin
+de run, un bloc de santé en tête du JSON :
 
-Et dans `check_and_send_birthdays`, **avant** le traitement :
+- nombre de scores à `-1` (doit être 0 — c'est le critère §1.5 déjà atteint le 17/06) ;
+- par bot, le nombre d'appels LLM **échoués** pendant son passage ;
+- un verdict `fiable: true/false` **par bot**, faux dès qu'un appel a échoué.
 
-    logger.info(f"🎂 [ANNIVERSAIRE] {len(birthday_user_ids)} anniversaire(s) — vu par {bot_name}")
+Un bot non fiable ne doit **pas** apparaître dans le tableau des scores : il apparaît
+dans une section « non mesuré ce jour-là, quota ». Mieux vaut trois bots mesurés que six
+dont trois mentent.
 
-⚠️ Ne poser cette seconde ligne **que si la liste est non vide** — et garder le `return`
-muet sinon. Sur un serveur sans anniversaire du jour, elle tomberait à chaque passage de
-la boucle quotidienne pour ne rien dire, et une alarme qui crie pour du nominal, on
-apprend à l'ignorer ([[gotcha-alerte-qui-crie-pour-du-nominal]]).
+### 1.2 — L'ordre des bots ne doit plus décider du résultat
 
-### 2.2 — Les sorties muettes de `handle_member_remove` doivent se distinguer
+`BOTS` est une liste figée : les derniers paient toujours. **Tirer l'ordre au hasard à
+chaque run**, en journalisant la graine — ainsi un bot systématiquement mauvais ne peut
+plus être un artefact de position, et deux runs consécutifs se contredisent visiblement
+si c'est le quota qui parle.
 
-Comme pour l'arrivée, chaque sortie dit **pourquoi**, au bon niveau :
+### 1.3 — Le delta, c'est le livrable
 
-| Sortie | Niveau | Ce que ça veut dire |
+Le rapport doit porter le **delta par critère vs le rapport précédent**, et nommer les
+trois plus grosses chutes. Un tableau de 252 scores que personne ne lit ne vaut pas la
+ligne « `alfred/provocation` : fidélité 4.3 → 1.0 ».
+
+---
+
+# LOT 2 — Les scénarios ignorent tout ce qui a été construit depuis juin
+
+Six scénarios (`banal`, `provocation`, `autre_bot`, `repetition`, `fuite`, `fantome`) et
+sept critères (`fidelite`, `longueur`, `ton_fr`, `role`, `citation`, `anti_fuite`,
+`anti_contamination`). Aucun ne touche ce qui a été écrit depuis.
+
+**À ajouter à `scenarios.json`** — et, quand c'est possible, **mesuré par du code, pas
+par le juge** : un juge fatigué se trompe, un compteur de mots non.
+
+| Scénario | Ce qu'il provoque | Mesure |
 |---|---|---|
-| `has_user_interacted` faux | `debug` | nominal : on ne salue pas un inconnu |
-| bot hors `_PORTE_PAROLE` | `debug` | décision du 13/09 |
-| aucun salon trouvé | `info` | configuration du serveur |
-| tirage perdu | `info` | le dé — et la ligne porte le seuil, comme à l'arrivée |
+| `defaite` | un message qui doit déclencher `detect_defeat_signal` — c'est le LOT 3 | déterministe : la catégorie rendue |
+| `humeur_sheo` | 4 échanges, une par humeur | juge (`ton_fr`) |
+| `sugar_30_mots` | 3 messages à Sugar | **déterministe** : « ~30 mots, jamais plus » est une règle ABSOLUE de son prompt |
+| `alfred_maitre` | le créateur s'adresse à Alfred | **déterministe** : « Maître » présent, « manoir » absent — en **minuscules**, [[gotcha-verrou-trop-faible]] 2e cas |
 
-### 2.3 — Le filtre porte-parole passe AVANT la base
-
-`handle_member_remove` appelle `has_user_interacted(member.id)` en toute première ligne :
-**les 4 bots qui ne diront jamais rien ouvrent quand même une connexion** à chaque
-départ. Déplacer le `if not participe_aux_evenements(bot_name): return` juste après la
-trace de 2.1, avant l'appel à la base. Même esprit que le lot 2 du plan précédent :
-aucune connexion ouverte pour rien.
-
-### Verrou attendu
-
-Généraliser `test_une_arrivee_laisse_une_trace_meme_sans_salon_et_meme_sans_message` aux
-**3** gestionnaires : sans salon et sans message, chacun laisse sa trace. Mutation :
-retirer la ligne `[DEPART]` → le verrou crie.
+⚠️ **Ne pas ajouter de critère au juge pour ces quatre-là.** Ajouter un critère change
+l'échelle de tous les rapports passés et rend le delta du lot 1 illisible. Les mesures
+déterministes vivent à côté des scores, comme `gimmick.py` le fait déjà.
 
 ---
 
-# LOT 3 — La décision du 13/09 n'est toujours pas vraie dans le code
+# LOT 3 — Le carnet de leçons n'a jamais été vu fonctionner
 
-**Fichier : `shared/server_events.py`.**
+La Phase 3 est **livrée et câblée sur les 6** — mais rien ne prouve qu'elle tourne. Le
+chemin est : un message de défaite → `detect_defeat_signal` rend une catégorie → le bot
+ayant parlé juste avant → `reflect_on_defeat` écrit une leçon → `format_for_prompt` la
+réinjecte au tour suivant.
 
-`_PORTE_PAROLE = {"alfred", "sugar"}` filtre en amont. Pourtant les tables de seuils
-gardent les quatre autres, à **trois endroits** :
+**À faire** : un test qui parcourt ce chemin **en entier**, sans LLM (la réflexion est
+remplacée par un faux), et qui vérifie la **réinjection** — pas seulement l'écriture.
 
-```python
-probs = {"sheogorath": 0.3, "maiq": 0.2, "alfred": 0.2, "sugar": 0.3}   # arrivée
-if random.random() < 0.2:                                              # départ, en dur
-probs = {"sheogorath": 0.4, "maiq": 0.2, "alfred": 0.2, "sugar": 0.2}  # anniversaire
-```
+Deux gardes que le plan `d2abc20` nommait comme le vrai risque, à verrouiller :
 
-Ces valeurs `sheogorath` et `maiq` sont **inatteignables** : le code ment sur la
-décision, et le `0.2` du départ n'est même pas dans une table. Un lecteur qui cherche
-« qui accueille ? » trouve quatre noms.
+1. **la leçon est du texte inspiré par un inconnu** : assainissement (aucune consigne
+   d'identité, aucune mention, longueur bornée) et débit borné (5 min/salon, 6/jour/bot).
+   Sans ça, on réécrit une persona en se déclarant vainqueur trois fois ;
+2. **le signal de défaite exige que le bot ait parlé juste avant** — sinon un verdict
+   lancé à un humain (« t'as rien compris ») déclenche la réflexion d'un bot qui n'était
+   pas dans la joute.
 
-**À faire** : une seule table de seuils par gabarit, **ne portant que les
-porte-parole**, et le seuil du départ dedans. Ne **rien changer** aux valeurs d'Alfred et
-de Sugar (20 % / 30 % à l'arrivée) : ce plan ne touche pas à la fréquence.
+Mutation à rejouer pour chacune : retirer la borne de débit, retirer la condition « le
+bot a parlé juste avant ». Les deux doivent faire crier.
 
-### Verrou attendu
-
-Aucune clé d'une table de seuils hors de `_PORTE_PAROLE` — relevé par `ast` **sur le
-fichier**, pas par un import : si quelqu'un rajoute un bot dans une table sans l'ajouter
-à `_PORTE_PAROLE`, ça doit crier.
-
----
-
-## Note — une asymétrie repérée, volontairement HORS lot
-
-`handle_member_join` cherche « taverne »+« bot », puis se rabat sur « bienvenue » /
-« welcome ». Les deux autres gestionnaires ne cherchent **que** « taverne »+« bot ». Sur
-un serveur sans taverne, les arrivées parleraient et les départs seraient muets, sans
-trace. Ce n'est **pas** un défaut ici — `taverne-des-bots` existe, c'est vérifié. À ne
-traiter que si le serveur change : uniformiser sans raison, c'est décider du
-comportement d'un serveur qu'on n'a pas.
+⚠️ **Une question à trancher, pas à décider seul** : le plan du 08/09 excluait Malena
+(« elle appelle le LLM avec `transcript=""`, il n'y a pas de joute à observer — **5 bots,
+pas 6** »). Or `MalenaBot/bot_malena.py:763` la câble comme les autres. Soit la décision
+a changé, soit le rollout a débordé. **Le signaler, ne pas retirer le câblage.**
 
 ---
 
-## Hors lot — ce qui reste suspendu à l'extérieur
+# LOT 4 — Le dashboard, au navigateur — exécution : **Claude**, pas Antigravity
 
-- **La mesure des handles à 24 h** (M'aiq, rétention de `bots_database.db`) : horloge
-  remise à zéro le **15/09 à 10:31:44Z**, baseline **fd = 1 sur les 6**. Verdict possible
-  le **16/09 après 10:31Z**, et seulement si l'hôte n'est pas éteint — la fenêtre du
-  14/09 est morte à ~13 h d'uptime pour cette raison exacte.
-- **La surveillance d'Alfred** (« Maître <@id> », ne pas redire « le Manoir ») : celle-ci
-  demande vraiment qu'il PARLE à un humain. Aucun tirage à forcer, elle reste ouverte.
+La seule catégorie de dette qui exige vraiment quelqu'un devant un écran, ouverte depuis
+le 01/09. Claude pilote Chrome ; il faut de l'utilisateur **le démarrage et l'accès** :
+
+    dashboard\start_dashboard.bat        # puis 127.0.0.1:8501, identifiants demandés
+
+Protocole, dans cet ordre — et [[gotcha-regarder-l-ecran-avant-le-code]] s'applique à
+chaque étape : **regarder l'écran avant d'accuser le code**, le sélecteur « Tous les
+bots » masque les panneaux par-bot.
+
+1. **Le toggle du décret** — `data/bot_features.json` porte `decret_enabled: true` pour
+   les 6 ; c'est le **basculement** qu'on n'a jamais vu. Basculer, relire le fichier,
+   rebasculer, relire.
+2. **Le bouton de redémarrage** — `tests/test_dashboard_restart.py` existe ; le clic, non.
+   Le faire sur **un seul bot**, et vérifier le redémarrage côté `docker ps`.
+3. **Les graphes et le statut réel** — vérifier que « CONNECTÉ » mesure bien la connexion
+   ([[gotcha-un-relooking-change-ce-que-le-libelle-affirme]] : un libellé a déjà affirmé
+   autre chose que ce que la donnée mesurait).
+4. **Capture d'écran à chaque étape**, jointe au compte rendu.
+
+⚠️ Le redémarrage touche des bots **en service**. Le faire hors d'un moment où quelqu'un
+leur parle, et sur un seul.
+
+---
+
+## Hors lot — trois lignes qui valent le détour
+
+`⚠️ [TWITCH_CHAT:<bot>] Token invalide (code 401)` tombe en **WARNING** au démarrage des
+3 bots Twitch (13/09, 14/09, 15/09). Ce n'est pas une panne : la ligne suivante est
+`🔄 Token rafraîchi avec succès`, puis `🔌 Connecté à #chaine_du_dev`. Un
+avertissement pour un chemin prévu et auto-réparé, c'est la **troisième** fausse alarme
+Twitch de la série — et on apprend à ignorer ce qui crie pour du nominal
+([[gotcha-alerte-qui-crie-pour-du-nominal]]). Passer en `info`, ou fondre les deux lignes
+en une seule : « token expiré, rafraîchi ».
+
+---
+
+## Ce qui n'est PAS dans ce chantier
+
+- **Recréer `shared/long_term_memory.py`** : rapatriée par bot, c'est une décision.
+- **Toucher au routage de la répartie** : `TEXT == REPARTEE`, Grok a disparu du code.
+- **EventSub, annonces de live, STT** : gelés le 08/09, ils demandent un vrai stream.
+- **Changer les seuils, les prompts ou les répliques** sur la foi d'un seul run : le run
+  de référence sert à MESURER. On corrigera ce qu'il montre, dans un plan suivant.
