@@ -409,7 +409,14 @@ def test_l_exception_nemotron_ne_vaut_que_par_son_correctif():
 # ─────────── La longueur est un defaut de MODELE : mesure du 2026-09-16 ────────────────
 
 
-BOTS_SORTIS_DE_MISTRAL = ("johnny", "malena")
+# ⚠️ Johnny n'est PAS dans cette liste, et c'est une mesure, pas un oubli. Teste sur les
+# TROIS tetes en conditions d'eval le 17/09, il rend 8 a 10 phrases PARTOUT :
+#   ministral 3.92 global / 2.20 longueur   gpt-oss 3.72 / 2.30   flash-lite 3.82 / 2.60
+# 0.20 d'ecart total : du bruit. Sa verbosite ne vient pas du modele. Un durcissement de
+# son prompt (permission conditionnee a une invitation explicite, calquee sur Sheogorath)
+# a ete essaye le meme jour et a rendu le score PIRE (3.54 / 1.50) : annule.
+# Il reste donc sur sa tete d'origine. Voir [[gotcha-la-longueur-est-un-defaut-de-MODELE]].
+BOTS_SORTIS_DE_MISTRAL = ("malena",)
 
 
 @pytest.mark.parametrize("bot", BOTS_SORTIS_DE_MISTRAL)
@@ -419,9 +426,11 @@ def test_les_bots_les_plus_verbeux_ne_repassent_pas_mistral_en_tete(bot):
     Le 2026-09-16, les trois bots les moins concis étaient exactement les trois bots
     Mistral-first. À prompt identique et `max_tokens=300` :
 
-        bot      ministral-14b     flash-lite      gpt-oss-120b
-        johnny    6 phr / 92 m     4 phr / 34 m    3 phr / 28 m   (score longueur 2.20/5)
         malena    8 phr / 95 m     4 phr / 35 m    4 phr / 24 m   (score longueur 1.40/5)
+
+    Confirme PAR L'EVAL, pas seulement par la sonde : passee sur flash-lite, Malena est
+    tombee de 12 a 6 phrases (138 -> 60 mots) et son `longueur` est monte de 1.40 a 3.30,
+    son score global de 3.62 a 4.34.
 
     ⚠️ La justification d'origine de leur tête Mistral portait sur `mistral-small-latest`,
     mort depuis le 04/09 (429 par MODÈLE, encore vrai le 16/09). `ministral-14b` était un

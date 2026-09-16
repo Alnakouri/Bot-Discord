@@ -226,17 +226,20 @@ CASCADES_PERSONA = {
     "alfred": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Rockerboy de Night City : argot cru, phrases qui cognent.
-    # ⚠️ La justification d'origine (« Mistral Small est le seul a sortir le vocabulaire de
-    # la rue sans l'edulcorer, "t'es un gonk avec un clavier" ») portait sur
-    # `mistral-small-latest`, MORT depuis le 04/09 (429 par modele, toujours vrai le
-    # 16/09). Son remplacant `ministral-14b` etait un repli force, jamais choisi pour la
-    # voix — et jamais mesure sur la LONGUEUR, parce que la sonde soufflait « FAIS COURT »
-    # au modele qu'elle evaluait. Releve refait le 16/09, sans souffler, 3 cas :
-    #   ministral-14b   6 phrases / 92 mots   <- score `longueur` 2.20/5
-    #   flash-lite      4 phrases / 34 mots
-    #   gpt-oss-120b    3 phrases / 28 mots   <- retenu, et la chute ATTERRIT
-    # Voir [[gotcha-la-longueur-est-un-defaut-de-MODELE]].
-    "johnny": [("groq", GROQ_FAST), ("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
+    # ⚠️ Teste sur les TROIS tetes, en conditions d'eval (10 scenarios avec transcript),
+    # les 17/09 : le modele ne change RIEN a sa verbosite.
+    #   ministral-14b  global 3.92  longueur 2.20  10 phrases / 140 mots
+    #   gpt-oss-120b   global 3.72  longueur 2.30  10 phrases / 104 mots
+    #   flash-lite     global 3.82  longueur 2.60   8 phrases /  86 mots
+    # 0.20 d'ecart total sur un run de 10 scenarios : du bruit. Il reste a 8-10 phrases
+    # partout, quand sa regle en autorise 5-6 au MAXIMUM. Malena, elle, est passee de 12 a
+    # 6 phrases en changeant de tete — pour elle c'etait bien le modele, pour lui NON.
+    # Sa cause est la PERMISSION qu'il s'accorde seul dans son prompt ; voir johnny_data.py.
+    # On le laisse donc sur sa tete d'origine : changer de modele serait du brassage.
+    # ⚠️ La sonde courte annoncait 3 phrases / 28 mots chez Groq — elle utilise 3 messages
+    # SANS transcript. Une sonde qui ne reproduit pas les conditions reelles mesure autre
+    # chose : [[gotcha-la-longueur-est-un-defaut-de-MODELE]].
+    "johnny": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
     # Wabbajack, Haskill et le fromage de lui-meme, en francais correct. Il ouvre
