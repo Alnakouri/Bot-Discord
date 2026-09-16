@@ -14,11 +14,13 @@ l'interdit. C'est la leçon déjà payée avec le moule Haskill
 ([[gotcha-le-prompt-enseigne-le-tic-interdit]]) : **une démonstration bat une
 interdiction**, et renforcer le filet ne sert à rien. On NOMME la forme, on ne la REND pas.
 
-⚠️ `Sheogorath` est hors de ce verrou, volontairement. Ses cinq occurrences ne sont pas
-des exemples : ce sont des easter eggs de `SHEO_BRAIN["easter_eggs"]`, renvoyés TELS
-QUELS au salon par `bot_sheogorath.py` (1 % des messages), sans passer par le LLM. Elles
-contredisent sa propre règle « PAS DE NARRATION », mais les retirer touche sa VOIX, pas
-un défaut de prompt — décision utilisateur, pas correctif.
+⚠️ `Sheogorath` est un cas à part, réglé le 2026-09-16 sur décision de l'utilisateur
+(« pas de narration »). Ses cinq occurrences n'étaient pas des exemples : c'étaient des
+easter eggs de `SHEO_BRAIN["easter_eggs"]`, renvoyés TELS QUELS au salon par
+`bot_sheogorath.py` (1 % des messages), **sans passer par le LLM** — donc pas un prompt
+qui enseigne, mais un bot qui narre pour de bon, en violation de sa propre règle
+« PAS DE NARRATION ». Elles ont été réécrites en PAROLES, pas supprimées : le tango,
+la chanson et le quatrième mur sont toujours là, mais Sheo les DIT.
 """
 import os
 import re
@@ -31,6 +33,7 @@ PERSONAS = {
     "JohnnyBot": "johnny_data.py",
     "MaiqBot": "maiq_data.py",
     "MalenaBot": "malena_data.py",
+    "Sheogorath": "sheo_data.py",
     "SugarBot": "sugar_data.py",
 }
 
@@ -71,3 +74,28 @@ def test_l_interdiction_elle_meme_n_a_pas_disparu():
             f"{dossier} : la règle qui interdit les astérisques a disparu du prompt — "
             "on a retiré la démonstration ET l'interdiction"
         )
+
+
+
+def test_sheogorath_ne_narre_plus_a_la_TROISIEME_personne():
+    """Ses easter eggs étaient envoyés TELS QUELS au salon, pas donnés en exemple.
+
+    `bot_sheogorath.py` tire dans `SHEO_BRAIN["easter_eggs"]` et renvoie la chaîne
+    directement, 1 % des messages, **sans passer par le LLM**. Cinq d'entre elles étaient
+    de la didascalie à la 3e personne — « Sheogorath danse le tango » — alors que sa
+    propre `PERSONALITY_BASE` dit « Tu PARLES, tu ne te décris pas ». Aucun prompt ne
+    pouvait corriger ça : le LLM n'était pas dans la boucle.
+
+    Réécrites en paroles le 2026-09-16, sur décision de l'utilisateur.
+    """
+    chemin = os.path.join(_parent_dir, "Sheogorath", "sheo_data.py")
+    src = open(chemin, encoding="utf-8").read()
+
+    for narration in ("Sheogorath danse", "Sheogorath chante", "Sheogorath sourit",
+                      "Sheogorath se", "Sheogorath regarde"):
+        assert narration not in src, (
+            f"didascalie à la 3e personne retrouvée : {narration!r}. Ces chaînes partent "
+            "TELLES QUELLES au salon — Sheo doit le DIRE, pas se décrire."
+        )
+
+    assert "Tu PARLES, tu ne te décris pas" in src,         "la règle PAS DE NARRATION a disparu de PERSONALITY_BASE"

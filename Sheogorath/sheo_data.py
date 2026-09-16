@@ -166,7 +166,7 @@ SHEO_BRAIN = {
         "Tu crois que j'ai des limites ? J'AI INVENTÉ LE CONCEPT DE LIMITE... puis je l'ai BRISÉ !",
         "Critiquer un Daedra ? Tu as du CRAN ! Du cran, mais AUCUN cerveau pour l'accompagner !",
         "Je parle comme je veux, QUAND je veux ! Et maintenant je veux que tu te TAISES ! 🔇",
-        "Tu attends de la nouveauté ? Très bien : *je t'accorde la permission de disparaître*. C'est NOUVEAU ça, non ? ✨",
+        "Tu attends de la nouveauté ? Très bien : je t'accorde la permission de DISPARAÎTRE. C'est NOUVEAU ça, non ? ✨",
         "Mon vocabulaire EST le vocabulaire ! Les autres n'en sont que de pâles COPIES !",
         "L'ennui que tu ressens ? C'est ton REFLET dans mes magnificences. Miroir déformant, évidemment.",
         "Tu veux que je sois 'normal' ? J'ai essayé une fois pendant 3 secondes. C'était HORRIBLE !",
@@ -379,20 +379,20 @@ SHEO_BRAIN = {
     
     "easter_eggs": [
         "WABBAJACK WABBAJACK WABBAJACK WABBAJACK WABBAJACK ! ✨🧀✨🧀✨",
-        "*POUF* Tu es maintenant un FROMAGE ! Enfin... en théorie. Discord ne le permet pas. Dommage.",
+        "POUF ! Tu es maintenant un FROMAGE ! Enfin... en théorie. Discord ne le permet pas. Dommage.",
         "Je vais te confier un secret : Jyggalag... Non. Non, finalement non. Va-t'en.",
         "🎭 MARCHE GRISE ACTIVÉE ! Non, attends, fausse alarme. C'était juste Haskill qui éternuait.",
         "Les saucisses sont les meilleurs philosophes. Elles SAVENT qu'elles finiront mangées et acceptent leur destin !",
-        "*Sheogorath danse le tango avec un crâne* Quoi ? TU N'AIMES PAS LE TANGO ?!",
+        "Une seconde, je termine mon tango avec ce crâne — il mène, l'insolent. Quoi ? TU N'AIMES PAS LE TANGO ?!",
         "J'ai inventé le fromage. Non, vraiment. Les mortels ont VOLÉ mon invention. Je vais tous les poursuivre en justice !",
         "🧀 ALERTE FROMAGE COSMIQUE ! Une meule de roquefort traverse l'Oblivion en ce moment même ! Fascinant !",
         # NOUVEAUX EASTER EGGS
-        "🎵 *Sheogorath chante* ♪ Le fromaaage est éternel, les mortels sont cruels, je mange du Brie sous le soleil ♪ ... Magnifique. J'ai pleuré.",
+        "🎵 Écoute bien, je chante : ♪ Le fromaaage est éternel, les mortels sont cruels, je mange du Brie sous le soleil ♪ ... Magnifique. J'ai pleuré.",
         "FUN FACT : Tu es le 7 429ème mortel à me parler aujourd'hui. Ou le premier. Le temps n'est pas linéaire ici. 🌀",
         "ERREUR 404 : SANTÉ MENTALE NON TROUVÉE. Résultat normal. Tout va bien. TOUT VA PARFAITEMENT BIEN. 😃🔥",
         "Si tu lis ce message, c'est que le Wabbajack t'a choisi. Ou pas. Je l'ai laissé traîner. Quelqu'un l'a touché ? 🪄",
         "CONFESSION : J'ai peur des cuillères. Non, c'est faux. LES CUILLÈRES ONT PEUR DE MOI ! 🥄😱",
-        "*Regarde directement dans le 4ème mur* Oui, TOI. Celui qui me lit. Je te VOIS. Tu as mangé quoi ce matin ? 👁️",
+        "Je regarde droit dans le quatrième mur, là, maintenant. Oui, TOI. Celui qui me lit. Je te VOIS. Tu as mangé quoi ce matin ? 👁️",
         "BREAKING NEWS : Haskill a souri. Les Îles Trémensides sont en état d'urgence. Apocalypse imminente. 🚨",
     ],
     
