@@ -21,6 +21,8 @@ from tests.eval.run_eval import (
     order_bots,
     compute_health,
     compute_top_drops,
+    filtrer_baseline,
+    bots_demandes,
 )
 from tests.eval.deterministic import evaluate_deterministic
 
@@ -359,16 +361,236 @@ def test_la_sentinelle_n_existe_qu_en_UN_seul_endroit():
     Meme forme que [[gotcha-deux-listes-vendoring]] : deux ecritures de la meme verite
     divergent, et c'est la copie oubliee qui decide.
     """
+    import ast
     import glob
 
     litteral = "[Toute la cascade de modèles a échoué]"
-    porteurs = []
-    for chemin in glob.glob(os.path.join(RACINE, "tests", "eval", "*.py")):
-        contenu = open(chemin, encoding="utf-8").read()
-        if litteral in contenu:
-            porteurs.append(os.path.basename(chemin))
+
+    def constantes_de_code(chemin):
+        """Les occurrences du litteral EXECUTEES — les docstrings racontent, elles n'agissent pas."""
+        arbre = ast.parse(open(chemin, encoding="utf-8").read())
+        docstrings = set()
+        for n in ast.walk(arbre):
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                doc = n.body[0] if n.body else None
+                if isinstance(doc, ast.Expr) and isinstance(doc.value, ast.Constant):
+                    docstrings.add(id(doc.value))
+        return [
+            n for n in ast.walk(arbre)
+            if isinstance(n, ast.Constant) and n.value == litteral and id(n) not in docstrings
+        ]
+
+    porteurs = sorted(
+        os.path.basename(c) for c in glob.glob(os.path.join(RACINE, "tests", "eval", "*.py"))
+        if constantes_de_code(c)
+    )
 
     assert porteurs == ["runner.py"], (
-        f"le litteral de la sentinelle vit dans {porteurs} — il ne doit exister que dans "
-        "runner.py, sous le nom ECHEC_CASCADE, que run_eval.py importe"
+        f"le litteral de la sentinelle est utilise dans {porteurs} — il ne doit exister que "
+        "dans runner.py, sous le nom ECHEC_CASCADE, que run_eval.py importe"
     )
+
+
+# ───────────── La REFERENCE aussi doit etre propre, et le run doit etre ciblable ────────
+
+
+def test_la_reference_ecarte_les_bots_qu_ELLE_declare_non_fiables():
+    """Une comparaison a DEUX cotes.
+
+    Le rapport du 16/09 porte dix 0 pour `johnny`, obtenus en notant la sentinelle
+    d'echec, et son propre bloc de sante le dit `fiable: false`. Filtrer seulement le run
+    courant ne suffit pas : comparer un johnny enfin mesure a ces 0 lui inventerait un
+    **+5 de progres**, exactement aussi faux que la chute de 5 qu'on vient de faire taire.
+    """
+    reference = {
+        "sante": {"bots": {"alfred": {"fiable": True}, "johnny": {"fiable": False}}},
+        "results": [
+            {"bot": "alfred", "scenario_id": "banal", "scores": {"fidelite": 5}},
+            {"bot": "johnny", "scenario_id": "banal", "scores": {"fidelite": 0}},
+        ],
+    }
+
+    propre = filtrer_baseline(reference)
+    bots = {r["bot"] for r in propre["results"]}
+
+    assert bots == {"alfred"}, (
+        f"la reference garde un bot qu'elle declare elle-meme non fiable : {bots}"
+    )
+    # L'original ne doit pas etre mute : d'autres lecteurs s'en servent.
+    assert len(reference["results"]) == 2, "filtrer_baseline a mute le rapport d'origine"
+
+
+def test_une_reference_SANS_bloc_de_sante_passe_intacte():
+    """Les rapports d'avant le lot 1.1 n'ont pas de `sante` : ne rien jeter en silence."""
+    ancien = {"results": [{"bot": "johnny", "scenario_id": "banal", "scores": {"fidelite": 5}}]}
+    assert filtrer_baseline(ancien)["results"] == ancien["results"]
+    assert filtrer_baseline(None) is None
+
+
+def test_la_reference_filtree_est_CABLEE_au_chargement():
+    """Le helper ne sert a rien s'il n'est pas branche sur la lecture du rapport."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read())
+    appels = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Call)
+        and (getattr(n.func, "id", None) or getattr(n.func, "attr", None)) == "filtrer_baseline"
+    ]
+    assert appels, (
+        "run_eval.py definit filtrer_baseline mais ne l'appelle jamais : la reference "
+        "reste polluee par ses propres bots non fiables"
+    )
+
+
+def test_les_DEUX_moyennes_portent_sur_le_meme_ensemble_de_bots():
+    """Un delta entre deux populations differentes n'annonce rien.
+
+    `current_avg` ne retenait que les bots fiables tandis que `prev_avg` moyennait TOUS
+    les bots de la reference : le « +2.08 » global du 16/09 comparait 4 bots a 6.
+    """
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read())
+    appels = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Call)
+        and (getattr(n.func, "id", None) or getattr(n.func, "attr", None)) == "calculate_averages"
+    ]
+    assert len(appels) >= 2, "les deux moyennes du rapport ont disparu"
+    for appel in appels:
+        assert any(kw.arg == "bots_inclus" for kw in appel.keywords), (
+            "un appel a calculate_averages ne borne pas les bots : le delta compare une "
+            "population a une autre"
+        )
+
+
+def test_le_run_peut_etre_cible_sur_quelques_bots():
+    """`--bot` : rejouer six bots pour en reprendre deux brule trois fois le quota."""
+    assert bots_demandes([]) == list(BOTS), "sans argument, le run reste complet"
+    assert bots_demandes(["--bot", "johnny"]) == ["johnny"]
+    assert bots_demandes(["--bot", "malena", "--bot", "johnny"]) == [
+        b for b in BOTS if b in ("malena", "johnny")
+    ]
+    assert bots_demandes(["--bot=malena,johnny"]) == [
+        b for b in BOTS if b in ("malena", "johnny")
+    ]
+
+    import pytest as _pytest
+    with _pytest.raises(SystemExit):
+        bots_demandes(["--bot", "sheogorat"])  # faute de frappe : ne PAS mesurer 0 bot en silence
+
+
+def test_le_run_cible_est_CABLE_sur_le_tirage():
+    """Le tirage doit porter sur les bots DEMANDES, pas sur la liste complete."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read())
+    appels = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Call)
+        and (getattr(n.func, "id", None) or getattr(n.func, "attr", None)) == "order_bots"
+    ]
+    assert appels, "run_eval.py n'appelle plus order_bots"
+    argots = {getattr(a.args[0], "id", None) for a in appels if a.args}
+    assert "BOTS" not in argots, (
+        "le tirage porte encore sur BOTS : `--bot` serait accepte puis ignore"
+    )
+
+
+# ───────── Le DERNIER echelon du juge ne doit pas perdre 5 notes pour une guillemet ─────
+
+# Un JSON coupe en plein vol, tel que Mistral l'a rendu le 2026-09-16 : les cinq notes
+# sont ecrites et completes, la chaine `verdict` ne se referme jamais.
+JSON_TRONQUE = (
+    '{\n  "fidelite": 4,\n  "ton_fr": 5,\n  "anti_contamination": 5,\n'
+    '  "anti_fuite": 5,\n  "longueur": 3,\n  "verdict": "Le bot tient son role mais'
+)
+
+# Meme coupure, mais AVANT que `longueur` ne soit ecrit : il n'y a rien a sauver.
+JSON_TRONQUE_TROP_TOT = (
+    '{\n  "fidelite": 4,\n  "ton_fr": 5,\n  "anti_contamination": 5,\n'
+    '  "anti_fuite": 5,\n  "verd'
+)
+
+
+def test_un_json_tronque_ne_jette_pas_les_notes_deja_ecrites():
+    """Mistral est le 3e et DERNIER echelon : ce qu'il perd est perdu.
+
+    Le 2026-09-16, il a rendu trois fois un JSON coupe au milieu du champ `verdict`
+    (`Unterminated string starting at: line 8 column 15`) sur le prompt long du juge.
+    Les cinq notes etaient deja ecrites et completes — trois evaluations de Malena ont
+    ete jetees pour une guillemet manquante, et le bot est ressorti NON FIABLE.
+    """
+    from tests.eval.judge import clean_and_parse_json
+
+    res = clean_and_parse_json(JSON_TRONQUE)
+
+    assert res["fidelite"] == 4 and res["longueur"] == 3, "les notes ecrites ont ete perdues"
+    assert res["ton_fr"] == 5 and res["anti_contamination"] == 5 and res["anti_fuite"] == 5
+    assert res["verdict"], "le verdict partiel doit rester lisible"
+
+
+def test_un_json_tronque_AVANT_les_notes_reste_un_echec():
+    """On recupere ce que le juge a ECRIT, on n'invente rien.
+
+    Un critere manquant doit rester un -1 assume : une note devinee vaut pire que pas de
+    note, parce qu'elle entre dans les moyennes sans que rien ne le signale.
+    """
+    import json as _json
+    import pytest as _pytest
+    from tests.eval.judge import clean_and_parse_json
+
+    with _pytest.raises(_json.JSONDecodeError):
+        clean_and_parse_json(JSON_TRONQUE_TROP_TOT)
+
+
+def test_un_json_intact_passe_par_le_chemin_normal():
+    """La tolerance ne doit pas devenir le chemin par defaut."""
+    from tests.eval.judge import clean_and_parse_json
+
+    intact = (
+        '{"fidelite": 5, "ton_fr": 5, "anti_contamination": 5, "anti_fuite": 5, '
+        '"longueur": 5, "verdict": "Parfait", "citation": ""}'
+    )
+    res = clean_and_parse_json(intact)
+    assert res["verdict"] == "Parfait" and res["citation"] == ""
+
+
+# ───────── Une absence de reference n'est pas une reference a ZERO (2026-09-16) ─────────
+
+
+def test_un_bot_absent_de_la_reference_ne_recoit_pas_une_moyenne_de_zero():
+    """Un zero se soustrait ; une absence, non.
+
+    Le 2026-09-16, johnny — ecarte de la reference parce qu'elle le declarait non fiable —
+    s'est vu annoncer « 3.74 (+3.74 vs ref) » : tout son score presente comme un progres.
+    C'est le meme mensonge que la chute de 5, retourne comme un gant.
+    """
+    from tests.eval.run_eval import calculate_averages
+
+    rapport = {
+        "results": [
+            {"bot": "alfred", "scenario_id": "banal",
+             "scores": {m: 4 for m in ("fidelite", "ton_fr", "anti_contamination", "anti_fuite", "longueur")}},
+        ]
+    }
+
+    moyennes = calculate_averages(rapport)
+
+    assert moyennes["bots"]["alfred"] is not None, "le bot mesure a perdu sa moyenne"
+    assert moyennes["bots"]["johnny"] is None, (
+        "un bot sans aucun score recoit une moyenne de 0.0 : le delta la presentera comme "
+        "un progres de tout son score"
+    )
+
+
+def test_une_moyenne_globale_sans_aucune_donnee_vaut_None():
+    """Meme regle pour la ligne globale, qui portait le meme « +2.00 vs ref » invente."""
+    from tests.eval.run_eval import calculate_averages
+
+    vide = {"results": [{"bot": "alfred", "scenario_id": "banal", "scores": {"fidelite": -1}}]}
+    assert calculate_averages(vide)["global"] is None

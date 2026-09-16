@@ -35,8 +35,49 @@ def clean_and_parse_json(text):
     match = re.search(r'\{.*\}', text, re.DOTALL)
     if match:
         text = match.group(0)
-        
-    return json.loads(text)
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        recupere = _recuperer_scores_tronques(text)
+        if recupere is None:
+            raise
+        logger.warning(
+            "Juge LLM : JSON tronque, les 5 notes ont ete recuperees telles qu'ecrites "
+            "par le juge (verdict perdu)."
+        )
+        return recupere
+
+
+# Les 5 criteres, dans l'ordre ou le juge doit les rendre.
+CRITERES = ("fidelite", "ton_fr", "anti_contamination", "anti_fuite", "longueur")
+
+
+def _recuperer_scores_tronques(text):
+    """Sauve les notes d'un JSON coupe en plein vol, SANS en inventer aucune.
+
+    Observe le 2026-09-16 : sur le prompt long du juge, Mistral — le troisieme et
+    DERNIER echelon — rend trois fois un JSON coupe au milieu du champ `verdict`
+    (`Unterminated string starting at: line 8 column 15`). Les cinq notes, elles, etaient
+    deja ecrites et completes : trois evaluations de Malena ont ete jetees pour une
+    guillemet manquante, et le bot est ressorti NON FIABLE.
+
+    La regle est stricte : on ne rend quelque chose que si **les cinq criteres** sont
+    presents en toutes lettres avec une valeur entiere. Un seul manquant, et on releve
+    l'erreur d'origine — un score absent doit rester un -1, jamais une valeur devinee.
+    """
+    notes = {}
+    for critere in CRITERES:
+        trouve = re.search(rf'"{critere}"\s*:\s*(-?\d+)', text)
+        if not trouve:
+            return None
+        notes[critere] = int(trouve.group(1))
+
+    verdict = re.search(r'"verdict"\s*:\s*"([^"]*)', text)
+    notes["verdict"] = (verdict.group(1).strip() if verdict else "") or "Verdict tronque par le fournisseur"
+    citation = re.search(r'"citation"\s*:\s*"([^"]*)"', text)
+    notes["citation"] = citation.group(1) if citation else ""
+    return notes
 
 async def evaluate_response(
     *,

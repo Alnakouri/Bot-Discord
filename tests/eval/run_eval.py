@@ -137,11 +137,49 @@ def calculate_averages(report_data, metrics: list[str] = METRICS, bots_inclus: l
                 if bot in bot_scores:
                     bot_scores[bot][m].append(val)
 
-    averages["global"] = {m: (sum(vals) / len(vals) if vals else 0.0) for m, vals in total_scores.items()}
+    if not any(total_scores[m] for m in metrics):
+        averages["global"] = None
+    else:
+        averages["global"] = {m: (sum(vals) / len(vals) if vals else 0.0) for m, vals in total_scores.items()}
     averages["bots"] = {}
     for b in BOTS:
+        # ⚠️ `None`, pas `0.0`, quand le bot n'a AUCUN score ici. Un zéro se soustrait :
+        # le 2026-09-16, johnny — absent de la référence parce qu'elle le déclarait non
+        # fiable — s'est vu annoncer « 3.74 (+3.74 vs ref) », c'est-à-dire tout son score
+        # présenté comme un progrès. Une absence de référence n'est pas une référence à
+        # zéro. Voir [[gotcha-run-eval-borne-par-le-quota]].
+        if not any(bot_scores[b][m] for m in metrics):
+            averages["bots"][b] = None
+            continue
         averages["bots"][b] = {m: (sum(vals) / len(vals) if vals else 0.0) for m, vals in bot_scores[b].items()}
     return averages
+
+
+def filtrer_baseline(previous_report_data: dict) -> dict:
+    """Retire de la référence les bots que CE rapport-là a lui-même déclarés non fiables.
+
+    ⚠️ Le filtre sur le run courant ne suffit pas : la comparaison a DEUX côtés.
+    Le rapport du 2026-09-16 porte dix 0 pour `johnny`, obtenus en notant
+    `[Toute la cascade de modèles a échoué]` — son propre bloc de santé le dit
+    `fiable: false`. Comparer un johnny mesuré à ces 0 lui inventerait un **+5 de
+    progrès** aussi faux que la chute de 5 qu'on vient de faire taire.
+    La vérité est déjà dans le fichier : chaque rapport transporte son `sante`.
+    Voir [[gotcha-run-eval-borne-par-le-quota]].
+    """
+    if not previous_report_data:
+        return previous_report_data
+
+    sante_ref = previous_report_data.get("sante", {}).get("bots", {})
+    non_fiables = {b for b, etat in sante_ref.items() if not etat.get("fiable", True)}
+    if not non_fiables:
+        return previous_report_data
+
+    propre = dict(previous_report_data)
+    propre["results"] = [
+        r for r in previous_report_data.get("results", []) if r["bot"] not in non_fiables
+    ]
+    print(f"[REF] Bots ecartes de la reference (non fiables dans CE rapport) : {sorted(non_fiables)}")
+    return propre
 
 
 def get_last_report():
@@ -169,6 +207,37 @@ def cleanup_pycache():
             print(f"Avertissement lors du nettoyage du cache : {e}")
 
 
+def bots_demandes(argv: list[str] = None) -> list[str]:
+    """Lit `--bot <id>` (répétable, ou liste séparée par des virgules).
+
+    Un run complet coûte ~60 appels de juge et autant côté bots. Quand seuls deux bots
+    sont à reprendre — parce que le tirage les avait laissés en fin de file et que les
+    quotas étaient vides — rejouer les six brûle trois fois le quota nécessaire et peut
+    affamer deux AUTRES bots. Voir [[gotcha-run-eval-borne-par-le-quota]].
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    demandes = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--bot" and i + 1 < len(argv):
+            demandes.extend(x.strip() for x in argv[i + 1].split(",") if x.strip())
+            i += 2
+        elif argv[i].startswith("--bot="):
+            demandes.extend(x.strip() for x in argv[i][6:].split(",") if x.strip())
+            i += 1
+        else:
+            i += 1
+
+    if not demandes:
+        return list(BOTS)
+
+    inconnus = [b for b in demandes if b not in BOTS]
+    if inconnus:
+        raise SystemExit(f"[ERREUR] Bot(s) inconnu(s) : {inconnus}. Connus : {BOTS}")
+    # Dedoublonner en gardant l'ordre de BOTS, pour que le tirage reste comparable.
+    return [b for b in BOTS if b in demandes]
+
+
 async def main():
     print("[START] Demarrage du harnais d'evaluation des personas...")
 
@@ -189,12 +258,15 @@ async def main():
         print(f"[REF] Rapport de reference trouve : {os.path.basename(last_report_path)}")
         try:
             with open(last_report_path, "r", encoding="utf-8") as f:
-                last_report_data = json.load(f)
+                last_report_data = filtrer_baseline(json.load(f))
         except Exception as e:
             print(f"Impossible de lire le dernier rapport : {e}")
 
     # 3. Tirage aléatoire de l'ordre des bots (Lot 1.2)
-    bots_evalues, seed = order_bots(BOTS)
+    bots_a_mesurer = bots_demandes()
+    if bots_a_mesurer != list(BOTS):
+        print(f"[HARNAIS] Run PARTIEL demande : {bots_a_mesurer}")
+    bots_evalues, seed = order_bots(bots_a_mesurer)
     print(f"[HARNAIS] Graine aleatoire (seed) : {seed}")
     print(f"[HARNAIS] Ordre des bots tire au sort : {' -> '.join(b.upper() for b in bots_evalues)}")
 
@@ -340,7 +412,9 @@ async def main():
     bots_non_fiables = [b for b in bots_evalues if not sante["bots"][b]["fiable"]]
 
     current_avg = calculate_averages(new_report_data, bots_inclus=bots_fiables)
-    prev_avg = calculate_averages(last_report_data)
+    # Les deux moyennes doivent couvrir le MEME ensemble de bots, sinon le delta
+    # compare une population a une autre et n'annonce rien.
+    prev_avg = calculate_averages(last_report_data, bots_inclus=bots_fiables)
 
     # 8. Affichage du résumé console
     print("\n" + "=" * 80)
@@ -395,19 +469,19 @@ async def main():
         print(" Aucune chute de score détectée par rapport au rapport précédent.")
 
     # Moyennes globales
-    if current_avg:
+    if current_avg and current_avg.get("global"):
         print("\n" + "=" * 80)
         print("MOYENNES ET DELTAS GLOBAUX (Bots fiables uniquement)")
         print("=" * 80)
         for m in METRICS:
             curr_val = current_avg["global"][m]
-            if prev_avg:
+            if prev_avg and prev_avg.get("global"):
                 prev_val = prev_avg["global"][m]
                 diff = curr_val - prev_val
                 diff_str = f"{diff:+.2f}" if diff != 0 else "0.00"
                 print(f" - {m:<18} : {curr_val:.2f} ({diff_str} vs ref)")
             else:
-                print(f" - {m:<18} : {curr_val:.2f}")
+                print(f" - {m:<18} : {curr_val:.2f} (pas de reference comparable)")
 
         print("\n" + "=" * 80)
         print("DETAIL PAR BOT (MOYENNE GLOBALE DES SCORES)")
@@ -415,14 +489,14 @@ async def main():
         for b in bots_fiables:
             b_avg = current_avg["bots"][b]
             score_sum = sum(b_avg.values()) / len(b_avg) if b_avg else 0.0
-            if prev_avg and b in prev_avg["bots"]:
-                prev_b_avg = prev_avg["bots"][b]
-                prev_sum = sum(prev_b_avg.values()) / len(prev_b_avg) if prev_b_avg else 0.0
+            prev_b_avg = prev_avg["bots"].get(b) if prev_avg else None
+            if prev_b_avg:
+                prev_sum = sum(prev_b_avg.values()) / len(prev_b_avg)
                 diff = score_sum - prev_sum
                 diff_str = f"{diff:+.2f}" if diff != 0 else "0.00"
                 print(f" - {b:<12} : {score_sum:.2f} ({diff_str} vs ref)")
             else:
-                print(f" - {b:<12} : {score_sum:.2f}")
+                print(f" - {b:<12} : {score_sum:.2f} (pas de reference : ce bot n'est pas mesure dans le rapport precedent)")
 
     # Nettoyage final
     cleanup_pycache()
