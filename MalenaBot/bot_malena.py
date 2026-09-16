@@ -197,6 +197,23 @@ def build_expression_hint(mood):
 
 
 
+# Temperature de la cascade de Malena, alignee sur les 4 echelons.
+#
+# ⚠️ Etait a 1.1 sur Gemini, Groq et NVIDIA, et a 0.9 sur Mistral : la voix de Malena
+# changeait donc selon le fournisseur qui la servait, sans que rien ne le dise.
+#
+# Baissee a 0.9 le 2026-09-16, sur decision de l'utilisateur. Au-dessus de 1.0 on aplatit
+# la distribution et les candidats improbables remontent ; sur une reponse de 200 mots
+# c'est 200 tirages, et un seul derapage suffit a enclencher une boucle dont le modele ne
+# sort plus — il relit sa propre sortie abimee. Mesure ce jour-la : Malena etait le SEUL
+# bot au-dessus de 0.9 et le SEUL a degenerer, avec 8 reponses sur 26 en
+# « Oh la la la la... » x201. Voir [[gotcha-boucle-degenerative-pas-une-reponse]].
+#
+# 0.9 est le haut de la zone utile pour de la conversation en persona (0.7-0.9) : c'est
+# ou sont Johnny et Alfred, qui ne sont pas fades pour autant.
+_TEMPERATURE_MALENA = 0.9
+
+
 async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None,
                                   mime_type=None, meme_consigne="", anti_tic=""):
     """Essaie selon le Smart Router : Gemini (Image/Audio) -> Groq (Texte) -> Mistral (Fallback)."""
@@ -238,7 +255,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                             model=model_name,
                             contents=gemini_messages,
                             config=types.GenerateContentConfig(
-                                temperature=1.1,
+                                temperature=_TEMPERATURE_MALENA,
                                 max_output_tokens=300,
                                 thinking_config=types.ThinkingConfig(thinking_level="minimal")
                             )
@@ -285,7 +302,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                             model=model_name,
                             messages=[{"role": "system", "content": sys_prompt},
                                       {"role": "user", "content": prompt}],
-                            temperature=0.9,
+                            temperature=_TEMPERATURE_MALENA,
                             max_tokens=300
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
@@ -316,7 +333,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                                       {"role": "user", "content": prompt}],
                             model=model_name,
                             **groq_kwargs(model_name),
-                            temperature=1.1,
+                            temperature=_TEMPERATURE_MALENA,
                             max_tokens=300
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
@@ -354,7 +371,7 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                             messages=[{"role": "system", "content": sys_prompt},
                                       {"role": "user", "content": prompt}],
                             model=model_name,
-                            temperature=1.1,
+                            temperature=_TEMPERATURE_MALENA,
                             max_tokens=300,
                             # ⚠️ SANS ceci, nemotron RECOPIE sa pensée dans `content`, et
                             # met six fois plus de temps à le faire.
