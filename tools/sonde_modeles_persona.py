@@ -13,6 +13,7 @@ appel reel tranche.
     python tools/sonde_modeles_persona.py --json rapport.json
 """
 import argparse
+import re
 import json
 import os
 import sys
@@ -38,6 +39,10 @@ MESSAGES = [
     ("pique",   "t'es completement nul en fait"),
     ("ouverte", "raconte-moi un truc que personne ne sait"),
 ]
+
+# Fin de phrase reelle. Les « ... » sont volontairement exclus : ils gonflent le
+# compte et ont deja coute une punchline ([[feedback-sheo-longueur-densite]]).
+PONCTUATION_FIN = r"(?<=[.!?])\s+"
 
 CANDIDATS_GROQ = [
     "openai/gpt-oss-120b",
@@ -206,6 +211,9 @@ def main():
     ap.add_argument("--json", help="ecrire le rapport complet dans ce fichier")
     ap.add_argument("--message", action="append", help="limiter a ce(s) cas de test")
     ap.add_argument("--modele", action="append", help="limiter a ce(s) modele(s)")
+    ap.add_argument("--force-court", action="store_true",
+                    help="ancien comportement : ajoute une consigne de brievete au "
+                         "prompt, ce qui masque la verbosite reelle du modele")
     args = ap.parse_args()
 
     clients = construire_clients()
@@ -230,7 +238,16 @@ def main():
     rapport = []
 
     for bot_id in bots:
-        systeme = charger_persona(bot_id) + "\n\nFAIS COURT (2-3 phrases max)."
+        # ⚠️ Cette sonde ajoutait « FAIS COURT (2-3 phrases max). » au prompt de
+        # persona. Elle mesurait donc les modeles sous une consigne que les VRAIS bots
+        # n'envoient jamais — et masquait exactement le defaut qui a coute le plus cher :
+        # le 2026-09-16, les 3 bots les moins concis se sont averes etre les 3 bots
+        # Mistral-first, ministral-14b rendant 13 phrases la ou gemini-flash-lite en rend
+        # 5, A PROMPT IDENTIQUE. La longueur n'avait jamais pu etre un critere.
+        # Meme famille que [[gotcha-sonde-ne-reproduit-pas-le-fournisseur]].
+        systeme = charger_persona(bot_id)
+        if args.force_court:
+            systeme += "\n\nFAIS COURT (2-3 phrases max)."
         print("\n" + "=" * 78 + "\n  " + bot_id.upper() + "\n" + "=" * 78)
         for fournisseur, modele in candidats:
             print("\n  -- " + fournisseur + "/" + modele)
@@ -246,9 +263,12 @@ def main():
                     drapeau = "!! VIDE (finish=" + str(meta.get("finish")) + ")"
                 else:
                     drapeau = ""
+                mots = len((texte or "").split())
+                phr = len([s for s in re.split(PONCTUATION_FIN, texte or "") if s.strip()])
+                meta.update(mots=mots, phrases=phr)
                 extrait = " ".join((texte or "").split())[:160]
-                print("    [%-7s] %5.2fs tok=%-5s %s" % (
-                    nom_cas, meta["duree"], meta.get("tokens"), drapeau))
+                print("    [%-7s] %5.2fs tok=%-5s %2dphr %3dmots %s" % (
+                    nom_cas, meta["duree"], meta.get("tokens"), phr, mots, drapeau))
                 if extrait:
                     print("        " + extrait)
 
