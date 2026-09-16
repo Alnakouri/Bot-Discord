@@ -32,7 +32,7 @@ from core.api_tracking import tracer_appel
 # morde chez NVIDIA) : la copie locale ne l'aurait jamais eue, et Malena est justement le
 # bot qui a deja recite son raisonnement en plein Discord. On importe le noyau, comme
 # Alfred, M'aiq et Sheogorath — une copie de moins qui puisse deriver.
-from core.llm_cascade import _est_vide, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
+from core.llm_cascade import _est_vide, _est_degenere, _fuite_de_raisonnement, _cle_du_pool, delai_de_reprise
 from core.media_handler import process_image_ollama
 from google.genai import types
 from core.safe_client import get_client as get_safe_genai_client
@@ -249,6 +249,10 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                         logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
                         _raison = "vide"
                         continue
+                    if _est_degenere(response.text):
+                        logger.warning(f"⚠️ [GEMINI {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        _raison = "degeneree"
+                        continue
                     _texte_branche = response.text
                     return _texte_branche
      
@@ -291,6 +295,10 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                         logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
                         _raison = "vide"
                         continue
+                    if _est_degenere(texte):
+                        logger.warning(f"⚠️ [MISTRAL {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        _raison = "degeneree"
+                        continue
                     _texte_branche = texte
                     return _texte_branche
 
@@ -321,6 +329,10 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     if _est_vide(texte):
                         logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse vide → échelon suivant")
                         _raison = "vide"
+                        continue
+                    if _est_degenere(texte):
+                        logger.warning(f"⚠️ [{client_type.upper()} {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        _raison = "degeneree"
                         continue
                     _texte_branche = texte
                     return _texte_branche
@@ -360,6 +372,10 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
                     if _est_vide(texte):
                         logger.warning(f"⚠️ [NVIDIA {model_name}] réponse vide → échelon suivant")
                         _raison = "vide"
+                        continue
+                    if _est_degenere(texte):
+                        logger.warning(f"⚠️ [NVIDIA {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        _raison = "degeneree"
                         continue
                     logger.info(f"🟩 [NVIDIA {model_name}] Malena a répondu.")
                     _texte_branche = texte

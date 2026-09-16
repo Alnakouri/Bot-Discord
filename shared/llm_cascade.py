@@ -7,6 +7,7 @@ import asyncio
 import base64
 import logging
 import re
+from collections import Counter
 
 from google.genai import types
 from shared.safe_client import get_client as get_safe_genai_client
@@ -26,6 +27,49 @@ def _est_vide(txt):
     muet. Le vide n'est pas une réponse : on descend la cascade au lieu de la casser.
     """
     return not (txt and txt.strip())
+
+
+# Seuils de degenerescence, MESURES sur les 153 reponses des rapports du 2026-09-16
+# avant d'etre poses (jamais choisis a vue) :
+#   - 8 reponses degenerees, toutes de Malena, toutes a >= 90 % d'un seul mot ;
+#   - le ratio legitime le plus haut est 20 % (une reponse de 10 mots) ;
+#   - le mot le plus long legitime fait 16 caracteres, contre 404 pour le cas casse.
+# Les bornes laissent donc une marge enorme des deux cotes : elles visent la panne, pas
+# le style. Malena dit « Oh la la » et doit pouvoir continuer.
+_DEGEN_MOTS_MIN = 20      # sous ce volume, un ratio ne veut rien dire
+_DEGEN_RATIO = 0.5        # un seul mot occupe la moitie de la reponse
+_DEGEN_MOT_MAX = 40       # « ohhhh... » sur 404 caracteres n'est pas un mot
+
+
+def _est_degenere(txt):
+    """Un modele peut boucler : rendre 200 OK, ne rien lever, et repeter un mot 200 fois.
+
+    Vu le 2026-09-16 dans les rapports d'eval : Malena a rendu **8 reponses sur 26** de la
+    forme « Oh la la la la la... » jusqu'a la coupure de `max_tokens`, notees 0 par le
+    juge. En direct, un utilisateur Discord recoit ce pave tel quel.
+
+    C'est exactement la regle de `_est_vide`, un cran plus loin : une boucle n'est pas une
+    reponse, donc on descend la cascade au lieu de l'envoyer. Deux formes distinctes sont
+    couvertes, parce qu'elles n'ont pas la meme signature :
+      - la boucle de MOTS (« la » x201), invisible a un compteur qui filtre les mots
+        courts — c'est ainsi que `tests/eval/gimmick.py` l'a laissee passer : il ne
+        retient que les mots de 4 lettres ou plus, et « la » en fait deux ;
+      - la boucle de CARACTERES (« ohhhh... » sur 404 signes), qui ne fait qu'UN mot et
+        echappe donc a tout ratio.
+    """
+    if not txt:
+        return False
+    mots = re.sub(r"[^\w\s]", " ", txt.lower()).split()
+    if not mots:
+        return False
+
+    if max(len(m) for m in mots) >= _DEGEN_MOT_MAX:
+        return True
+
+    if len(mots) < _DEGEN_MOTS_MIN:
+        return False
+
+    return Counter(mots).most_common(1)[0][1] / len(mots) >= _DEGEN_RATIO
 
 
 # Marqueurs de méta-discours : le modèle PARLE DE la conversation au lieu d'y participer.
@@ -347,6 +391,11 @@ async def generate_response(
                         response_text = None
                         _raison = "vide"
                         continue
+                    if _est_degenere(response_text):
+                        logger.warning(f"⚠️ [GEMINI {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        response_text = None
+                        _raison = "degeneree"
+                        continue
                     logger.info(f"✅ [GEMINI {model_name}] {bot_label} via {routing.get('reason', '')}")
                     break
     
@@ -383,6 +432,11 @@ async def generate_response(
                         response_text = None
                         _raison = "vide"
                         continue
+                    if _est_degenere(response_text):
+                        logger.warning(f"⚠️ [MISTRAL {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        response_text = None
+                        _raison = "degeneree"
+                        continue
                     logger.info(f"🌪️ [MISTRAL {model_name}] {bot_label}")
                     break
     
@@ -407,6 +461,11 @@ async def generate_response(
                         logger.warning(f"⚠️ [GROQ {model_name}] réponse vide → échelon suivant")
                         response_text = None
                         _raison = "vide"
+                        continue
+                    if _est_degenere(response_text):
+                        logger.warning(f"⚠️ [GROQ {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        response_text = None
+                        _raison = "degeneree"
                         continue
                     logger.info(f"⚡ [GROQ {model_name}] {bot_label}")
                     break
@@ -442,6 +501,11 @@ async def generate_response(
                         logger.warning(f"⚠️ [NVIDIA {model_name}] réponse vide → échelon suivant")
                         response_text = None
                         _raison = "vide"
+                        continue
+                    if _est_degenere(response_text):
+                        logger.warning(f"⚠️ [NVIDIA {model_name}] réponse dégénérée (boucle) → échelon suivant")
+                        response_text = None
+                        _raison = "degeneree"
                         continue
                     logger.info(f"🟩 [NVIDIA {model_name}] {bot_label}")
                     break

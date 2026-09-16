@@ -1,6 +1,8 @@
 import re
 from collections import Counter
 
+from shared.llm_cascade import _est_degenere
+
 # Liste de stopwords français courants pour filtrer les mots non significatifs
 STOPWORDS = {
     "le", "la", "les", "un", "une", "des", "ce", "cet", "cette", "ces",
@@ -25,7 +27,16 @@ def detect_gimmick(responses: list[str]) -> tuple[bool, str]:
     """
     if not responses:
         return False, ""
-        
+
+    # ⚠️ La dégénérescence d'abord, et sous son propre nom. Le 2026-09-16, Malena a rendu
+    # « Oh là là là là… » x201 et ce détecteur a répondu **False** : il ne retient que les
+    # mots de 4 lettres ou plus, et « là » en fait deux. Le scénario est donc sorti noté 0
+    # sans qu'une seule ligne ne dise que la réponse était CASSÉE, pas mauvaise.
+    # Un tic de style et une panne de génération ne se soignent pas pareil.
+    for resp in responses:
+        if _est_degenere(resp):
+            return True, "Réponse DÉGÉNÉRÉE (boucle de répétition), pas un tic de style"
+
     word_sets = []
     all_words_flat = []
     

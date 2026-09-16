@@ -594,3 +594,25 @@ def test_une_moyenne_globale_sans_aucune_donnee_vaut_None():
 
     vide = {"results": [{"bot": "alfred", "scenario_id": "banal", "scores": {"fidelite": -1}}]}
     assert calculate_averages(vide)["global"] is None
+
+
+def test_le_detecteur_de_tics_VOIT_une_boucle_de_mots_courts():
+    """Il ne retenait que les mots de 4 lettres ou plus — « là » en fait deux.
+
+    Le 2026-09-16, `detect_gimmick` a rendu False sur une reponse composee a 99 % du mot
+    « là » repete 201 fois. Le scenario est sorti note 0 sans qu'une ligne ne dise que la
+    reponse etait CASSEE plutot que mauvaise : un tic de style et une panne de generation
+    ne se soignent pas pareil.
+    """
+    from tests.eval.gimmick import detect_gimmick
+
+    detecte, detail = detect_gimmick(["Oh " + "là " * 201])
+    assert detecte is True, "la boucle la plus grossiere qui soit passait inapercue"
+    assert "DÉGÉNÉRÉE" in detail, f"la panne doit etre nommee, pas confondue avec un tic : {detail!r}"
+
+
+def test_le_detecteur_de_tics_ne_crie_pas_sur_le_style_de_malena():
+    from tests.eval.gimmick import detect_gimmick
+
+    detecte, _ = detect_gimmick(["Oh là là, mon p'tit ! Bonne mère, t'as picolé ou quoi ?"])
+    assert detecte is False
