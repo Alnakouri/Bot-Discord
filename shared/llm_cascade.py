@@ -420,11 +420,19 @@ async def generate_response(
                     if _saut:
                         _raison = _saut
                         continue
+                    # ⚠️ Cet échelon ne passait NI `temperature` NI `max_tokens` : il
+                    # servait aux défauts du fournisseur pendant que les autres échelons
+                    # obéissaient aux nôtres. Mesuré le 2026-09-16 — Malena est le seul
+                    # bot dont la cascade est Mistral-FIRST, et le seul dont les réponses
+                    # partaient à 432 mots puis dégénéraient en boucle. Ce n'était pas sa
+                    # persona : c'était cet échelon-ci.
                     chat = await _call(
                         mistral_client.chat.complete,
                         model=model_name,
                         messages=[{"role": "system", "content": system_prompt},
                                   {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\nMESSAGE: {user_message}"}],
+                        temperature=temperature,
+                        max_tokens=max_tokens,
                     )
                     response_text = chat.choices[0].message.content
                     if _est_vide(response_text):
@@ -454,6 +462,7 @@ async def generate_response(
                     chat = await _call(
                         groq_client.chat.completions.create,
                         messages=msgs, model=model_name, temperature=temperature,
+                        max_tokens=max_tokens,
                         **groq_kwargs(model_name),
                     )
                     response_text = chat.choices[0].message.content
