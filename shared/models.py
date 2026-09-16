@@ -219,11 +219,24 @@ CASCADES_PERSONA = {
     #   flash-lite     le plus court, mais ton fade et tic « helas » 2 fois sur 3.
     # Il partage le modele de Johnny et Malena : la voix vient du prompt de persona,
     # et les trois sorties restent nettement distinctes a la sonde.
+    # ⚠️ 16/09 : Johnny et Malena sont sortis de Mistral sur mesure de LONGUEUR, PAS lui.
+    # Son releve reste acceptable (4 phrases / 22 mots contre 6/92 et 8/95), son score
+    # `longueur` est le moins mauvais des trois (3.00), et flash-lite avait deja ete
+    # ecarte pour lui ci-dessus (« ton fade et tic helas »). On ne change pas ce qui tient.
     "alfred": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
-    # Rockerboy de Night City : argot cru, phrases qui cognent. Mistral Small est le seul
-    # a sortir le vocabulaire de la rue sans l'edulcorer (« t'es un gonk avec un clavier »).
-    "johnny": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
+    # Rockerboy de Night City : argot cru, phrases qui cognent.
+    # ⚠️ La justification d'origine (« Mistral Small est le seul a sortir le vocabulaire de
+    # la rue sans l'edulcorer, "t'es un gonk avec un clavier" ») portait sur
+    # `mistral-small-latest`, MORT depuis le 04/09 (429 par modele, toujours vrai le
+    # 16/09). Son remplacant `ministral-14b` etait un repli force, jamais choisi pour la
+    # voix — et jamais mesure sur la LONGUEUR, parce que la sonde soufflait « FAIS COURT »
+    # au modele qu'elle evaluait. Releve refait le 16/09, sans souffler, 3 cas :
+    #   ministral-14b   6 phrases / 92 mots   <- score `longueur` 2.20/5
+    #   flash-lite      4 phrases / 34 mots
+    #   gpt-oss-120b    3 phrases / 28 mots   <- retenu, et la chute ATTERRIT
+    # Voir [[gotcha-la-longueur-est-un-defaut-de-MODELE]].
+    "johnny": [("groq", GROQ_FAST), ("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
     # Wabbajack, Haskill et le fromage de lui-meme, en francais correct. Il ouvre
@@ -240,9 +253,16 @@ CASCADES_PERSONA = {
     # invisible pour les imbeciles. »)
     "maiq": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN), ("groq", GROQ_SMALL), ("nvidia", NVIDIA_FAST)],
 
-    # Diva gitane marseillaise : l'argot local doit sonner juste. Mistral Small sort
-    # « chanklette », « bonne mere », « gatee va » sans qu'on le lui souffle.
-    "malena": [("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("groq", GROQ_FAST), ("nvidia", NVIDIA_FAST)],
+    # Diva gitane marseillaise : l'argot local doit sonner juste.
+    # ⚠️ Meme histoire que Johnny : « chanklette / bonne mere / gatee va » avait ete
+    # mesure sur `mistral-small-latest`, mort depuis le 04/09. Elle etait le bot le PLUS
+    # verbeux des six (`longueur` 1.40/5). Releve du 16/09, sans souffler :
+    #   ministral-14b   8 phrases / 95 mots
+    #   gpt-oss-120b    4 phrases / 24 mots  (2 reponses sur 3 : Groq est le plus fragile)
+    #   flash-lite      4 phrases / 35 mots  <- retenu
+    # flash-lite garde l'accent ET la dyslexie voulue (« parceki », « sa », « bonne mere »),
+    # et il a tenu toute la journee quand Groq etait a sec. Groq reste juste derriere.
+    "malena": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("nvidia", NVIDIA_FAST)],
 }
 
 _MARQUEURS_BOT = {

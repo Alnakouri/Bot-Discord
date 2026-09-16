@@ -405,3 +405,51 @@ def test_l_exception_nemotron_ne_vaut_que_par_son_correctif():
     assert kw.get("extra_body", {}).get("reasoning_effort") == "none", (
         "le correctif qui justifie l'exception a disparu : nemotron va reciter sa pensee"
     )
+
+# ─────────── La longueur est un defaut de MODELE : mesure du 2026-09-16 ────────────────
+
+
+BOTS_SORTIS_DE_MISTRAL = ("johnny", "malena")
+
+
+@pytest.mark.parametrize("bot", BOTS_SORTIS_DE_MISTRAL)
+def test_les_bots_les_plus_verbeux_ne_repassent_pas_mistral_en_tete(bot):
+    """Ces deux-là ont été sortis de Mistral sur MESURE, pas sur intuition.
+
+    Le 2026-09-16, les trois bots les moins concis étaient exactement les trois bots
+    Mistral-first. À prompt identique et `max_tokens=300` :
+
+        bot      ministral-14b     flash-lite      gpt-oss-120b
+        johnny    6 phr / 92 m     4 phr / 34 m    3 phr / 28 m   (score longueur 2.20/5)
+        malena    8 phr / 95 m     4 phr / 35 m    4 phr / 24 m   (score longueur 1.40/5)
+
+    ⚠️ La justification d'origine de leur tête Mistral portait sur `mistral-small-latest`,
+    mort depuis le 04/09 (429 par MODÈLE, encore vrai le 16/09). `ministral-14b` était un
+    repli forcé, jamais choisi pour leur voix — et la LONGUEUR n'avait jamais pu être un
+    critère, parce que la sonde de sélection soufflait « FAIS COURT » au modèle qu'elle
+    évaluait. Voir [[gotcha-la-longueur-est-un-defaut-de-MODELE]].
+
+    Remettre Mistral en tête est peut-être légitime un jour — mais alors sur une NOUVELLE
+    mesure (`tools/sonde_modeles_persona.py`, SANS `--force-court`), pas par réflexe.
+    """
+    fournisseur, modele = CASCADES_PERSONA[bot][0]
+    assert fournisseur != "mistral", (
+        f"{bot} repasse sur {modele} en tête : c'est le modèle qui rendait 6 à 8 phrases "
+        "là où les deux autres candidats en rendent 3 à 4. Si c'est voulu, refaire la "
+        "sonde sans --force-court et mettre à jour ce verrou."
+    )
+
+
+@pytest.mark.parametrize("bot", BOTS_SORTIS_DE_MISTRAL)
+def test_mistral_reste_un_echelon_de_SECOURS_pour_eux(bot):
+    """On change la TÊTE, on ne jette pas le fournisseur : il reste un filet de quota.
+
+    Groq a été à sec une bonne partie du 2026-09-16 (TPD 200k) et Gemini a tenu — mais
+    l'inverse est arrivé d'autres jours. Retirer Mistral de la cascade échangerait un
+    problème de longueur contre un problème de disponibilité.
+    """
+    fournisseurs = [f for f, _ in CASCADES_PERSONA[bot]]
+    assert "mistral" in fournisseurs, \
+        f"{bot} a perdu Mistral de sa cascade : un échelon de secours en moins"
+    assert len(set(fournisseurs)) == len(fournisseurs), \
+        f"{bot} a un fournisseur en double : un échelon est gaspillé"
