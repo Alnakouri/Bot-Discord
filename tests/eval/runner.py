@@ -24,6 +24,11 @@ try:
 except Exception as e:
     print(f"Avertissement lors du chargement de secure_env depuis JohnnyBot : {e}")
 
+# Sentinelle rendue quand AUCUN echelon de la cascade n'a repondu. Elle doit rester une
+# constante partagee : `run_eval` s'en sert pour court-circuiter le juge et les mesures
+# deterministes, et une deuxieme copie du litteral les desarmerait en silence.
+ECHEC_CASCADE = "[Toute la cascade de modèles a échoué]"
+
 # Clés d'API
 GEMINI_API_KEYS = [
     os.getenv("GEMINI_KEY_1"),
@@ -111,7 +116,7 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
         
         if response is None:
             # Fallback en cas d'échec total de la cascade
-            response = "[Toute la cascade de modèles a échoué]"
+            response = ECHEC_CASCADE
             
         responses.append(response)
         

@@ -21,7 +21,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from tests.eval.runner import run_scenario_for_bot, key_manager, groq_client, mistral_client
+from tests.eval.runner import run_scenario_for_bot, key_manager, groq_client, mistral_client, ECHEC_CASCADE
 from tests.eval.gimmick import detect_gimmick
 from tests.eval.judge import evaluate_response
 from tests.eval.deterministic import evaluate_deterministic
@@ -70,10 +70,22 @@ def compute_health(results: list[dict], stats_bots: dict, bots: list[str], metri
     }
 
 
-def compute_top_drops(current_results: list[dict], previous_report_data: dict, metrics: list[str] = METRICS) -> list[dict]:
-    """Calcule le delta par critère et nomme les trois plus grosses chutes (Lot 1.3)."""
+def compute_top_drops(current_results: list[dict], previous_report_data: dict, metrics: list[str] = METRICS, bots_inclus: list[str] = None) -> list[dict]:
+    """Calcule le delta par critère et nomme les trois plus grosses chutes (Lot 1.3).
+
+    ⚠️ `bots_inclus` n'est pas un confort : sans lui, ce bloc classait en tête des
+    chutes des bots que le bloc de santé venait de déclarer NON FIABLES. Le
+    2026-09-16, les trois lignes affichées étaient toutes des chutes de `johnny`
+    « 5.0 -> 0.0 », alors que johnny n'avait obtenu aucune réponse de la journée :
+    du quota épuisé présenté comme une régression de persona. Le seul bloc qu'on
+    lit pour chercher une régression était entièrement du bruit.
+    Voir [[gotcha-run-eval-borne-par-le-quota]].
+    """
     if not previous_report_data:
         return []
+
+    if bots_inclus is not None:
+        current_results = [r for r in current_results if r["bot"] in bots_inclus]
 
     prev_map = {(r["bot"], r["scenario_id"]): r for r in previous_report_data.get("results", [])}
     chutes = []
@@ -204,9 +216,33 @@ async def main():
                 responses = await run_scenario_for_bot(bot_id, scenario)
 
                 # Échec cascade complet
-                echec_cascade = any(resp == "[Toute la cascade de modèles a échoué]" for resp in responses)
+                echec_cascade = any(resp == ECHEC_CASCADE for resp in responses)
                 if echec_cascade:
                     stats_bots[bot_id]["appels_echoues"] += 1
+
+                    # ⚠️ On ne MESURE PAS une non-réponse. Tant que le juge était
+                    # appelé sur la sentinelle, il brûlait du quota — la ressource
+                    # exactement qui manquait — pour noter une chaîne d'erreur : le
+                    # 2026-09-16 johnny a ainsi récolté dix 0 de `fidelite` et un 5
+                    # d'`anti_fuite`, et la mesure déterministe a « réussi » son
+                    # « Max 7 mots (<= 30 : True) » sur ce même message d'erreur.
+                    # Un -1 dit « pas mesuré » ; un 0 dit « mauvais ». Ce n'est pas
+                    # la même phrase. Voir [[gotcha-run-eval-borne-par-le-quota]].
+                    results.append({
+                        "bot": bot_id,
+                        "scenario_id": scenario_id,
+                        "success": False,
+                        "responses": responses,
+                        "user_messages": scenario["user_messages"],
+                        "scores": {m: -1 for m in METRICS},
+                        "verdict": "Non mesure : la cascade du bot n'a rendu aucune reponse",
+                        "citation": "",
+                        "gimmick_detected": False,
+                        "gimmick_detail": "",
+                        "mesure_deterministe": {}
+                    })
+                    print("   [NON MESURE] Cascade du bot muette : juge et mesures deterministes court-circuites.")
+                    continue
 
                 # Détection déterministe de gimmick
                 gimmick_detected, gimmick_detail = detect_gimmick(responses)
@@ -236,7 +272,7 @@ async def main():
                     # Si le juge a échoué, on compte un appel échoué
                     stats_bots[bot_id]["appels_echoues"] += 1
 
-                success = not echec_cascade and all(scores.get(m, -1) != -1 for m in METRICS)
+                success = all(scores.get(m, -1) != -1 for m in METRICS)
 
                 eval_result = {
                     "bot": bot_id,
@@ -278,7 +314,10 @@ async def main():
 
     # 5. Calcul de la santé du run et des deltas (Lot 1.1 & 1.3)
     sante = compute_health(results, stats_bots, bots_evalues)
-    top_3_chutes = compute_top_drops(results, last_report_data)
+    # La fiabilite se calcule AVANT les chutes : un bot non fiable n'a pas de score a
+    # comparer, seulement des zeros d'echec qui trustent le classement.
+    bots_fiables = [b for b in bots_evalues if sante["bots"][b]["fiable"]]
+    top_3_chutes = compute_top_drops(results, last_report_data, bots_inclus=bots_fiables)
 
     # 6. Écrire le nouveau rapport
     new_report_data = {
@@ -296,8 +335,8 @@ async def main():
         json.dump(new_report_data, f, ensure_ascii=False, indent=2)
     print(f"\n[SAVE] Nouveau rapport enregistre sous : {new_report_path}")
 
-    # 7. Séparation des bots fiables et non fiables (Lot 1.1)
-    bots_fiables = [b for b in bots_evalues if sante["bots"][b]["fiable"]]
+    # 7. Séparation des bots fiables et non fiables (Lot 1.1) — `bots_fiables` est
+    # déjà calculé plus haut, juste après le bloc de santé.
     bots_non_fiables = [b for b in bots_evalues if not sante["bots"][b]["fiable"]]
 
     current_avg = calculate_averages(new_report_data, bots_inclus=bots_fiables)

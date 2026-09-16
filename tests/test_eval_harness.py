@@ -246,3 +246,129 @@ def test_le_runner_est_PATIENT_la_borne_du_direct_ne_doit_pas_s_appliquer():
         f"borne trop courte pour un lot : {bornes} — un 429 Groq endort le SDK ~36 s, "
         "et la cascade peut enchainer plusieurs echelons avant de rendre la main"
     )
+
+
+# ──────────────── Le rapport ne doit pas MESURER une non-reponse (2026-09-16) ───────────
+
+
+def test_top_3_chutes_ignore_les_bots_NON_FIABLES():
+    """Une chute n'a de sens que si le bot a repondu.
+
+    Le 2026-09-16, les trois lignes du bloc « 3 plus grosses chutes » nommaient toutes
+    `johnny` (« ton_fr 5.0 -> 0.0 »), alors que johnny n'avait obtenu AUCUNE reponse de
+    la journee : quota epuise. Du quota presente comme une regression de persona, dans le
+    seul bloc qu'on lit pour chercher une regression.
+
+    La cause etait un ORDRE : `compute_top_drops` etait appele avant que la liste des
+    bots fiables ne soit calculee. Voir [[gotcha-run-eval-borne-par-le-quota]].
+    """
+    prev_report = {
+        "results": [
+            {"bot": "alfred", "scenario_id": "banal", "scores": {"fidelite": 5, "ton_fr": 5, "anti_contamination": 5, "anti_fuite": 5, "longueur": 5}},
+            {"bot": "johnny", "scenario_id": "banal", "scores": {"fidelite": 5, "ton_fr": 5, "anti_contamination": 5, "anti_fuite": 5, "longueur": 5}},
+        ]
+    }
+    current_results = [
+        # alfred a repondu : chute reelle, modeste
+        {"bot": "alfred", "scenario_id": "banal", "scores": {"fidelite": 4, "ton_fr": 5, "anti_contamination": 5, "anti_fuite": 5, "longueur": 5}},
+        # johnny n'a rien rendu : des zeros d'echec, qui trusteraient le classement
+        {"bot": "johnny", "scenario_id": "banal", "scores": {"fidelite": 0, "ton_fr": 0, "anti_contamination": 0, "anti_fuite": 0, "longueur": 0}},
+    ]
+
+    chutes = compute_top_drops(current_results, prev_report, bots_inclus=["alfred"])
+
+    assert chutes, "la chute reelle d'alfred a disparu avec le filtre"
+    noms = {c["bot"] for c in chutes}
+    assert "johnny" not in noms, (
+        f"un bot NON FIABLE est classe parmi les chutes : {noms} — ses 0 ne sont pas des "
+        "scores, c'est l'absence de reponse"
+    )
+    assert chutes[0]["bot"] == "alfred" and chutes[0]["chute"] == 1.0
+
+
+def test_le_filtre_de_fiabilite_est_CABLE_dans_le_run():
+    """Le parametre ne sert a rien s'il n'est pas passe par l'appelant.
+
+    Verrou sur le NOM de l'argument dans l'appel reel ([[gotcha-verrou-trop-faible]]) :
+    exiger la presence de `bots_inclus` dans la signature ne prouverait rien, c'est
+    l'APPEL de `main` qui doit le porter ([[gotcha-import-ajoute-mais-pas-cable]]).
+    """
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read())
+
+    appels = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Call)
+        and (getattr(n.func, "id", None) or getattr(n.func, "attr", None)) == "compute_top_drops"
+    ]
+    assert appels, "run_eval.py n'appelle plus compute_top_drops"
+    for appel in appels:
+        assert any(kw.arg == "bots_inclus" for kw in appel.keywords), (
+            "compute_top_drops est appele SANS `bots_inclus` : le classement des chutes "
+            "redevient aveugle aux bots non fiables"
+        )
+
+
+def test_la_sentinelle_d_echec_court_circuite_juge_ET_deterministe():
+    """Une non-reponse ne se NOTE pas.
+
+    Tant que le juge etait appele sur `[Toute la cascade de modeles a echoue]`, il brulait
+    du quota — la ressource exactement qui manquait — pour rendre des 0 et des 5 au hasard,
+    et la mesure deterministe « reussissait » son « Max 7 mots (<= 30 : True) » sur une
+    chaine d'erreur. Un -1 dit « pas mesure » ; un 0 dit « mauvais ».
+
+    Verrou structurel plutot que comportemental : le chemin vit dans `main()`, qui exige
+    de vraies cles ([[feedback-le-local-ment-sans-cles]]). On verifie que la branche
+    `echec_cascade` SORT (`continue`) et n'appelle ni le juge ni le deterministe.
+    """
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read())
+
+    branches = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.If)
+        and isinstance(n.test, ast.Name) and n.test.id == "echec_cascade"
+    ]
+    assert branches, (
+        "aucune branche `if echec_cascade:` dans run_eval.py : la sentinelle n'est plus "
+        "interceptee et le juge note des messages d'erreur"
+    )
+
+    interdits = {"evaluate_response", "evaluate_deterministic", "detect_gimmick"}
+    for branche in branches:
+        corps = list(ast.walk(ast.Module(body=branche.body, type_ignores=[])))
+        assert any(isinstance(n, ast.Continue) for n in corps), (
+            "la branche `echec_cascade` ne sort pas : l'execution retombe sur le juge"
+        )
+        appeles = {
+            (getattr(n.func, "id", None) or getattr(n.func, "attr", None))
+            for n in corps if isinstance(n, ast.Call)
+        }
+        assert not (appeles & interdits), (
+            f"la branche `echec_cascade` mesure encore la non-reponse : {appeles & interdits}"
+        )
+
+
+def test_la_sentinelle_n_existe_qu_en_UN_seul_endroit():
+    """Une deuxieme copie du litteral desarmerait le court-circuit en silence.
+
+    Meme forme que [[gotcha-deux-listes-vendoring]] : deux ecritures de la meme verite
+    divergent, et c'est la copie oubliee qui decide.
+    """
+    import glob
+
+    litteral = "[Toute la cascade de modèles a échoué]"
+    porteurs = []
+    for chemin in glob.glob(os.path.join(RACINE, "tests", "eval", "*.py")):
+        contenu = open(chemin, encoding="utf-8").read()
+        if litteral in contenu:
+            porteurs.append(os.path.basename(chemin))
+
+    assert porteurs == ["runner.py"], (
+        f"le litteral de la sentinelle vit dans {porteurs} — il ne doit exister que dans "
+        "runner.py, sous le nom ECHEC_CASCADE, que run_eval.py importe"
+    )
