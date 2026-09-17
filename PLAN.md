@@ -1,144 +1,189 @@
-# PLAN — Faire parler les bots sans humain
+# PLAN — Les astérisques, et le harnais qui ne les voit pas
 
-Rédaction : Claude, le **2026-09-15**. Exécution : **Antigravity**, sauf le lot 4.
-Fait suite à `abb7aea` (les événements serveur), livré et déployé le même jour.
+Rédaction : Claude, le **2026-09-17**, à partir du run `tests/eval/reports/eval_20260917_1233.json`.
+Exécution : **Antigravity**, sauf le LOT 4 (repris tel quel du plan du 15/09).
 
-Le plan précédent a retiré une attente en forçant un tirage. Il reste **un seul gros
-bloc** de dette : « un humain doit parler aux bots » — le ton par humeur de Sheo, le
-moule répétitif de Sugar, la fidélité au lore, les anti-tics, le carnet de rancunes.
-Ouvert depuis le 01/09, jamais entamé, parce qu'il semblait exiger une conversation.
-
-Il ne l'exige pas. **L'instrument existe déjà et il dort depuis trois mois.**
+Le plan précédent se terminait par une interdiction : *« Changer les seuils, les prompts
+ou les répliques sur la foi d'un seul run : le run de référence sert à MESURER. On
+corrigera ce qu'il montre, dans un plan suivant. »* Le run a eu lieu. Voici ce qu'il montre.
 
 ---
 
-## LA PREUVE, relevée le 15/09 avant d'écrire ce plan
+## LE RUN — propre, et c'est ce qui le rend utilisable
 
-L'index mémoire annonçait trois chantiers à ouvrir. **Deux étaient déjà faits.** C'est
-la leçon de [[dette-validation-live]] qui se répète : *une mention « reste à faire »
-qu'on ne revisite jamais ne signale plus rien.*
+Six bots, **barème 2**, `fiable: true` pour les six, **0 appel échoué, 0 score à ‑1**.
+Graine 1789641234, ordre tiré au sort. C'est la référence qui manquait.
 
-| Ce que l'index disait | Ce que le dépôt dit |
-|---|---|
-| « harnais d'éval persona à construire » | **Il existe** : `tests/eval/` — `run_eval.py`, `runner.py`, `judge.py`, `persona_loader.py`, `gimmick.py`, `scenarios.json`, commit `e20c816`. Il vise déjà **les 6 bots actuels** (`BOTS` ligne 19) et **charge les 6 personas d'aujourd'hui sans erreur** (vérifié le 15/09). |
-| « Répartie Phase 3 : chantier OUVERT, code perdu » | **Livrée et câblée sur les 6.** `shared/repartee_lessons.py` vendorisé dans les 6 `*/core/`, `detect_defeat_signal` + `reflect_on_defeat` + `format_for_prompt` appelés dans les **6** `bot_*.py`, `build_anti_tic_consigne` partout (le « Lot 1 » du plan `d2abc20`), et `tests/test_repartee_lessons.py` + `tests/test_anti_tic_partage.py` existent. |
-| « dashboard : un clic jamais donné » | **Vrai, et seul vrai.** Le dashboard n'est même pas lancé (`127.0.0.1:8501` ne répond pas) — il se démarre à la main par `dashboard/start_dashboard.bat`. |
+    bot            fidelite   ton_fr  anti_cont  anti_fuite  longueur   global
+    sugar              4.10     4.70       5.00        5.00      5.00     4.76
+    maiq               4.10     4.70       5.00        5.00      4.10     4.58
+    sheogorath         3.80     4.90       5.00        4.50      3.10     4.26
+    johnny             2.60     4.30       5.00        5.00      3.30     4.04
+    malena             1.80     3.90       5.00        5.00      2.60     3.66
+    alfred             1.90     4.20       5.00        5.00      1.40     3.50
 
-⚠️ **`shared/long_term_memory.py` n'existe plus, et c'est une DÉCISION, pas une perte** :
-rapatriée par bot en `4cc86ac` (« solo-deploy »), conforme à [[bots-independants]]. **Ne
-pas la recréer dans `shared/`.**
-
-Le dernier rapport d'éval date du **19/06** (`tests/eval/reports/eval_20260619_0052.json`).
-Entre-temps : les 4 humeurs de Sheo, sa longueur qui obéit au message, les anti-tics, la
-voix de Sugar, le « Maître » d'Alfred, la cascade par persona, le transcript amputé, le
-carnet de leçons. **Rien de tout cela n'a jamais été mesuré.**
+`anti_contamination` et `anti_fuite` sont réglés (5.00 / 4.92). **Le point faible unique
+du parc, c'est `fidelite` : 3.05.**
 
 ---
 
-# LOT 1 — Le harnais reprend du service : le run de référence
+## CE QU'IL MONTRE : UNE SEULE CAUSE, CINQ BOTS
 
-**Aucun fichier de bot ne change dans ce lot.** On fait tourner ce qui existe, et on
-rend le résultat lisible.
+Vingt-six verdicts sur soixante tombent à 2 ou moins en `fidelite`. En les lisant l'un
+après l'autre, **la même phrase revient** : *« a brisé les règles de narration »*,
+*« description narrative entre astérisques »*, *« l'usage d'italiques/astérisques
+(même pour insister) »*.
 
-    python tests/eval/run_eval.py
+Compté sur les **102 réponses** du run, sans passer par le juge :
 
-### 1.1 — Le piège documenté, et qui a déjà mordu
+    bot          réponses contenant *…*   exemple
+    sugar                 0 / 17          —
+    maiq                  4 / 17          *Les Gardiens du Sucre*
+    malena               11 / 17          *soupir dramatique*
+    johnny               16 / 17          *Souffle sur ma clope imaginaire*
+    alfred               16 / 17          *Soupir imperceptible, mais audible…*
+    sheogorath           17 / 17          *très*
 
-Run du 18/06 : les quotas free-tier s'épuisent **en cours de run**, et les bots évalués
-en **dernier** tombent sur des cascades échouées. Ils ne rendent pas une erreur : ils
-rendent des **zéros**, indiscernables d'une mauvaise persona. Trois bots sur six étaient
-faux ce jour-là.
-
-Le tell est connu : `anti_contamination` vaut **5.00 partout, constamment** ; quand un
-run est sain, `anti_fuite` ne vaut pas 0. Un score à `-1` signale un juge mort.
-
-**À faire** : `run_eval.py` doit **refuser de produire un rapport qu'on croira**. En fin
-de run, un bloc de santé en tête du JSON :
-
-- nombre de scores à `-1` (doit être 0 — c'est le critère §1.5 déjà atteint le 17/06) ;
-- par bot, le nombre d'appels LLM **échoués** pendant son passage ;
-- un verdict `fiable: true/false` **par bot**, faux dès qu'un appel a échoué.
-
-Un bot non fiable ne doit **pas** apparaître dans le tableau des scores : il apparaît
-dans une section « non mesuré ce jour-là, quota ». Mieux vaut trois bots mesurés que six
-dont trois mentent.
-
-### 1.2 — L'ordre des bots ne doit plus décider du résultat
-
-`BOTS` est une liste figée : les derniers paient toujours. **Tirer l'ordre au hasard à
-chaque run**, en journalisant la graine — ainsi un bot systématiquement mauvais ne peut
-plus être un artefact de position, et deux runs consécutifs se contredisent visiblement
-si c'est le quota qui parle.
-
-### 1.3 — Le delta, c'est le livrable
-
-Le rapport doit porter le **delta par critère vs le rapport précédent**, et nommer les
-trois plus grosses chutes. Un tableau de 252 scores que personne ne lit ne vaut pas la
-ligne « `alfred/provocation` : fidélité 4.3 → 1.0 ».
+**64 réponses sur 102.** Les six fiches de persona l'interdisent toutes.
 
 ---
 
-# LOT 2 — Les scénarios ignorent tout ce qui a été construit depuis juin
+## LE FAIT QUI TRANCHE : ce n'est PAS le modèle
 
-Six scénarios (`banal`, `provocation`, `autre_bot`, `repetition`, `fuite`, `fantome`) et
-sept critères (`fidelite`, `longueur`, `ton_fr`, `role`, `citation`, `anti_fuite`,
-`anti_contamination`). Aucun ne touche ce qui a été écrit depuis.
+La conclusion facile serait « encore la tête de cascade ». Le run l'interdit :
 
-**À ajouter à `scenarios.json`** — et, quand c'est possible, **mesuré par du code, pas
-par le juge** : un juge fatigué se trompe, un compteur de mots non.
+- **Sugar 0/17 et Malena 11/17 partagent la même tête** (`gemini-flash-lite` en tête de
+  cascade, cf. `CASCADES_PERSONA`). Même modèle, même harnais, même jour : 0 contre 11.
+- La sonde du 04/09 avait pourtant mesuré `ministral-14b` à **11/18 réponses avec
+  astérisques** — c'est écrit dans `shared/models.py`. Le modèle **aggrave**. Il ne décide pas.
 
-| Scénario | Ce qu'il provoque | Mesure |
-|---|---|---|
-| `defaite` | un message qui doit déclencher `detect_defeat_signal` — c'est le LOT 3 | déterministe : la catégorie rendue |
-| `humeur_sheo` | 4 échanges, une par humeur | juge (`ton_fr`) |
-| `sugar_30_mots` | 3 messages à Sugar | **déterministe** : « ~30 mots, jamais plus » est une règle ABSOLUE de son prompt |
-| `alfred_maitre` | le créateur s'adresse à Alfred | **déterministe** : « Maître » présent, « manoir » absent — en **minuscules**, [[gotcha-verrou-trop-faible]] 2e cas |
-
-⚠️ **Ne pas ajouter de critère au juge pour ces quatre-là.** Ajouter un critère change
-l'échelle de tous les rapports passés et rend le delta du lot 1 illisible. Les mesures
-déterministes vivent à côté des scores, comme `gimmick.py` le fait déjà.
+⚠️ [[gotcha-la-longueur-est-un-defaut-de-MODELE]] vaut pour la **longueur**. Il ne se
+transpose pas aux astérisques : ici c'est la **formulation de la règle** qui fait la
+différence, et Sugar en détient la preuve.
 
 ---
 
-# LOT 3 — Le carnet de leçons n'a jamais été vu fonctionner
+## L'ÉTAT RÉEL DES FILETS (relevé fichier par fichier)
 
-La Phase 3 est **livrée et câblée sur les 6** — mais rien ne prouve qu'elle tourne. Le
-chemin est : un message de défaite → `detect_defeat_signal` rend une catégorie → le bot
-ayant parlé juste avant → `reflect_on_defeat` écrit une leçon → `format_for_prompt` la
-réinjecte au tour suivant.
+    bot          filet sur le chemin Discord              ce qu'il retire
+    sugar        _strip_didascalies   bot_sugar.py:1079   didascalies nues + *…*, marqueurs
+    sheogorath   postprocess_response sheo_llm.py:383     méta-narration, didascalies nues,
+                                                          marqueurs *…*, cap de phrases
+    johnny       RIEN                                     (son _strip_stage_directions ne sert
+                                                          qu'à une punchline Twitch, ligne 528)
+    alfred       RIEN                                     seulement <fact>, <think>
+    maiq         RIEN                                     seulement <fact>
+    malena       RIEN                                     rien du tout
 
-**À faire** : un test qui parcourt ce chemin **en entier**, sans LLM (la réflexion est
-remplacée par un faux), et qui vérifie la **réinjection** — pas seulement l'écriture.
+Quatre bots sur six envoient `*Soupir imperceptible*` tel quel dans Discord.
 
-Deux gardes que le plan `d2abc20` nommait comme le vrai risque, à verrouiller :
+---
 
-1. **la leçon est du texte inspiré par un inconnu** : assainissement (aucune consigne
-   d'identité, aucune mention, longueur bornée) et débit borné (5 min/salon, 6/jour/bot).
-   Sans ça, on réécrit une persona en se déclarant vainqueur trois fois ;
-2. **le signal de défaite exige que le bot ait parlé juste avant** — sinon un verdict
-   lancé à un humain (« t'as rien compris ») déclenche la réflexion d'un bot qui n'était
-   pas dans la joute.
+## ⚠️ LE PIÈGE, à lire avant de coder quoi que ce soit
 
-Mutation à rejouer pour chacune : retirer la borne de débit, retirer la condition « le
-bot a parlé juste avant ». Les deux doivent faire crier.
+`tests/eval/runner.py:57-130` rend la sortie **brute de la cascade**. Il n'applique
+**aucun** post-traitement de bot. Deux conséquences, opposées :
 
-⚠️ **Une question à trancher, pas à décider seul** : le plan du 08/09 excluait Malena
-(« elle appelle le LLM avec `transcript=""`, il n'y a pas de joute à observer — **5 bots,
-pas 6** »). Or `MalenaBot/bot_malena.py:763` la câble comme les autres. Soit la décision
-a changé, soit le rollout a débordé. **Le signaler, ne pas retirer le câblage.**
+1. **Sheogorath est puni pour 17/17 astérisques que personne ne voit jamais** : son
+   `strip_markdown_emphasis` les retire avant l'envoi. Son 3.80 de `fidelite` est un
+   plancher, pas une mesure.
+2. **Un filet ajouté aux quatre bots nus ne bougerait AUCUN score.** On conclurait que le
+   correctif a échoué, alors que le harnais ne le regarde pas.
+
+C'est [[gotcha-sonde-ne-reproduit-pas-le-fournisseur]], un étage plus haut : le harnais ne
+reproduit pas le **bot**, il mesure le **modèle**. D'où l'ordre des lots — le LOT 0 n'est
+pas un confort, c'est ce qui rend les lots 1 et 2 mesurables.
+
+---
+
+# LOT 0 — le harnais mesure le PRODUIT, pas la sortie brute
+
+1. **Exposer le filtre de chaque bot dans un module importable sans `discord`.**
+   `persona_loader` n'importe que les modules `*_data` : il ne peut pas atteindre
+   `bot_sugar.py`. Donc :
+   - Sugar : sortir `_strip_didascalies` de `bot_sugar.py` vers un module sans `discord` ;
+     l'appel de la ligne 1079 doit continuer à passer par la même fonction.
+   - Sheo : `postprocess_response` réclame `fact_brain`, `user_id`, `original_message`.
+     Exposer une porte étroite `filtre_sortie(texte)` qui n'enchaîne **que** les étapes
+     sans état (méta-narration, didascalies nues, marqueurs d'emphase).
+2. **`runner.py` applique `filtre_sortie` du bot** avant de rendre la réponse. Un bot qui
+   n'en a pas rend son texte inchangé — pas d'exception, pas de cas particulier.
+3. **Bumper `VERSION_BAREME` à 3.** L'entrée du juge change, donc les scores changent de
+   sens. Le masquage des deltas existe déjà et vient de prouver sa valeur : il empêchera
+   la comparaison qui mentirait.
+4. **Verrou** : un test AST sur `runner.py` qui exige l'appel **avec son argument**, pas
+   une reconstitution de la logique ([[gotcha-test-qui-retape-la-logique]],
+   [[gotcha-import-ajoute-mais-pas-cable]]).
+
+⚠️ Ce lot **fera bouger tous les scores**, y compris ceux des bots qu'on ne touche pas.
+C'est voulu. Le tableau ci-dessus reste la référence « sortie brute » ; le run d'après
+sera la première référence « produit ».
+
+---
+
+# LOT 1 — le filet déterministe sur les quatre bots nus
+
+Alfred, Johnny, M'aiq, Malena. Sheo a déjà écrit l'argument dans son propre code :
+*« Une règle de prompt oriente ; elle ne garantit rien. Seul un filet déterministe
+garantit. »* Deux traitements **distincts**, qu'il a déjà séparés — ne pas les confondre :
+
+- **Didascalie** (`*Soupir imperceptible*`, `*pose son torchon*`) → **tout le segment tombe**.
+- **Emphase** (`*The Times*`, `*très*`) → **seuls les marqueurs tombent, les mots restent**.
+
+Contraintes :
+
+- Copie **inline par bot**, pas un import obligatoire de `shared/`
+  ([[decision-independance-stricte-vendoring-core]]). Si le code passe par
+  `vendor_core.py`, mettre à jour **les deux** listes ([[gotcha-deux-listes-vendoring]]).
+- Reprendre la logique **déjà curée** de Sugar plutôt que la réécrire : elle ne coupe pas
+  un impératif de dialogue (« souris ! ») ni un pseudo (`le_dev`). Ces deux pièges
+  ont déjà coûté.
+- Verrou par bot : AST **sur le fichier du bot**, visant le **NOM** de la fonction, l'appel
+  avec ses arguments, ET l'absence du code remplacé ([[gotcha-verrou-trop-faible]]).
+- Compter : **quatre** bots. Pas trois ([[gotcha-un-bot-sur-six-manque-toujours]]).
+
+---
+
+# LOT 2 — la formulation qui marche, portée aux cinq autres fiches
+
+Sugar est à 0/17 avec cette phrase (`sugar_data.py:34`) :
+
+> *Tu ne fais QUE parler : JAMAIS de didascalie ni d'action narrée — ni entre astérisques,
+> ni en clair (« soupir sucré », « glisse un regard en coin », « sourire en coin »).
+> Tu ne décris pas tes gestes, mimiques ou soupirs : tu ne mets que tes répliques.*
+
+Elle **nomme le comportement attendu** au lieu d'empiler des ❌, et elle cite les tics
+**entre guillemets français, en clair** — jamais entre astérisques. Porter cette **forme**
+aux cinq autres fiches.
+
+⚠️ Alfred a déjà reçu **deux** renforcements d'interdiction (`4bb1ce4`, `4402e3d`) et il
+reste à 16/17. **Ne pas en ajouter un troisième** : changer la forme, pas le volume. Et ne
+jamais écrire la démonstration de ce qu'on interdit
+([[gotcha-le-prompt-enseigne-le-tic-interdit]], deux occurrences déjà).
+
+Mesure d'arrivée : re-compter les `*…*` sur les réponses du run suivant. **64 sur 102** est
+le chiffre à battre, et il se compte sans le juge.
+
+---
+
+# LOT 3 — les didascalies EN DUR, qui ne passent ni par le LLM ni par un filtre
+
+Même famille que Sheo le 16/09 : une règle de persona ne protège que ce qui passe par le
+modèle.
+
+- `Alfred/bot_alfred.py:1612` `*pose son torchon*` et `:1615` `*soupir britannique*` —
+  pool de sanction « chant », envoyé tel quel. Vraies didascalies, à retirer.
+- `Alfred/bot_alfred.py:933,934` `*chant*`, `*bruit*` — de l'**emphase**, pas une
+  didascalie : marqueurs retirés, mots gardés.
+- `Sheogorath/sheo_punishments.py` (`*POUF*`, `*TRANSFORMATION !*`, `*Soupir*`) — **à
+  trancher, pas à corriger d'office.** Un effet sonore de sort peut être voulu
+  ([[gotcha-un-defaut-peut-etre-une-fonctionnalite]]). Poser la question avant de toucher.
 
 ---
 
 # LOT 4 — Le dashboard, au navigateur — exécution : **Claude**, pas Antigravity
 
-La seule catégorie de dette qui exige vraiment quelqu'un devant un écran, ouverte depuis
-le 01/09. Claude pilote Chrome ; il faut de l'utilisateur **le démarrage et l'accès** :
-
-    dashboard\start_dashboard.bat        # puis 127.0.0.1:8501, identifiants demandés
-
-Protocole, dans cet ordre — et [[gotcha-regarder-l-ecran-avant-le-code]] s'applique à
-chaque étape : **regarder l'écran avant d'accuser le code**, le sélecteur « Tous les
-bots » masque les panneaux par-bot.
+*(repris intact du plan du 15/09 : toujours ouvert, il demande un humain et des clics.)*
 
 1. **Le toggle du décret** — `data/bot_features.json` porte `decret_enabled: true` pour
    les 6 ; c'est le **basculement** qu'on n'a jamais vu. Basculer, relire le fichier,
@@ -146,8 +191,7 @@ bots » masque les panneaux par-bot.
 2. **Le bouton de redémarrage** — `tests/test_dashboard_restart.py` existe ; le clic, non.
    Le faire sur **un seul bot**, et vérifier le redémarrage côté `docker ps`.
 3. **Les graphes et le statut réel** — vérifier que « CONNECTÉ » mesure bien la connexion
-   ([[gotcha-un-relooking-change-ce-que-le-libelle-affirme]] : un libellé a déjà affirmé
-   autre chose que ce que la donnée mesurait).
+   ([[gotcha-un-relooking-change-ce-que-le-libelle-affirme]]).
 4. **Capture d'écran à chaque étape**, jointe au compte rendu.
 
 ⚠️ Le redémarrage touche des bots **en service**. Le faire hors d'un moment où quelqu'un
@@ -155,22 +199,14 @@ leur parle, et sur un seul.
 
 ---
 
-## Hors lot — trois lignes qui valent le détour
-
-`⚠️ [TWITCH_CHAT:<bot>] Token invalide (code 401)` tombe en **WARNING** au démarrage des
-3 bots Twitch (13/09, 14/09, 15/09). Ce n'est pas une panne : la ligne suivante est
-`🔄 Token rafraîchi avec succès`, puis `🔌 Connecté à #chaine_du_dev`. Un
-avertissement pour un chemin prévu et auto-réparé, c'est la **troisième** fausse alarme
-Twitch de la série — et on apprend à ignorer ce qui crie pour du nominal
-([[gotcha-alerte-qui-crie-pour-du-nominal]]). Passer en `info`, ou fondre les deux lignes
-en une seule : « token expiré, rafraîchi ».
-
----
-
 ## Ce qui n'est PAS dans ce chantier
 
-- **Recréer `shared/long_term_memory.py`** : rapatriée par bot, c'est une décision.
-- **Toucher au routage de la répartie** : `TEXT == REPARTEE`, Grok a disparu du code.
-- **EventSub, annonces de live, STT** : gelés le 08/09, ils demandent un vrai stream.
-- **Changer les seuils, les prompts ou les répliques** sur la foi d'un seul run : le run
-  de référence sert à MESURER. On corrigera ce qu'il montre, dans un plan suivant.
+- **Changer une tête de cascade pour régler les astérisques.** Mesuré : Sugar 0/17 et
+  Malena 11/17 partagent la même. Ce serait du brassage.
+- **La verbosité de Johnny.** Trois interventions, trois échecs (modèle, prompt, sonde).
+  Ne rien faire reste défendable ; c'est écrit dans `CASCADES_PERSONA`.
+- **Toucher au juge.** Il vient de changer de barème le 17/09 ; on ne déplace pas
+  l'instrument et la pièce dans le même geste.
+- **Twitch**, gelé depuis le 08/09.
+- **Les handles de M'aiq** (`tools/sonde_handles_db.py`) : indépendant, et il faut des
+  points d'uptime croissant.
