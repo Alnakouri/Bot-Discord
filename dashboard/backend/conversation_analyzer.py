@@ -45,9 +45,15 @@ class ConversationAnalyzer:
                 stats["unique_users"] = row[1]
                 
             # Par bot
-            cursor.execute("SELECT bot_name, COUNT(*) FROM interactions WHERE timestamp > ? GROUP BY bot_name", (cutoff,))
+            # ⚠️ `unique_users` n'etait jamais calcule ici : la requete ne ramenait que
+            # COUNT(*), et le rapport lisait `data.get("unique_users", 0)` — donc une
+            # colonne « Utilisateurs Uniques » a 0 sur CHAQUE ligne, a cote d'un total
+            # global a 1. Un chiffre faux vaut moins qu'une colonne absente : il fait
+            # douter de tout le tableau.
+            cursor.execute("""SELECT bot_name, COUNT(*), COUNT(DISTINCT user_id)
+                              FROM interactions WHERE timestamp > ? GROUP BY bot_name""", (cutoff,))
             for r in cursor.fetchall():
-                stats["by_bot"][r[0]] = {"messages": r[1]}
+                stats["by_bot"][r[0]] = {"messages": r[1], "unique_users": r[2]}
                 
             # Par type
             cursor.execute("SELECT interaction_type, COUNT(*) FROM interactions WHERE timestamp > ? GROUP BY interaction_type", (cutoff,))

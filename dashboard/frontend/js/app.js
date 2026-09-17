@@ -479,11 +479,15 @@ async function updateStatTiles() {
             const apiData = await apiRes.json();
             const statApiEl = document.getElementById('stat-api-success');
             if (statApiEl) {
+                // On compte les appels TENTÉS, pas les lignes : un échelon sauté (clé en
+                // quarantaine, client absent) n'a envoyé aucune requête, il ne peut être
+                // ni un succès ni un échec. `tentes` peut manquer si le backend est plus
+                // ancien que ce code — on retombe alors sur `calls`.
                 let totalCalls = 0;
                 let totalErrors = 0;
                 if (apiData && apiData.by_api) {
                     for (const provider of Object.values(apiData.by_api)) {
-                        totalCalls += provider.calls || 0;
+                        totalCalls += (provider.tentes !== undefined ? provider.tentes : provider.calls) || 0;
                         totalErrors += provider.errors || 0;
                     }
                 }

@@ -14,6 +14,7 @@ if root_dir not in sys.path:
 from shared.secure_env import load_secure_env
 from shared.api_manager import MultiAPIKeyManager
 from shared.smart_router import RequestType
+from shared.models import NVIDIA_BASE_URL
 from shared.llm_cascade import generate_response
 from tests.eval.persona_loader import load_persona, load_filtre
 
@@ -53,6 +54,18 @@ key_manager.register_api("nvidia", [NVIDIA_API_KEY] if NVIDIA_API_KEY else [])
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 mistral_client = Mistral(api_key=MISTRAL_API_KEY) if MISTRAL_API_KEY else None
+# ⚠️ Le client NVIDIA manquait, et le pool ci-dessus ne suffisait pas : la cascade teste
+# `elif client_type == "nvidia" and nvidia_client`. Sans client, le 4e echelon — le DERNIER
+# de chacune des six cascades — n'etait jamais appele, et chaque passage inscrivait une
+# ligne `raison='non_tentee'`, `latency_ms=0`. Releve du 2026-09-17 sur `api_usage.db` :
+# 30 lignes de ce genre, toutes issues d'un run d'eval, et AUCUN succes NVIDIA depuis que
+# la base existe. Le dashboard les comptait en echecs et affichait « nvidia 0.0 % ».
+# Un harnais qui ne cable pas un echelon ne mesure pas la cascade du bot, il en mesure une
+# amputee — [[gotcha-sonde-ne-reproduit-pas-le-fournisseur]], [[gotcha-nvidia-jamais-cable-inline]].
+nvidia_client = (
+    OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, max_retries=0)
+    if NVIDIA_API_KEY else None
+)
 
 async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
     """
@@ -107,6 +120,7 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
             key_manager=key_manager,
             mistral_client=mistral_client,
             groq_client=groq_client,
+            nvidia_client=nvidia_client,
             bot_label=bot_label,
             temperature=0.8,
             max_tokens=300,

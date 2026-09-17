@@ -1436,9 +1436,22 @@ async def check_missed_mentions_sheo():
                     found_one = True
                     break  # 1 seul rattrapage par cycle
                     
+            except discord.HTTPException as e:
+                # Un 5xx vient de DISCORD, pas de nous, et la boucle repassera au cycle
+                # suivant : il n'y a rien a reparer. Le journaliser en ERROR remplissait la
+                # liste des incidents « actifs non resolus » du dashboard pour une panne
+                # amont deja terminee — 12 lignes du 14 au 16/09, zero depuis, restarts
+                # compris. [[gotcha-alerte-qui-crie-pour-du-nominal]]
+                if e.status and e.status >= 500:
+                    logger.warning(
+                        f"⚠️ [MISSED CHECK] Discord indisponible sur {channel.name} "
+                        f"({e.status}) — reessai au prochain cycle"
+                    )
+                else:
+                    logger.error(f"❌ [MISSED CHECK] Erreur canal {channel.name}: {e}")
             except Exception as e:
                 logger.error(f"❌ [MISSED CHECK] Erreur canal {channel.name}: {e}")
-    
+
     # Nettoyer le cache (garder les 200 derniers)
     if len(checked_messages_sheo) > MAX_CHECKED_CACHE:
         checked_messages_sheo = set(list(checked_messages_sheo)[-MAX_CHECKED_CACHE:])

@@ -712,3 +712,50 @@ def test_le_rapport_porte_le_bareme_et_le_delta_refuse_de_melanger():
         "aucun `if` ne compare `bareme_ref` a `VERSION_BAREME` pour ECARTER la reference : "
         "les deltas peuvent melanger deux echelles de notation"
     )
+
+
+# ────────────── Le 4e echelon de la cascade existe aussi dans le harnais ───────────────
+
+
+def test_le_harnais_construit_ET_passe_un_client_nvidia():
+    """⚠️ Verrou ne : NVIDIA etait le DERNIER echelon des six cascades, et le harnais ne
+    le cablait pas.
+
+    `runner.py` enregistrait bien le pool de cles NVIDIA — ce qui suffisait a le faire
+    paraitre branche — mais ne construisait aucun client et n'en passait aucun. Or la
+    cascade teste `elif client_type == "nvidia" and nvidia_client`. Sans client, l'echelon
+    etait saute et chaque passage ecrivait `raison='non_tentee'`, `latency_ms=0`, que le
+    dashboard affichait ensuite en « nvidia : 0.0 % de succes ».
+
+    Releve du 2026-09-17 : AUCUN succes NVIDIA dans `api_usage.db` depuis sa creation. Un
+    appel reel provoque le meme jour a repondu en 5,9 s — l'echelon marchait, personne ne
+    l'avait jamais appele. Enregistrer une CLE n'est pas cabler un FOURNISSEUR :
+    [[gotcha-nvidia-jamais-cable-inline]], [[gotcha-import-ajoute-mais-pas-cable]].
+    """
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "runner.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    construit = any(
+        isinstance(n, ast.Assign)
+        and any(getattr(c, "id", None) == "nvidia_client" for c in n.targets)
+        for n in ast.walk(arbre)
+    )
+    assert construit, "runner.py doit CONSTRUIRE un nvidia_client, pas seulement enregistrer sa cle"
+
+    passe = any(
+        isinstance(n, ast.Call)
+        and any(
+            kw.arg == "nvidia_client"
+            and isinstance(kw.value, ast.Name)
+            and kw.value.id == "nvidia_client"
+            for kw in n.keywords
+        )
+        for n in ast.walk(arbre)
+    )
+    assert passe, (
+        "le client NVIDIA n'est PASSE a aucun appel : construit et jamais transmis, "
+        "l'echelon reste saute exactement comme avant"
+    )

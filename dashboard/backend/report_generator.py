@@ -103,10 +103,18 @@ Veuillez analyser ce traceback et me fournir la cause racine et une suggestion d
                 
                 by_api = usage.get("by_api", {})
                 if by_api:
-                    lines.append("| Provider API | Appels | Erreurs | Taux de Succès |")
-                    lines.append("|---|---|---|---|")
+                    # « Sautés » = échelons que la cascade a passés sans appeler personne
+                    # (clé en quarantaine, client absent). Les fondre dans les erreurs
+                    # faisait lire une panne là où il n'y avait qu'un repli qui fonctionne.
+                    lines.append("| Provider API | Lignes | Tentés | Sautés | Erreurs | Taux de Succès |")
+                    lines.append("|---|---|---|---|---|---|")
                     for api_name, data in by_api.items():
-                        lines.append(f"| {api_name} | {data['calls']} | {data['errors']} | {data['success_rate']}% |")
+                        taux = data.get("success_rate")
+                        taux_txt = f"{taux}%" if taux is not None else "— (jamais appelé)"
+                        lines.append(
+                            f"| {api_name} | {data['calls']} | {data.get('tentes', '?')} | "
+                            f"{data.get('sautes', '?')} | {data['errors']} | {taux_txt} |"
+                        )
                     lines.append("")
                 
                 keys = self.api_tracker.get_keys_status()
@@ -135,6 +143,33 @@ Veuillez analyser ce traceback et me fournir la cause racine et une suggestion d
                     for bot_name, data in by_bot.items():
                         lines.append(f"| {bot_name} | {data.get('messages', 0)} | {data.get('unique_users', 0)} |")
                     lines.append("")
+                    # ⚠️ Un bot sans interaction n'a AUCUNE ligne (GROUP BY). Le tableau en
+                    # montrait 4 sur 6 sans le dire, et « absent » se lit comme « pas de
+                    # donnee » alors que ca peut etre un bot muet ou qui n'enregistre plus.
+                    # On nomme les manquants. [[gotcha-un-bot-sur-six-manque-toujours]]
+                    if self.bot_manager:
+                        try:
+                            # Rapprochement sur l'IDENTIFIANT, pas sur le libelle : `display`
+                            # commence par un emoji (« ☕ Alfred Pennyworth ») et la table
+                            # `interactions` ecrit « M'aiq », « Sugar Bot ». On normalise des
+                            # deux cotes (minuscules, lettres seules) avant de comparer.
+                            vus = {"".join(ch for ch in nom.lower() if ch.isalpha())
+                                   for nom in by_bot}
+                            muets = []
+                            for b in self.bot_manager.get_all_status():
+                                ident = "".join(ch for ch in b["id"].lower() if ch.isalpha())
+                                if not any(v.startswith(ident) or ident.startswith(v) for v in vus):
+                                    muets.append(b["display"])
+                            if muets:
+                                lines.append(f"- **Aucune interaction enregistree** : {', '.join(sorted(muets))}")
+                                lines.append("")
+                        except Exception:
+                            # Silence VOULU : cette ligne est un complement d'information.
+                            # Si `bot_manager` est indisponible ou change de forme, le
+                            # rapport de diagnostic doit sortir quand meme — c'est souvent
+                            # dans ces moments-la qu'on le consulte. On perd une ligne, pas
+                            # le rapport.
+                            pass
                 lines.append("")
                 
             # 5. Instructions pour IA
