@@ -1,18 +1,16 @@
-# PLAN — Les astérisques, et le harnais qui ne les voit pas
+# PLAN — Les astérisques, du harnais jusqu'aux fiches
 
 Rédaction : Claude, le **2026-09-17**, à partir du run `tests/eval/reports/eval_20260917_1233.json`.
-Exécution : **Antigravity**, sauf le LOT 4 (repris tel quel du plan du 15/09).
+Exécution : **Antigravity**, sauf le LOT 4.
 
-Le plan précédent se terminait par une interdiction : *« Changer les seuils, les prompts
-ou les répliques sur la foi d'un seul run : le run de référence sert à MESURER. On
-corrigera ce qu'il montre, dans un plan suivant. »* Le run a eu lieu. Voici ce qu'il montre.
+Cinq lots. Le **0 est livré** (`2e06d09`). Les lots 1 à 3 visent une seule cible mesurée,
+par trois bouts différents. Le 4 attend un humain depuis le 15/09.
 
 ---
 
-## LE RUN — propre, et c'est ce qui le rend utilisable
+## CE QUE LE RUN A MONTRÉ
 
 Six bots, **barème 2**, `fiable: true` pour les six, **0 appel échoué, 0 score à ‑1**.
-Graine 1789641234, ordre tiré au sort. C'est la référence qui manquait.
 
     bot            fidelite   ton_fr  anti_cont  anti_fuite  longueur   global
     sugar              4.10     4.70       5.00        5.00      5.00     4.76
@@ -22,174 +20,246 @@ Graine 1789641234, ordre tiré au sort. C'est la référence qui manquait.
     malena             1.80     3.90       5.00        5.00      2.60     3.66
     alfred             1.90     4.20       5.00        5.00      1.40     3.50
 
-`anti_contamination` et `anti_fuite` sont réglés (5.00 / 4.92). **Le point faible unique
-du parc, c'est `fidelite` : 3.05.**
+`anti_contamination` et `anti_fuite` sont réglés. **Le seul critère faible est `fidelite` :
+3.05.** Vingt-six verdicts sur soixante y tombent à 2 ou moins, et la même phrase revient :
+*« a brisé les règles de narration »*, *« description narrative entre astérisques »*.
+
+Compté sur les **102 réponses**, sans passer par le juge :
+
+    bot          réponses contenant *…*   tête de cascade   règle anti-narration dans la fiche
+    sugar                 0 / 17          flash-lite        « Tu ne fais QUE parler » (positive)
+    maiq                  4 / 17          flash-lite        une ligne, sur les PARENTHÈSES seules
+    malena               11 / 17          flash-lite        trois ❌ dont un sur les astérisques
+    johnny               16 / 17          ministral-14b     quatre ❌, dont deux sur les astérisques
+    alfred               16 / 17          ministral-14b     quatre ❌ + un MAUVAIS EXEMPLE décrit
+    sheogorath           17 / 17          gpt-oss-120b      « 🚫 PAS DE NARRATION », la plus nette
+
+**64 réponses sur 102.** Les six fiches l'interdisent toutes.
+
+### Les deux conclusions faciles, et pourquoi le tableau les refuse
+
+- **« C'est le modèle. »** Non : sugar 0, maiq 4 et malena 11 partagent la **même tête**.
+  Le modèle aggrave — la sonde du 04/09 mesurait `ministral-14b` à 11/18 — il ne décide pas.
+  [[gotcha-la-longueur-est-un-defaut-de-MODELE]] vaut pour la longueur, pas ici.
+- **« C'est le volume d'interdiction. »** Non plus : **Sheogorath a la règle la plus nette
+  et le pire chiffre.** Alfred a reçu deux renforcements (`4bb1ce4`, `4402e3d`) et reste à
+  16/17. Empiler des ❌ n'a jamais rien donné — trois fois de suite.
+
+Ce que Sugar a de différent n'est pas la force de sa règle, c'est sa **forme** : elle dit ce
+qu'il FAIT (« tu ne fais que parler ») avant ce qu'il ne fait pas, et cite les tics **en
+clair entre guillemets**, jamais entre astérisques. C'est une hypothèse, pas une preuve :
+le LOT 2 est écrit pour qu'elle puisse être **réfutée** par la mesure.
 
 ---
 
-## CE QU'IL MONTRE : UNE SEULE CAUSE, CINQ BOTS
+## L'ORDRE, ET POURQUOI IL N'EST PAS NÉGOCIABLE
 
-Vingt-six verdicts sur soixante tombent à 2 ou moins en `fidelite`. En les lisant l'un
-après l'autre, **la même phrase revient** : *« a brisé les règles de narration »*,
-*« description narrative entre astérisques »*, *« l'usage d'italiques/astérisques
-(même pour insister) »*.
+Le LOT 0 devait passer **en premier** : le harnais notait la sortie brute du modèle, donc
+un filet ajouté à un bot n'aurait bougé **aucun** score et on aurait conclu à son échec.
+Il est livré. Ensuite :
 
-Compté sur les **102 réponses** du run, sans passer par le juge :
+    LOT 1  le filet    garantit   ──┐
+                                    ├── LOT 1 avant LOT 2 : le filet rend le résultat
+    LOT 2  la fiche    oriente    ──┘   VISIBLE même si la fiche ne change rien.
+    MESURE run complet des six          Première référence « produit », barème 3.
+    LOT 3  le hors-LLM                  Ce qu'aucun des deux ne peut atteindre.
+    LOT 4  le navigateur                Humain requis, indépendant du reste.
 
-    bot          réponses contenant *…*   exemple
-    sugar                 0 / 17          —
-    maiq                  4 / 17          *Les Gardiens du Sucre*
-    malena               11 / 17          *soupir dramatique*
-    johnny               16 / 17          *Souffle sur ma clope imaginaire*
-    alfred               16 / 17          *Soupir imperceptible, mais audible…*
-    sheogorath           17 / 17          *très*
-
-**64 réponses sur 102.** Les six fiches de persona l'interdisent toutes.
+⚠️ Faire le LOT 2 **seul** serait le piège inverse du LOT 0 : si la fiche améliore les
+choses sans filet, on ne saura pas ce qui a agi. Le filet d'abord donne un plancher ; la
+fiche se juge ensuite **sur le texte d'avant filtrage**, que le rapport conserve.
 
 ---
 
-## LE FAIT QUI TRANCHE : ce n'est PAS le modèle
+# LOT 0 — ✅ LIVRÉ (`2e06d09`) — le harnais mesure le BOT, plus le modèle
 
-La conclusion facile serait « encore la tête de cascade ». Le run l'interdit :
+Pour mémoire, et parce que les lots suivants s'appuient dessus :
 
-- **Sugar 0/17 et Malena 11/17 partagent la même tête** (`gemini-flash-lite` en tête de
-  cascade, cf. `CASCADES_PERSONA`). Même modèle, même harnais, même jour : 0 contre 11.
-- La sonde du 04/09 avait pourtant mesuré `ministral-14b` à **11/18 réponses avec
-  astérisques** — c'est écrit dans `shared/models.py`. Le modèle **aggrave**. Il ne décide pas.
+- `SugarBot/sugar_filtres.py` (nouveau) — le filtre de Sugar est sorti de `bot_sugar.py`,
+  qui importe `discord` et restait donc hors de portée du harnais.
+- `Sheogorath/sheo_llm.py` — `filtre_sortie(texte, message_utilisateur=None)` regroupe les
+  étapes sans état ; `postprocess_response` passe par elle. L'ordre écho → astérisques
+  (correctif du 06/09) est préservé, et son verrou a suivi le code.
+- `tests/eval/persona_loader.py` — `FILTRES` + `load_filtre(bot_id)`, qui rend **l'identité**
+  pour un bot sans filtre : un harnais qui refuserait de mesurer les bots nus ne mesurerait
+  plus rien.
+- `tests/eval/runner.py` — applique `filtre_sortie(response, user_msg)`, **après** le repli
+  `ECHEC_CASCADE` (c'est un marqueur du harnais, pas une réplique).
+- `tests/eval/judge.py` — `VERSION_BAREME` 2 → 3. Le prompt du juge n'a pas bougé d'une
+  ligne : c'est son **entrée** qui change, et elle déplace les notes.
 
-⚠️ [[gotcha-la-longueur-est-un-defaut-de-MODELE]] vaut pour la **longueur**. Il ne se
-transpose pas aux astérisques : ici c'est la **formulation de la règle** qui fait la
-différence, et Sugar en détient la preuve.
+7 verrous AST (`tests/test_verrou_filtre_sortie.py`), le principal vérifié par mutation.
+Suite complète : **1045 verts**.
 
----
-
-## L'ÉTAT RÉEL DES FILETS (relevé fichier par fichier)
-
-    bot          filet sur le chemin Discord              ce qu'il retire
-    sugar        _strip_didascalies   bot_sugar.py:1079   didascalies nues + *…*, marqueurs
-    sheogorath   postprocess_response sheo_llm.py:383     méta-narration, didascalies nues,
-                                                          marqueurs *…*, cap de phrases
-    johnny       RIEN                                     (son _strip_stage_directions ne sert
-                                                          qu'à une punchline Twitch, ligne 528)
-    alfred       RIEN                                     seulement <fact>, <think>
-    maiq         RIEN                                     seulement <fact>
-    malena       RIEN                                     rien du tout
-
-Quatre bots sur six envoient `*Soupir imperceptible*` tel quel dans Discord.
-
----
-
-## ⚠️ LE PIÈGE, à lire avant de coder quoi que ce soit
-
-`tests/eval/runner.py:57-130` rend la sortie **brute de la cascade**. Il n'applique
-**aucun** post-traitement de bot. Deux conséquences, opposées :
-
-1. **Sheogorath est puni pour 17/17 astérisques que personne ne voit jamais** : son
-   `strip_markdown_emphasis` les retire avant l'envoi. Son 3.80 de `fidelite` est un
-   plancher, pas une mesure.
-2. **Un filet ajouté aux quatre bots nus ne bougerait AUCUN score.** On conclurait que le
-   correctif a échoué, alors que le harnais ne le regarde pas.
-
-C'est [[gotcha-sonde-ne-reproduit-pas-le-fournisseur]], un étage plus haut : le harnais ne
-reproduit pas le **bot**, il mesure le **modèle**. D'où l'ordre des lots — le LOT 0 n'est
-pas un confort, c'est ce qui rend les lots 1 et 2 mesurables.
-
----
-
-# LOT 0 — le harnais mesure le PRODUIT, pas la sortie brute
-
-1. **Exposer le filtre de chaque bot dans un module importable sans `discord`.**
-   `persona_loader` n'importe que les modules `*_data` : il ne peut pas atteindre
-   `bot_sugar.py`. Donc :
-   - Sugar : sortir `_strip_didascalies` de `bot_sugar.py` vers un module sans `discord` ;
-     l'appel de la ligne 1079 doit continuer à passer par la même fonction.
-   - Sheo : `postprocess_response` réclame `fact_brain`, `user_id`, `original_message`.
-     Exposer une porte étroite `filtre_sortie(texte)` qui n'enchaîne **que** les étapes
-     sans état (méta-narration, didascalies nues, marqueurs d'emphase).
-2. **`runner.py` applique `filtre_sortie` du bot** avant de rendre la réponse. Un bot qui
-   n'en a pas rend son texte inchangé — pas d'exception, pas de cas particulier.
-3. **Bumper `VERSION_BAREME` à 3.** L'entrée du juge change, donc les scores changent de
-   sens. Le masquage des deltas existe déjà et vient de prouver sa valeur : il empêchera
-   la comparaison qui mentirait.
-4. **Verrou** : un test AST sur `runner.py` qui exige l'appel **avec son argument**, pas
-   une reconstitution de la logique ([[gotcha-test-qui-retape-la-logique]],
-   [[gotcha-import-ajoute-mais-pas-cable]]).
-
-⚠️ Ce lot **fera bouger tous les scores**, y compris ceux des bots qu'on ne touche pas.
-C'est voulu. Le tableau ci-dessus reste la référence « sortie brute » ; le run d'après
-sera la première référence « produit ».
+⚠️ **Limite connue, assumée** : le plafond de phrases de Sheo (`force_short_response`) se
+calcule sur le message et tombe après les easter eggs — il reste **hors** du chemin mesuré.
+Le `longueur` de Sheogorath est donc encore sous-mesuré. À savoir avant de lire le prochain
+run ; à traiter seulement si ce critère devient la question.
 
 ---
 
 # LOT 1 — le filet déterministe sur les quatre bots nus
 
-Alfred, Johnny, M'aiq, Malena. Sheo a déjà écrit l'argument dans son propre code :
+**Alfred, Johnny, M'aiq, Malena.** Sheo a déjà écrit l'argument dans son propre code :
 *« Une règle de prompt oriente ; elle ne garantit rien. Seul un filet déterministe
-garantit. »* Deux traitements **distincts**, qu'il a déjà séparés — ne pas les confondre :
+garantit. »*
+
+## 1.1 — Deux traitements, à ne jamais confondre
 
 - **Didascalie** (`*Soupir imperceptible*`, `*pose son torchon*`) → **tout le segment tombe**.
-- **Emphase** (`*The Times*`, `*très*`) → **seuls les marqueurs tombent, les mots restent**.
+- **Emphase** (`*The Times*`, `*très*`) → **les marqueurs tombent, les mots restent**.
 
-Contraintes :
+La logique existe, curée par deux passages en production : `SugarBot/sugar_filtres.py`.
+**La reprendre, ne pas la réécrire.** Elle protège déjà deux pièges payés cher : un
+impératif de dialogue (« souris ! ») n'est pas une didascalie, et `le_dev` n'est pas
+de l'italique.
 
-- Copie **inline par bot**, pas un import obligatoire de `shared/`
-  ([[decision-independance-stricte-vendoring-core]]). Si le code passe par
-  `vendor_core.py`, mettre à jour **les deux** listes ([[gotcha-deux-listes-vendoring]]).
-- Reprendre la logique **déjà curée** de Sugar plutôt que la réécrire : elle ne coupe pas
-  un impératif de dialogue (« souris ! ») ni un pseudo (`le_dev`). Ces deux pièges
-  ont déjà coûté.
-- Verrou par bot : AST **sur le fichier du bot**, visant le **NOM** de la fonction, l'appel
-  avec ses arguments, ET l'absence du code remplacé ([[gotcha-verrou-trop-faible]]).
-- Compter : **quatre** bots. Pas trois ([[gotcha-un-bot-sur-six-manque-toujours]]).
+## 1.2 — Un module par bot, sans `discord`
+
+Créer `Alfred/alfred_filtres.py`, `JohnnyBot/johnny_filtres.py`, `MaiqBot/maiq_filtres.py`,
+`MalenaBot/malena_filtres.py`, chacun exposant :
+
+```python
+def filtre_sortie(texte, message_utilisateur=None): ...
+```
+
+`message_utilisateur` est facultatif et peut être ignoré : il existe pour que les six bots
+présentent **la même porte**, appelable par le harnais sans savoir lequel il tient.
+
+⚠️ Copie **inline par bot**, pas un import obligatoire de `shared/`
+([[decision-independance-stricte-vendoring-core]] : chaque bot reste déployable seul). Si le
+code passe par `tools/vendor_core.py`, mettre à jour **les deux** listes — celle du copieur
+et celle de la sonde de dérive ([[gotcha-deux-listes-vendoring]]).
+
+## 1.3 — Où brancher, bot par bot (relevé le 17/09)
+
+| bot | point de branchement | remarque |
+|---|---|---|
+| Alfred | `bot_alfred.py:2096-2098` → remplacer les 3 `re.sub` par `filtre_sortie` | l'envoi est juste après, ligne 2100 |
+| Johnny | `bot_johnny.py:1164-1166`, même forme | ⚠️ son `_strip_stage_directions` de la ligne 528 ne concerne **que** une punchline Twitch : ne pas croire le bot déjà équipé |
+| M'aiq | `bot_maiq.py:1710-1712`, même forme | envoi ligne 1715 |
+| Malena | **aucun** nettoyage aujourd'hui, et **5 `return _texte_branche`** dispersés dans sa cascade INLINE (`bot_malena.py:274, 287, 320, 355, 399`) + 2 envois (`:841` et `:968`, la « mention manquée ») | renommer `generate_response_hybrid` en `_generate_response_hybrid_brut` et écrire un mince enveloppe qui filtre le retour : **une** modification couvre les 5 sorties et les 2 envois |
+
+⚠️ Malena est le cas à ne pas bâcler : filtrer à ses deux `reply()` laisserait le prochain
+chemin d'envoi à découvert. C'est [[gotcha-appels-fournisseur-hors-cascade]] transposé —
+compter les SORTIES, pas les fonctions.
+
+## 1.4 — Déclarer les filtres au harnais
+
+Ajouter les quatre entrées dans `tests/eval/persona_loader.FILTRES`. Sans cela, le LOT 1
+est invisible au score — c'est exactement le défaut que le LOT 0 vient de corriger.
+
+## 1.5 — Verrous (compléter `tests/test_verrou_filtre_sortie.py`)
+
+1. `FILTRES` contient **les six** bots. Pas cinq ([[gotcha-un-bot-sur-six-manque-toujours]]).
+2. Pour chacun : `filtre_sortie` retire une didascalie **entière** et ne laisse **aucun**
+   astérisque, sur les cas réels du run (`*Soupir imperceptible, mais audible…*`,
+   `*Souffle sur ma clope imaginaire*`, `*soupir dramatique*`, `*The Times*`).
+3. Pour chacun : ne coupe **pas** « Souris ! », ne touche **pas** `le_dev`.
+4. AST **sur le fichier du bot**, visant le **NOM** : `filtre_sortie` est appelée, et les
+   `re.sub(r"<fact>…` remplacés ont **disparu** ([[gotcha-import-ajoute-mais-pas-cable]],
+   [[gotcha-verrou-trop-faible]]).
+5. Pour Malena : vérifier que la fonction publique `generate_response_hybrid` passe par le
+   filtre, et qu'aucun `return _texte_branche` ne subsiste hors de l'enveloppe.
+
+**Fin du lot** : suite complète verte, et `python tests/eval/run_eval.py --bot alfred` rend
+un texte sans astérisque dans le rapport.
 
 ---
 
-# LOT 2 — la formulation qui marche, portée aux cinq autres fiches
+# LOT 2 — la forme de la règle, portée aux cinq autres fiches
 
-Sugar est à 0/17 avec cette phrase (`sugar_data.py:34`) :
+## 2.1 — L'hypothèse, et ce qui la réfuterait
+
+La phrase de Sugar (`SugarBot/sugar_data.py:34`) :
 
 > *Tu ne fais QUE parler : JAMAIS de didascalie ni d'action narrée — ni entre astérisques,
 > ni en clair (« soupir sucré », « glisse un regard en coin », « sourire en coin »).
 > Tu ne décris pas tes gestes, mimiques ou soupirs : tu ne mets que tes répliques.*
 
-Elle **nomme le comportement attendu** au lieu d'empiler des ❌, et elle cite les tics
-**entre guillemets français, en clair** — jamais entre astérisques. Porter cette **forme**
-aux cinq autres fiches.
+Trois traits : elle **nomme le comportement attendu** en premier, elle **cite les tics en
+clair** entre guillemets français, et elle **ne montre jamais** la forme interdite.
 
-⚠️ Alfred a déjà reçu **deux** renforcements d'interdiction (`4bb1ce4`, `4402e3d`) et il
-reste à 16/17. **Ne pas en ajouter un troisième** : changer la forme, pas le volume. Et ne
-jamais écrire la démonstration de ce qu'on interdit
-([[gotcha-le-prompt-enseigne-le-tic-interdit]], deux occurrences déjà).
+**Hypothèse** : c'est cette forme qui tient, pas la sévérité.
+**Ce qui la réfute** : si, après le LOT 2, les comptes d'astérisques **avant filtrage** ne
+baissent pas, l'hypothèse est morte — on le dit, on la retire du plan, et le filet du LOT 1
+reste la seule réponse. Le rapport conserve le texte d'avant filtrage : la mesure est
+disponible, elle n'exige aucun outil neuf.
 
-Mesure d'arrivée : re-compter les `*…*` sur les réponses du run suivant. **64 sur 102** est
-le chiffre à battre, et il se compte sans le juge.
+## 2.2 — Où intervenir
+
+| fiche | lignes à refondre | état actuel |
+|---|---|---|
+| `Alfred/alfred_data.py` | 14-22, et la ligne 50 (parenthèses) | quatre ❌ + un MAUVAIS EXEMPLE décrit |
+| `JohnnyBot/johnny_data.py` | 18-21 | quatre ❌ |
+| `MalenaBot/malena_data.py` | 18-20 | trois ❌ |
+| `MaiqBot/maiq_data.py` | 62 | **une seule ligne**, et seulement sur les parenthèses |
+| `Sheogorath/sheo_data.py` | 691-692 (et 757) | la plus nette des six… et 17/17 |
+
+## 2.3 — Les trois interdits de ce lot
+
+1. **Ne pas ajouter un troisième renforcement chez Alfred.** Deux ont échoué. Changer la
+   FORME, pas le volume.
+2. **Ne jamais écrire la démonstration de ce qu'on interdit**
+   ([[gotcha-le-prompt-enseigne-le-tic-interdit]], deux occurrences déjà — un prompt qui
+   écrit `*allume une clope*` enseigne le geste qu'il condamne).
+3. **Chercher d'abord la PERMISSION.** Avant de réécrire une règle, relire la fiche entière
+   à la recherche de ce qui **autorise** le comportement ailleurs
+   ([[gotcha-une-permission-bat-une-demonstration]]) : chez Johnny, c'est ce qui explique sa
+   longueur, et c'est écrit dans `CASCADES_PERSONA`.
+
+**Fin du lot** : suite verte, fiches relues, et **aucune** nouvelle démonstration introduite
+(un verrou existe déjà pour ça — le laisser travailler).
 
 ---
 
-# LOT 3 — les didascalies EN DUR, qui ne passent ni par le LLM ni par un filtre
+# MESURE — le run complet, entre le LOT 2 et le LOT 3
 
-Même famille que Sheo le 16/09 : une règle de persona ne protège que ce qui passe par le
-modèle.
+    python tests/eval/run_eval.py          # les six, ~1 h, à un moment creux
+
+- Lire le **bloc de santé AVANT les scores** (`scores_a_moins_un`, `fiable`). Un bot non
+  fiable : regarder les cooldowns et **relancer ce bot seul** (`--bot <id>`) avant de
+  conclure quoi que ce soit ([[gotcha-run-eval-borne-par-le-quota]]).
+- Les deltas resteront **masqués** : le rapport du 17/09 est en barème 2, celui-ci en 3.
+  C'est voulu. Ce run devient la première référence « produit ».
+- La mesure qui tranche n'est pas le score du juge, c'est le **compte d'astérisques avant
+  filtrage**, bot par bot. **64 sur 102** est le chiffre à battre, et il se compte sans le
+  juge — donc sans quota, et sans discussion.
+
+---
+
+# LOT 3 — les didascalies EN DUR, que ni le filet ni la fiche n'atteignent
+
+Elles ne passent pas par le LLM : une règle de persona ne protège que ce qui traverse le
+modèle (leçon du 16/09 chez Sheo).
 
 - `Alfred/bot_alfred.py:1612` `*pose son torchon*` et `:1615` `*soupir britannique*` —
-  pool de sanction « chant », envoyé tel quel. Vraies didascalies, à retirer.
-- `Alfred/bot_alfred.py:933,934` `*chant*`, `*bruit*` — de l'**emphase**, pas une
-  didascalie : marqueurs retirés, mots gardés.
+  pool de sanction « chant », envoyé tel quel. Vraies didascalies : **retirer**.
+- `Alfred/bot_alfred.py:933,934` `*chant*`, `*bruit*` — de l'**emphase** : marqueurs
+  retirés, mots gardés. Ne pas amputer la réplique.
 - `Sheogorath/sheo_punishments.py` (`*POUF*`, `*TRANSFORMATION !*`, `*Soupir*`) — **à
-  trancher, pas à corriger d'office.** Un effet sonore de sort peut être voulu
-  ([[gotcha-un-defaut-peut-etre-une-fonctionnalite]]). Poser la question avant de toucher.
+  trancher, pas à corriger d'office.** `*POUF*` est un effet sonore de sort : ça peut être
+  voulu ([[gotcha-un-defaut-peut-etre-une-fonctionnalite]]). **Poser la question** avant de
+  toucher ; `*Soupir*` est un cas différent, c'est une vraie didascalie.
+
+⚠️ Ne PAS supprimer par motif textuel : ces littéraux vivent dans des listes, et une coupe
+à la regex casse la syntaxe ou efface une entrée voisine
+([[gotcha-suppression-par-motif-textuel]] — pyflakes AVANT pytest).
+
+**Fin du lot** : suite verte, et une relecture des **littéraux** des pools, pas du code
+([[gotcha-persona-fuite-dans-le-partage]]).
 
 ---
 
 # LOT 4 — Le dashboard, au navigateur — exécution : **Claude**, pas Antigravity
 
-*(repris intact du plan du 15/09 : toujours ouvert, il demande un humain et des clics.)*
+*(ouvert depuis le 15/09 ; il demande un humain, des clics et des captures.)*
 
-1. **Le toggle du décret** — `data/bot_features.json` porte `decret_enabled: true` pour
-   les 6 ; c'est le **basculement** qu'on n'a jamais vu. Basculer, relire le fichier,
+1. **Le toggle du décret** — `data/bot_features.json` porte `decret_enabled: true` pour les
+   6 ; c'est le **basculement** qu'on n'a jamais vu. Basculer, relire le fichier,
    rebasculer, relire.
 2. **Le bouton de redémarrage** — `tests/test_dashboard_restart.py` existe ; le clic, non.
-   Le faire sur **un seul bot**, et vérifier le redémarrage côté `docker ps`.
+   Le faire sur **un seul bot**, et vérifier côté `docker ps`.
 3. **Les graphes et le statut réel** — vérifier que « CONNECTÉ » mesure bien la connexion
    ([[gotcha-un-relooking-change-ce-que-le-libelle-affirme]]).
 4. **Capture d'écran à chaque étape**, jointe au compte rendu.
@@ -197,16 +267,21 @@ modèle.
 ⚠️ Le redémarrage touche des bots **en service**. Le faire hors d'un moment où quelqu'un
 leur parle, et sur un seul.
 
+⚠️ Avant de conclure qu'un panneau ne marche pas : vérifier le sélecteur de bot — « Tous les
+bots » MASQUE les panneaux par-bot ([[gotcha-regarder-l-ecran-avant-le-code]]).
+
 ---
 
 ## Ce qui n'est PAS dans ce chantier
 
-- **Changer une tête de cascade pour régler les astérisques.** Mesuré : Sugar 0/17 et
-  Malena 11/17 partagent la même. Ce serait du brassage.
-- **La verbosité de Johnny.** Trois interventions, trois échecs (modèle, prompt, sonde).
-  Ne rien faire reste défendable ; c'est écrit dans `CASCADES_PERSONA`.
-- **Toucher au juge.** Il vient de changer de barème le 17/09 ; on ne déplace pas
-  l'instrument et la pièce dans le même geste.
+- **Changer une tête de cascade pour régler les astérisques.** Mesuré : sugar 0, maiq 4 et
+  malena 11 partagent la même. Ce serait du brassage.
+- **La verbosité de Johnny.** Trois interventions, trois échecs (modèle, prompt, sonde). Ne
+  rien faire reste défendable ; c'est écrit dans `CASCADES_PERSONA`.
+- **Toucher au juge.** Il a changé de barème le 17/09 ; on ne déplace pas l'instrument et la
+  pièce dans le même geste.
+- **Le plafond de phrases de Sheo dans le harnais** — limite connue du LOT 0, à ouvrir
+  seulement si `longueur` devient la question.
 - **Twitch**, gelé depuis le 08/09.
 - **Les handles de M'aiq** (`tools/sonde_handles_db.py`) : indépendant, et il faut des
   points d'uptime croissant.
