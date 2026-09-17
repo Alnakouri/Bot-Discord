@@ -209,11 +209,27 @@ def test_la_route_repond_avant_de_mourir():
     src = (_backend / "app.py").read_text(encoding="utf-8")
     bloc = src.split('@app.post("/api/dashboard/restart")')[1].split("@app.")[0]
     position_reponse = bloc.index("return {")
-    position_mort = bloc.index("os._exit(0)")
+    position_mort = bloc.index("os._exit(")
     assert position_mort < position_reponse, \
         "la sortie doit être différée dans un thread, PAS exécutée avant le return"
     assert "threading.Thread" in bloc and "daemon=True" in bloc
     assert "time.sleep" in bloc, "il faut laisser la réponse partir avant de couper"
+
+    # ⚠️ Le code de sortie n'est pas un detail cosmetique : `start_dashboard.bat` finit
+    # par `pause`, et il ne le saute que sur CE code precis. Repasser a `os._exit(0)`
+    # laisserait la console d'origine bloquee sur « appuyez sur une touche » pendant que
+    # le relanceur en ouvre une neuve — deux fenetres, dont une morte. Constate par
+    # l'utilisateur le 2026-09-17.
+    assert "os._exit(CODE_REDEMARRAGE)" in bloc, (
+        "la sortie doit porter CODE_REDEMARRAGE : c'est ce que le .bat lit pour savoir "
+        "qu'il ne doit PAS faire `pause` et peut laisser sa fenetre se fermer"
+    )
+    bat = (_backend.parent / "start_dashboard.bat").read_text(encoding="utf-8")
+    code = src.split("CODE_REDEMARRAGE = ")[1].split("\n")[0].strip()
+    assert f'"%ERRORLEVEL%"=="{code}"' in bat, (
+        f"start_dashboard.bat ne teste pas le code {code} : le .bat et app.py se sont "
+        "desynchronises, et les deux consoles reviendront sans qu'aucun test ne le voie"
+    )
 
 
 def test_la_route_est_protegee_par_authentification():

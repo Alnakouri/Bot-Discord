@@ -647,6 +647,13 @@ async def get_twitch_leaderboard(bot_id: str):
 
 DASHBOARD_PORT = 8501
 
+# Code de sortie qui dit « je pars pour revenir ». `start_dashboard.bat` se termine par
+# `pause` — utile apres un plantage, pour lire l'erreur avant que la fenetre se ferme —
+# mais lors d'un REDEMARRAGE il laissait la console d'origine bloquee sur « appuyez sur
+# une touche » pendant que le relanceur en ouvrait une neuve : deux fenetres, dont une
+# morte. Le .bat saute donc son `pause` sur ce code precis, et sur lui seul.
+CODE_REDEMARRAGE = 42
+
 
 @app.post("/api/dashboard/restart")
 async def restart_dashboard():
@@ -680,7 +687,10 @@ async def restart_dashboard():
         # peut traîner sur les connexions ouvertes, et le relanceur attend de toute
         # façon que le port soit libre.
         time.sleep(1.0)
-        os._exit(0)
+        # ⚠️ Pas 0 : c'est ce code qui dit au .bat de NE PAS faire `pause`, donc de
+        # laisser sa fenetre se fermer. Le relanceur, lui, n'attend qu'une chose — que
+        # ce processus disparaisse — et se moque de son code de sortie.
+        os._exit(CODE_REDEMARRAGE)
 
     threading.Thread(target=_quitter, daemon=True).start()
     return {"status": "ok", "message": "Redémarrage en cours...", "port": DASHBOARD_PORT}

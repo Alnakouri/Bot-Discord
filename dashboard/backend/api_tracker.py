@@ -148,6 +148,13 @@ class APITracker:
                 else:
                     status = "active"
                 keys.append({
+                    # ⚠️ `api_name` et `key_index` ne sortaient PAS d'ici, alors que le
+                    # front groupe les cles par fournisseur (`byProvider[k.api_name]`,
+                    # app.js). Resultat a l'ecran : un seul groupe intitule « undefined »
+                    # au-dessus de toutes les cles. Le nom n'existait que fondu dans
+                    # `api_key_display`, ou le JS ne pouvait pas le relire.
+                    "api_name": d.get("api_name"),
+                    "key_index": d.get("key_index"),
                     "api_key_display": f"{d.get('api_name','?')} #{d.get('key_index','?')}",
                     "status": status,
                     "error_count": d.get("total_errors", 0),
