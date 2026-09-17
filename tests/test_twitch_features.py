@@ -139,7 +139,18 @@ class TestTwitchFeatures(unittest.TestCase):
         # Verify normal link command registered
         self.assertIn("discord", bot.commands)
         discord_callback = bot.commands["discord"]
-        self.assertEqual(discord_callback("author", ""), "Le Discord : https://discord.gg/test")
+        # ⚠️ Contrat CHANGÉ le 2026-09-18 : un champ « Message » VIDE ne rend plus le
+        # gabarit directement — il fait écrire sa phrase au bot, donc le callback est une
+        # coroutine. Le gabarit reste le repli, et ce test le vérifie en awaitant avec un
+        # bot dont la cascade ne peut rien rendre (key_manager absent).
+        # Le cas « message FOURNI » garde son callback synchrone :
+        # cf. test_link_command_message_template.
+        import asyncio
+        self.assertTrue(asyncio.iscoroutinefunction(discord_callback))
+        self.assertEqual(
+            asyncio.run(discord_callback("author", "")),
+            "Le Discord : https://discord.gg/test",
+        )
         
         # Verify alias registered
         self.assertIn("serveur", bot.command_aliases)

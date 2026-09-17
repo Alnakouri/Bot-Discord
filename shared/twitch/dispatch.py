@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import re
 import time
 import random
 import collections
@@ -6,6 +7,41 @@ import asyncio
 from datetime import datetime
 from shared.twitch.sanitize import strip_stage_directions, send_chat_safe
 from shared.twitch.llm import ANTI_INJECTION_GUARD
+
+# Tout ce qui ressemble à une adresse dans la phrase écrite par le modèle. Le lien
+# officiel est accolé par le code : celui que le modèle invente est au mieux inutile,
+# au pire faux — et personne ne verifie une URL avant de cliquer.
+_RESSEMBLE_A_UN_LIEN = re.compile(
+    r"(?:https?://\S+|www\.\S+|\b\S+\.(?:gg|com|fr|net|io|tv|org)(?:/\S*)?)",
+    re.IGNORECASE,
+)
+
+
+def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
+    """Rend la phrase prête à recevoir l'URL, ou None si rien d'exploitable.
+
+    ⚠️ Une phrase qui contient déjà une adresse est REJETÉE, pas réparée. Mesuré en
+    écrivant ce filtre : découper l'URL laisse une phrase estropiée — « Rejoins le sucre
+    sur mon caramel », « Rejoins-nous sur tout de suite ». La phrase est construite AUTOUR
+    du lien ; lui retirer son complément la casse. Le gabarit fixe, lui, est simplement
+    fade — et fade bat cassé. Même famille que
+    [[gotcha-nettoyeur-laisse-ce-qui-rattachait]] : ce qu'un nettoyeur laisse derrière lui
+    compte autant que ce qu'il enlève.
+    """
+    if not texte:
+        return None
+    phrase = " ".join(str(texte).split())
+    phrase = strip_stage_directions(phrase)
+    if _RESSEMBLE_A_UN_LIEN.search(phrase):
+        return None
+    phrase = " ".join(phrase.split()).strip().strip('"').strip("«»").strip()
+    # Un modèle finit souvent sur « rejoins-nous ici : » en attendant l'adresse ; c'est
+    # nous qui l'ajoutons, la ponctuation d'annonce n'a plus rien à annoncer.
+    phrase = phrase.rstrip(" :;,-—–")
+    if len(phrase) < 3:
+        return None
+    return phrase[:200]
+
 
 class DispatchMixin:
     async def _fetch_game_facts_block(self, chan: str, category: str):
@@ -262,6 +298,91 @@ class DispatchMixin:
             await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
             return True
         return False
+
+    async def _generate_link_line(self, cmd: str, label: str, url: str) -> str | None:
+        """Fait écrire au bot, EN PERSONNAGE, la phrase qui accompagne un lien.
+
+        ⚠️ Le modèle n'écrit JAMAIS l'adresse. Il produit une phrase, et le code y accole
+        l'URL telle qu'elle est configurée. Un lien est la seule chose d'un message dont
+        l'exactitude ne se négocie pas : une adresse « presque bonne » est pire qu'une
+        phrase fade, et un LLM tronque, francise ou invente une URL sans prévenir.
+        Tout ce qui ressemble à une adresse est donc retiré de sa phrase avant l'envoi.
+
+        Rend None si rien d'exploitable : l'appelant retombe alors sur le gabarit fixe.
+        """
+        if not url:
+            return None
+
+        # Cache court : `!discord` peut être tapé dix fois d'affilée, et chaque appel
+        # coûterait un appel LLM. La phrase change plusieurs fois par heure, ça suffit.
+        maintenant = time.time()
+        cache = getattr(self, "_link_lines_cache", None)
+        if cache is None:
+            cache = self._link_lines_cache = {}
+        vue = cache.get(cmd)
+        if vue and maintenant - vue[0] < 900:
+            return f"{vue[1]} {url}"
+
+        system_prompt = self.personality_prompt
+        if self.system_prompt_provider:
+            try:
+                sp = self.system_prompt_provider()
+                if sp:
+                    system_prompt = sp
+            except Exception as e:
+                self.logger.warning(
+                    f"⚠️ [TWITCH_CHAT:{self.bot_id}] system_prompt_provider a échoué "
+                    f"dans _generate_link_line : {e}"
+                )
+        if not system_prompt or self.key_manager is None:
+            return None
+
+        quoi = label or cmd
+        instruction = (
+            f"Écris UNE seule phrase très courte (max 120 caractères), en personnage, "
+            f"pour inviter le chat Twitch à rejoindre {quoi}. "
+            f"N'ÉCRIS PAS l'adresse ni aucun lien : elle sera ajoutée juste après ta phrase. "
+            f"Pas de guillemets, pas de didascalie."
+        )
+
+        try:
+            from shared.llm_cascade import generate_response
+            from shared.smart_router import classify_request
+            try:
+                routing = classify_request(instruction)
+            except Exception:
+                routing = {"type": "text"}
+
+            texte = await generate_response(
+                routing=routing,
+                system_prompt=system_prompt + "\n\n" + ANTI_INJECTION_GUARD,
+                transcript="",
+                user_message=instruction,
+                conversation_history=[],
+                media_data=None,
+                mime_type="",
+                key_manager=self.key_manager,
+                mistral_client=self.mistral_client,
+                groq_client=self.groq_client,
+                nvidia_client=getattr(self, "nvidia_client", None),
+                bot_label=self.bot_label or self.bot_id,
+                temperature=1.0,
+                max_tokens=60,
+                # Quelqu'un attend devant son chat : on préfère le gabarit fixe à
+                # quinze secondes de silence.
+                call_timeout=8.0,
+            )
+        except Exception as e:
+            self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur phrase de lien !{cmd} : {e}")
+            return None
+
+        phrase = _nettoyer_phrase_de_lien(texte)
+        if not phrase:
+            return None
+
+        cache[cmd] = (maintenant, phrase)
+        self.logger.info(f"✨ [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd} écrite par le bot : {phrase}")
+        return f"{phrase} {url}"
 
     async def _generate_interjection(self, chan: str) -> str | None:
         system_prompt = self.personality_prompt

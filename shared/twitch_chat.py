@@ -394,6 +394,10 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         resolved_color = None
 
     # Espace liens (Feature 1)
+    # Les callbacks des liens peuvent avoir besoin du bot lui-meme (pour lui faire
+    # ecrire sa phrase), et il n'existe pas encore a cet instant : on le leur passe
+    # par ce porte-instance, rempli juste apres la construction.
+    bot_ref = {}
     link_cmds = {}
     link_aliases = {}
     reserved_names = {
@@ -419,6 +423,10 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         url = entry["url"].strip()
         label = (entry.get("label") or "").strip()
         msg_tmpl = (entry.get("message") or "").strip()
+        # Champ « Message (optionnel) » laissé VIDE = le bot écrit lui-même sa phrase, en
+        # personnage, et le code y accole l'URL. Rempli = gabarit fixe, comme avant : qui
+        # a pris la peine d'écrire un message ne veut pas qu'on le remplace.
+        message_auto = not msg_tmpl
         if not msg_tmpl:
             msg_tmpl = "{label} : {url}" if label else "{url}"
 
@@ -432,7 +440,21 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
             logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command !{cmd} ignorée (placeholder inconnu : {bad})")
             continue
 
-        callback = lambda author, args, u=url, l=label, t=msg_tmpl: t.format(url=u, label=l)
+        if message_auto:
+            async def callback(author, args, u=url, l=label, c=cmd, t=msg_tmpl):
+                # ⚠️ Repli sur le gabarit fixe à la moindre défaillance : quota épuisé,
+                # cascade muette, phrase vide. Un `!discord` qui ne rend RIEN est pire
+                # qu'un `!discord` fade — le viewer, lui, attend une adresse.
+                bot = bot_ref.get("bot")
+                phrase = None
+                if bot is not None:
+                    try:
+                        phrase = await bot._generate_link_line(c, l, u)
+                    except Exception as e:
+                        logger.error(f"❌ [TWITCH_CHAT:{bot_id}] phrase de lien !{c} : {e}")
+                return phrase or t.format(url=u, label=l)
+        else:
+            callback = lambda author, args, u=url, l=label, t=msg_tmpl: t.format(url=u, label=l)
         link_cmds[cmd] = callback
         
         aliases = entry.get("aliases") or []
@@ -454,7 +476,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     final_commands = {**link_cmds, **(commands or {})}
     final_aliases = {**link_aliases, **(command_aliases or {})}
 
-    return TwitchChatBot(
+    bot = TwitchChatBot(
         bot_id=bot_id,
         logger=logger,
         username=username,
@@ -494,3 +516,6 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         enable_game_qa=enable_game_qa,
         cohost_channels=cohost_channels
     )
+    # Les callbacks de lien construits plus haut peuvent maintenant atteindre le bot.
+    bot_ref["bot"] = bot
+    return bot
