@@ -82,6 +82,40 @@ def test_aucun_lien_absolu_vers_cette_machine():
     assert not coupables, f"liens absolus locaux dans : {coupables}"
 
 
+
+def _lignes_ignorees(a_verifier):
+    """Rend les entrees dont le chemin est ECARTE par `.gitignore`, en UN seul appel git.
+
+    Un fichier peut exister sur ce poste et manquer dans un clone frais : c'est arrive le
+    2026-08-29 (`DEV_GUIDE.md -> data/bots_database.db`). Le test doit donc interroger git,
+    mais pas une fois par lien : voir le commentaire de l'appelant.
+    """
+    if not a_verifier:
+        return []
+    entree = b"\x00".join(str(c).encode("utf-8") for _f, _c, c in a_verifier)
+    res = subprocess.run(
+        ["git", "check-ignore", "--stdin", "-z"],
+        cwd=_racine, input=entree, capture_output=True,
+    )
+    # 0 = au moins un chemin ignore, 1 = aucun. Tout le reste est une vraie panne git,
+    # et la taire ferait passer ce test au vert sans avoir rien verifie.
+    if res.returncode not in (0, 1):
+        raise AssertionError(
+            f"`git check-ignore` a echoue (code {res.returncode}) : "
+            f"{res.stderr.decode('utf-8', 'replace')[:200]}"
+        )
+    ignores = {s for s in res.stdout.decode("utf-8", "replace").split("\x00") if s}
+    if not ignores:
+        return []
+    # git rend les chemins relatifs a la racine du depot, avec des `/`.
+    def _forme_git(chemin):
+        try:
+            return chemin.resolve().relative_to(_racine.resolve()).as_posix()
+        except ValueError:
+            return str(chemin)
+    return [e for e in a_verifier if _forme_git(e[2]) in ignores or str(e[2]) in ignores]
+
+
 def test_les_liens_internes_pointent_sur_des_fichiers_existants():
     """Un lien mort est une doc qui ment, en plus discret.
 
@@ -94,6 +128,7 @@ def test_les_liens_internes_pointent_sur_des_fichiers_existants():
     n'est pas dans le dépôt n'existe pas ailleurs que sur la machine qui l'a fabriqué.
     """
     casses = []
+    a_verifier = []          # (document, cible, chemin) pour les fichiers qui EXISTENT
     for f in _documents():
         for m in re.finditer(r"\[([^\]]*)\]\(([^)\s]+)\)", f.read_text(encoding="utf-8")):
             cible = m.group(2)
@@ -105,14 +140,19 @@ def test_les_liens_internes_pointent_sur_des_fichiers_existants():
             chemin = f.parent / brut
             if not chemin.exists():
                 casses.append(f"{f.relative_to(_racine).as_posix()} -> {cible} (absent)")
-            elif subprocess.run(
-                ["git", "check-ignore", "-q", str(chemin)],
-                cwd=_racine, capture_output=True,
-            ).returncode == 0:
-                casses.append(
-                    f"{f.relative_to(_racine).as_posix()} -> {cible} "
-                    "(écarté par .gitignore : absent d'un clone frais)"
-                )
+            else:
+                a_verifier.append((f, cible, chemin))
+
+    # ⚠️ UN SEUL `git check-ignore`, pas un par lien. Mesure du 2026-09-17
+    # (`pytest --durations`) : ce test prenait **310 s**, plus de la moitie de toute la
+    # suite, uniquement en creation de processus — Windows facture cher chaque `git`
+    # lance. Le lot tient dans un appel : `--stdin` lit les chemins, `-z` les separe par
+    # des NUL (indispensable ici, la racine du projet contient une espace).
+    for _doc, cible, chemin in _lignes_ignorees(a_verifier):
+        casses.append(
+            f"{_doc.relative_to(_racine).as_posix()} -> {cible} "
+            "(écarté par .gitignore : absent d'un clone frais)"
+        )
     assert not casses, "liens internes cassés :\n  " + "\n  ".join(casses)
 
 
