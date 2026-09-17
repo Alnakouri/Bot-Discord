@@ -195,10 +195,13 @@ def test_le_nettoyage_passe_APRES_le_detecteur_d_echo():
     sur lequel il reconnait l'echo : `*Nul* ?!` redevient `Nul ?!`, en casse normale, donc
     autorise — et il ressort en clair. C'est le bug qu'a produit la premiere version.
     """
+    # Le nettoyage a demenage dans `filtre_sortie` le 2026-09-17 (il est desormais partage
+    # avec le harnais d'evaluation, cf. tests/test_verrou_filtre_sortie.py) : l'invariant
+    # n'a pas bouge d'un pouce, seul l'endroit ou il se verifie a change.
     src = open(os.path.join(_sheo_dir, "sheo_llm.py"), encoding="utf-8").read()
-    corps = src.split("def postprocess_response")[1]
-    i_echo = corps.index("_strip_echo_opening(response_text")
-    i_md = corps.index("strip_markdown_emphasis(response_text)")
+    corps = src.split("def filtre_sortie")[1].split("\ndef ")[0]
+    i_echo = corps.index("_strip_echo_opening(texte")
+    i_md = corps.index("strip_markdown_emphasis(texte)")
     assert i_echo < i_md, (
         "strip_markdown_emphasis passe AVANT _strip_echo_opening : le detecteur d'echo "
         "ne verra plus le markdown sur lequel il s'appuie."

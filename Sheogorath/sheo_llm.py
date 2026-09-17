@@ -380,27 +380,58 @@ def _trim_incomplete_tail(text):
     return text  # aucune phrase complète : ne rien casser
 
 
+def filtre_sortie(texte, message_utilisateur=None):
+    """Tout ce que Sheogorath RETIRE d'une réponse, et rien de ce qu'il y ajoute.
+
+    Sorti de `postprocess_response` le 2026-09-17 pour que le harnais d'évaluation
+    puisse enchaîner EXACTEMENT les mêmes étapes que le bot. Il notait jusque-là la
+    sortie brute du modèle : Sheo était puni pour 17/17 astérisques que personne ne voit
+    jamais, puisqu'il les retire avant l'envoi.
+    Cf. [[gotcha-le-harnais-mesure-le-modele-pas-le-bot]].
+
+    Ne contient QUE les étapes qui n'exigent pas d'état de conversation. Restent dehors,
+    donc à la charge de `postprocess_response` : l'extraction de faits (il lui faut le
+    cerveau), les easter eggs (ils AJOUTENT du texte), et le plafond de phrases (il se
+    calcule sur le message et doit tomber APRÈS les easter eggs).
+
+    `message_utilisateur` est facultatif : sans lui, l'écho-perroquet n'est pas coupé.
+    """
+    if not texte:
+        return texte
+
+    # Les blocs <fact>…</fact> : `extract_facts` les retire après les avoir enregistrés ;
+    # ici on n'a pas le cerveau, on retire seulement le texte pour voir la même réplique.
+    texte = re.sub(r"<fact>.*?</fact>", "", texte, flags=re.DOTALL | re.IGNORECASE)
+
+    # Nettoyage des balises
+    texte = clean_internal_tags(texte)
+
+    # Méta-narration hors-personnage ("L'utilisateur semble...")
+    texte = strip_meta_narration(texte)
+
+    # Didascalies nues sans astérisques ("... ?! hurle UNE CUILLÈRE")
+    texte = strip_bare_stage_directions(texte)
+
+    # Ouverture-perroquet qui HURLE l'insulte en écho ("Oh, FACE DE PET !")
+    texte = _strip_echo_opening(texte, message_utilisateur or "")
+
+    # Les asterisques — INTERDITES par le prompt, produites quand meme 9/9.
+    # ⚠️ APRES _strip_echo_opening : c'est le marqueur `*...*` qui lui permet de
+    # reconnaitre l'echo. Nettoyer avant lui reviendrait a lui crever un oeil.
+    texte = strip_markdown_emphasis(texte)
+
+    return texte
+
+
 def postprocess_response(response_text, fact_brain, user_id, original_message, max_sentences=4):
     """Pipeline complet de post-processing de la réponse LLM."""
     # 1. Extraction de faits
     response_text = extract_facts(response_text, fact_brain, user_id)
 
-    # 2. Nettoyage des balises
-    response_text = clean_internal_tags(response_text)
-
-    # 2.5 Suppression de la méta-narration hors-personnage ("L'utilisateur semble...")
-    response_text = strip_meta_narration(response_text)
-
-    # 2.6 Suppression des didascalies nues sans astérisques ("... ?! hurle UNE CUILLÈRE")
-    response_text = strip_bare_stage_directions(response_text)
-
-    # 2.7 Coupe l'ouverture-perroquet qui HURLE l'insulte en écho ("Oh, FACE DE PET !")
-    response_text = _strip_echo_opening(response_text, original_message)
-
-    # 2.75 Retire les asterisques — INTERDITES par le prompt, produites quand meme 9/9.
-    # ⚠️ APRES _strip_echo_opening : c'est le marqueur `*...*` qui lui permet de
-    # reconnaitre l'echo. Nettoyer avant lui reviendrait a lui crever un oeil.
-    response_text = strip_markdown_emphasis(response_text)
+    # 2. Tout le nettoyage, dans un SEUL endroit, partagé avec le harnais d'évaluation :
+    # deux enchaînements parallèles finissent toujours par diverger, et c'est alors le
+    # score qui ment.
+    response_text = filtre_sortie(response_text, original_message)
 
     # 3. Easter eggs
     response_text = apply_easter_eggs(response_text, original_message)

@@ -15,7 +15,7 @@ from shared.secure_env import load_secure_env
 from shared.api_manager import MultiAPIKeyManager
 from shared.smart_router import RequestType
 from shared.llm_cascade import generate_response
-from tests.eval.persona_loader import load_persona
+from tests.eval.persona_loader import load_persona, load_filtre
 
 # Charger les variables d'environnement à partir de JohnnyBot (qui contient .env.encrypted et .master_key)
 johnny_dir = Path(root_dir) / "JohnnyBot"
@@ -62,6 +62,13 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
     persona = load_persona(bot_id)
     system_prompt = persona["system_prompt"]
     bot_label = persona["bot_label"]
+
+    # Le filtre de sortie du bot : sans lui on note la sortie BRUTE du modèle, c'est-à-dire
+    # un texte que l'utilisateur ne voit jamais. Mesuré le 2026-09-17 : Sheogorath perdait
+    # des points sur 17 réponses sur 17 pour des astérisques qu'il retire lui-même, et un
+    # filet ajouté aux bots nus n'aurait bougé aucun score.
+    # Cf. [[gotcha-le-harnais-mesure-le-modele-pas-le-bot]].
+    filtre_sortie = load_filtre(bot_id)
     
     conversation_history = []
     responses = []
@@ -117,7 +124,11 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
         if response is None:
             # Fallback en cas d'échec total de la cascade
             response = ECHEC_CASCADE
-            
+        else:
+            # ⚠️ APRÈS le repli : `ECHEC_CASCADE` est un marqueur du harnais, pas une
+            # réplique de bot — le filtrer n'aurait aucun sens et pourrait l'effacer.
+            response = filtre_sortie(response, user_msg)
+
         responses.append(response)
         
         # Mise à jour de l'historique pour le tour suivant

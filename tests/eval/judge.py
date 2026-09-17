@@ -16,9 +16,11 @@ except ImportError:
 
 logger = logging.getLogger("eval_judge")
 
-# Version du BAREME. A incrementer des que le prompt du juge change de façon a déplacer
-# les notes : deux rapports de versions differentes ne sont PAS comparables, et le delta
-# afficherait un progres ou une chute qui ne viennent pas des bots.
+# Version du BAREME. A incrementer des que le prompt du juge OU CE QU'ON LUI DONNE A LIRE
+# change de façon a déplacer les notes : deux rapports de versions differentes ne sont PAS
+# comparables, et le delta afficherait un progres ou une chute qui ne viennent pas des bots.
+# ⚠️ « ce qu'on lui donne a lire » compte autant que sa grille : la version 3 ne touche pas
+# une ligne du prompt du juge, et pourtant elle deplace toutes les notes.
 #   1 : bareme d'origine. Le critere `longueur` etait PLAT (« par exemple max 2 phrases »)
 #       et ignorait la clause d'invitation que les fiches de persona definissent. Mesure du
 #       2026-09-17 : les scenarios OU l'utilisateur invite explicitement a developper
@@ -29,7 +31,14 @@ logger = logging.getLogger("eval_judge")
 #       ⚠️ Effet de bord mesure et assume : l'echelle s'est resserree (ecart-type 1.49 ->
 #       0.66 sur les scenarios sans invitation) et les notes ont monte de ~0.6. Le juge
 #       discrimine moins. C'est le prix d'un critere plus nuance, paye en connaissance.
-VERSION_BAREME = 2
+#   3 : le juge lit desormais la reponse APRES le filtre de sortie du bot, plus la sortie
+#       brute du modele (`runner.py` appelle `load_filtre(bot_id)`). Le prompt du juge est
+#       INCHANGE ; c'est l'entree qui change, et elle deplace les notes de ceux qui
+#       nettoient : Sheogorath etait note sur 17 reponses sur 17 contenant des asterisques
+#       qu'il retire lui-meme avant l'envoi, Sugar sur un texte qui n'etait pas le sien.
+#       Le rapport `eval_20260917_1233` reste la reference « sortie brute » ; le premier
+#       run en version 3 est la premiere reference « produit ».
+VERSION_BAREME = 3
 
 
 def clean_and_parse_json(text):
