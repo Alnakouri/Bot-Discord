@@ -172,6 +172,10 @@ except ImportError:
     DiscordDailyStatus = None
 
 from maiq_data import PERSONALITY_PROMPT
+try:
+    from maiq_filtres import filtre_sortie
+except ImportError:
+    from MaiqBot.maiq_filtres import filtre_sortie
 
 # LTM SYSTEM
 try:
@@ -1707,9 +1711,7 @@ async def on_message(message):
             if fact_text:
                 fact_memory.add_fact(user_id, fact_text)
                 
-        response_text = re.sub(r"<fact>.*?</fact>", "", response_text, flags=re.DOTALL | re.IGNORECASE).strip()
-        response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
-        response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
+        response_text = filtre_sortie(response_text)
 
         _chrono.etape("llm")
         await message.channel.send(response_text)

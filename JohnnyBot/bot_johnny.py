@@ -159,6 +159,10 @@ from johnny_data import (
     MISSION_TRIGGERS, SKYRIM_TRIGGERS, MEAD_TRIGGERS,
     TWITCH_BIO, JOHNNY_TWITCH_RANKS, JOHNNY_TWITCH_KEYWORDS, TWITCH_GREETINGS
 )
+try:
+    from johnny_filtres import filtre_sortie
+except ImportError:
+    from JohnnyBot.johnny_filtres import filtre_sortie
 
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -1161,9 +1165,7 @@ async def on_message(message):
         if fact_text:
             fact_memory.add_fact(user_id, fact_text)
             
-    response_text = re.sub(r"<fact>.*?</fact>", "", response_text, flags=re.DOTALL | re.IGNORECASE).strip()
-    response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
-    response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
+    response_text = filtre_sortie(response_text)
 
     # Sauvegarde anti-répétition
     if message.guild:

@@ -273,6 +273,10 @@ VOCAL_PATROL_TARGET = "cendrillon13"
 
 # PERSONALITY (LE MAJORDOME CYNIQUE - VERSION AGRESSIVE)
 from alfred_data import PERSONALITY_PROMPT
+try:
+    from alfred_filtres import filtre_sortie
+except ImportError:
+    from Alfred.alfred_filtres import filtre_sortie
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -930,8 +934,8 @@ active_sanctions = {}
 VOCAL_SANCTION_MESSAGES = [
     "🤵 Monsieur {user}. Ce que mes oreilles viennent de subir dans le salon vocal constitue un crime contre la musique. Cessez immédiatement. 😒",
     "🤵 {user}, ce serveur n'est PAS un karaoké. Les chauves-souris dans la cave pleurent en ce moment même. 🦇",
-    "🤵 J'ai formellement identifié du... *chant*... provenant de {user}. Article 12 du Règlement : 'Toute nuisance sonore sera sanctionnée.' ☕",
-    "🤵 {user}. Monsieur Wayne m'a personnellement téléphoné pour demander que ce... *bruit*... cesse immédiatement. 🧐",
+    "🤵 J'ai formellement identifié du... chant... provenant de {user}. Article 12 du Règlement : 'Toute nuisance sonore sera sanctionnée.' ☕",
+    "🤵 {user}. Monsieur Wayne m'a personnellement téléphoné pour demander que ce... bruit... cesse immédiatement. 🧐",
     "🤵 Ce n'est pas un concert, {user}. C'est une attaque acoustique. Les murs du serveur en tremblent. 😒",
     "🤵 {user}, la dernière personne à avoir chanté ici a été retrouvée dans le placard à balais. Avec les balais. 🧹",
     "🤵 Mes capteurs acoustiques confirment : {user} chante. Le niveau de douleur auditive est... considérable. 🎵❌",
@@ -1609,12 +1613,12 @@ async def on_message(message):
                 
                 # Messages de sanction (sélection aléatoire)
                 sanction_messages = [
-                    "🤵 *pose son torchon* Monsieur. Ce que vous faites avec votre voix constitue une infraction au bon goût. Cessez immédiatement. 😒",
+                    "🤵 Monsieur. Ce que vous faites avec votre voix constitue une infraction au bon goût. Cessez immédiatement. 😒",
                     "🤵 Le chant est interdit dans cette demeure. Si Monsieur souhaite s'exprimer vocalement, qu'il le fasse dans la cave. Seul. 🧐",
                     "🤵 Je dois vous informer que le dernier à avoir chanté ici a été retrouvé dans la Batcave. Avec les chauves-souris. Elles n'ont pas apprécié non plus. 🦇",
-                    "🤵 Monsieur... *soupir britannique* C'est censé être de la musique ? Le chat du voisin fait mieux. Et il est sourd. 😒",
+                    "🤵 Monsieur... C'est censé être de la musique ? Le chat du voisin fait mieux. Et il est sourd. 😒",
                     "🤵 Je me permets de vous rappeler l'Article 7 du Règlement du serveur : 'Tout chant non autorisé sera sanctionné par un thé froid.' ☕",
-                    "🤵 Monsieur Wayne m'a personnellement demandé de vous informer que ce... *bruit*... que vous émettez n'est pas toléré dans cette enceinte. 🧤",
+                    "🤵 Monsieur Wayne m'a personnellement demandé de vous informer que ce... bruit... que vous émettez n'est pas toléré dans cette enceinte. 🧤",
                     "🤵 Si c'est un appel à l'aide déguisé en mélodie, je peux contacter les secours. Sinon, veuillez cesser. 🚑",
                     "🤵 La dernière personne qui a chanté sur ce serveur a été confondue avec une alarme incendie. Les pompiers n'étaient pas ravis. 🔥",
                 ]
@@ -2093,9 +2097,7 @@ async def on_message(message):
                 if fact_text:
                     fact_memory.add_fact(message.author.id, fact_text)
                     
-            response_text = re.sub(r"<fact>.*?</fact>", "", response_text, flags=re.DOTALL | re.IGNORECASE).strip()
-            response_text = re.sub(r"<[a-z_-]+>", "", response_text, flags=re.IGNORECASE)
-            response_text = re.sub(r"</[a-z_-]+>", "", response_text, flags=re.IGNORECASE).strip()
+            response_text = filtre_sortie(response_text)
 
             await message.channel.send(response_text)
             _chrono.fin(envoye=True)

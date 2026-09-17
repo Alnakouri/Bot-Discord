@@ -52,8 +52,12 @@ def load_persona(bot_id):
 # C'est la raison d'être de `SugarBot/sugar_filtres.py`.
 # Un bot absent de cette table n'a pas (encore) de filtre : son texte passe inchangé.
 FILTRES = {
-    "sugar": ("SugarBot.sugar_filtres", "filtre_sortie"),
+    "alfred": ("Alfred.alfred_filtres", "filtre_sortie"),
+    "johnny": ("JohnnyBot.johnny_filtres", "filtre_sortie"),
+    "maiq": ("MaiqBot.maiq_filtres", "filtre_sortie"),
+    "malena": ("MalenaBot.malena_filtres", "filtre_sortie"),
     "sheogorath": ("Sheogorath.sheo_llm", "filtre_sortie"),
+    "sugar": ("SugarBot.sugar_filtres", "filtre_sortie"),
 }
 
 

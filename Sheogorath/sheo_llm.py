@@ -415,12 +415,36 @@ def filtre_sortie(texte, message_utilisateur=None):
     # Ouverture-perroquet qui HURLE l'insulte en écho ("Oh, FACE DE PET !")
     texte = _strip_echo_opening(texte, message_utilisateur or "")
 
-    # Les asterisques — INTERDITES par le prompt, produites quand meme 9/9.
-    # ⚠️ APRES _strip_echo_opening : c'est le marqueur `*...*` qui lui permet de
-    # reconnaitre l'echo. Nettoyer avant lui reviendrait a lui crever un oeil.
+    # ── Les asterisques, a DEUX etages — et l'ordre porte toute la mesure ──────────
+    #
+    # ⚠️ Tout ce bloc passe APRES _strip_echo_opening : c'est le marqueur `*...*` qui
+    # lui permet de reconnaitre l'echo. Nettoyer avant lui reviendrait a lui crever un oeil.
+    #
+    # Etage 1 — une didascalie entre asterisques : le SEGMENT ENTIER tombe.
+    # Mesure du 2026-09-17, avec le seul strip_markdown_emphasis :
+    #   « *Soupir imperceptible, mais audible…* Le the est servi. »
+    #   -> « Soupir imperceptible, mais audible… Le the est servi. »
+    # Sheogorath ne cessait pas de se decrire : il cessait de le mettre en italique, ce
+    # qui est PIRE pour qui lit. `strip_bare_stage_directions` n'y voyait rien, puisque la
+    # didascalie n'etait justement pas « nue ». Les cinq autres bots n'ont pas ce trou :
+    # leur filtre traite `*...*` comme une didascalie d'emblee (logique curee de Sugar).
+    # ⚠️ En tete : tout segment. Apres une ponctuation : seulement s'il fait au moins deux
+    # mots — un `*mot*` isole au milieu d'une phrase reste de l'emphase, pas une action.
+    texte = re.sub(r"^\s*\*[^*]+\*\s*", "", texte)
+    texte = re.sub(r"(?<=[.!?…])\s*\*[^*]+\s[^*]+\*\s*", " ", texte)
+
+    # Etage 2 — le reste n'etait que de l'emphase : les marqueurs tombent, les mots restent.
     texte = strip_markdown_emphasis(texte)
 
-    return texte
+    # Seconde passe sur les didascalies NUES : ce que les asterisques masquaient au
+    # premier passage devient visible une fois les marqueurs tombes.
+    texte = strip_bare_stage_directions(texte)
+
+    # Et la ponctuation qui RATTACHAIT le morceau supprime
+    # ([[gotcha-nettoyeur-laisse-ce-qui-rattachait]]).
+    texte = _retirer_ponctuation_orpheline(texte)
+
+    return re.sub(r"\s{2,}", " ", texte).strip()
 
 
 def postprocess_response(response_text, fact_brain, user_id, original_message, max_sentences=4):

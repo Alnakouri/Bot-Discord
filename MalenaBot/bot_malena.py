@@ -76,6 +76,10 @@ except ImportError:
 # Import données spécifiques
 import malena_data as data
 from malena_memory import MalenaMemory
+try:
+    from malena_filtres import filtre_sortie
+except ImportError:
+    from MalenaBot.malena_filtres import filtre_sortie
 from core.graceful_shutdown import setup_graceful_shutdown
 
 try:
@@ -214,8 +218,8 @@ def build_expression_hint(mood):
 _TEMPERATURE_MALENA = 0.9
 
 
-async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_data=None,
-                                  mime_type=None, meme_consigne="", anti_tic=""):
+async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, media_data=None,
+                                         mime_type=None, meme_consigne="", anti_tic=""):
     """Essaie selon le Smart Router : Gemini (Image/Audio) -> Groq (Texte) -> Mistral (Fallback)."""
     
     # SYSTEM PROMPT COMMUN + HUMEUR + EXPRESSIONS CIBLÉES
@@ -434,6 +438,12 @@ async def generate_response_hybrid(prompt, mood="NEUTRE", routing=None, media_da
             )
 
     return "Ay caramba ! J'ai mal au crâne, plus personne ne marche là-dedans ! (Erreur API Totale)"
+ 
+ 
+async def generate_response_hybrid(*args, **kwargs):
+    """Enveloppe publique : applique le filtre de sortie à toutes les branches de retour."""
+    texte = await _generate_response_hybrid_brut(*args, **kwargs)
+    return filtre_sortie(texte)
 
 # INITIALISATION DU BOT
 intents = discord.Intents.default()

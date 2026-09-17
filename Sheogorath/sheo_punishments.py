@@ -185,7 +185,7 @@ def get_punishment_messages(member, new_nick):
         # Regrets moqueurs
         f"Dommage. **{new_nick}** était PARFAIT pour toi. Mais le temps a parlé. 🕰️😔",
         f"Tu redeviens {member.mention}... Ennuyeux. **{new_nick}** avait du STYLE. 💅✨",
-        f"*Soupir* **{new_nick}** me manquera déjà. Toi ? Moins. 😮‍💨",
+        f"**{new_nick}** me manquera déjà. Toi ? Moins. 😮‍💨",
         f"Adieu **{new_nick}**, tu étais magnifique. Bonjour {member.mention}... tu es... là. 👋😐",
         # Menaces voilées
         f"Pour CETTE fois, {member.mention}. La prochaine sera plus longue. BEAUCOUP plus longue. ⏳👁️",
