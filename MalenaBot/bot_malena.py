@@ -781,7 +781,18 @@ async def on_message(message):
                 if has_audio:
                     user_msg += "\n[🎤 VOCAL] L'utilisateur a envoyé un message vocal. Écoute-le et réponds avec ton franc-parler de gitane !"
                 
-                prompt = f"L'utilisateur {message.author.name} te dit : '{user_msg}'. Réponds-lui.{nickname_instruction}{memory_context}"
+                # ⚠️ Le contexte passe AVANT, le message courant EN DERNIER — et c'est
+                # l'ordre qui est le correctif, pas l'etiquette. Tant que les echanges
+                # passes fermaient le prompt, le modele repondait au dernier qu'il avait
+                # lu : le 17/09 a 16:32, a une insulte vieille de deux heures plutot qu'a
+                # la question posee. Cf. `malena_memory.get_context_summary`.
+                prompt = (
+                    f"{memory_context}\n\n" if memory_context else ""
+                ) + (
+                    f"[MESSAGE ACTUEL — c'est a CELUI-CI, et a lui seul, que tu reponds]\n"
+                    f"L'utilisateur {message.author.name} te dit : '{user_msg}'. "
+                    f"Réponds-lui.{nickname_instruction}"
+                )
                 
                 # GÉNÉRATION ROUTÉE
                 def _get_meme_addition():

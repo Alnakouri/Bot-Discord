@@ -86,6 +86,10 @@ class MalenaMemory:
         entry = {
             "time": datetime.now().strftime("%H:%M"),
             "user": user_name,
+            # ⚠️ L'identifiant, pas seulement le pseudo : deux personnes peuvent porter
+            # le meme nom d'affichage, et le pseudo change. Sans lui, le contexte d'un
+            # membre pouvait remonter dans la reponse faite a un AUTRE.
+            "user_id": uid,
             "content": content[:100],  # Tronquer les longs messages
             "response": bot_response[:100] if bot_response else None
         }
@@ -110,12 +114,35 @@ class MalenaMemory:
                 if u_data['topics']:
                     summary += f" Sujets abordés : {', '.join(u_data['topics'][-3:])}."
 
-        # Ajouter les 3 derniers échanges pour le contexte conversationnel
-        recent_chats = self.memory["conversations"][-3:]
+        # ── Les échanges précédents ───────────────────────────────────────────────
+        # ⚠️ Constaté en live le 2026-09-17, 16:32. L'utilisateur écrit « j'été avec
+        # tony on fait la paix ? » et Malena répond « BÉBÉ KADOM ?? Tu recommences avec
+        # sa ? » — une insulte vieille de DEUX HEURES, encore présente dans ce bloc.
+        # Trois défauts se cumulaient, et chacun compte :
+        #   1. le bloc arrivait APRÈS le message courant dans le prompt : le modèle
+        #      lisait l'insulte en dernier et la prenait pour l'actuelle ;
+        #   2. rien ne disait que c'était du passé (l'heure était stockée, jamais rendue) ;
+        #   3. seules les lignes de l'utilisateur y figuraient — sans les réponses de
+        #      Malena, ça ressemblait à une rafale de messages entrants NON traités,
+        #      donc à des insultes auxquelles elle n'avait pas encore répondu.
+        # Et un quatrième, latent : `conversations` est global, donc le contexte d'un
+        # autre membre pouvait entrer dans la réponse faite à celui-ci.
+        nom_connu = users.get(uid, {}).get("name")
+        siens = [
+            c for c in self.memory["conversations"]
+            if str(c.get("user_id", "")) == uid
+            or (not c.get("user_id") and nom_connu and c.get("user") == nom_connu)
+        ]
+        recent_chats = siens[-3:]
         if recent_chats:
-            summary += "\n[CONVERSATION RÉCENTE] " + " | ".join(
-                [f"{c['user']}: {c['content']}" for c in recent_chats]
-            )
+            summary += ("\n[ÉCHANGES DÉJÀ PASSÉS — contexte seulement. Ils ont DÉJÀ reçu "
+                        "leur réponse : n'y réponds pas une deuxième fois, et ne relance "
+                        "pas un sujet clos si la personne est passée à autre chose.]")
+            for c in recent_chats:
+                heure = c.get("time", "?")
+                summary += f"\n  ({heure}) {c.get('user', '?')} : {c.get('content', '')}"
+                if c.get("response"):
+                    summary += f"\n  ({heure}) Toi : {c['response']}"
 
         return summary
 
