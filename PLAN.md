@@ -8,7 +8,48 @@ par trois bouts différents. Le 4 attend un humain depuis le 15/09.
 
 ---
 
-## CE QUE LE RUN A MONTRÉ
+## ETAT AU 17/09 AU SOIR — tout est livre, une question reste ouverte
+
+| lot | etat |
+|---|---|
+| **LOT 0** harnais | ✅ `2e06d09` — le juge lit le texte APRES le filtre du bot |
+| **LOT 1** filet | ✅ `ec79b3f` — les 6 bots filtrent, verifie DANS chaque conteneur |
+| **LOT 2** fiches | ✅ `ec79b3f` — les 5 autres ont pris la forme de celle de Sugar |
+| **LOT 3** dur | ✅ `ec79b3f` — didascalies des pools d'Alfred retirees ; `*POUF*` garde (decision) |
+| **MESURE** | ✅ les SIX au bareme 3, malena au 3e essai (quota) |
+| **LOT 4** navigateur | ✅ decret bascule/relu/rebascule, bouton de redemarrage verifie cote `docker`, libelles honnetes |
+
+    alfred 4.86 | maiq 4.46 | sheogorath 4.46 | sugar 4.42 | johnny 4.18 | malena 4.10
+
+⚠️ **Deltas non comparables** au bareme 2 : l'entree du juge a change.
+
+### La question que la mesure a tranchee, et dans quel sens
+
+Le run rend desormais le compte d'asterisques AVANT et APRES filtrage. Premier releve,
+sur malena : **10/17 avant, 0/17 apres**. Le matin, avant le LOT 2, elle etait a 11/17.
+**La fiche n'a presque rien change ; c'est le FILET qui fait le travail.** L'hypothese du
+LOT 2 est donc affaiblie par sa propre mesure — a confirmer sur les cinq autres au
+prochain run complet, le bloc s'affiche tout seul.
+
+### Ce que le run a trouve et qui est corrige
+
+- `e50dc1d` — le **gras** devenait de l'italique (`**x**` -> `*x*`), et une **didascalie
+  sans borne** a mange 200 caracteres de replique chez Alfred.
+- `41955f6` — la reponse **brute** est gardee a cote de la filtree : sans elle, la
+  question ci-dessus aurait coute un run entier a trancher.
+- `a6a66ee` — un test prenait **310 s** a lui seul (un `git check-ignore` par lien).
+
+### Ce qui reste, et qui n'est pas dans ce plan
+
+- **Relancer une passe complete** quand les quotas seront frais, pour voir les six
+  colonnes AVANT/APRES et trancher le LOT 2 sur les six.
+- ⚠️ `Windows fatal exception: access violation` dans `test_anti_rattrapage_boucles.py:167`
+  (boucle asyncio Windows). La suite finit verte, mais la ligne de resume disparait parfois.
+- **NVIDIA** : tranche, il reste tel quel — [[decision-nvidia-reste-avec-la-borne-du-direct]].
+
+---
+
+## CE QUE LE RUN A MONTRÉ (le matin du 17/09, bareme 2)
 
 Six bots, **barème 2**, `fiable: true` pour les six, **0 appel échoué, 0 score à ‑1**.
 
