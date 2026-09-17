@@ -23,13 +23,38 @@ par trois bouts différents. Le 4 attend un humain depuis le 15/09.
 
 ⚠️ **Deltas non comparables** au bareme 2 : l'entree du juge a change.
 
-### La question que la mesure a tranchee, et dans quel sens
+### La question que la mesure a tranchee — CORRIGEE le 18/09
 
-Le run rend desormais le compte d'asterisques AVANT et APRES filtrage. Premier releve,
-sur malena : **10/17 avant, 0/17 apres**. Le matin, avant le LOT 2, elle etait a 11/17.
-**La fiche n'a presque rien change ; c'est le FILET qui fait le travail.** L'hypothese du
-LOT 2 est donc affaiblie par sa propre mesure — a confirmer sur les cinq autres au
-prochain run complet, le bloc s'affiche tout seul.
+Passe complete du **18/09 a quotas frais** (5 bots fiables, sheogorath non : un scenario
+perdu). Comptes d'asterisques AVANT filtrage, contre le matin du 17 :
+
+    bot          17/09   18/09
+    sugar         0/17   11/17   <- sa fiche n'a PAS change
+    alfred       16/17    9/17
+    johnny       16/17   11/17
+    sheogorath   17/17    9/17
+    malena       11/17    7/17
+    maiq          4/17    6/17
+
+⚠️ **Lu tel quel, ce tableau ment.** Sugar n'a pas regresse : son ECHELON a change.
+Gemini etait a sec, ministral-14b a repondu a sa place (15 reponses sur 17) — et ministral
+etait mesure a 11/18 asterisques des le 04/09. Le chiffre colle.
+
+**Ce qu'on peut conclure, une fois le modele tenu constant :** alfred et johnny sont
+servis a 100 % par ministral dans LES DEUX runs, fiche reecrite entre les deux —
+**16/17 -> 9/17** et **16/17 -> 11/17**. La reecriture des fiches (LOT 2) fait bien
+chuter la production d'environ 40 %. Cela **corrige** la conclusion ecrite ici le 17/09 au
+soir (« la fiche n'a presque rien change »), tiree de malena seule, dont le melange
+d'echelons avait bouge. Voir
+[[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]].
+
+**Reserve qui reste ouverte :** depuis le LOT 0, l'historique rendu au modele contient ses
+propres reponses FILTREES — il s'imite lui-meme, sans asterisques. La baisse peut venir de
+la fiche, de cet historique assaini, ou des deux. Pour trancher : remettre le texte BRUT
+dans `conversation_history`, le filtre ne servant qu'a ce qui est NOTE.
+
+**Prochaine amelioration evidente du harnais :** afficher, a cote de chaque compte, le
+modele qui a repondu. Sans lui, la colonne AVANT se lit a l'envers.
 
 ### Ce que le run a trouve et qui est corrige
 
