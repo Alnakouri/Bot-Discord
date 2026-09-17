@@ -23,7 +23,7 @@ if root_dir not in sys.path:
 
 from tests.eval.runner import run_scenario_for_bot, key_manager, groq_client, mistral_client, ECHEC_CASCADE
 from tests.eval.gimmick import detect_gimmick
-from tests.eval.judge import evaluate_response
+from tests.eval.judge import evaluate_response, VERSION_BAREME
 from tests.eval.deterministic import evaluate_deterministic
 
 # Liste des bots à évaluer
@@ -259,6 +259,15 @@ async def main():
         try:
             with open(last_report_path, "r", encoding="utf-8") as f:
                 last_report_data = filtrer_baseline(json.load(f))
+            # ⚠️ Deux barèmes différents ne se comparent pas : le delta afficherait un
+            # progrès ou une chute qui ne viennent pas des bots. Les rapports d'avant le
+            # 2026-09-17 n'ont pas de `version_bareme` — ce sont des barèmes 1.
+            bareme_ref = (last_report_data or {}).get("version_bareme", 1)
+            if bareme_ref != VERSION_BAREME:
+                print(f"[REF] ⚠️ Bareme different (reference={bareme_ref}, courant="
+                      f"{VERSION_BAREME}) : les DELTAS sont masques, seuls les scores "
+                      f"bruts de ce run sont exploitables.")
+                last_report_data = None
         except Exception as e:
             print(f"Impossible de lire le dernier rapport : {e}")
 
@@ -394,6 +403,7 @@ async def main():
     # 6. Écrire le nouveau rapport
     new_report_data = {
         "timestamp": timestamp,
+        "version_bareme": VERSION_BAREME,
         "graine_aleatoire": seed,
         "ordre_bots": bots_evalues,
         "sante": sante,

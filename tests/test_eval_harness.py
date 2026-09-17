@@ -616,3 +616,99 @@ def test_le_detecteur_de_tics_ne_crie_pas_sur_le_style_de_malena():
 
     detecte, _ = detect_gimmick(["Oh là là, mon p'tit ! Bonne mère, t'as picolé ou quoi ?"])
     assert detecte is False
+
+
+# ───────── Changer le BAREME invalide les comparaisons (2026-09-17) ────────────────────
+
+
+def test_le_critere_de_longueur_connait_la_clause_d_INVITATION():
+    """Le juge punissait le plus fort là où la fiche AUTORISE.
+
+    Mesure du 2026-09-17 sur Johnny : les scénarios où l'utilisateur invite explicitement
+    à développer (« tu me racontes un truc cool ? », « Raconte-moi ta philosophie ») ont
+    recolté **0.50** de moyenne en `longueur`, contre **2.62** pour les huit autres. Le
+    critere etait plat (« par exemple max 2 phrases courtes ») alors que les fiches de
+    persona definissent la longueur CONDITIONNELLEMENT — Sheogorath l'ecrit noir sur
+    blanc, et c'est lui qui note le mieux.
+
+    Le bot repondait conformement a sa fiche et prenait 0/5.
+    """
+    from tests.eval.judge import evaluate_response
+    import inspect
+
+    src = inspect.getsource(evaluate_response)
+    bloc = src[src.index("5. longueur"):src.index("Tu dois répondre UNIQUEMENT")]
+
+    # ⚠️ Viser les DECLENCHEURS eux-memes : le mot « invitation » peut survivre dans une
+    # phrase qui ne dit plus rien ([[gotcha-verrou-trop-faible]], mutation jouee le 17/09).
+    assert "conditionnelle" in bloc.lower(), (
+        "le critère `longueur` ne dit plus que la contrainte est CONDITIONNELLE : il "
+        "pénalisera un bot qui développe alors que sa fiche le lui permet"
+    )
+    assert "raconte" in bloc.lower(), (
+        "les déclencheurs d'invitation ont disparu du critère : le juge ne peut plus "
+        "reconnaître une invitation dans le message de l'utilisateur"
+    )
+    assert "remplissage" in bloc.lower(), (
+        "sur invitation, c'est le REMPLISSAGE qu'il faut noter, pas la longueur en soi "
+        "([[feedback-sheo-longueur-densite]])"
+    )
+
+
+def test_changer_le_bareme_impose_d_incrementer_sa_version():
+    """Deux barèmes différents ne se comparent pas.
+
+    ⚠️ Le vrai risque n'est pas le score, c'est le DELTA : un rapport note au bareme 2
+    compare a un rapport du bareme 1 afficherait un « progres » qui ne vient pas des bots.
+    Mesure du 2026-09-17 : le seul changement de bareme a deplace les notes de ~+0.6 et
+    resserre l'echelle (ecart-type 1.49 -> 0.66).
+    """
+    from tests.eval.judge import VERSION_BAREME
+
+    assert isinstance(VERSION_BAREME, int) and VERSION_BAREME >= 2, \
+        "VERSION_BAREME doit exister et valoir au moins 2 depuis le 2026-09-17"
+
+
+def test_le_rapport_porte_le_bareme_et_le_delta_refuse_de_melanger():
+    """Sans ces deux cables, la version ne sert a rien."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    src = open(chemin, encoding="utf-8").read()
+    arbre = ast.parse(src)
+
+    # ⚠️ Ces deux verrous ont d'abord ete ecrits en cherchant une CHAINE dans le fichier.
+    # Les deux mutations sont passees sans un bruit : « version_bareme » vit aussi dans le
+    # `.get(...)` de lecture, et « bareme_ref » dans sa propre affectation. Il faut viser
+    # la STRUCTURE. 5e cas de [[gotcha-verrou-trop-faible]].
+    rapports = [
+        n for n in ast.walk(arbre) if isinstance(n, ast.Dict)
+        and any(isinstance(k, ast.Constant) and k.value == "timestamp" for k in n.keys)
+    ]
+    assert rapports, "le dictionnaire du rapport est introuvable"
+    for d in rapports:
+        cles = {k.value for k in d.keys if isinstance(k, ast.Constant)}
+        assert "version_bareme" in cles, (
+            f"le rapport ecrit {sorted(cles)} mais PAS `version_bareme` : un rapport sans "
+            "bareme sera compare a n'importe quel autre"
+        )
+
+    gardes = []
+    for n in ast.walk(arbre):
+        if not isinstance(n, ast.If):
+            continue
+        noms_test = {getattr(x, "id", None) for x in ast.walk(n.test)}
+        if not {"bareme_ref", "VERSION_BAREME"} <= noms_test:
+            continue
+        neutralise = any(
+            isinstance(a, ast.Assign)
+            and any(getattr(c, "id", None) == "last_report_data" for c in a.targets)
+            and isinstance(a.value, ast.Constant) and a.value.value is None
+            for a in ast.walk(ast.Module(body=n.body, type_ignores=[]))
+        )
+        if neutralise:
+            gardes.append(n)
+    assert gardes, (
+        "aucun `if` ne compare `bareme_ref` a `VERSION_BAREME` pour ECARTER la reference : "
+        "les deltas peuvent melanger deux echelles de notation"
+    )
