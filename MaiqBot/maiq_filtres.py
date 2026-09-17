@@ -41,8 +41,23 @@ def _strip_didascalies(text):
     while prev != text:                                   # didascalies nues, en boucle
         prev = text
         text = _BARE_STAGE.sub("", text)
-    text = _re.sub(r"^\s*\*[^*]+\*\s*", "", text)          # didascalie en tête *...*
-    text = _re.sub(r"(?<=[.!?…])\s*\*[^*]+\s[^*]+\*\s*", " ", text)  # après ponctuation
+    # ⚠️ BORNE de longueur, et elle n'est pas cosmetique. Sans elle, `[^*]+` court
+    # jusqu'a l'asterisque suivante, ou qu'elle soit. Cas reel du run du 2026-09-17,
+    # Alfred, scenario `alfred_maitre` : le modele avait ouvert par `*` et referme 200
+    # caracteres plus loin, et la regle a emporte TOUTE la replique — il ne restait que
+    # « encore en train de sauver Gotham. ». Une didascalie est courte ; au-dela, c'est
+    # de la prose que le modele a mise en italique, et on ne retire alors que les marqueurs.
+    text = _re.sub(r"^\s*\*[^*\n]{1,120}\*\s*", "", text)   # didascalie en tête *...*
+    text = _re.sub(r"(?<=[.!?…])\s*\*[^*\n]{1,120}\s[^*\n]{1,120}\*\s*", " ", text)  # après ponctuation
+    # ⚠️ Le GRAS D'ABORD. Mesure du 2026-09-17 sur le run de reference : 10 reponses sur
+    # 102 sortaient ENCORE avec des asterisques apres filtrage, alors que les 92 autres
+    # etaient des points fixes — le filtre n'etait pas idempotent. Cause : sur `**gras**`,
+    # la substitution ci-dessous ne peut pas demarrer a l'indice 0 (le caractere suivant
+    # est une asterisque), elle attaque a l'indice 1, mange `*gras*` et laisse `*gras*`
+    # derriere elle. Le gras ne disparaissait pas : il DEVENAIT de l'italique.
+    # Sheogorath n'a jamais eu ce defaut (`strip_markdown_emphasis` traite `**` en
+    # premier) et c'est le seul des six a sortir 0/17 sur ce meme run.
+    text = _re.sub(r"\*\*([^*]+)\*\*", r"\1", text)        # gras
     text = _re.sub(r"\*([^*]+)\*", r"\1", text)            # reste = simple emphase
     return _re.sub(r"\s{2,}", " ", text).strip()
 

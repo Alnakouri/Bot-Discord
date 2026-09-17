@@ -430,8 +430,13 @@ def filtre_sortie(texte, message_utilisateur=None):
     # leur filtre traite `*...*` comme une didascalie d'emblee (logique curee de Sugar).
     # ⚠️ En tete : tout segment. Apres une ponctuation : seulement s'il fait au moins deux
     # mots — un `*mot*` isole au milieu d'une phrase reste de l'emphase, pas une action.
-    texte = re.sub(r"^\s*\*[^*]+\*\s*", "", texte)
-    texte = re.sub(r"(?<=[.!?…])\s*\*[^*]+\s[^*]+\*\s*", " ", texte)
+    # ⚠️ BORNE de longueur : sans elle, `[^*]+` court jusqu'à l'astérisque suivante, où
+    # qu'elle soit. Cas réel du run du 2026-09-17 (chez Alfred, même règle) : le modèle
+    # ouvre par `*` et referme 200 caractères plus loin, et la règle emporte TOUTE la
+    # réplique. Une didascalie est courte ; au-delà, c'est de la prose mise en italique,
+    # et on ne retire alors que les marqueurs.
+    texte = re.sub(r"^\s*\*[^*\n]{1,120}\*\s*", "", texte)
+    texte = re.sub(r"(?<=[.!?…])\s*\*[^*\n]{1,120}\s[^*\n]{1,120}\*\s*", " ", texte)
 
     # Etage 2 — le reste n'etait que de l'emphase : les marqueurs tombent, les mots restent.
     texte = strip_markdown_emphasis(texte)

@@ -245,3 +245,63 @@ def test_malena_generate_response_hybrid_passe_par_filtre():
                     assert r.value.id != "_texte_branche", (
                         f"return _texte_branche trouvé dans {n.name} hors de _generate_response_hybrid_brut"
                     )
+
+
+# ──────── Deux défauts que seule la MESURE d'un vrai run a révélés (17/09) ─────────────
+
+
+def test_le_filtre_est_idempotent():
+    r"""⚠️ Un filtre qui laisse du travail au passage suivant laisse du travail à l'écran.
+
+    Mesure du run `eval_20260917_1731` : 92 réponses sur 102 étaient des points fixes, et
+    **10 changeaient encore** au second passage. Toutes portaient des astérisques que
+    l'utilisateur voyait donc pour de bon.
+
+    Cause : `**gras**`. La substitution `\*([^*]+)\*` ne peut pas démarrer à l'indice 0
+    (le caractère suivant est une astérisque), elle attaque à l'indice 1, mange `*gras*`
+    et laisse `*gras*` derrière elle. Le gras ne disparaissait pas : il DEVENAIT de
+    l'italique. Sheogorath, seul à traiter `**` en premier, était aussi le seul à 0/17.
+    """
+    cas = [
+        "Ouais **1-0** ? Mon pote, c'est *fini*.",
+        "**Écoute les rats avant les rois.** Voilà tout.",
+        "Du **gras**, de l'*italique*, et du ***deux à la fois***.",
+    ]
+    for bot_id in FILTRES:
+        filtre = load_filtre(bot_id)
+        for texte in cas:
+            une = filtre(texte)
+            assert filtre(une) == une, (
+                f"{bot_id} : filtrer deux fois ne donne pas le même résultat — "
+                f"{texte!r} -> {une!r} -> {filtre(une)!r}"
+            )
+            assert "*" not in une, f"{bot_id} laisse une astérisque : {une!r}"
+
+
+def test_une_didascalie_est_COURTE_et_la_prose_est_conservee():
+    """⚠️ Sans borne de longueur, `[^*]+` court jusqu'à l'astérisque suivante, où qu'elle soit.
+
+    Cas réel du même run, Alfred / `alfred_maitre` : le modèle avait ouvert par `*` et
+    refermé 200 caractères plus loin. La règle de tête a emporté TOUTE la réplique — il ne
+    restait que « encore en train de sauver Gotham. ». Perdre le message est pire que
+    laisser l'italique.
+    """
+    longue = (
+        "*LeDev ? Quel nom... prévisible. 🦇 Le manoir est impeccable, comme toujours "
+        "— contrairement à certaines apparences. Le thé est servi, et le Maître est "
+        "probablement* encore en train de sauver Gotham. 🎩"
+    )
+    for bot_id in FILTRES:
+        filtre = load_filtre(bot_id)
+
+        # La prose survit : seuls les marqueurs tombent.
+        sortie = filtre(longue)
+        assert "manoir est impeccable" in sortie, (
+            f"{bot_id} a mangé la réplique entière au lieu des seuls marqueurs : {sortie!r}"
+        )
+        assert "*" not in sortie, f"{bot_id} laisse une astérisque : {sortie!r}"
+
+        # Mais une VRAIE didascalie, courte, tombe toujours en entier.
+        assert filtre("*pose son torchon* Le thé est servi.") == "Le thé est servi.", (
+            f"{bot_id} ne retire plus les didascalies courtes"
+        )
