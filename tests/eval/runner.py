@@ -67,10 +67,20 @@ nvidia_client = (
     if NVIDIA_API_KEY else None
 )
 
-async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
+async def run_scenario_for_bot(bot_id: str, scenario: dict) -> tuple[list[str], list[str]]:
     """
     Exécute un scénario (pouvant comporter plusieurs tours) pour un bot donné.
-    Retourne la liste des réponses générées par le bot.
+
+    Rend DEUX listes : les réponses telles que l'utilisateur les lit (filtrées), et les
+    mêmes AVANT le filtre de sortie du bot.
+
+    ⚠️ La brute n'est pas un confort. Le 2026-09-17, après avoir posé un filet
+    déterministe (LOT 1) ET réécrit les fiches de persona (LOT 2), il était impossible de
+    dire lequel des deux avait agi : le rapport ne gardait que le texte filtré, où il n'y
+    a par construction plus une seule astérisque. Trancher aurait demandé un run entier
+    avec le filtre désarmé — une heure et du quota, pour une information que chaque run
+    peut livrer gratuitement. Le juge, lui, continue de noter la version filtrée : c'est
+    celle que l'utilisateur lit.
     """
     persona = load_persona(bot_id)
     system_prompt = persona["system_prompt"]
@@ -85,6 +95,7 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
     
     conversation_history = []
     responses = []
+    responses_brutes = []
     
     # Scénario info
     user_messages = scenario.get("user_messages", [])
@@ -135,6 +146,8 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
             call_timeout=90.0,
         )
         
+        responses_brutes.append(response if response is not None else ECHEC_CASCADE)
+
         if response is None:
             # Fallback en cas d'échec total de la cascade
             response = ECHEC_CASCADE
@@ -149,4 +162,4 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> list[str]:
         conversation_history.append({"role": "user", "parts": [user_msg]})
         conversation_history.append({"role": "model", "parts": [response]})
         
-    return responses
+    return responses, responses_brutes

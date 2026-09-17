@@ -759,3 +759,75 @@ def test_le_harnais_construit_ET_passe_un_client_nvidia():
         "le client NVIDIA n'est PASSE a aucun appel : construit et jamais transmis, "
         "l'echelon reste saute exactement comme avant"
     )
+
+
+# ────────── La réponse BRUTE est gardée à côté de la filtrée (2026-09-17) ──────────────
+
+
+def test_le_runner_rend_la_filtree_ET_la_brute():
+    """⚠️ Sans la brute, on ne peut pas dire QUI a agi.
+
+    Le 2026-09-17, après avoir posé un filet déterministe (LOT 1) ET réécrit les fiches
+    (LOT 2), la question « c'est le filet ou la fiche ? » est restée sans réponse : le
+    rapport ne gardait que le texte filtré, où il n'y a plus une astérisque par
+    construction. Trancher aurait coûté un run entier avec le filtre désarmé.
+    """
+    import asyncio
+    import tests.eval.runner as runner
+
+    async def _faux_appel(**kwargs):
+        return "**Gras** et *pose son torchon* une didascalie."
+
+    vrai = runner.generate_response
+    runner.generate_response = _faux_appel
+    try:
+        scenario = {"id": "sonde", "user_messages": ["salut"], "transcript": ""}
+        filtrees, brutes = asyncio.run(runner.run_scenario_for_bot("alfred", scenario))
+    finally:
+        runner.generate_response = vrai
+
+    assert len(filtrees) == len(brutes) == 1, "les deux listes doivent aller de pair"
+    assert "*" in brutes[0], "la BRUTE doit garder les astérisques du modèle"
+    assert "*" not in filtrees[0], "la FILTRÉE doit être ce que l'utilisateur lit"
+
+
+def test_chaque_resultat_stocke_la_brute_a_cote_de_la_filtree():
+    """Un dict de résultat qui porte `responses` sans `responses_brutes` reperd l'info."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    dicts_de_resultat = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Dict)
+        and any(isinstance(k, ast.Constant) and k.value == "responses" for k in n.keys)
+    ]
+    assert dicts_de_resultat, "aucun dict de résultat trouvé dans run_eval.py"
+    for d in dicts_de_resultat:
+        cles = {k.value for k in d.keys if isinstance(k, ast.Constant)}
+        assert "responses_brutes" in cles, (
+            "un résultat porte `responses` sans `responses_brutes` : la mesure qui sépare "
+            "le FILET de la FICHE est perdue pour ce cas"
+        )
+
+
+def test_le_compte_d_asterisques_separe_avant_et_apres():
+    from tests.eval.run_eval import compte_asterisques
+
+    results = [
+        {"bot": "alfred",
+         "responses": ["Le the est servi."],
+         "responses_brutes": ["*pose son torchon* Le the est servi."]},
+        {"bot": "sugar",
+         "responses": ["Rien a signaler."],
+         "responses_brutes": ["Rien a signaler."]},
+    ]
+    compte = compte_asterisques(results)
+    assert compte["alfred"] == {"avant": 1, "apres": 0, "total": 1}, (
+        "alfred : le modèle en produit, le filet les retire — c'est le FILET qui agit"
+    )
+    assert compte["sugar"] == {"avant": 0, "apres": 0, "total": 1}, (
+        "sugar : rien à retirer — c'est la FICHE qui tient"
+    )

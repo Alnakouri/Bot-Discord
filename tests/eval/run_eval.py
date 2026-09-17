@@ -13,6 +13,7 @@ import asyncio
 import glob
 import shutil
 import random
+import re
 import time
 from datetime import datetime
 
@@ -25,6 +26,9 @@ from tests.eval.runner import run_scenario_for_bot, key_manager, groq_client, mi
 from tests.eval.gimmick import detect_gimmick
 from tests.eval.judge import evaluate_response, VERSION_BAREME
 from tests.eval.deterministic import evaluate_deterministic
+
+# Une paire d'astérisques autour d'au moins deux caractères : didascalie ou emphase.
+_MOTIF_ASTERISQUE = re.compile(r"\*[^*\n]{2,}\*")
 
 # Liste des bots à évaluer
 BOTS = ["johnny", "maiq", "alfred", "malena", "sugar", "sheogorath"]
@@ -238,6 +242,31 @@ def bots_demandes(argv: list[str] = None) -> list[str]:
     return [b for b in BOTS if b in demandes]
 
 
+
+def compte_asterisques(results: list[dict]) -> dict:
+    """Compte, par bot, les réponses qui portent des `*…*` AVANT puis APRÈS le filtre.
+
+    C'est la seule mesure qui sépare les deux leviers posés le 2026-09-17 :
+      - la colonne AVANT bouge  -> c'est la FICHE de persona qui a agi (le modèle produit
+        moins de didascalies) ;
+      - seule la colonne APRÈS bouge -> c'est le FILET déterministe qui les retire.
+    Le score du juge, lui, ne sait pas répondre : il lit le texte filtré, où il n'y a plus
+    une seule astérisque par construction.
+    """
+    par_bot = {}
+    for res in results:
+        e = par_bot.setdefault(res["bot"], {"avant": 0, "apres": 0, "total": 0})
+        brutes = res.get("responses_brutes") or []
+        filtrees = res.get("responses") or []
+        for i, rep in enumerate(filtrees):
+            e["total"] += 1
+            if _MOTIF_ASTERISQUE.search(rep):
+                e["apres"] += 1
+            if i < len(brutes) and _MOTIF_ASTERISQUE.search(brutes[i]):
+                e["avant"] += 1
+    return par_bot
+
+
 async def main():
     print("[START] Demarrage du harnais d'evaluation des personas...")
 
@@ -294,7 +323,12 @@ async def main():
 
             try:
                 # Exécution du scénario
-                responses = await run_scenario_for_bot(bot_id, scenario)
+                # `responses` = ce que l'utilisateur lit (filtre applique) ; `brutes` =
+                # la meme chose AVANT le filtre de sortie du bot. Les deux sont gardees :
+                # sans la brute, impossible de dire si un progres vient du FILET ou de la
+                # FICHE de persona — dans le texte filtre il n'y a plus une asterisque,
+                # par construction.
+                responses, brutes = await run_scenario_for_bot(bot_id, scenario)
 
                 # Échec cascade complet
                 echec_cascade = any(resp == ECHEC_CASCADE for resp in responses)
@@ -314,6 +348,7 @@ async def main():
                         "scenario_id": scenario_id,
                         "success": False,
                         "responses": responses,
+                        "responses_brutes": brutes,
                         "user_messages": scenario["user_messages"],
                         "scores": {m: -1 for m in METRICS},
                         "verdict": "Non mesure : la cascade du bot n'a rendu aucune reponse",
@@ -360,6 +395,7 @@ async def main():
                     "scenario_id": scenario_id,
                     "success": success,
                     "responses": responses,
+                    "responses_brutes": brutes,
                     "user_messages": scenario["user_messages"],
                     "scores": scores,
                     "verdict": scores.get("verdict", "Juge indisponible"),
@@ -384,6 +420,7 @@ async def main():
                     "scenario_id": scenario_id,
                     "success": False,
                     "responses": [],
+                    "responses_brutes": [],
                     "user_messages": scenario["user_messages"],
                     "scores": {"fidelite": -1, "ton_fr": -1, "anti_contamination": -1, "anti_fuite": -1, "longueur": -1},
                     "verdict": f"Erreur d'execution: {e}",
@@ -467,6 +504,23 @@ async def main():
         if det and det.get("detail"):
             statut = "OK" if det.get("succes") else "FAIL"
             print(f" - {res['bot']:<10} | {res['scenario_id']:<15} | [{statut}] {det.get('detail')}")
+
+    # Ce que le filtre a retiré (2026-09-17)
+    print("\n" + "=" * 80)
+    print("ASTÉRISQUES : AVANT -> APRÈS LE FILTRE DE SORTIE")
+    print("=" * 80)
+    compte = compte_asterisques(results)
+    if compte:
+        for bot, e in compte.items():
+            if e["avant"] == 0 and e["apres"] == 0:
+                note = "rien a retirer : la fiche suffit"
+            elif e["apres"] == 0:
+                note = "le filet fait le travail"
+            else:
+                note = "⚠️ le filtre en laisse passer"
+            print(f" - {bot:<12} : {e['avant']:>2}/{e['total']:<3} -> {e['apres']:>2}/{e['total']:<3}  ({note})")
+    else:
+        print(" Aucune reponse mesuree.")
 
     # Top 3 chutes (Lot 1.3)
     print("\n" + "=" * 80)
