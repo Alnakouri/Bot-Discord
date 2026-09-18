@@ -438,3 +438,93 @@ def test_l_accroche_de_live_INVITE_autorise_l_emoji_et_reste_honnete():
         "N'écris PAS le lien",
     ):
         assert attendu in source, f"l'instruction d'annonce ne dit plus : {attendu}"
+
+
+def _instruction_d_annonce() -> str:
+    """La consigne REELLEMENT envoyee au modele, commentaires exclus.
+
+    ⚠️ `inspect.getsource` rend la fonction ENTIERE, commentaires compris — et le
+    commentaire au-dessus du prompt raconte l'incident du 2026-09-18, donc il contient les
+    memes mots que la consigne. Un verrou qui cherche « genre » dans cette source passe
+    au vert alors que l'instruction ne dit plus rien : mesure du 2026-09-18, le mot retire
+    du prompt, le test restait vert. C'est [[gotcha-verrou-trop-faible]] — la PRESENCE
+    d'un mot dans le fichier n'est pas sa presence dans l'OBJET qu'on protege.
+    """
+    import inspect
+
+    from shared.twitch_announcer import TwitchAnnouncer
+
+    source = inspect.getsource(TwitchAnnouncer._generate_hype)
+    debut = source.index("system_prompt = (")
+    fin = source.index("try:", debut)
+    bloc = source[debut:fin]
+    # Les commentaires peuvent aussi vivre DANS le bloc : on ne garde que les lignes de
+    # chaine, seules a partir chez le modele.
+    return "\n".join(
+        ligne for ligne in bloc.splitlines()
+        if not ligne.strip().startswith("#")
+    )
+
+
+def test_l_accroche_n_invente_rien_sur_LA_PERSONNE_qui_stream():
+    """Vu EN LIVE le 2026-09-18 (johnny, 12:12) :
+
+        « Cinq ans de stream et un premier pas dans Elden Ring AVEC streameuse_amie »
+
+    streameuse_amie EST la streameuse, et elle jouait seule. Deux faits inventes dans une seule
+    phrase : son anciennete, et une coequipiere.
+
+    La borne d'honnetete d'alors enumerait le JEU et le LIVE ; la PERSONNE n'y figurait
+    pas, alors que la consigne juste au-dessus demande de « mettre en valeur le streamer »
+    a temperature 0.95. Le prompt AUTORISAIT donc a broder sur quelqu'un et ne bornait que
+    le decor ([[gotcha-une-permission-bat-une-demonstration]]).
+
+    Le verrou vise les trois manques separement : ils ont trois causes et se reperdent un
+    par un a la prochaine reecriture.
+    """
+    source = _instruction_d_annonce()
+
+    # 1. l'anciennete et le passe : « cinq ans de stream » n'est vrai nulle part.
+    assert "LA PERSONNE qui stream" in source and "ancienneté" in source, (
+        "l'instruction n'interdit plus d'inventer un passe au streamer"
+    )
+    # 2. le ROLE du nom : sans lui, « ne mens pas » ne protege de rien, le modele ne
+    #    recevant qu'un nom sans savoir de qui il parle.
+    assert "LA PERSONNE QUI JOUE" in source, (
+        "l'instruction ne dit plus QUI est la personne nommee : le modele peut la prendre "
+        "pour un coequipier, un jeu ou un personnage"
+    )
+    assert "à plusieurs" in source, (
+        "l'instruction ne refuse plus de supposer un live joue a plusieurs"
+    )
+    # 3. le genre : l'API n'en rend aucun et le francais accorde.
+    assert "genre" in source, (
+        "l'instruction ne dit plus que le genre du streamer est inconnu : un bot qui "
+        "devine se trompe une fois sur deux sur une personne reelle"
+    )
+
+
+def test_l_accroche_DECRIT_la_tournure_fautive_sans_la_MONTRER():
+    """Une demonstration bat une interdiction — deja paye deux fois dans ce depot.
+
+    Le 2026-09-16, `❌ INTERDIT : *allume une clope*` ENSEIGNAIT la didascalie qu'il
+    interdisait (5 demos chez Johnny, 4 chez Alfred). Le 2026-09-18, la fiche d'Alfred a
+    ete de-citee pour la meme raison, et sa fidelite est MONTEE en perdant ses exemples.
+
+    Ecrire ici la tournure fautive — la preposition d'accompagnement suivie du nom du
+    streamer — la placerait mot pour mot dans le contexte, a deux lignes de l'endroit ou
+    le modele redige, et avec le VRAI nom interpole dedans. Le verrou interdit donc que
+    l'instruction contienne ce gabarit, quelle que soit la facon dont il est amene.
+    """
+    import re
+
+    # QUE la chaine d'instruction : le commentaire du dessus cite l'incident, c'est sa
+    # fonction, et il ne part jamais au modele.
+    instruction = _instruction_d_annonce()
+
+    gabarit = re.compile(r"avec\s*\{?\s*streamer", re.IGNORECASE)
+    assert not gabarit.search(instruction), (
+        "l'instruction MONTRE la tournure qu'elle interdit, le nom du streamer interpole "
+        "dedans : c'est le gabarit exact que le modele va reproduire "
+        "([[gotcha-le-prompt-enseigne-le-tic-interdit]]). La decrire, ne pas la citer."
+    )

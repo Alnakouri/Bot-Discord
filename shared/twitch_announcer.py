@@ -462,6 +462,32 @@ class TwitchAnnouncer:
         # chemin, mais tant qu'on ne le demandait pas, l'accroche sortait sèche.
         # La borne d'honnêteté ne bouge PAS : c'est précisément une accroche enthousiaste
         # qui invente un fait sur le jeu, et le salon y croit.
+        #
+        # ⚠️ 2026-09-18, EN LIVE (johnny, 12:12, #les-coupains-en-stream) : « Cinq ans de
+        # stream et un premier pas dans Elden Ring AVEC streameuse_amie ». streameuse_amie EST la
+        # streameuse, et elle jouait seule. Deux faits inventés dans une phrase : son
+        # ancienneté, et une coéquipière.
+        #
+        # La borne d'honnêteté ne voyait NI l'un NI l'autre : elle énumérait le JEU (« pas
+        # de qualité, note, histoire ou détail inventés ») et le LIVE (« tu ne l'as pas
+        # regardé »). La PERSONNE n'y figurait pas — alors que la ligne juste au-dessus
+        # demande de « mettre en valeur le streamer », à température 0.95. Le prompt
+        # autorisait donc à broder sur quelqu'un et ne bornait que le décor :
+        # [[gotcha-une-permission-bat-une-demonstration]].
+        #
+        # Le rôle du nom mérite sa propre phrase : le modèle ne reçoit qu'un NOM, et rien
+        # ne lui dit que ce nom est CELUI QUI JOUE. « Ne mens pas » ne protège de rien
+        # quand le modèle ignore de qui on parle.
+        #
+        # ⚠️ Et cette phrase DÉCRIT le défaut, elle ne le montre pas. Écrire ici la tournure
+        # fautive avec le vrai nom du streamer dedans la placerait mot pour mot dans le
+        # contexte, à deux lignes de l'endroit où le modèle rédige : c'est le piège
+        # [[gotcha-le-prompt-enseigne-le-tic-interdit]], déjà payé deux fois ici, et la
+        # raison pour laquelle la fiche d'Alfred a été dé-citée (`3e3c91e`).
+        #
+        # Le GENRE est le même trou, pas encore mordu : le français accorde, l'API ne rend
+        # aucun genre, et deviner se trompe une fois sur deux sur une personne réelle. On
+        # demande donc une tournure qui n'ait pas à choisir.
         system_prompt = (
             f"SYSTEM: {self.personality_prompt}\n"
             "INSTRUCTION: Annonce, DANS TA VOIX et avec TA personnalité, qu'un streamer vient "
@@ -474,6 +500,15 @@ class TwitchAnnouncer:
             "sur le jeu (pas de superlatif présenté comme vrai type « le meilleur jeu de l'année », "
             "pas de qualité, note, histoire ou détail inventés), et n'invente rien non plus sur ce "
             "qui se passe en ce moment dans le live : tu ne l'as pas regardé. "
+            "N'invente RIEN non plus sur LA PERSONNE qui stream : ni son ancienneté ou son "
+            "nombre d'années de stream, ni son niveau, ni son passé, ni sa communauté. "
+            "Le nom donné ci-dessous est celui de LA PERSONNE QUI JOUE et qui tient ce "
+            "live : ce n'est ni un jeu, ni un personnage, ni quelqu'un qui l'accompagne. "
+            "Ta phrase ne doit donc jamais le présenter comme la personne EN COMPAGNIE de "
+            "qui on joue, et tu ne dois pas supposer que le live se joue à plusieurs — sauf "
+            "si le titre ci-dessous le dit explicitement. "
+            "Tu ne connais pas non plus son genre : tourne ta phrase pour n'avoir pas à le "
+            "deviner, plutôt que de choisir au hasard. "
             "Appuie-toi UNIQUEMENT sur le titre "
             "du live et le nom du jeu ci-dessous ; si tu ne connais pas le jeu, reste enthousiaste "
             "sans affirmer quoi que ce soit de faux. N'écris PAS le lien (il est ajouté séparément). "
