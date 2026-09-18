@@ -223,13 +223,33 @@ def test_le_runner_est_PATIENT_la_borne_du_direct_ne_doit_pas_s_appliquer():
     Le verrou vise le NOM du parametre dans l'appel reel, releve par `ast` : un
     `call_timeout` absent fait silencieusement retomber le harnais sur la borne du direct,
     et le run redevient inexploitable sans que rien ne le dise.
+
+    ⚠️ 2026-09-18 : la borne est devenue CHOISISSABLE (`--borne-du-direct`), donc l'appel
+    porte une conditionnelle et non plus une constante. Ce que le verrou protege n'a pas
+    change d'un pouce — c'est le DEFAUT qui doit rester patient. Il relit donc la branche
+    `else` de la conditionnelle, celle qui s'applique quand personne ne demande rien. Une
+    borne courte glissee la reviendrait a reintroduire le defaut de 2026-09-16 en laissant
+    un drapeau pour alibi.
     """
     import ast
 
     chemin = os.path.join(RACINE, "tests", "eval", "runner.py")
     arbre = ast.parse(open(chemin, encoding="utf-8").read())
 
+    def _valeurs_par_defaut(noeud):
+        """La ou les valeurs que prend `call_timeout` quand aucun drapeau n'est passe.
+
+        Une constante vaut pour elle-meme ; une conditionnelle ne vaut que par sa branche
+        `else`, la seule qu'un run ordinaire emprunte.
+        """
+        if isinstance(noeud, ast.Constant):
+            return [noeud.value]
+        if isinstance(noeud, ast.IfExp):
+            return _valeurs_par_defaut(noeud.orelse)
+        return []
+
     bornes = []
+    conditionnelles = []
     for node in ast.walk(arbre):
         if not isinstance(node, ast.Call):
             continue
@@ -237,17 +257,30 @@ def test_le_runner_est_PATIENT_la_borne_du_direct_ne_doit_pas_s_appliquer():
         if nom != "generate_response":
             continue
         for kw in node.keywords:
-            if kw.arg == "call_timeout" and isinstance(kw.value, ast.Constant):
-                bornes.append(kw.value.value)
+            if kw.arg != "call_timeout":
+                continue
+            bornes.extend(_valeurs_par_defaut(kw.value))
+            if isinstance(kw.value, ast.IfExp):
+                conditionnelles.append(kw.value)
 
     assert bornes, (
-        "l'appel a generate_response du harnais ne passe aucun `call_timeout` : il herite "
-        "de la borne du DIRECT (15 s) et le run se perd en TimeoutError"
+        "l'appel a generate_response du harnais ne passe aucun `call_timeout` exploitable : "
+        "il herite de la borne du DIRECT (15 s) et le run se perd en TimeoutError"
     )
     assert all(isinstance(b, (int, float)) and b >= 60 for b in bornes), (
         f"borne trop courte pour un lot : {bornes} — un 429 Groq endort le SDK ~36 s, "
         "et la cascade peut enchainer plusieurs echelons avant de rendre la main"
     )
+
+    # Si la borne est conditionnelle, elle ne peut l'etre que sur le drapeau prevu pour ca.
+    # Sans ce point, n'importe quelle variable de portee pourrait raccourcir le lot en
+    # laissant la branche `else` presentable.
+    for cond in conditionnelles:
+        noms = {n.id for n in ast.walk(cond.test) if isinstance(n, ast.Name)}
+        assert "borne_du_direct" in noms, (
+            f"la borne du lot depend de {noms or 'une expression opaque'} et non de "
+            "`borne_du_direct` : le lot peut devenir presse sans que personne l'ait demande"
+        )
 
 
 # ──────────────── Le rapport ne doit pas MESURER une non-reponse (2026-09-16) ───────────
@@ -1324,3 +1357,91 @@ def test_la_recitation_est_ECRITE_dans_le_rapport():
         any(isinstance(k, ast.Constant) and k.value == "recitation" for k in r.keys)
         for r in rapports
     ), "le rapport n'ecrit pas `recitation` : la mesure ne survivrait pas au run"
+
+
+# ──────── La borne du direct est CHOISISSABLE, et cablee jusqu'a la cascade (18/09) ────────
+
+
+def test_la_borne_du_direct_est_CABLEE_du_drapeau_jusqu_a_la_cascade():
+    """`--borne-du-direct` doit atteindre `generate_response`, pas seulement etre lu.
+
+    Ce drapeau existe parce que la borne patiente du lot (90 s) CACHE ce que le direct
+    refuserait. Mesure du 2026-09-18 sur les 67 appels `google/gemma-4-31b-it` de la passe
+    qui l'a valide en tete de cascade : mediane 12,4 s, et 26 au-dela de 15 s — comptes en
+    succes par le harnais, refuses en production. Le rapport annoncait « gemma x17 » sur
+    dix-sept tours quand le chat n'en voit que six sur dix.
+
+    Un drapeau lu mais non transmis rendrait exactement les memes chiffres qu'un run
+    ordinaire, en affichant son avertissement : le pire des cas, une mesure fausse qui se
+    croit corrigee. Le verrou suit donc la chaine entiere, maillon par maillon
+    ([[gotcha-import-ajoute-mais-pas-cable]]).
+    """
+    import ast
+
+    # 1. run_eval : le drapeau est lu, puis PASSE au runner sous son nom.
+    chemin_run = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    arbre_run = ast.parse(open(chemin_run, encoding="utf-8").read())
+
+    passages = [
+        kw
+        for node in ast.walk(arbre_run)
+        if isinstance(node, ast.Call)
+        and (getattr(node.func, "id", None) or getattr(node.func, "attr", None)) == "run_scenario_for_bot"
+        for kw in node.keywords
+        if kw.arg == "borne_du_direct"
+    ]
+    assert passages, (
+        "run_eval lit `--borne-du-direct` mais ne le passe pas a run_scenario_for_bot : "
+        "le run resterait patient en annoncant le contraire"
+    )
+    assert all(isinstance(kw.value, ast.Name) and kw.value.id == "borne_du_direct" for kw in passages), (
+        "le harnais passe autre chose que la valeur lue sur la ligne de commande"
+    )
+
+    # 2. runner : le parametre existe, il est FAUX par defaut, et c'est lui qui commande
+    #    la borne de l'appel (verifie par le test de patience, juste au-dessus).
+    chemin_runner = os.path.join(RACINE, "tests", "eval", "runner.py")
+    source_runner = open(chemin_runner, encoding="utf-8").read()
+    arbre_runner = ast.parse(source_runner)
+
+    fonctions = [
+        n for n in ast.walk(arbre_runner)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "run_scenario_for_bot"
+    ]
+    assert fonctions, "run_scenario_for_bot a disparu du runner"
+    signature = fonctions[0].args
+    noms = [a.arg for a in signature.args]
+    assert "borne_du_direct" in noms, (
+        "run_scenario_for_bot n'accepte pas `borne_du_direct` : le drapeau s'arrete au CLI"
+    )
+    rang = noms.index("borne_du_direct") - (len(noms) - len(signature.defaults))
+    defaut = signature.defaults[rang]
+    assert isinstance(defaut, ast.Constant) and defaut.value is False, (
+        "le defaut de `borne_du_direct` n'est pas False : tous les runs deviendraient "
+        "presses, et un 429 Groq endormi redeviendrait un echec"
+    )
+
+    # 3. La borne demandee est bien celle du DIRECT, pas un nombre recopie a la main.
+    #    Un litteral divergerait le jour ou `_BORNE_TEXTE` bouge.
+    assert "_BORNE_TEXTE if borne_du_direct" in source_runner, (
+        "la borne du mode direct doit etre `_BORNE_TEXTE` lui-meme, pas une copie : "
+        "sinon le harnais mesure une borne que la production n'applique plus"
+    )
+
+
+def test_deux_bornes_differentes_MASQUENT_les_deltas():
+    """Un run borne au direct ne se compare pas a un run patient.
+
+    Les deux ne font pas repondre les memes ECHELONS : borne au direct, une tete de
+    cascade lente est refusee et c'est le suivant qui sert. Comparer les deux attribuerait
+    aux fiches de persona un ecart qui vient du chronometre — l'erreur exacte, dans sa
+    version modele, du 2026-09-17 au soir.
+    """
+    source = open(os.path.join(RACINE, "tests", "eval", "run_eval.py"), encoding="utf-8").read()
+    assert '"borne_du_direct": borne_du_direct' in source, (
+        "le rapport ne note pas sous quelle borne il a ete mene : plus aucun run posterieur "
+        "ne pourra savoir s'il est comparable"
+    )
+    assert 'get("borne_du_direct", False)) != borne_du_direct' in source, (
+        "rien ne masque les deltas entre deux bornes differentes"
+    )

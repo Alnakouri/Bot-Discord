@@ -16,7 +16,7 @@ from shared.secure_env import load_secure_env
 from shared.api_manager import MultiAPIKeyManager
 from shared.smart_router import RequestType
 from shared.models import NVIDIA_BASE_URL
-from shared.llm_cascade import generate_response
+from shared.llm_cascade import generate_response, _BORNE_TEXTE
 # Le MODULE, et pas seulement la fonction : `_echelon_qui_repond` y remplace le temps
 # d'un appel le traceur de la cascade, et c'est le module qui porte ce nom-là.
 import shared.llm_cascade as llm_cascade
@@ -110,6 +110,7 @@ async def run_scenario_for_bot(
     bot_id: str,
     scenario: dict,
     historique_brut: bool = False,
+    borne_du_direct: bool = False,
 ) -> tuple[list[str], list[str], list[str | None]]:
     """
     Exécute un scénario (pouvant comporter plusieurs tours) pour un bot donné.
@@ -120,6 +121,9 @@ async def run_scenario_for_bot(
 
     `historique_brut=True` remet le texte NON filtré dans `conversation_history` : voir
     le commentaire au point où l'historique est nourri, plus bas.
+
+    `borne_du_direct=True` remplace la borne patiente du lot par celle du chat
+    (`_BORNE_TEXTE`) : voir le commentaire au point d'appel, plus bas.
 
     ⚠️ La brute n'est pas un confort. Le 2026-09-17, après avoir posé un filet
     déterministe (LOT 1) ET réécrit les fiches de persona (LOT 2), il était impossible de
@@ -192,7 +196,19 @@ async def run_scenario_for_bot(
                 # légitime en `TimeoutError`. Mesuré le 2026-09-16 : 14 appels Groq d'affilée
                 # perdus ainsi, 0 réponse obtenue, alors que l'hôte joignait l'API en 0,3 s.
                 # Un lot patient mesure les bots ; un lot pressé ne mesure que sa propre borne.
-                call_timeout=90.0,
+                #
+                # ⚠️ MAIS la borne patiente CACHE aussi ce que le direct refuserait. Mesure
+                # du 2026-09-18 sur les 67 appels `google/gemma-4-31b-it` de la passe qui
+                # l'a valide : mediane 12,4 s, et 26 d'entre eux au-dela de 15 s — comptes
+                # en SUCCES ici, refuses la-bas. Le harnais annoncait donc un echelon qui
+                # sert 100 % des tours quand le chat n'en voit que ~60 %, et le verdict de
+                # persona qui en decoule (« johnny 3.70 -> 5.00 ») decrivait un bot qui
+                # n'existe pas. `borne_du_direct=True` rend au lot la borne du chat, pour
+                # repondre a la seule question qui vaille : que voit l'UTILISATEUR ?
+                # [[gotcha-borne-du-direct-sabote-le-lot]] est l'erreur inverse — les deux
+                # bornes sont justes, chacune pour sa question ; c'est le fait d'en avoir
+                # UNE SEULE qui trompe.
+                call_timeout=(_BORNE_TEXTE if borne_du_direct else 90.0),
             )
 
         # Un seul échelon peut rendre un succès par appel. Liste vide = rien de tracé :

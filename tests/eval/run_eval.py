@@ -254,12 +254,16 @@ def bots_demandes(argv: list[str] = None) -> list[str]:
 
 
 USAGE = """Usage : python tests/eval/run_eval.py [--bot <id>[,<id>...]] [--historique-brut]
+                                  [--borne-du-direct]
 
   --bot <id>          Ne mesurer que ce(s) bot(s). Repetable, ou liste separee par des
                       virgules. Par defaut : les six.
   --historique-brut   EXPERIENCE : le texte NON filtre repart dans l'historique du
                       modele. Ne decrit PAS le bot reel ; ses deltas ne se comparent
                       pas a ceux d'un run normal.
+  --borne-du-direct   Borne chaque appel a 15 s, comme le chat, au lieu des 90 s du lot.
+                      Un echelon lent est alors REFUSE ici comme il l'est en production.
+                      Ses deltas ne se comparent pas a ceux d'un run normal.
   -h, --help          Afficher cette aide et ne RIEN appeler.
 """
 
@@ -296,7 +300,7 @@ def verifie_arguments(argv: list[str] = None) -> None:
             if not arg[6:].strip(","):
                 raise SystemExit(f"[ERREUR] `{arg}` ne nomme aucun bot.\n{USAGE}")
             i += 1
-        elif arg == "--historique-brut":
+        elif arg in ("--historique-brut", "--borne-du-direct"):
             i += 1
         else:
             inconnus.append(arg)
@@ -322,6 +326,35 @@ def historique_brut_demande(argv: list[str] = None) -> bool:
     """
     argv = list(sys.argv[1:] if argv is None else argv)
     return "--historique-brut" in argv
+
+
+def borne_du_direct_demandee(argv: list[str] = None) -> bool:
+    """Lit `--borne-du-direct` : chaque appel est borne a 15 s, comme dans le chat.
+
+    ⚠️ Le harnais attend 90 s par defaut, et c'est VOULU : un 429 Groq est absorbe par le
+    SDK qui dort ~36 s, et une borne de chat transformerait cette attente legitime en
+    `TimeoutError` ([[gotcha-borne-du-direct-sabote-le-lot]]). Mais la meme patience cache
+    l'inverse : un echelon que le DIRECT refuserait est compte ici en succes.
+
+    Mesure du 2026-09-18, les 67 appels `google/gemma-4-31b-it` de la passe qui l'a valide
+    en tete de cascade chez Alfred et Johnny :
+
+        bot      appels   mediane   sous 15 s
+        alfred     34      13,3 s   20/34  (58 %)
+        sheo       17      12,5 s   10/17  (58 %)
+        johnny     16       6,6 s   11/16  (68 %)
+
+    Le rapport annoncait « gemma x17 » sur dix-sept tours. En production, quatre tours sur
+    dix ne l'atteignent jamais et retombent sur ministral — l'etat d'avant la bascule. Le
+    gain de persona mesure (« johnny fidelite 3.70 -> 5.00 ») decrivait donc un bot que
+    personne ne rencontre.
+
+    Les deux bornes sont justes, chacune pour sa question : 90 s demande « ce modele
+    tient-il le personnage ? », 15 s demande « l'utilisateur le voit-il repondre ? ». Ce
+    drapeau existe parce que le harnais ne savait poser que la premiere.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    return "--borne-du-direct" in argv
 
 
 def _resume_echelons(compteur) -> str:
@@ -452,6 +485,12 @@ async def main():
               "l'historique du modele. Ce run ISOLE l'effet de la fiche ; il ne decrit "
               "PAS le bot reel, ou l'historique est ce que l'utilisateur a lu.")
 
+    borne_du_direct = borne_du_direct_demandee()
+    if borne_du_direct:
+        print("[HARNAIS] ⚠️ --borne-du-direct : chaque appel est borne a 15 s, comme dans "
+              "le chat. Un echelon lent sera REFUSE ici comme il l'est en production — "
+              "attendez-vous a voir d'autres echelons repondre que d'habitude.")
+
     # 1. Charger les scénarios
     eval_dir = os.path.dirname(os.path.abspath(__file__))
     scenarios_path = os.path.join(eval_dir, "scenarios.json")
@@ -488,6 +527,16 @@ async def main():
                 print(f"[REF] ⚠️ Mode d'historique different (reference brut={ref_brut}, "
                       f"courant brut={historique_brut}) : les DELTAS sont masques.")
                 last_report_data = None
+            # Même famille, troisième cause : deux bornes d'appel différentes ne font pas
+            # répondre les mêmes ÉCHELONS. Un run borné au direct peut perdre sa tête de
+            # cascade et se faire servir par le suivant ; le comparer à un run patient
+            # attribuerait aux fiches un écart qui vient du chronomètre. Les rapports
+            # d'avant le 2026-09-18 n'ont pas ce champ — ils ont tous été menés à 90 s.
+            elif bool((last_report_data or {}).get("borne_du_direct", False)) != borne_du_direct:
+                ref_borne = bool((last_report_data or {}).get("borne_du_direct", False))
+                print(f"[REF] ⚠️ Borne d'appel differente (reference direct={ref_borne}, "
+                      f"courant direct={borne_du_direct}) : les DELTAS sont masques.")
+                last_report_data = None
         except Exception as e:
             print(f"Impossible de lire le dernier rapport : {e}")
 
@@ -520,7 +569,8 @@ async def main():
                 # FICHE de persona — dans le texte filtre il n'y a plus une asterisque,
                 # par construction.
                 responses, brutes, echelons = await run_scenario_for_bot(
-                    bot_id, scenario, historique_brut=historique_brut
+                    bot_id, scenario, historique_brut=historique_brut,
+                    borne_du_direct=borne_du_direct,
                 )
 
                 # Échec cascade complet
@@ -638,6 +688,7 @@ async def main():
         "timestamp": timestamp,
         "version_bareme": VERSION_BAREME,
         "historique_brut": historique_brut,
+        "borne_du_direct": borne_du_direct,
         "graine_aleatoire": seed,
         "ordre_bots": bots_evalues,
         "sante": sante,
