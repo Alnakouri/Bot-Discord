@@ -137,3 +137,30 @@ def test_le_message_rempli_reste_un_gabarit_fixe():
         "le drapeau qui distingue « message fourni » de « message vide » a disparu : "
         "un gabarit écrit à la main risque d'être remplacé par une phrase du modèle"
     )
+
+
+def test_l_emoji_SURVIT_au_nettoyage():
+    """Un emoji est ce qui rend l'invitation vivante ; rien ne doit le manger.
+
+    Le chemin Twitch le protege deja (la troncature le recolle a la fin), mais c'est ce
+    nettoyeur-ci qui passe en premier, et lui retire les didascalies : la regle
+    `*...*` ne doit pas emporter l'emoji qui suit.
+    """
+    assert _nettoyer_phrase_de_lien("Rejoins la bande, ca pique 🔥🤘") == "Rejoins la bande, ca pique 🔥🤘"
+    assert _nettoyer_phrase_de_lien("*sourit* Viens voir de plus pres 😏") == "Viens voir de plus pres 😏"
+
+
+def test_l_instruction_demande_l_ENVIE_et_interdit_d_inventer():
+    """Une accroche enthousiaste invente un chiffre ou un salon, et le chat y croit.
+
+    Le modele ne sait rien de ce serveur : ni qui y est, ni ce qui s'y passe, ni combien
+    ils sont. L'instruction doit donc demander l'ambiance ET fermer les faits — meme
+    regle que l'annonce de live, ou « enjolive le TON, jamais les FAITS » est deja ecrit.
+    """
+    import inspect
+
+    from shared.twitch.dispatch import DispatchMixin
+
+    source = inspect.getsource(DispatchMixin._generate_link_line)
+    for attendu in ("ENVIE", "n'invente ni chiffre", "emoji", "N'ÉCRIS PAS l'adresse"):
+        assert attendu in source, f"l'instruction ne dit plus : {attendu}"

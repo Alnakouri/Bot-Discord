@@ -338,9 +338,22 @@ class DispatchMixin:
             return None
 
         quoi = label or cmd
+        # ⚠️ « Inviter » ne suffisait pas : le modèle rendait des constats polis. On lui
+        # demande de DONNER ENVIE, et on lui rappelle ce qu'il ne sait pas — il ignore qui
+        # est dans ce serveur, ce qui s'y passe et combien ils sont. Sans cette borne, une
+        # accroche enthousiaste invente un chiffre, un salon ou une récompense, et le chat
+        # y croit. Même règle que l'annonce de live : enjoliver le TON, jamais les FAITS.
+        # L'emoji est explicitement autorisé (un seul) : rien ne le retire sur le chemin
+        # Twitch — la troncature le recolle même à la fin — mais tant qu'on ne le demandait
+        # pas, les phrases sortaient sèches.
         instruction = (
             f"Écris UNE seule phrase très courte (max 120 caractères), en personnage, "
-            f"pour inviter le chat Twitch à rejoindre {quoi}. "
+            f"qui donne ENVIE au chat Twitch de rejoindre {quoi} : une invitation adressée "
+            f"directement à eux, pas une annonce. "
+            f"Promets l'AMBIANCE, jamais un fait : tu ne sais pas qui s'y trouve, ce qui "
+            f"s'y passe, ni combien ils sont — n'invente ni chiffre, ni salon, ni "
+            f"évènement, ni récompense. "
+            f"Tu peux finir par UN emoji, s'il colle à ton personnage. "
             f"N'ÉCRIS PAS l'adresse ni aucun lien : elle sera ajoutée juste après ta phrase. "
             f"Pas de guillemets, pas de didascalie."
         )

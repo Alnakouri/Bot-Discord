@@ -456,14 +456,25 @@ class TwitchAnnouncer:
         title = stream.get("title", "") or "inconnu"
         game = stream.get("game_name", "") or "inconnu"
 
+        # ⚠️ « Donne envie de regarder » rendait des annonces correctes et plates. On
+        # demande maintenant une INVITATION adressée au salon — « venez », pas « il est
+        # en live » — et l'emoji est explicitement autorisé : rien ne le retire sur ce
+        # chemin, mais tant qu'on ne le demandait pas, l'accroche sortait sèche.
+        # La borne d'honnêteté ne bouge PAS : c'est précisément une accroche enthousiaste
+        # qui invente un fait sur le jeu, et le salon y croit.
         system_prompt = (
             f"SYSTEM: {self.personality_prompt}\n"
             "INSTRUCTION: Annonce, DANS TA VOIX et avec TA personnalité, qu'un streamer vient "
             "de lancer un live Twitch. Écris UNE accroche très courte (1 à 2 phrases), "
-            "TOUJOURS positive et enthousiaste, qui met en valeur le streamer et le jeu et donne "
-            "envie de regarder. Tu peux enjoliver le TON, mais reste HONNÊTE : n'invente AUCUN fait "
+            "TOUJOURS positive et enthousiaste, qui met en valeur le streamer et le jeu et "
+            "DONNE ENVIE DE REJOINDRE le live : parle au salon, invite-le franchement à venir "
+            "regarder, ne te contente pas de constater que le live existe. "
+            "Tu PEUX utiliser un ou deux emoji, s'ils collent à ton personnage. "
+            "Tu peux enjoliver le TON, mais reste HONNÊTE : n'invente AUCUN fait "
             "sur le jeu (pas de superlatif présenté comme vrai type « le meilleur jeu de l'année », "
-            "pas de qualité, note, histoire ou détail inventés). Appuie-toi UNIQUEMENT sur le titre "
+            "pas de qualité, note, histoire ou détail inventés), et n'invente rien non plus sur ce "
+            "qui se passe en ce moment dans le live : tu ne l'as pas regardé. "
+            "Appuie-toi UNIQUEMENT sur le titre "
             "du live et le nom du jeu ci-dessous ; si tu ne connais pas le jeu, reste enthousiaste "
             "sans affirmer quoi que ce soit de faux. N'écris PAS le lien (il est ajouté séparément). "
             f"Streamer : {streamer}. Titre du live : {title}. Jeu : {game}."

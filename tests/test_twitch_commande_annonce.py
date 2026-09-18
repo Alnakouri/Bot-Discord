@@ -414,3 +414,27 @@ def test_effacer_la_commande_rend_VRAI_seulement_quand_elle_a_efface():
     assert asyncio.run(effacer_la_commande(ctx, journal)) is True
     assert asyncio.run(effacer_la_commande(
         _Contexte(leve=discord.NotFound(_ReponseHttp(404), "x")), journal)) is False
+
+
+def test_l_accroche_de_live_INVITE_autorise_l_emoji_et_reste_honnete():
+    """Trois exigences qui tiennent ensemble, et qu'on perd une par une en reecrivant.
+
+    - INVITER : « donne envie de regarder » rendait des constats polis (« X est en live »).
+    - EMOJI : rien ne les retire sur ce chemin, mais tant qu'on ne les demandait pas
+      l'accroche sortait seche.
+    - HONNETE : c'est precisement une accroche enthousiaste qui invente une note, un
+      superlatif ou une scene du live que le bot n'a pas regardee — et le salon y croit.
+    """
+    import inspect
+
+    from shared.twitch_announcer import TwitchAnnouncer
+
+    source = inspect.getsource(TwitchAnnouncer._generate_hype)
+    for attendu in (
+        "DONNE ENVIE DE REJOINDRE",
+        "emoji",
+        "n'invente AUCUN fait",
+        "tu ne l'as pas regardé",
+        "N'écris PAS le lien",
+    ):
+        assert attendu in source, f"l'instruction d'annonce ne dit plus : {attendu}"
