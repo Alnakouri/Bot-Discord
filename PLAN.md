@@ -174,6 +174,47 @@ en quelques minutes d'activite reelle. Le filet reste donc le garde-fou, quoi qu
 
 ---
 
+## LA BASCULE DE MODELE — verdict du 18/09 a 14:00
+
+`tests/eval/reports/eval_20260918_1400.json`, bareme 3, les trois bots `fiable: true`,
+0 appel echoue. Reference : la passe de 11:09, avant la bascule.
+
+             fidelite       longueur      didascalies       echelon servi
+    johnny  3.70 -> 5.00  3.50 -> 4.70   13/17 -> 1/17    gemma x16, ministral x1
+    sheo    4.10 -> 4.70  3.70 -> 4.70   15/17 -> 0/17    gemma x17
+    alfred  4.70 -> 4.20  4.60 -> 4.50   10/17 -> 0/17    gemma x17
+
+**Johnny est le resultat du chantier.** +1,30 en fidelite, +1,20 en longueur, et les
+didascalies passent de 13 a 1 — sur le bot ou TROIS interventions de prompt avaient
+echoue, et dont on avait conclu le 17/09 que « le modele n'y change RIEN ». C'etait vrai
+des trois tetes testees ce jour-la ; ce n'etait pas vrai du modele en general.
+
+**Sheogorath confirme, et par le chemin prevu** : il a ete servi 17/17 par gemma, donc par
+son echelon de SECOURS — Groq etait encore throttle, exactement le cas pour lequel gemma
+avait ete place en deuxieme plutot qu'en tete.
+
+### ⚠️ Alfred : la didascalie part, la RECITATION arrive
+
+    recitation  2/17, record 83 caracteres   (reference : 0/17, record 18)
+
+Deux provocations differentes recoivent la meme reponse au caractere pres :
+
+    « Quelle éloquence. Monsieur rivalise avec les plus grands penseurs... du caniveau. 🧐 »
+
+C'est `Alfred/alfred_data.py:61`, un EXEMPLE de sa fiche. Johnny et Sheogorath, meme
+modele, memes conditions : 0 recitation. C'est donc la fiche d'Alfred qui se prete a etre
+citee. Sa baisse de 0,50 en fidelite est dans le bruit (+/-0,4) ; la recitation, non — et
+ni le juge (4.20, il la trouve fidele) ni l'anti-tic (il compare les reponses entre elles)
+ne peuvent la voir. [[gotcha-un-modele-obeissant-RECITE-la-fiche]]
+
+**Deux sorties, DECISION D'AHMED :**
+1. remettre Alfred sur ministral — ses 10 didascalies sur 17 reviennent, mais il improvise ;
+2. **de-citer sa fiche** : remplacer les repliques d'exemple par des DESCRIPTIONS du
+   registre. On garde le gain et on tue la recitation. C'est la meme lecon que les
+   didascalies : ce qu'une fiche DEMONTRE, un modele le REPRODUIT.
+
+---
+
 ## CE QUE LE RUN A MONTRÉ (le matin du 17/09, bareme 2)
 
 Six bots, **barème 2**, `fiable: true` pour les six, **0 appel échoué, 0 score à ‑1**.
