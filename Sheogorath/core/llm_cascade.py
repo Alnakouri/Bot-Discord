@@ -312,6 +312,66 @@ _BORNE_TEXTE = 15.0
 _BORNE_MEDIA = 45.0
 
 
+# ---------------------------------------------------------------------------
+# QUARANTAINE D'ECHELON : un modele qui EXPIRE ne doit pas couter sa borne a CHAQUE
+# message.
+#
+# ⚠️ Mesure du 2026-09-18 : `google/gemma-4-31b-it` (NVIDIA) a repondu 26 fois d'affilee
+# en 1,3 a 5,1 s, puis a expire 9 fois de suite pendant plus de 40 minutes — alors que
+# `nemotron`, meme compte, meme point d'entree, repondait en 3,3 s dans la meme minute.
+# Ce n'est ni le reseau, ni un demarrage a froid, ni notre quota : c'est l'echelon qui
+# est parti.
+#
+# Sans quarantaine, un tel echelon en TETE de cascade coute `_BORNE_TEXTE` (15 s) de
+# silence a CHAQUE message avant que le suivant ne reponde. La quarantaine de cle ne
+# couvre pas ce cas : elle ne se declenche que sur un 429, et c'est deliberé
+# ([[gotcha-503-quarantaine-cle]]) — un depassement de delai ne dit rien de la CLE.
+#
+# On ecarte donc le COUPLE (api, modele), pas la cle : les autres modeles du meme
+# fournisseur restent joignables — c'est exactement ce que la mesure ci-dessus montre.
+# L'etat vit dans le processus : chaque bot a le sien, il meurt au redemarrage, et une
+# fausse mise a l'ecart coute au pire 5 minutes sur l'echelon suivant.
+_QUARANTAINE_ECHELON: dict[tuple[str, str], float] = {}
+_QUARANTAINE_ECHELON_DUREE = 300.0
+
+# ⚠️ DEUX depassements de suite, pas un. `gpt-oss-120b` met legitimement 7,75 s sur une
+# question ouverte : un hoquet isole ne doit pas ecarter la tete de cascade de Sheogorath
+# pendant cinq minutes. Une panne franche, elle, se voit tout de suite — gemma a expire
+# NEUF fois d'affilee. Le compteur repart a zero des que l'echelon repond.
+_ECHECS_ECHELON: dict[tuple[str, str], int] = {}
+_QUARANTAINE_ECHELON_SEUIL = 2
+
+
+def _echelon_en_quarantaine(api_name: str, model_name: str) -> bool:
+    """L'echelon est-il ecarte pour l'instant ? Purge l'entree expiree au passage."""
+    fin = _QUARANTAINE_ECHELON.get((api_name, model_name))
+    if fin is None:
+        return False
+    if time.time() >= fin:
+        _QUARANTAINE_ECHELON.pop((api_name, model_name), None)
+        return False
+    return True
+
+
+def _ecarter_l_echelon(api_name: str, model_name: str) -> bool:
+    """Compte un depassement. Au `_QUARANTAINE_ECHELON_SEUIL`e d'affilee, ecarte l'echelon.
+
+    Rend True si l'echelon vient d'etre mis de cote.
+    """
+    cle = (api_name, model_name)
+    _ECHECS_ECHELON[cle] = _ECHECS_ECHELON.get(cle, 0) + 1
+    if _ECHECS_ECHELON[cle] < _QUARANTAINE_ECHELON_SEUIL:
+        return False
+    _QUARANTAINE_ECHELON[cle] = time.time() + _QUARANTAINE_ECHELON_DUREE
+    return True
+
+
+def _echelon_a_repondu(api_name: str, model_name: str) -> None:
+    """Une reponse efface l'ardoise : le compteur ne doit pas cumuler des hoquets
+    separes par des heures de bon fonctionnement."""
+    _ECHECS_ECHELON.pop((api_name, model_name), None)
+
+
 async def generate_response(
     *,
     routing: dict,
@@ -359,6 +419,17 @@ async def generate_response(
         _raison = None
         api_key = None
         try:
+            # ⚠️ Un echelon qui vient d'expirer est SAUTE, sans l'appeler : sinon il coute
+            # sa borne (15 s de silence) a chaque message tant qu'il est parti. Trace sous
+            # `raison="quarantaine_echelon"` — un saut delibere, pas une panne : le tableau
+            # de bord comptait deja les echelons SAUTES comme des erreurs, 230 fois sur 287.
+            if _echelon_en_quarantaine(client_type, model_name):
+                _raison = "quarantaine_echelon"
+                logger.info(
+                    f"⏭️ [{client_type.upper()}] {model_name} en quarantaine (delai depasse "
+                    f"recemment) → echelon suivant, sans appel"
+                )
+                continue
             try:
                 # 1. GEMINI
                 if client_type == "gemini":
@@ -533,6 +604,15 @@ async def generate_response(
                 if not error_msg:
                     error_msg = type(e).__name__
                 _raison = type(e).__name__
+                # Un depassement de delai vise l'ECHELON, pas la cle : on l'ecarte
+                # quelques minutes pour ne pas repayer la borne au message suivant.
+                if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+                    if _ecarter_l_echelon(client_type, model_name):
+                        logger.warning(
+                            f"⏱️ [{client_type.upper()}] {model_name} a depasse la borne "
+                            f"{_QUARANTAINE_ECHELON_SEUIL} fois de suite : ecarte "
+                            f"{int(_QUARANTAINE_ECHELON_DUREE)} s"
+                        )
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
                 # ⚠️ Un 429 dit POURQUOI dans ses en-tetes : sans ca on ne voit qu'un
                 # echec de plus, alors que la cause est un quota par minute depasse.
@@ -555,6 +635,10 @@ async def generate_response(
         finally:
             _latence = int((time.perf_counter() - _depart) * 1000)
             _succes = bool(response_text)
+            if _succes:
+                # L'ardoise de cet echelon est effacee : deux hoquets separes par des
+                # heures de bon fonctionnement ne doivent pas s'additionner.
+                _echelon_a_repondu(client_type, model_name)
             if not _succes and _raison is None:
                 # Aucune branche n'a tourné (client absent, échelon inconnu) : pas un
                 # échec d'API. Sans ça, la base se remplit d'échecs sans cause — le

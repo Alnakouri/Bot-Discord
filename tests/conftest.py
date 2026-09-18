@@ -21,3 +21,25 @@ BOT_FILES = glob.glob(str(_racine / "*Bot" / "bot_*.py")) + [
     str(_racine / "Alfred" / "bot_alfred.py"),
     str(_racine / "Sheogorath" / "bot_sheogorath.py")
 ]
+
+
+# La quarantaine d'echelon de la cascade est un etat de MODULE : voulu en production
+# (chaque bot a le sien, il meurt au redemarrage), mais il fuit d'un test a l'autre.
+# Vu le 2026-09-18 : un test qui fait expirer Groq ecartait l'echelon, et un test SUIVANT,
+# dans un autre fichier, voyait sa tete de cascade sautee sans rien y comprendre.
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _quarantaine_echelon_vierge():
+    """Chaque test part d'une cascade sans echelon ecarte."""
+    try:
+        import shared.llm_cascade as _cascade
+    except Exception:
+        yield
+        return
+    _cascade._QUARANTAINE_ECHELON.clear()
+    _cascade._ECHECS_ECHELON.clear()
+    yield
+    _cascade._QUARANTAINE_ECHELON.clear()
+    _cascade._ECHECS_ECHELON.clear()
