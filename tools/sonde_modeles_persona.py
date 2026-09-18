@@ -280,6 +280,11 @@ def main():
     ap.add_argument("--json", help="ecrire le rapport complet dans ce fichier")
     ap.add_argument("--message", action="append", help="limiter a ce(s) cas de test")
     ap.add_argument("--modele", action="append", help="limiter a ce(s) modele(s)")
+    ap.add_argument("--ajouter", action="append", metavar="FOURNISSEUR:MODELE",
+                    help="sonder un modele HORS des listes de candidats, p.ex. "
+                         "--ajouter nvidia:ai21labs/jamba-1.5-large-instruct. "
+                         "`--modele` ne sait que FILTRER les listes : un id inconnu y "
+                         "vidait la selection et la sonde ne mesurait rien, en silence.")
     ap.add_argument("--force-court", action="store_true",
                     help="ancien comportement : ajoute une consigne de brievete au "
                          "prompt, ce qui masque la verbosite reelle du modele")
@@ -303,6 +308,21 @@ def main():
         candidats += [("gemini", m) for m in CANDIDATS_GEMINI]
     if args.modele:
         candidats = [(f, m) for f, m in candidats if m in args.modele]
+        inconnus = [m for m in args.modele if m not in {mod for _, mod in candidats}]
+        if inconnus:
+            # Sans ce cri, `--modele <id absent des listes>` rendait une selection VIDE :
+            # la sonde affichait le nom du bot, n'appelait rien, et sortait a 0.
+            print("[!] Hors des listes de candidats, donc ignores par --modele : "
+                  + ", ".join(inconnus) + "  (utiliser --ajouter fournisseur:modele)")
+    for entree in (args.ajouter or []):
+        fournisseur, _, modele = entree.partition(":")
+        if not modele:
+            print("[!] --ajouter attend fournisseur:modele, recu : " + entree)
+            continue
+        if fournisseur not in clients:
+            print("[!] Fournisseur indisponible (cle absente ?) : " + fournisseur)
+            continue
+        candidats.append((fournisseur, modele))
 
     bots = args.bot or sorted(BOTS)
     cas = [(n, m) for n, m in MESSAGES if not args.message or n in args.message]

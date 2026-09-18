@@ -5,7 +5,6 @@ import random
 import datetime
 import aiohttp
 import discord
-from discord.ext import commands
 from pathlib import Path
 
 # Path configuration
