@@ -485,9 +485,21 @@ class TwitchAnnouncer:
         # [[gotcha-le-prompt-enseigne-le-tic-interdit]], déjà payé deux fois ici, et la
         # raison pour laquelle la fiche d'Alfred a été dé-citée (`3e3c91e`).
         #
-        # Le GENRE est le même trou, pas encore mordu : le français accorde, l'API ne rend
-        # aucun genre, et deviner se trompe une fois sur deux sur une personne réelle. On
-        # demande donc une tournure qui n'ait pas à choisir.
+        # Le GENRE est le même trou : le français accorde, l'API ne rend aucun genre, et il
+        # s'agit d'une personne réelle.
+        #
+        # ⚠️ Premier jet inefficace, MESURÉ : « tourne ta phrase pour n'avoir pas à le
+        # deviner » a rendu 4 tirages masculins sur 6 pour une streameuse (« ce mec »,
+        # « il gère », « il se fait écrabouiller »). Une consigne NÉGATIVE et abstraite ne
+        # tient pas — le français masculinise par défaut et le modèle suit la pente. La
+        # consigne dit donc maintenant quoi ÉCRIRE, pas quoi éviter : le nom, et rien que
+        # le nom. Même leçon que la longueur de Johnny, qu'aucune interdiction n'a jamais
+        # raccourcie.
+        #
+        # ⚠️ Le vrai correctif serait de CONNAÎTRE le pronom, pas de le contourner : il
+        # n'est dans aucune réponse de l'API Twitch, il faudrait le saisir par streameur
+        # côté dashboard. Tant qu'il n'y est pas, le nom seul est la seule tournure qui ne
+        # se trompe jamais.
         system_prompt = (
             f"SYSTEM: {self.personality_prompt}\n"
             "INSTRUCTION: Annonce, DANS TA VOIX et avec TA personnalité, qu'un streamer vient "
@@ -507,8 +519,9 @@ class TwitchAnnouncer:
             "Ta phrase ne doit donc jamais le présenter comme la personne EN COMPAGNIE de "
             "qui on joue, et tu ne dois pas supposer que le live se joue à plusieurs — sauf "
             "si le titre ci-dessous le dit explicitement. "
-            "Tu ne connais pas non plus son genre : tourne ta phrase pour n'avoir pas à le "
-            "deviner, plutôt que de choisir au hasard. "
+            "Tu ignores aussi si cette personne est un homme ou une femme, et rien ici ne "
+            "te le dira : DÉSIGNE-LA TOUJOURS PAR SON NOM, et par rien d'autre — jamais un "
+            "pronom, jamais un mot qui porte un genre pour parler d'elle. "
             "Appuie-toi UNIQUEMENT sur le titre "
             "du live et le nom du jeu ci-dessous ; si tu ne connais pas le jeu, reste enthousiaste "
             "sans affirmer quoi que ce soit de faux. N'écris PAS le lien (il est ajouté séparément). "

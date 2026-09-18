@@ -497,10 +497,18 @@ def test_l_accroche_n_invente_rien_sur_LA_PERSONNE_qui_stream():
     assert "à plusieurs" in source, (
         "l'instruction ne refuse plus de supposer un live joue a plusieurs"
     )
-    # 3. le genre : l'API n'en rend aucun et le francais accorde.
-    assert "genre" in source, (
-        "l'instruction ne dit plus que le genre du streamer est inconnu : un bot qui "
-        "devine se trompe une fois sur deux sur une personne reelle"
+    # 3. le genre. ⚠️ Le verrou vise la CONSIGNE POSITIVE, pas le mot « genre » : le
+    #    premier jet disait « tourne ta phrase pour n'avoir pas a le deviner » et rendait
+    #    4 tirages masculins sur 6 pour une streameuse. Mesure du 2026-09-18, memes
+    #    conditions, apres reecriture : 1 sur 6. Une interdiction abstraite ne tient pas
+    #    contre le masculin par defaut du francais ; dire quoi ECRIRE tient.
+    assert "DÉSIGNE-LA TOUJOURS PAR SON NOM" in source, (
+        "l'instruction ne dit plus de nommer la personne : sans consigne POSITIVE, le "
+        "modele retombe sur le masculin par defaut et invente le genre d'une personne reelle"
+    )
+    assert "homme ou une femme" in source, (
+        "l'instruction ne dit plus que le genre est INCONNU : la consigne de nommage perd "
+        "sa raison d'etre et se fait negocier au premier tirage"
     )
 
 
