@@ -1,6 +1,7 @@
 import os
 import sys
 import asyncio
+from contextlib import contextmanager
 from pathlib import Path
 from groq import Groq
 from mistralai import Mistral
@@ -16,6 +17,9 @@ from shared.api_manager import MultiAPIKeyManager
 from shared.smart_router import RequestType
 from shared.models import NVIDIA_BASE_URL
 from shared.llm_cascade import generate_response
+# Le MODULE, et pas seulement la fonction : `_echelon_qui_repond` y remplace le temps
+# d'un appel le traceur de la cascade, et c'est le module qui porte ce nom-là.
+import shared.llm_cascade as llm_cascade
 from tests.eval.persona_loader import load_persona, load_filtre
 
 # Charger les variables d'environnement à partir de JohnnyBot (qui contient .env.encrypted et .master_key)
@@ -29,6 +33,41 @@ except Exception as e:
 # constante partagee : `run_eval` s'en sert pour court-circuiter le juge et les mesures
 # deterministes, et une deuxieme copie du litteral les desarmerait en silence.
 ECHEC_CASCADE = "[Toute la cascade de modèles a échoué]"
+
+
+@contextmanager
+def _echelon_qui_repond():
+    """Rend la liste des échelons (``api/modele``) qui ont RÉPONDU pendant le bloc.
+
+    ⚠️ Sans cette information, le compte d'astérisques se lit à l'envers. Le
+    2026-09-18, Sugar est passée de 0/17 à 11/17 sans qu'un mot de sa fiche ne bouge :
+    Gemini était à sec et ministral-14b avait répondu à sa place — un modèle mesuré à
+    11/18 astérisques dès le 04/09. Le chiffre ne parlait pas de la fiche, il parlait du
+    modèle, et la conclusion tirée ce soir-là a dû être corrigée le lendemain.
+    Cf. [[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]].
+
+    On OBSERVE `tracer_appel` — le seul endroit où la cascade nomme l'échelon qu'elle
+    vient d'essayer — au lieu d'ajouter un paramètre à `generate_response` :
+    `shared/llm_cascade.py` est VENDORÉ dans les six bots (`tools/vendor_core.py`), et
+    une commodité de harnais n'a pas à faire bouger le code que les bots exécutent en
+    production. L'espion délègue au vrai traceur : rien n'est perdu en base.
+
+    Le harnais est séquentiel — un bot, un scénario, un tour à la fois — donc un
+    observateur de portée module ne peut pas mélanger deux appels.
+    """
+    vus = []
+    vrai = llm_cascade.tracer_appel
+
+    def _espion(*args, **kwargs):
+        if kwargs.get("succes"):
+            vus.append(f"{kwargs.get('api')}/{kwargs.get('modele')}")
+        return vrai(*args, **kwargs)
+
+    llm_cascade.tracer_appel = _espion
+    try:
+        yield vus
+    finally:
+        llm_cascade.tracer_appel = vrai
 
 # Clés d'API
 GEMINI_API_KEYS = [
@@ -67,12 +106,20 @@ nvidia_client = (
     if NVIDIA_API_KEY else None
 )
 
-async def run_scenario_for_bot(bot_id: str, scenario: dict) -> tuple[list[str], list[str]]:
+async def run_scenario_for_bot(
+    bot_id: str,
+    scenario: dict,
+    historique_brut: bool = False,
+) -> tuple[list[str], list[str], list[str | None]]:
     """
     Exécute un scénario (pouvant comporter plusieurs tours) pour un bot donné.
 
-    Rend DEUX listes : les réponses telles que l'utilisateur les lit (filtrées), et les
-    mêmes AVANT le filtre de sortie du bot.
+    Rend TROIS listes, de même longueur : les réponses telles que l'utilisateur les lit
+    (filtrées), les mêmes AVANT le filtre de sortie du bot, et l'échelon (``api/modele``)
+    qui a répondu à chaque tour — `None` si aucun appel n'a été tracé.
+
+    `historique_brut=True` remet le texte NON filtré dans `conversation_history` : voir
+    le commentaire au point où l'historique est nourri, plus bas.
 
     ⚠️ La brute n'est pas un confort. Le 2026-09-17, après avoir posé un filet
     déterministe (LOT 1) ET réécrit les fiches de persona (LOT 2), il était impossible de
@@ -96,6 +143,7 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> tuple[list[str], 
     conversation_history = []
     responses = []
     responses_brutes = []
+    echelons = []
     
     # Scénario info
     user_messages = scenario.get("user_messages", [])
@@ -120,32 +168,37 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> tuple[list[str], 
         }
         
         # Appel de la cascade LLM
-        response = await generate_response(
-            routing=routing,
-            system_prompt=system_prompt,
-            transcript=transcript,
-            user_message=user_msg,
-            conversation_history=conversation_history,
-            media_data=None,
-            mime_type="",
-            key_manager=key_manager,
-            mistral_client=mistral_client,
-            groq_client=groq_client,
-            nvidia_client=nvidia_client,
-            bot_label=bot_label,
-            temperature=0.8,
-            max_tokens=300,
-            # ⚠️ La borne par défaut de la cascade (`_BORNE_TEXTE`, 15 s) est calibrée
-            # pour un bot EN DIRECT : au-delà, l'utilisateur voit un silence, donc mieux
-            # vaut basculer d'échelon. Ici personne n'attend devant un écran, et la borne
-            # se retourne contre nous : un 429 Groq est absorbé par le SDK qui DORT ~36 s
-            # ([[gotcha-429-groq-dort-en-silence]]), et 15 s transforment cette attente
-            # légitime en `TimeoutError`. Mesuré le 2026-09-16 : 14 appels Groq d'affilée
-            # perdus ainsi, 0 réponse obtenue, alors que l'hôte joignait l'API en 0,3 s.
-            # Un lot patient mesure les bots ; un lot pressé ne mesure que sa propre borne.
-            call_timeout=90.0,
-        )
-        
+        with _echelon_qui_repond() as echelons_vus:
+            response = await generate_response(
+                routing=routing,
+                system_prompt=system_prompt,
+                transcript=transcript,
+                user_message=user_msg,
+                conversation_history=conversation_history,
+                media_data=None,
+                mime_type="",
+                key_manager=key_manager,
+                mistral_client=mistral_client,
+                groq_client=groq_client,
+                nvidia_client=nvidia_client,
+                bot_label=bot_label,
+                temperature=0.8,
+                max_tokens=300,
+                # ⚠️ La borne par défaut de la cascade (`_BORNE_TEXTE`, 15 s) est calibrée
+                # pour un bot EN DIRECT : au-delà, l'utilisateur voit un silence, donc mieux
+                # vaut basculer d'échelon. Ici personne n'attend devant un écran, et la borne
+                # se retourne contre nous : un 429 Groq est absorbé par le SDK qui DORT ~36 s
+                # ([[gotcha-429-groq-dort-en-silence]]), et 15 s transforment cette attente
+                # légitime en `TimeoutError`. Mesuré le 2026-09-16 : 14 appels Groq d'affilée
+                # perdus ainsi, 0 réponse obtenue, alors que l'hôte joignait l'API en 0,3 s.
+                # Un lot patient mesure les bots ; un lot pressé ne mesure que sa propre borne.
+                call_timeout=90.0,
+            )
+
+        # Un seul échelon peut rendre un succès par appel. Liste vide = rien de tracé :
+        # cascade entièrement muette, ou `generate_response` remplacé par une sonde.
+        echelons.append(echelons_vus[-1] if echelons_vus else None)
+
         responses_brutes.append(response if response is not None else ECHEC_CASCADE)
 
         if response is None:
@@ -157,9 +210,21 @@ async def run_scenario_for_bot(bot_id: str, scenario: dict) -> tuple[list[str], 
             response = filtre_sortie(response, user_msg)
 
         responses.append(response)
-        
-        # Mise à jour de l'historique pour le tour suivant
+
+        # Mise à jour de l'historique pour le tour suivant.
         conversation_history.append({"role": "user", "parts": [user_msg]})
-        conversation_history.append({"role": "model", "parts": [response]})
-        
-    return responses, responses_brutes
+        # ⚠️ Ce qui repart dans l'historique est ce que l'utilisateur A LU : sur Discord,
+        # le tour suivant relit le message FILTRÉ, celui qui a été envoyé. Le harnais
+        # doit donc filtrer ici aussi, sinon il mesure une conversation qui n'a jamais eu
+        # lieu — [[gotcha-le-harnais-mesure-le-modele-pas-le-bot]].
+        #
+        # `historique_brut=True` désarme ce choix pour UNE question précise, ouverte
+        # depuis le 2026-09-17 : depuis que l'historique est assaini, le modèle s'imite
+        # lui-même SANS astérisques, et la baisse de production observée peut venir de la
+        # fiche de persona, de cet historique propre, ou des deux. Le drapeau sert à
+        # trancher cette question-là, jamais à mesurer les bots : un run mené ainsi ne
+        # décrit plus le bot réel, et `run_eval.py` refuse de le comparer à un run normal.
+        memoire = responses_brutes[-1] if historique_brut else response
+        conversation_history.append({"role": "model", "parts": [memoire]})
+
+    return responses, responses_brutes, echelons

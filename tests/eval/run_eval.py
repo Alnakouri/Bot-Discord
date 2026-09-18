@@ -15,6 +15,7 @@ import shutil
 import random
 import re
 import time
+from collections import Counter
 from datetime import datetime
 
 # Injection du répertoire racine dans sys.path
@@ -243,6 +244,32 @@ def bots_demandes(argv: list[str] = None) -> list[str]:
 
 
 
+def historique_brut_demande(argv: list[str] = None) -> bool:
+    """Lit `--historique-brut` : le texte NON filtré repart dans l'historique du modèle.
+
+    ⚠️ Ce n'est pas un réglage, c'est une EXPÉRIENCE, et elle ne mesure plus les bots.
+    Depuis que le harnais applique le filtre de sortie (2026-09-17), l'historique rendu au
+    modèle ne contient plus une astérisque : il s'imite lui-même, propre. La baisse de
+    production mesurée le 18/09 (alfred 16/17 -> 9/17, johnny 16/17 -> 11/17, à modèle
+    constant) peut donc venir de la fiche réécrite, de cet historique assaini, ou des deux.
+    Ce drapeau isole la variable : la fiche reste en place, l'historique redevient sale.
+
+    Un run mené ainsi décrit une conversation qui n'a pas lieu sur Discord — là-bas le tour
+    suivant relit le message ENVOYÉ, donc filtré. Il est marqué comme tel dans le rapport,
+    et ses deltas ne se comparent pas à ceux d'un run normal.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    return "--historique-brut" in argv
+
+
+def _resume_echelons(compteur) -> str:
+    """« mistral/ministral-14b x15, gemini/<le-modele> x2 », du plus servi au moins."""
+    if not compteur:
+        return "echelon inconnu"
+    parts = sorted(compteur.items(), key=lambda kv: (-kv[1], kv[0]))
+    return ", ".join(f"{nom} x{n}" for nom, n in parts)
+
+
 def compte_asterisques(results: list[dict]) -> dict:
     """Compte, par bot, les réponses qui portent des `*…*` AVANT puis APRÈS le filtre.
 
@@ -252,23 +279,42 @@ def compte_asterisques(results: list[dict]) -> dict:
       - seule la colonne APRÈS bouge -> c'est le FILET déterministe qui les retire.
     Le score du juge, lui, ne sait pas répondre : il lit le texte filtré, où il n'y a plus
     une seule astérisque par construction.
+
+    ⚠️ Et ces deux colonnes ne veulent RIEN DIRE sans le modèle qui a répondu. Sugar est
+    passée de 0/17 le 17/09 à 11/17 le 18/09 sans qu'un mot de sa fiche ne bouge : Gemini
+    était à sec, ministral-14b a répondu à sa place, et ministral était déjà mesuré à
+    11/18 astérisques le 04/09. Lu sans son échelon, le tableau disait « la fiche a
+    régressé » ; lu avec, il ne disait rien du tout sur la fiche. D'où `echelons`, rempli
+    ici et affiché à côté du compte.
+    [[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]]
     """
     par_bot = {}
     for res in results:
-        e = par_bot.setdefault(res["bot"], {"avant": 0, "apres": 0, "total": 0})
+        e = par_bot.setdefault(
+            res["bot"], {"avant": 0, "apres": 0, "total": 0, "echelons": Counter()}
+        )
         brutes = res.get("responses_brutes") or []
         filtrees = res.get("responses") or []
+        echelons = res.get("echelons") or []
         for i, rep in enumerate(filtrees):
             e["total"] += 1
             if _MOTIF_ASTERISQUE.search(rep):
                 e["apres"] += 1
             if i < len(brutes) and _MOTIF_ASTERISQUE.search(brutes[i]):
                 e["avant"] += 1
+            if i < len(echelons) and echelons[i]:
+                e["echelons"][echelons[i]] += 1
     return par_bot
 
 
 async def main():
     print("[START] Demarrage du harnais d'evaluation des personas...")
+
+    historique_brut = historique_brut_demande()
+    if historique_brut:
+        print("[HARNAIS] ⚠️ --historique-brut : le texte NON filtre repart dans "
+              "l'historique du modele. Ce run ISOLE l'effet de la fiche ; il ne decrit "
+              "PAS le bot reel, ou l'historique est ce que l'utilisateur a lu.")
 
     # 1. Charger les scénarios
     eval_dir = os.path.dirname(os.path.abspath(__file__))
@@ -296,6 +342,15 @@ async def main():
                 print(f"[REF] ⚠️ Bareme different (reference={bareme_ref}, courant="
                       f"{VERSION_BAREME}) : les DELTAS sont masques, seuls les scores "
                       f"bruts de ce run sont exploitables.")
+                last_report_data = None
+            # Même raison, autre cause : un run à historique brut ne nourrit pas le modèle
+            # de la même façon. Comparer les deux attribuerait aux bots un écart qui vient
+            # du harnais. Les rapports d'avant le 2026-09-18 n'ont pas ce champ — ils ont
+            # tous été menés à historique FILTRÉ.
+            elif bool((last_report_data or {}).get("historique_brut", False)) != historique_brut:
+                ref_brut = bool((last_report_data or {}).get("historique_brut", False))
+                print(f"[REF] ⚠️ Mode d'historique different (reference brut={ref_brut}, "
+                      f"courant brut={historique_brut}) : les DELTAS sont masques.")
                 last_report_data = None
         except Exception as e:
             print(f"Impossible de lire le dernier rapport : {e}")
@@ -328,7 +383,9 @@ async def main():
                 # sans la brute, impossible de dire si un progres vient du FILET ou de la
                 # FICHE de persona — dans le texte filtre il n'y a plus une asterisque,
                 # par construction.
-                responses, brutes = await run_scenario_for_bot(bot_id, scenario)
+                responses, brutes, echelons = await run_scenario_for_bot(
+                    bot_id, scenario, historique_brut=historique_brut
+                )
 
                 # Échec cascade complet
                 echec_cascade = any(resp == ECHEC_CASCADE for resp in responses)
@@ -349,6 +406,7 @@ async def main():
                         "success": False,
                         "responses": responses,
                         "responses_brutes": brutes,
+                        "echelons": echelons,
                         "user_messages": scenario["user_messages"],
                         "scores": {m: -1 for m in METRICS},
                         "verdict": "Non mesure : la cascade du bot n'a rendu aucune reponse",
@@ -396,6 +454,7 @@ async def main():
                     "success": success,
                     "responses": responses,
                     "responses_brutes": brutes,
+                    "echelons": echelons,
                     "user_messages": scenario["user_messages"],
                     "scores": scores,
                     "verdict": scores.get("verdict", "Juge indisponible"),
@@ -421,6 +480,7 @@ async def main():
                     "success": False,
                     "responses": [],
                     "responses_brutes": [],
+                    "echelons": [],
                     "user_messages": scenario["user_messages"],
                     "scores": {"fidelite": -1, "ton_fr": -1, "anti_contamination": -1, "anti_fuite": -1, "longueur": -1},
                     "verdict": f"Erreur d'execution: {e}",
@@ -441,6 +501,7 @@ async def main():
     new_report_data = {
         "timestamp": timestamp,
         "version_bareme": VERSION_BAREME,
+        "historique_brut": historique_brut,
         "graine_aleatoire": seed,
         "ordre_bots": bots_evalues,
         "sante": sante,
@@ -519,6 +580,9 @@ async def main():
             else:
                 note = "⚠️ le filtre en laisse passer"
             print(f" - {bot:<12} : {e['avant']:>2}/{e['total']:<3} -> {e['apres']:>2}/{e['total']:<3}  ({note})")
+            # ⚠️ Le compte AVANT appartient au MODELE autant qu'a la fiche : sans cette
+            # ligne, une bascule d'echelon se lit comme une regression de persona.
+            print(f"   {'':<12}   echelons : {_resume_echelons(e['echelons'])}")
     else:
         print(" Aucune reponse mesuree.")
 

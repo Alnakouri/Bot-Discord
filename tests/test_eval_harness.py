@@ -782,7 +782,9 @@ def test_le_runner_rend_la_filtree_ET_la_brute():
     runner.generate_response = _faux_appel
     try:
         scenario = {"id": "sonde", "user_messages": ["salut"], "transcript": ""}
-        filtrees, brutes = asyncio.run(runner.run_scenario_for_bot("alfred", scenario))
+        filtrees, brutes, _echelons = asyncio.run(
+            runner.run_scenario_for_bot("alfred", scenario)
+        )
     finally:
         runner.generate_response = vrai
 
@@ -825,9 +827,303 @@ def test_le_compte_d_asterisques_separe_avant_et_apres():
          "responses_brutes": ["Rien a signaler."]},
     ]
     compte = compte_asterisques(results)
-    assert compte["alfred"] == {"avant": 1, "apres": 0, "total": 1}, (
+    assert compte["alfred"] == {"avant": 1, "apres": 0, "total": 1, "echelons": {}}, (
         "alfred : le modèle en produit, le filet les retire — c'est le FILET qui agit"
     )
-    assert compte["sugar"] == {"avant": 0, "apres": 0, "total": 1}, (
+    assert compte["sugar"] == {"avant": 0, "apres": 0, "total": 1, "echelons": {}}, (
         "sugar : rien à retirer — c'est la FICHE qui tient"
     )
+
+
+# ───────── L'échelon qui a répondu, à côté du compte (2026-09-18) ──────────────────────
+
+
+def _scenario(*messages):
+    return {"id": "sonde", "user_messages": list(messages), "transcript": ""}
+
+
+def _sans_tracage():
+    """Remplace le vrai traceur par un muet : un test n'écrit pas dans `api_usage.db`.
+
+    [[gotcha-pytest-pollue-data]] — et l'espion du runner DÉLÈGUE au traceur qu'il
+    trouve, donc c'est bien ici qu'il faut couper.
+    """
+    import shared.llm_cascade as llm_cascade
+
+    vrai = llm_cascade.tracer_appel
+    llm_cascade.tracer_appel = lambda *a, **k: None
+    return llm_cascade, vrai
+
+
+def test_le_runner_nomme_l_echelon_qui_a_repondu():
+    """⚠️ Le compte d'astérisques AVANT filtrage appartient au MODÈLE autant qu'à la fiche.
+
+    Sugar est passée de 0/17 le 17/09 à 11/17 le 18/09 sans qu'un mot de sa fiche ne
+    bouge : Gemini était à sec, ministral-14b avait répondu à sa place. Lu sans son
+    échelon, le tableau accusait la fiche.
+    [[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]]
+    """
+    import asyncio
+    import tests.eval.runner as runner
+
+    llm_cascade, vrai_traceur = _sans_tracage()
+
+    async def _faux_appel(**kwargs):
+        # Comme la vraie cascade : l'échelon raté, puis celui qui répond.
+        llm_cascade.tracer_appel(bot="alfred", api="gemini", modele="un-modele-gemini",
+                                 index_cle=0, succes=False, raison="429")
+        llm_cascade.tracer_appel(bot="alfred", api="mistral", modele="ministral-14b",
+                                 index_cle=0, succes=True)
+        return "Le the est servi, Monsieur."
+
+    vrai_appel = runner.generate_response
+    runner.generate_response = _faux_appel
+    try:
+        _f, _b, echelons = asyncio.run(runner.run_scenario_for_bot("alfred", _scenario("salut")))
+    finally:
+        runner.generate_response = vrai_appel
+        llm_cascade.tracer_appel = vrai_traceur
+
+    assert echelons == ["mistral/ministral-14b"], (
+        f"l'echelon qui a REPONDU doit etre nomme, pas celui qui a echoue : {echelons}"
+    )
+
+
+def test_une_cascade_MUETTE_ne_nomme_aucun_echelon():
+    """⚠️ Le trou qu'une mutation a ouvert : sans le filtre sur `succes`, l'espion garde
+    le DERNIER échelon tracé — et quand toute la cascade a échoué, c'est un échelon qui
+    n'a rien produit. Le rapport nommerait alors nemotron comme auteur d'une réponse qui
+    n'existe pas, et le compte d'astérisques la lui attribuerait.
+
+    Tant que la cascade répond, le dernier tracé EST le bon (elle s'arrête là) : c'est
+    exactement le cas où un verrou trop faible reste vert.
+    [[gotcha-verrou-trop-faible]]
+    """
+    import asyncio
+    import tests.eval.runner as runner
+
+    llm_cascade, vrai_traceur = _sans_tracage()
+
+    async def _cascade_muette(**kwargs):
+        for api, modele in (("gemini", "flash-lite"), ("mistral", "ministral-14b"),
+                            ("nvidia", "nemotron")):
+            llm_cascade.tracer_appel(bot="alfred", api=api, modele=modele,
+                                     index_cle=0, succes=False, raison="429")
+        return None
+
+    vrai_appel = runner.generate_response
+    runner.generate_response = _cascade_muette
+    try:
+        filtrees, brutes, echelons = asyncio.run(
+            runner.run_scenario_for_bot("alfred", _scenario("salut"))
+        )
+    finally:
+        runner.generate_response = vrai_appel
+        llm_cascade.tracer_appel = vrai_traceur
+
+    assert echelons == [None], (
+        f"aucun echelon n'a repondu : le rapport doit le dire, pas nommer le dernier "
+        f"essai rate — {echelons}"
+    )
+    assert filtrees == [runner.ECHEC_CASCADE] and brutes == [runner.ECHEC_CASCADE], (
+        "la sentinelle d'echec doit rester intacte des deux cotes"
+    )
+
+
+def test_l_espion_rend_le_traceur_intact_et_ne_lui_mange_rien():
+    """L'observation ne doit RIEN retirer à la base : l'espion délègue, il ne remplace pas.
+
+    Et il se retire de lui-même — un traceur laissé en place fuirait sur tout le reste
+    de la suite.
+    """
+    import shared.llm_cascade as llm_cascade
+
+    vus_par_la_base = []
+    vrai = llm_cascade.tracer_appel
+    llm_cascade.tracer_appel = lambda **k: vus_par_la_base.append(k["modele"])
+    muet = llm_cascade.tracer_appel
+    try:
+        with runner_echelon() as vus:
+            llm_cascade.tracer_appel(bot="b", api="mistral", modele="ministral-14b",
+                                     index_cle=0, succes=True)
+        assert vus == ["mistral/ministral-14b"]
+        assert vus_par_la_base == ["ministral-14b"], (
+            "l'espion a avale l'appel : la base perdrait cette ligne pendant les runs"
+        )
+        assert llm_cascade.tracer_appel is muet, "l'espion ne s'est pas retire"
+    finally:
+        llm_cascade.tracer_appel = vrai
+
+
+def runner_echelon():
+    import tests.eval.runner as runner
+    return runner._echelon_qui_repond()
+
+
+def test_l_historique_rend_le_texte_FILTRE_par_defaut():
+    """⚠️ Sur Discord, le tour suivant relit le message ENVOYÉ — donc filtré.
+
+    Un harnais qui renvoie la sortie brute au modèle mesure une conversation qui n'a
+    jamais eu lieu. [[gotcha-le-harnais-mesure-le-modele-pas-le-bot]]
+    """
+    import asyncio
+    import tests.eval.runner as runner
+
+    llm_cascade, vrai_traceur = _sans_tracage()
+    histoires = []
+
+    async def _faux_appel(**kwargs):
+        histoires.append([m["parts"][0] for m in kwargs["conversation_history"]])
+        return "*pose son torchon* Le the est servi."
+
+    vrai_appel = runner.generate_response
+    runner.generate_response = _faux_appel
+    try:
+        asyncio.run(runner.run_scenario_for_bot("alfred", _scenario("salut", "et encore ?")))
+    finally:
+        runner.generate_response = vrai_appel
+        llm_cascade.tracer_appel = vrai_traceur
+
+    assert len(histoires) == 2, "les deux tours doivent avoir eu lieu"
+    memoire = histoires[1][-1]
+    assert "*" not in memoire, f"l'historique doit porter le texte FILTRE : {memoire!r}"
+    assert "pose son torchon" not in memoire, "la didascalie devait tomber avec le filtre"
+
+
+def test_l_historique_brut_remet_le_texte_NON_filtre():
+    """Le drapeau qui isole la variable restée ouverte le 2026-09-17.
+
+    Depuis que l'historique est assaini, le modèle s'imite lui-même sans astérisques : la
+    baisse de production peut venir de la fiche, de cet historique, ou des deux. Sans ce
+    drapeau, trancher coûte un run entier filtre désarmé — et ce run-là ne mesurerait plus
+    ce que l'utilisateur lit.
+    """
+    import asyncio
+    import tests.eval.runner as runner
+
+    llm_cascade, vrai_traceur = _sans_tracage()
+    histoires = []
+
+    async def _faux_appel(**kwargs):
+        histoires.append([m["parts"][0] for m in kwargs["conversation_history"]])
+        return "*pose son torchon* Le the est servi."
+
+    vrai_appel = runner.generate_response
+    runner.generate_response = _faux_appel
+    try:
+        filtrees, _b, _e = asyncio.run(runner.run_scenario_for_bot(
+            "alfred", _scenario("salut", "et encore ?"), historique_brut=True
+        ))
+    finally:
+        runner.generate_response = vrai_appel
+        llm_cascade.tracer_appel = vrai_traceur
+
+    memoire = histoires[1][-1]
+    assert "*pose son torchon*" in memoire, (
+        f"avec --historique-brut, le modele doit relire sa sortie BRUTE : {memoire!r}"
+    )
+    assert "*" not in filtrees[0], (
+        "le drapeau ne touche QUE l'historique : ce qui est NOTE reste le texte filtre"
+    )
+
+
+def test_le_compte_d_asterisques_nomme_l_echelon_de_chaque_bot():
+    from tests.eval.run_eval import compte_asterisques
+
+    results = [
+        {"bot": "sugar",
+         "responses": ["Rien.", "Rien non plus."],
+         "responses_brutes": ["*hausse un sourcil* Rien.", "Rien non plus."],
+         "echelons": ["mistral/ministral-14b", "gemini/un-modele-gemini"]},
+    ]
+    compte = compte_asterisques(results)["sugar"]
+    assert compte["avant"] == 1 and compte["total"] == 2
+    assert compte["echelons"] == {
+        "mistral/ministral-14b": 1,
+        "gemini/un-modele-gemini": 1,
+    }, "chaque reponse doit etre rattachee a l'echelon qui l'a produite"
+
+
+def test_le_resume_d_echelons_classe_du_plus_servi_au_moins():
+    from tests.eval.run_eval import _resume_echelons
+
+    resume = _resume_echelons({"gemini/flash-lite": 2, "mistral/ministral-14b": 15})
+    assert resume.startswith("mistral/ministral-14b x15"), resume
+    assert "gemini/flash-lite x2" in resume
+    assert _resume_echelons({}) == "echelon inconnu", (
+        "un compte sans echelon doit le DIRE, pas afficher une case vide"
+    )
+
+
+def test_le_drapeau_historique_brut_est_lu_et_cable():
+    """[[gotcha-import-ajoute-mais-pas-cable]] : la fonction doit aussi être APPELÉE,
+    et son résultat passé à `run_scenario_for_bot`."""
+    import ast
+    from tests.eval.run_eval import historique_brut_demande
+
+    assert historique_brut_demande([]) is False
+    assert historique_brut_demande(["--bot", "alfred"]) is False
+    assert historique_brut_demande(["--historique-brut"]) is True
+    assert historique_brut_demande(["--bot", "alfred", "--historique-brut"]) is True
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    appels = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "run_scenario_for_bot"
+    ]
+    assert appels, "run_scenario_for_bot n'est plus appele dans run_eval.py"
+    assert all(
+        any(kw.arg == "historique_brut" for kw in a.keywords) for a in appels
+    ), (
+        "un appel a run_scenario_for_bot ne passe pas `historique_brut` : le drapeau "
+        "serait lu, annonce en console, et sans le moindre effet"
+    )
+
+
+def test_le_rapport_ecrit_le_mode_d_historique():
+    """Un rapport qui ne dit pas comment il a ete mene se compare a n'importe quoi."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    rapports = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Dict)
+        and any(isinstance(k, ast.Constant) and k.value == "version_bareme" for k in n.keys)
+    ]
+    assert rapports, "le dict de rapport a disparu de run_eval.py"
+    for d in rapports:
+        cles = {k.value for k in d.keys if isinstance(k, ast.Constant)}
+        assert "historique_brut" in cles, (
+            "le rapport doit porter `historique_brut` : sans lui, un run experimental "
+            "devient en silence la reference du run normal suivant"
+        )
+
+
+def test_chaque_resultat_stocke_l_echelon_a_cote_des_reponses():
+    """Même leçon que pour la brute : un résultat sans son échelon se lit à l'envers."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    dicts_de_resultat = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Dict)
+        and any(isinstance(k, ast.Constant) and k.value == "responses" for k in n.keys)
+    ]
+    assert dicts_de_resultat, "aucun dict de résultat trouvé dans run_eval.py"
+    for d in dicts_de_resultat:
+        cles = {k.value for k in d.keys if isinstance(k, ast.Constant)}
+        assert "echelons" in cles, (
+            "un resultat porte `responses` sans `echelons` : impossible de dire quel "
+            "modele a produit ces asterisques"
+        )

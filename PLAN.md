@@ -48,13 +48,35 @@ soir (« la fiche n'a presque rien change »), tiree de malena seule, dont le me
 d'echelons avait bouge. Voir
 [[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]].
 
-**Reserve qui reste ouverte :** depuis le LOT 0, l'historique rendu au modele contient ses
-propres reponses FILTREES — il s'imite lui-meme, sans asterisques. La baisse peut venir de
-la fiche, de cet historique assaini, ou des deux. Pour trancher : remettre le texte BRUT
-dans `conversation_history`, le filtre ne servant qu'a ce qui est NOTE.
+**Reserve qui reste ouverte — l'OUTIL pour la fermer est livre (18/09, `tests/eval/`) :**
+depuis le LOT 0, l'historique rendu au modele contient ses propres reponses FILTREES — il
+s'imite lui-meme, sans asterisques. La baisse peut venir de la fiche, de cet historique
+assaini, ou des deux.
 
-**Prochaine amelioration evidente du harnais :** afficher, a cote de chaque compte, le
-modele qui a repondu. Sans lui, la colonne AVANT se lit a l'envers.
+▶ **`python tests/eval/run_eval.py --historique-brut`** remet le texte NON filtre dans
+`conversation_history` ; ce qui est NOTE reste le texte filtre. Le defaut ne bouge pas, et
+c'est voulu : sur Discord, le tour suivant relit le message ENVOYE, donc filtre — un
+harnais a historique brut mesurerait une conversation qui n'a jamais eu lieu
+([[gotcha-le-harnais-mesure-le-modele-pas-le-bot]]). Le rapport porte `historique_brut`, et
+un run experimental ne peut plus devenir en silence la reference du run normal suivant :
+les deltas sont masques, exactement comme pour un barème different.
+**Reste a faire : le run lui-meme** (un bot suffit, `--bot alfred` — il est a 100 %
+ministral dans les deux passes, donc le modele y est constant).
+
+**Amelioration du harnais : LIVREE le 18/09.** Le bloc AVANT/APRES nomme desormais, sous
+chaque compte, l'echelon qui a repondu :
+
+        - alfred       :  9/17  ->  0/17   (le filet fait le travail)
+                          echelons : mistral/ministral-14b x17
+
+Sans cette ligne, une bascule d'echelon se lit comme une regression de persona — c'est
+exactement l'erreur commise le 17/09 au soir. L'echelon est capte en OBSERVANT
+`tracer_appel` (l'espion delegue au vrai traceur, la base ne perd rien) plutot qu'en
+ajoutant un parametre a `generate_response` : `shared/llm_cascade.py` est VENDORE dans les
+six bots, et une commodite de harnais n'a pas a faire bouger le code de production.
+Les anciens rapports, qui n'ont pas le champ, affichent « echelon inconnu » au lieu de
+mentir. Une cascade entierement muette ne nomme AUCUN echelon (le dernier essai rate n'est
+pas un auteur) — ce trou-la n'a ete vu qu'en rejouant les mutations.
 
 ### Ce que le run a trouve et qui est corrige
 
