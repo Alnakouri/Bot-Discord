@@ -64,7 +64,48 @@ CANDIDATS_MISTRAL = ["open-mistral-nemo", "mistral-small-latest", "ministral-8b-
                      "mistral-medium-latest", "mistral-large-latest"]
 CANDIDATS_GEMINI = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
 
+# NVIDIA (build.nvidia.com) — 82 modeles au catalogue le 2026-09-18, dont une dizaine
+# de vrais candidats conversationnels. C'est le seul fournisseur qui en offre encore :
+# Groq n'a plus que 13 entrees (gpt-oss x2, qwen ecarte pour son francais, compound
+# ecarte a 8 echecs sur 12), et toute la famille `mistral-*` est plafonnee sauf
+# `ministral-*`. Gemini est ECARTE par decision du 2026-09-18 (Ahmed).
+#
+# ⚠️ Le catalogue MENT : `nemotron-nano-3-30b-a3b`, `llama-3.1-nemotron-70b-instruct` et
+# `-51b-instruct` y figurent et rendent 404 ([[gotcha-catalogue-nvidia-ment]]). Ils ne
+# sont pas dans cette liste — seul un appel reel tranche, et ils l'ont deja perdu.
+# Ecartes aussi, sur mesure anterieure : `nemotron-3-super-120b-a12b` (prefixe ses
+# reponses par « Johnny: »), `mistralai/mistral-nemotron` (entoure tout de guillemets).
+CANDIDATS_NVIDIA = [
+    "moonshotai/kimi-k3",
+    "moonshotai/kimi-k2.6",
+    "z-ai/glm-5.3-flash",
+    "z-ai/glm-5.3",
+    "mistralai/mistral-large-2-instruct",   # hors tier chez Mistral, hebergé ici
+    "google/gemma-4-31b-it",
+    "nv-mistralai/mistral-nemo-12b-instruct",
+    "meta/muse-glimmer-30b",
+    "deepseek-ai/deepseek-v4-flash-0731",
+    "writer/palmyra-creative-122b",
+    "01-ai/yi-large",
+]
+
+# La meme paire d'asterisques que le harnais d'eval (`run_eval._MOTIF_ASTERISQUE`) :
+# deux mesures qui ne comptent pas la meme chose ne se comparent pas.
+MOTIF_ASTERISQUE = re.compile(r"\*[^*\n]{2,}\*")
+
 MAX_TOKENS = 300
+
+# Borne par appel. Sans elle, la sonde PEND : `z-ai/glm-5.3-flash` a tenu un run entier
+# en otage le 2026-09-18 — deux heures, aucune ligne, exit 0, et pas de rapport. Le SDK
+# OpenAI n'a pas de timeout par defaut digne de ce nom, et un seul candidat muet suffit a
+# emporter les quinze autres.
+#
+# La valeur n'est pas arbitraire : les bots coupent a 15 s en direct
+# ([[decision-nvidia-reste-avec-la-borne-du-direct]]). Un modele qui depasse est
+# inutilisable en salon, quelle que soit la qualite de sa prose — on lui laisse 20 s pour
+# que la mesure distingue « lent » de « mort », et la sonde le signale au-dela de 15.
+TIMEOUT_APPEL = 20
+BORNE_DU_DIRECT = 15
 
 
 def charger_persona(bot_id):
@@ -100,7 +141,8 @@ def appeler(fournisseur, modele, systeme, message, clients):
                 model=modele,
                 messages=[{"role": "system", "content": systeme},
                           {"role": "user", "content": message}],
-                temperature=1.0, max_tokens=MAX_TOKENS, **groq_kwargs(modele))
+                temperature=1.0, max_tokens=MAX_TOKENS, timeout=TIMEOUT_APPEL,
+                **groq_kwargs(modele))
             msg = r.choices[0].message
             texte = msg.content
             meta["finish"] = r.choices[0].finish_reason
@@ -111,7 +153,7 @@ def appeler(fournisseur, modele, systeme, message, clients):
                 model=modele,
                 messages=[{"role": "system", "content": systeme},
                           {"role": "user", "content": message}],
-                temperature=1.0, max_tokens=MAX_TOKENS)
+                temperature=1.0, max_tokens=MAX_TOKENS, timeout=TIMEOUT_APPEL)
             msg = r.choices[0].message
             texte = msg.content
             meta["finish"] = r.choices[0].finish_reason
@@ -122,11 +164,29 @@ def appeler(fournisseur, modele, systeme, message, clients):
                 model=modele,
                 messages=[{"role": "system", "content": systeme},
                           {"role": "user", "content": message}],
-                temperature=1.0, max_tokens=MAX_TOKENS)
+                temperature=1.0, max_tokens=MAX_TOKENS,
+                timeout_ms=TIMEOUT_APPEL * 1000)
             msg = r.choices[0].message
             texte = msg.content
             meta["finish"] = r.choices[0].finish_reason
             meta["tokens"] = r.usage.completion_tokens
+
+        elif fournisseur == "nvidia":
+            # ⚠️ `nvidia_kwargs()` n'est pas une option : sans lui, nemotron RECOPIE son
+            # raisonnement dans `content` et met 6,8 s au lieu de 1,0 s. Une sonde qui
+            # l'oublie mesure un fournisseur que les bots n'utilisent pas
+            # ([[gotcha-sonde-ne-reproduit-pas-le-fournisseur]]).
+            from shared.models import nvidia_kwargs
+            r = clients["nvidia"].chat.completions.create(
+                model=modele,
+                messages=[{"role": "system", "content": systeme},
+                          {"role": "user", "content": message}],
+                temperature=1.0, max_tokens=MAX_TOKENS, timeout=TIMEOUT_APPEL,
+                **nvidia_kwargs(modele))
+            msg = r.choices[0].message
+            texte = msg.content
+            meta["finish"] = r.choices[0].finish_reason
+            meta["tokens"] = r.usage.completion_tokens if r.usage else None
 
         elif fournisseur == "gemini":
             from google.genai import types
@@ -190,6 +250,15 @@ def construire_clients():
     except Exception as e:
         print("[!] Mistral indisponible : " + str(e))
     try:
+        from openai import OpenAI
+        from shared.models import NVIDIA_BASE_URL
+        if os.getenv("NVIDIA_API_KEY"):
+            clients["nvidia"] = OpenAI(base_url=NVIDIA_BASE_URL,
+                                       api_key=os.getenv("NVIDIA_API_KEY"),
+                                       max_retries=0)
+    except Exception as e:
+        print("[!] NVIDIA indisponible : " + str(e))
+    try:
         from shared.safe_client import get_client
         cle = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY_1")
         if cle:
@@ -228,6 +297,8 @@ def main():
         candidats += [("openrouter", m) for m in CANDIDATS_OPENROUTER]
     if "mistral" in clients:
         candidats += [("mistral", m) for m in CANDIDATS_MISTRAL]
+    if "nvidia" in clients:
+        candidats += [("nvidia", m) for m in CANDIDATS_NVIDIA]
     if "gemini" in clients:
         candidats += [("gemini", m) for m in CANDIDATS_GEMINI]
     if args.modele:
@@ -261,14 +332,21 @@ def main():
                     drapeau = "!! FUITE DE RAISONNEMENT"
                 elif meta["vide"]:
                     drapeau = "!! VIDE (finish=" + str(meta.get("finish")) + ")"
+                elif meta["duree"] > BORNE_DU_DIRECT:
+                    drapeau = "!! HORS BORNE DU DIRECT (%.1fs > %ds)" % (
+                        meta["duree"], BORNE_DU_DIRECT)
                 else:
                     drapeau = ""
                 mots = len((texte or "").split())
                 phr = len([s for s in re.split(PONCTUATION_FIN, texte or "") if s.strip()])
-                meta.update(mots=mots, phrases=phr)
+                # Le critere du 2026-09-18 : la didascalie entre asterisques. Elle etait
+                # comptee a la main sur le JSON, donc jamais visible pendant la sonde.
+                ast = len(MOTIF_ASTERISQUE.findall(texte or ""))
+                meta.update(mots=mots, phrases=phr, asterisques=ast)
                 extrait = " ".join((texte or "").split())[:160]
-                print("    [%-7s] %5.2fs tok=%-5s %2dphr %3dmots %s" % (
-                    nom_cas, meta["duree"], meta.get("tokens"), phr, mots, drapeau))
+                print("    [%-7s] %5.2fs tok=%-5s %2dphr %3dmots %s %s" % (
+                    nom_cas, meta["duree"], meta.get("tokens"), phr, mots,
+                    ("*%d*" % ast) if ast else "   ", drapeau))
                 if extrait:
                     print("        " + extrait)
 

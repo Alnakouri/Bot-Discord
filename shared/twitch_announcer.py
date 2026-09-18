@@ -5,6 +5,7 @@ import random
 import datetime
 import aiohttp
 import discord
+from discord.ext import commands
 from pathlib import Path
 
 # Path configuration
@@ -122,6 +123,53 @@ class TwitchClient:
                         pass
 
         return results
+
+    async def get_channel_info(self, login: str) -> dict | None:
+        """Titre et jeu d'une chaine, MEME HORS LIGNE (deux appels Helix).
+
+        `/streams` ne rend rien quand la chaine est eteinte : une simulation d'annonce
+        devrait alors inventer un titre et un jeu, et ne testerait plus rien de reel.
+        `/users` donne l'identifiant, `/channels` donne le dernier titre et le dernier
+        jeu declares — les vraies valeurs, celles qu'une annonce afficherait.
+        """
+        try:
+            await self.ensure_token()
+        except Exception:
+            return None
+
+        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {self.token}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("https://api.twitch.tv/helix/users",
+                                       headers=headers, params={"login": login.lower()},
+                                       timeout=10) as resp:
+                    if resp.status != 200:
+                        return None
+                    users = (await resp.json()).get("data", [])
+                if not users:
+                    return None
+                user = users[0]
+
+                async with session.get("https://api.twitch.tv/helix/channels",
+                                       headers=headers,
+                                       params={"broadcaster_id": user["id"]},
+                                       timeout=10) as resp:
+                    chaine = {}
+                    if resp.status == 200:
+                        donnees = (await resp.json()).get("data", [])
+                        chaine = donnees[0] if donnees else {}
+        except Exception:
+            return None
+
+        return {
+            "user_id": user["id"],
+            "user_login": user["login"],
+            "user_name": user.get("display_name") or user["login"],
+            "title": chaine.get("title", ""),
+            "game_name": chaine.get("game_name", ""),
+            "profile_image_url": user.get("profile_image_url", ""),
+        }
+
 
 def build_embed(stream: dict, twitch_login: str) -> discord.Embed:
     """
@@ -296,6 +344,99 @@ class TwitchAnnouncer:
         except Exception as e:
             self.logger.error(f"❌ [TWITCH] Échec de l'envoi de l'annonce Twitch dans #{channel_id} : {e}")
 
+    async def simuler_annonce(self, canal, login: str | None = None) -> dict:
+        """Joue une annonce complete dans `canal`, a la demande, sans attendre un live.
+
+        Le chemin est le VRAI : meme resolution du streamer, meme embed, meme accroche
+        ecrite par le modele, meme repli statique. Trois differences, toutes voulues :
+
+        1. **Le salon est celui d'ou la commande part**, jamais celui de la config. Un
+           test n'a rien a faire dans le salon de la communaute.
+        2. **L'anti-doublon est saute.** `_recent_announcement_exists` regarde
+           l'historique du salon et fait taire le 2e bot qui parle du meme streamer
+           dans les 30 minutes : sur six bots lances ensemble, un seul parlerait et
+           les cinq autres auraient l'air casses. Ici on veut justement les six voix.
+        3. **Ce qui est FAUX est signale.** Si la chaine n'est pas en direct, le titre
+           et le jeu restent les vrais (`/channels` les rend hors ligne), mais le
+           nombre de spectateurs et la vignette n'existent pas : l'embed le dit dans son
+           pied. Une annonce de test indistinguable d'une vraie ferait croire a un live.
+
+        Rend un petit compte rendu — pour le JOURNAL, pas pour le salon
+        ([[gotcha-un-bot-ne-parle-jamais-de-sa-mecanique]]).
+        """
+        cfg = self.load_config()
+        abonnements = cfg.get("subscriptions", []) or []
+
+        if not login:
+            for sub in abonnements:
+                if sub.get("twitch_login"):
+                    login = sub["twitch_login"]
+                    break
+        if not login:
+            return {"ok": False, "raison": "aucun streamer : ni argument, ni abonnement configure"}
+
+        login = login.strip().lstrip("@").lower()
+
+        # 1. En direct ? Si oui, les donnees sont reelles de bout en bout.
+        stream = None
+        try:
+            stream = (await self.client.get_streams([login])).get(login)
+        except Exception as e:
+            self.logger.warning(f"⚠️ [TWITCH] Simulation : /streams indisponible ({e})")
+
+        simulee = stream is None
+        if simulee:
+            infos = await self.client.get_channel_info(login)
+            if not infos:
+                return {"ok": False, "raison": f"chaine Twitch introuvable : {login}"}
+            stream = {
+                "id": f"simulation-{int(time.time())}",
+                "user_id": infos["user_id"],
+                "user_login": infos["user_login"],
+                "user_name": infos["user_name"],
+                "title": infos["title"] or "(aucun titre declare)",
+                "game_name": infos["game_name"] or "Inconnu",
+                "viewer_count": 0,
+                "thumbnail_url": "",
+            }
+
+        # 2. Le meme embed que l'annonce reelle, et le pied qui dit ce qui est faux.
+        embed = build_embed(stream, stream["user_login"])
+        if simulee:
+            embed.set_footer(text="Twitch · simulation — la chaine n'est pas en direct")
+
+        # 3. Le meme contenu : message custom s'il existe, sinon l'accroche du modele.
+        url_twitch = f"https://twitch.tv/{stream['user_login']}"
+        sub = next((s for s in abonnements
+                    if (s.get("twitch_login") or "").lower() == login), {})
+        custom = sub.get("custom_message")
+        origine = "custom"
+        if custom:
+            try:
+                contenu = custom.format(streamer=stream["user_name"], title=stream.get("title", ""),
+                                        game=stream.get("game_name", "Inconnu"), url=url_twitch)
+            except Exception:
+                contenu = custom
+        else:
+            accroche = await self._generate_hype(stream)
+            if accroche:
+                contenu, origine = f"{accroche}\n{url_twitch}", "modele"
+            else:
+                contenu = random.choice(GENERIC_HYPE).format(
+                    streamer=stream["user_name"], title=stream.get("title", ""),
+                    game=stream.get("game_name", "Inconnu"), url=url_twitch)
+                origine = "repli statique"
+
+        await canal.send(content=contenu, embed=embed)
+        self.logger.info(
+            f"🧪 [TWITCH] Simulation d'annonce pour {stream['user_name']} dans "
+            f"#{getattr(canal, 'name', canal.id)} — "
+            f"{'chaine HORS LIGNE (donnees partielles)' if simulee else 'chaine EN DIRECT (donnees reelles)'}, "
+            f"accroche : {origine}"
+        )
+        return {"ok": True, "simulee": simulee, "origine": origine,
+                "streamer": stream["user_name"]}
+
     async def _generate_hype(self, stream: dict) -> str | None:
         """
         Génère une phrase d'annonce dans la voix/personnalité du bot via la
@@ -413,6 +554,124 @@ class TwitchAnnouncer:
 
         return False
 
+# Qui repond quand on ecrit `!annonce johnny`. La cle est le `bot_id` passe a
+# `setup_twitch_announcer` ; les valeurs sont ce qu'un humain tape vraiment.
+# ⚠️ Les six bots lisent la MEME table : un bot absent d'ici ne serait jamais appelable
+# par son nom, et personne ne le verrait — c'est la moitie des ennuis de ce projet
+# ([[gotcha-un-bot-sur-six-manque-toujours]]). Un verrou la compare aux six dossiers.
+ALIAS_BOTS = {
+    "alfred":     ("alfred", "majordome"),
+    "johnny":     ("johnny", "johnnybot", "silverbot", "silverhand"),
+    "maiq":       ("maiq", "maiqbot", "khajiit"),
+    "malena":     ("malena", "gitane"),
+    "sugar":      ("sugar", "sugarbot"),
+    "sheogorath": ("sheogorath", "sheo"),
+}
+
+
+def _normaliser(mot: str) -> str:
+    """« M'aiq » et « maïq » doivent designer le meme bot qu'un `maiq` tape a la va-vite."""
+    import unicodedata
+    sans_accent = unicodedata.normalize("NFD", (mot or "").strip().lower())
+    sans_accent = "".join(c for c in sans_accent if unicodedata.category(c) != "Mn")
+    return sans_accent.replace("'", "").replace("-", "").replace("_", "")
+
+
+def bot_vise(mot: str) -> str | None:
+    """Rend le `bot_id` designe par `mot`, ou None si ce mot ne nomme aucun bot."""
+    cible = _normaliser(mot)
+    if not cible:
+        return None
+    for bot_id, alias in ALIAS_BOTS.items():
+        if cible == _normaliser(bot_id) or cible in {_normaliser(a) for a in alias}:
+            return bot_id
+    return None
+
+
+def lire_arguments_annonce(args) -> tuple[str | None, str | None]:
+    """Separe « a qui je parle » de « de quelle chaine on parle ».
+
+    `!annonce`                  -> (None, None)        les six repondent, streamer configure
+    `!annonce johnny`           -> ("johnny", None)    Johnny seul
+    `!annonce streameuse_amie`        -> (None, "streameuse_amie") les six, sur cette chaine
+    `!annonce johnny streameuse_amie` -> ("johnny", "streameuse_amie")
+
+    Un mot qui ne nomme aucun bot est donc lu comme un login Twitch. C'est le bon defaut :
+    les noms de bots forment une liste fermee et connue, les logins non.
+    ⚠️ Un streamer qui s'appellerait « sugar » serait pris pour le bot. Cas assume : il
+    reste `!annonce sugar sugar`.
+    """
+    mots = [m for m in (args or ()) if m and m.strip()]
+    if not mots:
+        return None, None
+    cible = bot_vise(mots[0])
+    if cible:
+        return cible, (mots[1] if len(mots) > 1 else None)
+    return None, mots[0]
+
+
+def enregistrer_commande_annonce(bot, announcer, logger) -> bool:
+    """Ajoute `!annonce [login]` : rejoue une annonce a la demande, pour la voir.
+
+    Elle est enregistree ICI et pas dans les six fichiers de bots : un envoi ecrit en dur
+    dans un bot echappe au module partage, a ses garde-fous et a son journal — Johnny
+    accueillait ainsi 100 % des arrivants hors du tirage commun
+    ([[gotcha-un-envoi-en-dur-contourne-le-partage]]). Un seul point d'ajout, et les six
+    l'ont parce qu'ils appellent tous `setup_twitch_announcer`
+    ([[gotcha-un-bot-sur-six-manque-toujours]]).
+
+    ⚠️ Les six bots repondent donc a la MEME commande, dans le meme salon : c'est voulu,
+    c'est meme l'interet — six accroches cote a cote, ecrites par six personas (et, en ce
+    moment, par des modeles differents selon le quota disponible).
+
+    Rend True si la commande a ete ajoutee. `on_ready` rejoue a chaque reconnexion
+    ([[bug-on-ready-taches-relancees]]) : sans ce garde, discord.py leverait
+    `CommandRegistrationError` et la reconnexion echouerait.
+    """
+    if bot.get_command("annonce") is not None:
+        return False
+
+    @bot.command(name="annonce")
+    async def annonce(ctx, *args):
+        """Rejoue une annonce de live dans CE salon (reserve aux gerants du serveur).
+
+            !annonce                     les six bots repondent
+            !annonce johnny              Johnny seul
+            !annonce streameuse_amie           les six, sur cette chaine
+            !annonce johnny streameuse_amie    Johnny seul, sur cette chaine
+        """
+        cible, login = lire_arguments_annonce(args)
+
+        # Un bot qui n'est pas vise se tait AVANT toute verification : le nom sert a
+        # n'en faire parler qu'un, et six refus de permission pour un seul appel
+        # rempliraient le salon.
+        if cible and cible != announcer.bot_id:
+            return
+
+        if ctx.guild is None:
+            logger.info("🧪 [TWITCH] !annonce ignoree : hors serveur, aucune permission a verifier")
+            return
+
+        droits = getattr(ctx.author, "guild_permissions", None)
+        if not (droits and (droits.manage_guild or droits.administrator)):
+            # Silence volontaire : six bots qui refusent en choeur feraient six messages
+            # pour un refus. Le refus va au journal, qui est fait pour ca.
+            logger.info(f"🧪 [TWITCH] !annonce refusee a {ctx.author} (droits insuffisants)")
+            return
+
+        try:
+            resultat = await announcer.simuler_annonce(ctx.channel, login)
+        except Exception as e:
+            logger.error(f"❌ [TWITCH] !annonce a echoue : {e}", exc_info=True)
+            return
+
+        if not resultat.get("ok"):
+            logger.warning(f"⚠️ [TWITCH] !annonce sans effet : {resultat.get('raison')}")
+
+    logger.info("🧪 [TWITCH] Commande !annonce disponible (gerants du serveur)")
+    return True
+
+
 def setup_twitch_announcer(bot, bot_id: str, logger, *, personality_prompt: str | None = None,
                            key_manager=None, mistral_client=None, groq_client=None,
                             nvidia_client=None, bot_label: str | None = None) -> TwitchAnnouncer | None:
@@ -429,9 +688,11 @@ def setup_twitch_announcer(bot, bot_id: str, logger, *, personality_prompt: str 
         logger.info("📡 [TWITCH] Module Twitch non activé (crédentiels manquants)")
         return None
 
-    return TwitchAnnouncer(
+    announcer = TwitchAnnouncer(
         bot, bot_id, logger, client_id, client_secret,
         personality_prompt=personality_prompt, key_manager=key_manager,
         mistral_client=mistral_client, groq_client=groq_client,
          nvidia_client=nvidia_client, bot_label=bot_label,
     )
+    enregistrer_commande_annonce(bot, announcer, logger)
+    return announcer

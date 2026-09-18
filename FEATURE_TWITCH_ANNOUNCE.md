@@ -71,3 +71,39 @@ La configuration globale se trouve dans le fichier `data/twitch_config.json`. El
 - **Anti-doublon intelligent** :
   1. *Niveau Bot* : Le bot garde en mémoire les streams déjà annoncés pour éviter le spam.
   2. *Inter-Bots* : Avant de poster, le bot vérifie l'historique du salon Discord. Si un embed Twitch identique a été posté dans les 30 dernières minutes par n'importe quel bot, le doublon est évité.
+
+---
+
+## 5. Voir une annonce sans attendre un live : `!annonce`
+
+    !annonce                     # les SIX bots répondent, sur le streamer configuré
+    !annonce johnny              # Johnny seul
+    !annonce streameuse_amie           # les six, sur cette chaîne
+    !annonce johnny streameuse_amie    # Johnny seul, sur cette chaîne
+
+Noms acceptés : `alfred` · `johnny` (`silverbot`, `silverhand`) · `maiq` (`m'aiq`, `khajiit`) ·
+`malena` (`gitane`) · `sugar` · `sheogorath` (`sheo`). Accents, apostrophes et tirets sont
+ignorés — `M'aiq`, `Maïq` et `maiq` désignent le même bot.
+
+Un mot qui ne nomme aucun bot est lu comme un **login Twitch** : la liste des bots est
+fermée et connue, celle des streamers non. Un streamer qui s'appellerait « sugar » serait
+donc pris pour le bot — il reste `!annonce sugar sugar`.
+
+Réservée aux **gérants du serveur** (permission « Gérer le serveur » ou administrateur) ;
+pour tout le monde d'autre la commande ne répond pas, et le refus part dans le journal.
+
+Elle rejoue le **vrai** chemin d'annonce — même embed, même accroche écrite par le modèle
+en personnage, même repli statique si le modèle se tait — avec trois différences voulues :
+
+- **Elle poste dans le salon d'où la commande part**, jamais dans le salon configuré :
+  un test n'a rien à faire chez la communauté.
+- **L'anti-doublon est sauté.** Sinon, les six bots répondant à la même commande, un seul
+  parlerait et les cinq autres auraient l'air cassés. C'est justement l'intérêt : six
+  accroches côte à côte, six personas.
+- **Ce qui est faux est signalé.** Si la chaîne n'est pas en direct, le titre et le jeu
+  restent les VRAIS (lus sur `/helix/channels`, qui répond hors ligne) ; seuls le nombre
+  de spectateurs et la vignette manquent, et le pied de l'embed dit « simulation ». Une
+  annonce de test indistinguable d'une vraie ferait croire à un live.
+
+Les six bots l'ont parce que la commande est enregistrée dans `setup_twitch_announcer`,
+que tous appellent — pas dans six fichiers de bots. Verrous : `tests/test_twitch_commande_annonce.py`.
