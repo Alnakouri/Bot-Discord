@@ -42,26 +42,40 @@ etait mesure a 11/18 asterisques des le 04/09. Le chiffre colle.
 
 **Ce qu'on peut conclure, une fois le modele tenu constant :** alfred et johnny sont
 servis a 100 % par ministral dans LES DEUX runs, fiche reecrite entre les deux —
-**16/17 -> 9/17** et **16/17 -> 11/17**. La reecriture des fiches (LOT 2) fait bien
-chuter la production d'environ 40 %. Cela **corrige** la conclusion ecrite ici le 17/09 au
-soir (« la fiche n'a presque rien change »), tiree de malena seule, dont le melange
-d'echelons avait bouge. Voir
+**16/17 -> 9/17** et **16/17 -> 11/17**. La reecriture des fiches (LOT 2) pese donc pour
+quelque chose. Cela **corrige** la conclusion ecrite ici le 17/09 au soir (« la fiche n'a
+presque rien change »), tiree de malena seule, dont le melange d'echelons avait bouge. Voir
 [[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]].
+⚠️ **La part exacte — « environ 40 % » — etait encore fausse : le run du 18/09 a 10:48 la
+ramene a 25 %** (section suivante). Les deux chutes se cumulaient dans le meme chiffre.
 
-**Reserve qui reste ouverte — l'OUTIL pour la fermer est livre (18/09, `tests/eval/`) :**
-depuis le LOT 0, l'historique rendu au modele contient ses propres reponses FILTREES — il
-s'imite lui-meme, sans asterisques. La baisse peut venir de la fiche, de cet historique
-assaini, ou des deux.
+## LA RESERVE EST CLOSE — la fiche fait **-25 %**, pas -40 % (run du 18/09, 10:48)
 
-▶ **`python tests/eval/run_eval.py --historique-brut`** remet le texte NON filtre dans
-`conversation_history` ; ce qui est NOTE reste le texte filtre. Le defaut ne bouge pas, et
-c'est voulu : sur Discord, le tour suivant relit le message ENVOYE, donc filtre — un
-harnais a historique brut mesurerait une conversation qui n'a jamais eu lieu
-([[gotcha-le-harnais-mesure-le-modele-pas-le-bot]]). Le rapport porte `historique_brut`, et
-un run experimental ne peut plus devenir en silence la reference du run normal suivant :
-les deltas sont masques, exactement comme pour un barème different.
-**Reste a faire : le run lui-meme** (un bot suffit, `--bot alfred` — il est a 100 %
-ministral dans les deux passes, donc le modele y est constant).
+Depuis le LOT 0, l'historique rendu au modele contient ses propres reponses FILTREES — il
+s'imite lui-meme, sans asterisques. La chute mesuree plus haut pouvait donc venir de la
+fiche, de cet historique assaini, ou des deux. `--historique-brut` remet le texte NON
+filtre dans `conversation_history` ; ce qui est NOTE reste le texte filtre.
+
+`python tests/eval/run_eval.py --historique-brut --bot alfred` →
+`tests/eval/reports/eval_20260918_1048.json`, **17 reponses, 100 % `mistral/ministral-14b`,
+`fiable: true`, 0 appel echoue** — donc a modele constant, comme les deux passes precedentes :
+
+    ancienne fiche (17/09)                          16/17
+    fiche reecrite + historique BRUT (18/09 10:48)  12/17   <- la fiche seule
+    fiche reecrite + historique filtre (18/09)       9/17   <- fiche + auto-imitation
+
+**La fiche vaut -25 % (16 -> 12). L'autre moitie de la chute (12 -> 9) est le modele qui
+s'imite lui-meme** sur ses propres reponses deja nettoyees par le filet. Le LOT 2 n'est donc
+pas inutile, mais il pese deux fois moins que le chiffre du 17/09 au soir ne le disait — et
+il ne peut rien contre le fond : 12 reponses sur 17 sortent encore avec des asterisques
+quand le contexte n'est pas assaini. **C'est le filet (LOT 1) qui garantit, la fiche oriente.**
+
+⚠️ Ce gain d'auto-imitation existe AUSSI en production, et c'est voulu : sur Discord le tour
+suivant relit le message ENVOYE, donc filtre. `--historique-brut` mesure une conversation qui
+n'a jamais eu lieu ([[gotcha-le-harnais-mesure-le-modele-pas-le-bot]]) — c'est un instrument
+de diagnostic, **jamais** le run de reference. Le rapport porte `historique_brut: true` et le
+bloc AVANT/APRES masque ses deltas, exactement comme pour un bareme different.
+Voir [[gotcha-le-filtre-s-auto-renforce-par-l-historique]].
 
 **Amelioration du harnais : LIVREE le 18/09.** Le bloc AVANT/APRES nomme desormais, sous
 chaque compte, l'echelon qui a repondu :
@@ -89,7 +103,12 @@ pas un auteur) — ce trou-la n'a ete vu qu'en rejouant les mutations.
 ### Ce qui reste, et qui n'est pas dans ce plan
 
 - **Relancer une passe complete** quand les quotas seront frais, pour voir les six
-  colonnes AVANT/APRES et trancher le LOT 2 sur les six.
+  colonnes AVANT/APRES et trancher le LOT 2 sur les six. — **lancee le 18/09 a 10:55**
+  (accidentellement, voir ci-dessous) ; resultats a reporter ici.
+- ✅ `484cfa4` — **`run_eval.py --help` lancait un run complet des six bots.** Le harnais
+  lit ses drapeaux a la main : tout argument inconnu etait ignore en silence, et
+  `--bots alfred` (faute de frappe) mesurait les SIX. `verifie_arguments()` refuse
+  desormais l'inconnu, en tete de `main`. [[gotcha-help-lance-un-run-complet]]
 - ⚠️ `Windows fatal exception: access violation` dans `test_anti_rattrapage_boucles.py:167`
   (boucle asyncio Windows). La suite finit verte, mais la ligne de resume disparait parfois.
 - **NVIDIA** : tranche, il reste tel quel — [[decision-nvidia-reste-avec-la-borne-du-direct]].
