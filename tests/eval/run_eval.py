@@ -18,6 +18,13 @@ import time
 from collections import Counter
 from datetime import datetime
 
+# La console Windows rend du cp1252 : un seul `⚠️` dans un message fait tomber le run
+# sur un `UnicodeEncodeError`, AVANT le premier appel au modele. On force UTF-8 sur la
+# sortie plutot que d'appauvrir le texte des messages, qui sont la moitie de leur valeur.
+for _flux in (sys.stdout, sys.stderr):
+    if hasattr(_flux, "reconfigure"):
+        _flux.reconfigure(encoding="utf-8", errors="replace")
+
 # Injection du répertoire racine dans sys.path
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if root_dir not in sys.path:

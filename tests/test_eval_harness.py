@@ -1127,3 +1127,70 @@ def test_chaque_resultat_stocke_l_echelon_a_cote_des_reponses():
             "un resultat porte `responses` sans `echelons` : impossible de dire quel "
             "modele a produit ces asterisques"
         )
+
+
+
+# ───────── La console cp1252 ne doit pas TUER le run avant le 1er appel (2026-09-18) ────
+#
+# Vu en vrai le 18/09 : `run_eval.py --historique-brut` est tombe sur un
+# `UnicodeEncodeError` a la banniere, AVANT d'avoir appele un seul modele. Le coupable
+# n'est pas le `⚠️` — c'est la console Windows, qui rend du cp1252. Appauvrir les
+# messages un par un ne tient pas : il en reste six autres dans le fichier, et le
+# prochain qu'on ecrira retombera dans le trou.
+
+
+def test_le_harnais_force_UTF_8_sur_sa_sortie():
+    """Verrou sur le NOM : `sys.stdout`/`sys.stderr` doivent etre reconfigures en UTF-8."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    flux_vus = set()
+    for noeud in ast.walk(arbre):
+        if not (isinstance(noeud, ast.Call) and isinstance(noeud.func, ast.Attribute)):
+            continue
+        if noeud.func.attr != "reconfigure":
+            continue
+        encodage = next(
+            (kw.value.value for kw in noeud.keywords
+             if kw.arg == "encoding" and isinstance(kw.value, ast.Constant)),
+            None,
+        )
+        if encodage is None or encodage.lower().replace("-", "") != "utf8":
+            continue
+        # La cible est soit `sys.stdout.reconfigure(...)`, soit une variable de boucle
+        # qui parcourt `(sys.stdout, sys.stderr)` : on lit les noms du fichier entier.
+        flux_vus.add(ast.unparse(noeud.func.value))
+
+    assert flux_vus, (
+        "aucun `reconfigure(encoding=\"utf-8\")` dans run_eval.py : un seul caractere "
+        "hors cp1252 dans un message fera tomber le run sur une console Windows"
+    )
+
+    source = open(chemin, encoding="utf-8").read()
+    for flux in ("sys.stdout", "sys.stderr"):
+        assert flux in source, f"{flux} n'est pas reconfigure"
+
+
+def test_un_message_hors_cp1252_SURVIT_a_l_import_du_harnais():
+    """Le verrou structurel ne prouve rien : on le VERIFIE sur une vraie console cp1252."""
+    import subprocess
+
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "cp1252"       # la console Windows de l'utilisateur
+    env["PYTHONPATH"] = RACINE
+
+    # Sans la reconfiguration, ce `print` leve `UnicodeEncodeError` et le code sort a 1.
+    code = "import tests.eval.run_eval; print('⚠️ ok')"
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True, env=env, cwd=RACINE, timeout=120,
+    )
+
+    assert proc.returncode == 0, (
+        "importer le harnais ne repare pas la sortie : "
+        + proc.stderr.decode("utf-8", "replace")[-600:]
+    )
+    assert b"ok" in proc.stdout
