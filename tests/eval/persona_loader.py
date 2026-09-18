@@ -7,18 +7,26 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+# Chaque bot : (module de sa fiche, symbole du prompt, etiquette affichee). Le premier
+# segment du module est AUSSI le dossier du bot — c'est ce qui permet au harnais de
+# charger les cles DE CE BOT sans tenir une seconde liste a la main, laquelle divergerait
+# en silence comme les deux listes de vendoring l'ont fait
+# ([[gotcha-deux-listes-vendoring]]). Promue en constante le 2026-09-19 pour cette raison.
+PERSONAS = {
+    "johnny": ("JohnnyBot.johnny_data", "PERSONALITY_PROMPT", "Johnny"),
+    "maiq": ("MaiqBot.maiq_data", "PERSONALITY_PROMPT", "M'aiq"),
+    "alfred": ("Alfred.alfred_data", "PERSONALITY_PROMPT", "Alfred"),
+    "malena": ("MalenaBot.malena_data", "PERSONALITY_PROMPT", "Malena"),
+    "sugar": ("SugarBot.sugar_data", "PERSONALITY_PROMPT", "Sugar Bot"),
+    "sheogorath": ("Sheogorath.sheo_data", "MOOD_PROMPTS", "Sheogorath"),
+}
+
+
 def load_persona(bot_id):
     """
     Charge le prompt système et le label du bot de manière isolée sans exécuter le client Discord.
     """
-    mapping = {
-        "johnny": ("JohnnyBot.johnny_data", "PERSONALITY_PROMPT", "Johnny"),
-        "maiq": ("MaiqBot.maiq_data", "PERSONALITY_PROMPT", "M'aiq"),
-        "alfred": ("Alfred.alfred_data", "PERSONALITY_PROMPT", "Alfred"),
-        "malena": ("MalenaBot.malena_data", "PERSONALITY_PROMPT", "Malena"),
-        "sugar": ("SugarBot.sugar_data", "PERSONALITY_PROMPT", "Sugar Bot"),
-        "sheogorath": ("Sheogorath.sheo_data", "MOOD_PROMPTS", "Sheogorath")
-    }
+    mapping = PERSONAS
     
     if bot_id not in mapping:
         raise ValueError(f"Bot ID inconnu : {bot_id}")

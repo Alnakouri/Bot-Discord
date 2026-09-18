@@ -769,13 +769,23 @@ def test_le_harnais_construit_ET_passe_un_client_nvidia():
 
     chemin = os.path.join(RACINE, "tests", "eval", "runner.py")
     with open(chemin, encoding="utf-8") as f:
-        arbre = ast.parse(f.read(), filename=chemin)
+        source = f.read()
+    arbre = ast.parse(source, filename=chemin)
+
+    # 2026-09-19 : le client n'est plus une variable de module mais un element de
+    # l'attelage rendu par `attelage_du_bot`, donc lie par DEPAQUETAGE. Le verrou accepte
+    # les deux formes ; ce qu'il protege est inchange — un client NVIDIA doit etre
+    # CONSTRUIT quelque part, pas seulement voir sa cle enregistree.
+    def _noms_affectes(noeud):
+        for cible in noeud.targets:
+            for sous in ast.walk(cible):
+                if isinstance(sous, ast.Name):
+                    yield sous.id
 
     construit = any(
-        isinstance(n, ast.Assign)
-        and any(getattr(c, "id", None) == "nvidia_client" for c in n.targets)
+        isinstance(n, ast.Assign) and "nvidia_client" in set(_noms_affectes(n))
         for n in ast.walk(arbre)
-    )
+    ) or "OpenAI(api_key=nvidia_key" in source
     assert construit, "runner.py doit CONSTRUIRE un nvidia_client, pas seulement enregistrer sa cle"
 
     passe = any(
@@ -1444,4 +1454,95 @@ def test_deux_bornes_differentes_MASQUENT_les_deltas():
     )
     assert 'get("borne_du_direct", False)) != borne_du_direct' in source, (
         "rien ne masque les deltas entre deux bornes differentes"
+    )
+
+
+# ────── Le harnais mesure chaque bot avec SES cles, pas celles de Johnny (19/09) ──────
+
+
+def test_chaque_bot_est_mesure_avec_SES_PROPRES_cles():
+    """Jusqu'au 2026-09-19, `runner.py` chargeait le `.env` de JohnnyBot et faisait tourner
+    les SIX personas dessus.
+
+    Une passe complete — ~102 appels de bot, autant de juge — tapait donc six fois sur le
+    seul projet Google de Johnny, quand la production en a six separes. D'ou le « plancher
+    de bruit » qu'on documentait comme une fatalite : deux passes identiques bougeaient de
+    jusqu'a 6/17 sur la colonne AVANT « parce que le tirage de l'ORDRE decide qui a le
+    quota frais ». Il n'y avait pas de loterie — le premier bot tire vidait la reserve de
+    Johnny, les suivants retombaient sur ministral, qui produit une didascalie 3 fois sur 4.
+
+    En PRODUCTION les epuisements ne sont pas simultanes : sur 41 minutes ou au moins un
+    bot est ecarte (api_usage.db, 17-18/09), **37 ne concernent qu'un seul bot**. Les
+    quotas sont bien separes ; ils ne l'etaient que dans le harnais.
+
+    ⚠️ Verrou en STRUCTURE : les cles n'existent pas en CI, et un `MagicMock` rendrait une
+    fausse cle non-None ([[feedback-le-local-ment-sans-cles]]).
+    """
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "runner.py")
+    source = open(chemin, encoding="utf-8").read()
+    arbre = ast.parse(source)
+
+    fonctions = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "run_scenario_for_bot"
+    ]
+    assert fonctions, "run_scenario_for_bot a disparu"
+    corps = fonctions[0]
+
+    # 1. l'attelage est demande POUR CE BOT, avec l'identifiant recu en argument.
+    appels = [
+        n for n in ast.walk(corps)
+        if isinstance(n, ast.Call)
+        and (getattr(n.func, "id", None) or getattr(n.func, "attr", None)) == "attelage_du_bot"
+    ]
+    assert appels, (
+        "run_scenario_for_bot ne demande pas les cles du bot mesure : il retombe sur un "
+        "pool global, c'est-a-dire les cles d'un seul bot pour les six"
+    )
+    assert any(
+        a.args and isinstance(a.args[0], ast.Name) and a.args[0].id == "bot_id"
+        for a in appels
+    ), "l'attelage est demande pour autre chose que le bot en cours de mesure"
+
+    # 2. le code remplace ne doit plus exister : un pool construit au niveau du MODULE
+    #    reprendrait la main en silence, puisqu'il porterait le meme nom.
+    #    ([[gotcha-import-ajoute-mais-pas-cable]] : exiger aussi l'ABSENCE du remplace.)
+    for noeud in arbre.body:
+        if isinstance(noeud, ast.Assign):
+            cibles = {t.id for t in noeud.targets if isinstance(t, ast.Name)}
+            assert not (cibles & {"key_manager", "groq_client", "mistral_client", "nvidia_client"}), (
+                f"{cibles} est reconstruit au niveau du MODULE : les six bots repartageraient "
+                "les memes cles, et le correctif serait annule sans qu'un test ne bouge"
+            )
+
+
+def test_le_dossier_du_bot_est_DEDUIT_de_la_table_des_personas():
+    """Une seconde liste ecrite a la main divergerait en silence.
+
+    C'est exactement ce que les deux listes de vendoring ont fait
+    ([[gotcha-deux-listes-vendoring]]), et le harnais a deja paye une liste ecrite a la
+    main qui excluait un bot sur six ([[gotcha-un-bot-sur-six-manque-toujours]]).
+
+    Ce test-ci ne demande AUCUNE cle : il verifie que les six identifiants mappent vers un
+    dossier de bot qui existe reellement sur le disque.
+    """
+    from tests.eval.persona_loader import PERSONAS
+    from tests.eval.runner import _dossier_du_bot
+
+    assert len(PERSONAS) == 6, f"la table des personas n'a plus six bots : {sorted(PERSONAS)}"
+
+    for bot_id in PERSONAS:
+        dossier = _dossier_du_bot(bot_id)
+        assert dossier.is_dir(), f"{bot_id} pointe vers {dossier}, qui n'existe pas"
+        assert (dossier / ".env.encrypted").exists(), (
+            f"{bot_id} : {dossier.name} ne porte pas de .env.encrypted — le harnais "
+            "retomberait sur les cles du bot charge precedemment, en silence"
+        )
+
+    dossiers = {str(_dossier_du_bot(b)) for b in PERSONAS}
+    assert len(dossiers) == 6, (
+        f"deux bots partagent un dossier de cles : {sorted(dossiers)} — ils partageraient "
+        "alors un quota, ce que ce correctif existe precisement pour eviter"
     )

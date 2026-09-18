@@ -32,7 +32,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from tests.eval.runner import run_scenario_for_bot, key_manager, groq_client, mistral_client, ECHEC_CASCADE
+from tests.eval.runner import run_scenario_for_bot, attelage_du_bot, ECHEC_CASCADE
 from tests.eval.gimmick import detect_gimmick
 from tests.eval.judge import evaluate_response, VERSION_BAREME
 from tests.eval.deterministic import evaluate_deterministic
@@ -618,14 +618,22 @@ async def main():
                 # Évaluation par le juge LLM
                 transcript_str = scenario.get("transcript", "")
 
+                # ⚠️ Le juge tire sur les cles DU BOT JUGE, pas sur un pool commun.
+                # Il consomme un appel PAR TOUR : branche sur une seule cle, il vidait le
+                # projet Google de ce bot-la — ~102 appels de juge en plus de ses 17
+                # appels a lui — et ce bot devenait le seul a retomber sur ministral. Un
+                # harnais ne doit pas creer d'ecart entre les bots qu'il compare.
+                # Ainsi chaque projet porte exactement la meme charge : ses 17 tours et
+                # les 17 notes qui vont avec.
+                km_bot, groq_bot, mistral_bot, _ = attelage_du_bot(bot_id)
                 scores = await evaluate_response(
                     system_prompt=system_prompt,
                     transcript=transcript_str,
                     user_messages=scenario["user_messages"],
                     responses=responses,
-                    key_manager=key_manager,
-                    groq_client=groq_client,
-                    mistral_client=mistral_client,
+                    key_manager=km_bot,
+                    groq_client=groq_bot,
+                    mistral_client=mistral_bot,
                 )
 
                 if any(scores.get(m, -1) == -1 for m in METRICS):
