@@ -251,6 +251,59 @@ def bots_demandes(argv: list[str] = None) -> list[str]:
 
 
 
+USAGE = """Usage : python tests/eval/run_eval.py [--bot <id>[,<id>...]] [--historique-brut]
+
+  --bot <id>          Ne mesurer que ce(s) bot(s). Repetable, ou liste separee par des
+                      virgules. Par defaut : les six.
+  --historique-brut   EXPERIENCE : le texte NON filtre repart dans l'historique du
+                      modele. Ne decrit PAS le bot reel ; ses deltas ne se comparent
+                      pas a ceux d'un run normal.
+  -h, --help          Afficher cette aide et ne RIEN appeler.
+"""
+
+
+def verifie_arguments(argv: list[str] = None) -> None:
+    """Refuse tout argument inconnu, et rend `--help` inoffensif.
+
+    Le harnais n'utilise pas `argparse` : chaque drapeau est lu a la main par la fonction
+    qui s'en sert, et tout le reste etait ignore EN SILENCE. Un run complet coute ~60
+    appels de bot et autant de juge, donc une part du quota du jour — et
+    `run_eval.py --help` le depensait integralement en croyant afficher une aide (vu le
+    2026-09-18). Une faute de frappe (`--bots alfred`, `--bot-alfred`) faisait pire :
+    elle mesurait les SIX en silence, exactement ce que `--bot` existe pour eviter
+    ([[gotcha-run-eval-borne-par-le-quota]]).
+
+    `--bot` sans valeur, ou `--bot=` vide, tombent ici aussi : ils retombaient sur la
+    liste complete, le contraire de ce que l'utilisateur demandait.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    if "--help" in argv or "-h" in argv:
+        print(USAGE)
+        raise SystemExit(0)
+
+    inconnus = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--bot":
+            if i + 1 >= len(argv):
+                raise SystemExit(f"[ERREUR] `--bot` attend un identifiant de bot.\n{USAGE}")
+            i += 2
+        elif arg.startswith("--bot="):
+            if not arg[6:].strip(","):
+                raise SystemExit(f"[ERREUR] `{arg}` ne nomme aucun bot.\n{USAGE}")
+            i += 1
+        elif arg == "--historique-brut":
+            i += 1
+        else:
+            inconnus.append(arg)
+            i += 1
+
+    if inconnus:
+        raise SystemExit(f"[ERREUR] Argument(s) inconnu(s) : {inconnus}\n{USAGE}")
+
+
 def historique_brut_demande(argv: list[str] = None) -> bool:
     """Lit `--historique-brut` : le texte NON filtré repart dans l'historique du modèle.
 
@@ -315,6 +368,10 @@ def compte_asterisques(results: list[dict]) -> dict:
 
 
 async def main():
+    # Avant toute chose, et surtout avant le premier appel payant : un argument inconnu
+    # ou `--help` ne doit pas declencher un run complet.
+    verifie_arguments()
+
     print("[START] Demarrage du harnais d'evaluation des personas...")
 
     historique_brut = historique_brut_demande()

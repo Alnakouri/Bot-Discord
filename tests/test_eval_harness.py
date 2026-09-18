@@ -1194,3 +1194,70 @@ def test_un_message_hors_cp1252_SURVIT_a_l_import_du_harnais():
         + proc.stderr.decode("utf-8", "replace")[-600:]
     )
     assert b"ok" in proc.stdout
+
+
+def test_un_argument_inconnu_ne_lance_PAS_un_run_complet():
+    """`run_eval.py --help` depensait le quota du jour en croyant afficher une aide.
+
+    Le harnais lit ses drapeaux a la main, sans `argparse` : tout le reste etait ignore en
+    SILENCE et le run partait sur les six bots (~60 appels de bot, autant de juge). Vu le
+    2026-09-18. Une faute de frappe (`--bots alfred`) faisait pire : elle mesurait les six
+    alors que l'utilisateur en demandait un.
+    """
+    import pytest as _pytest
+    from tests.eval.run_eval import verifie_arguments
+
+    # Ce qui est reconnu passe sans bruit.
+    verifie_arguments([])
+    verifie_arguments(["--bot", "alfred"])
+    verifie_arguments(["--bot=malena,johnny", "--historique-brut"])
+
+    # `--help` sort a 0, et sans avoir rien appele.
+    with _pytest.raises(SystemExit) as sortie:
+        verifie_arguments(["--help"])
+    assert sortie.value.code == 0
+    with _pytest.raises(SystemExit) as sortie:
+        verifie_arguments(["-h"])
+    assert sortie.value.code == 0
+
+    # Tout le reste est refuse plutot que joue.
+    for argv in (
+        ["--bots", "alfred"],                  # faute de frappe : mesurait les SIX
+        ["--bot-alfred"],
+        ["--historique_brut"],                 # tiret bas : le drapeau etait sans effet
+        ["--bot"],                             # valeur manquante : retombait sur les six
+        ["--bot="],                            # idem, en silence
+        ["alfred"],                            # le nom nu, sans son drapeau
+    ):
+        with _pytest.raises(SystemExit) as sortie:
+            verifie_arguments(argv)
+        assert sortie.value.code != 0, f"{argv} est passe : le run complet serait parti"
+
+
+def test_la_verification_des_arguments_passe_AVANT_le_premier_appel():
+    """Un garde place apres le premier appel payant ne garde plus rien."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    mains = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "main"
+    ]
+    assert mains, "run_eval.py n'a plus de `main`"
+
+    corps = mains[0].body
+    appels = [
+        i for i, stmt in enumerate(corps)
+        if isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and isinstance(stmt.value.func, ast.Name)
+        and stmt.value.func.id == "verifie_arguments"
+    ]
+    assert appels, "`main` n'appelle plus `verifie_arguments` : un typo relance les six bots"
+    assert appels[0] == 0, (
+        "`verifie_arguments()` n'est plus la PREMIERE instruction de `main` : "
+        "ce qui la precede s'execute pour un argument qui sera refuse"
+    )
