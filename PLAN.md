@@ -102,9 +102,7 @@ pas un auteur) — ce trou-la n'a ete vu qu'en rejouant les mutations.
 
 ### Ce qui reste, et qui n'est pas dans ce plan
 
-- **Relancer une passe complete** quand les quotas seront frais, pour voir les six
-  colonnes AVANT/APRES et trancher le LOT 2 sur les six. — **lancee le 18/09 a 10:55**
-  (accidentellement, voir ci-dessous) ; resultats a reporter ici.
+- ✅ **La passe complete est FAITE** (18/09, 11:09) — voir la section ci-dessous.
 - ✅ `484cfa4` — **`run_eval.py --help` lancait un run complet des six bots.** Le harnais
   lit ses drapeaux a la main : tout argument inconnu etait ignore en silence, et
   `--bots alfred` (faute de frappe) mesurait les SIX. `verifie_arguments()` refuse
@@ -112,6 +110,67 @@ pas un auteur) — ce trou-la n'a ete vu qu'en rejouant les mutations.
 - ⚠️ `Windows fatal exception: access violation` dans `test_anti_rattrapage_boucles.py:167`
   (boucle asyncio Windows). La suite finit verte, mais la ligne de resume disparait parfois.
 - **NVIDIA** : tranche, il reste tel quel — [[decision-nvidia-reste-avec-la-borne-du-direct]].
+
+---
+
+## LA PASSE COMPLETE DES SIX — 18/09 a 11:09, bareme 3
+
+`tests/eval/reports/eval_20260918_1055.json`. **Les six `fiable: true`, 0 appel echoue,
+0 score a -1**, malgre un quota Gemini a sec en cours de route (la cascade a tenu).
+
+    bot           asterisques AVANT -> APRES   echelon qui a repondu
+    alfred            10/17  ->  0/17          ministral x17
+    johnny            13/17  ->  0/17          ministral x17
+    maiq               0/17  ->  0/17          gemini-flash-lite x17
+    malena            11/17  ->  0/17          ministral x13, flash-lite x3, nvidia x1
+    sheogorath        15/17  ->  0/17          ministral x17
+    sugar             10/17  ->  0/17          ministral x13, flash-lite x4
+
+### Ce que cette passe tranche
+
+**1. Le LOT 1 est valide sur les six : la colonne APRES est a ZERO partout.** Le filet
+deterministe attrape 59 reponses sur 102 qui portaient encore une didascalie. C'est le
+seul des trois leviers qui GARANTIT, et il est desormais mesure comme tel.
+
+**2. Sur le texte brut, c'est le MODELE qui decide — pas la fiche.** Les 102 reponses,
+regroupees par echelon plutot que par bot :
+
+    mistral/ministral-14b     59/77   76,6 %   (5 fiches differentes : 10..15/17 chacune)
+    gemini/gemini-flash-lite   0/24    0,0 %   (3 fiches differentes : maiq, malena, sugar)
+    nvidia/nemotron            0/1
+
+Toutes ces fiches sont les fiches **reecrites** du LOT 2. Sur le modele qui ecoute, la
+reecriture donne **zero** ; sur ministral, elle laisse **trois reponses sur quatre**.
+⚠️ Cela **nuance** la conclusion du 17/09 (« la FORMULATION bat le modele »), tiree de
+sugar 0/17 contre malena 11/17 a modele egal — sur les ANCIENNES fiches. Lecture qui tient
+aujourd'hui : **la fiche agit, mais seulement sur un modele qui la suit.** Ministral ne la
+suit pas, comme il ne suit pas la consigne de longueur
+([[gotcha-la-longueur-est-un-defaut-de-MODELE]]).
+
+**3. Le plancher de bruit du harnais est ~±0,4.** Cette passe et celle de 00:50 le meme
+jour ont les **memes fiches** (aucun commit sur un dossier de bot entre les deux), les
+memes 10 scenarios, le meme bareme — et pourtant :
+
+    bot          global 00:50   global 11:09        AVANT 00:50   AVANT 11:09
+    alfred            4.52          4.86                 9/17         10/17
+    johnny            4.60          4.42                11/17         13/17
+    maiq              4.20          4.76                 6/17          0/17
+    malena            4.42          4.20                 7/17         11/17
+    sheogorath        4.24          4.54                 9/17         15/17
+    sugar             4.56          4.20                11/17         10/17
+
+Le tirage de l'ORDRE des bots decide qui recoit le quota Gemini encore frais ; l'echelon
+suit, et le compte brut avec lui (maiq 6/17 -> 0/17 : il a eu flash-lite sur les 17).
+**Aucun delta de moins de 0,4 point ne doit etre lu comme un effet**, et aucune colonne
+AVANT ne doit etre lue sans son echelon.
+
+### La question que cela ouvre (non tranchee)
+
+Quatre bots tournent sur ministral et produisent 10 a 15 didascalies sur 17 ; le filet les
+retire toutes. Basculer ces bots vers un modele qui ECOUTE reglerait la cause — mais le
+quota Gemini gratuit est de **20 requetes/jour et par modele**, ce qui renvoie a ministral
+en quelques minutes d'activite reelle. Le filet reste donc le garde-fou, quoi qu'on choisisse.
+**Decision a prendre avec Ahmed, pas dans ce plan.**
 
 ---
 
