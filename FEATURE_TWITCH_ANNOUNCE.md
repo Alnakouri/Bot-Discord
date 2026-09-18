@@ -95,6 +95,12 @@ pour tout le monde d'autre la commande ne répond pas, et le refus part dans le 
 Elle rejoue le **vrai** chemin d'annonce — même embed, même accroche écrite par le modèle
 en personnage, même repli statique si le modèle se tait — avec trois différences voulues :
 
+- **La commande s'efface.** Le message `!annonce…` est supprimé avant l'envoi : il ne
+  reste que l'annonce. À six bots, cinq tombent forcément sur un « message déjà
+  supprimé » — c'est le cas nominal, il ne crie pas dans le journal et n'empêche
+  aucune annonce. Sans la permission « Gérer les messages », le bot le note une fois
+  et annonce quand même. Un refus, lui, n'efface rien : une commande qui disparaît
+  sans rien produire serait pire que la laisser.
 - **Elle poste dans le salon d'où la commande part**, jamais dans le salon configuré :
   un test n'a rien à faire chez la communauté.
 - **L'anti-doublon est sauté.** Sinon, les six bots répondant à la même commande, un seul

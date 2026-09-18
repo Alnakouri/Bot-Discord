@@ -609,6 +609,31 @@ def lire_arguments_annonce(args) -> tuple[str | None, str | None]:
     return None, mots[0]
 
 
+async def effacer_la_commande(ctx, logger) -> bool:
+    """Retire le message `!annonce…` pour ne laisser que l'annonce.
+
+    ⚠️ A six bots, cinq echouent FORCEMENT : le premier arrive supprime, les autres
+    tombent sur un `NotFound`. C'est le cas nominal, pas une panne — il ne doit donc ni
+    crier dans le journal ni empecher l'annonce de partir
+    ([[gotcha-une-alerte-qui-crie-pour-du-nominal]]).
+
+    Sans la permission « Gerer les messages », on le dit une fois au journal et on
+    continue : une annonce vaut mieux qu'un abandon parce qu'un menage a echoue.
+    """
+    try:
+        await ctx.message.delete()
+        return True
+    except discord.NotFound:
+        return False        # un autre bot a ete plus rapide : nominal
+    except discord.Forbidden:
+        logger.info("🧪 [TWITCH] !annonce : message non supprime, permission "
+                    "« Gerer les messages » absente")
+        return False
+    except Exception as e:
+        logger.warning(f"⚠️ [TWITCH] !annonce : suppression du message impossible : {e}")
+        return False
+
+
 def enregistrer_commande_annonce(bot, announcer, logger) -> bool:
     """Ajoute `!annonce [login]` : rejoue une annonce a la demande, pour la voir.
 
@@ -657,6 +682,11 @@ def enregistrer_commande_annonce(bot, announcer, logger) -> bool:
             # pour un refus. Le refus va au journal, qui est fait pour ca.
             logger.info(f"🧪 [TWITCH] !annonce refusee a {ctx.author} (droits insuffisants)")
             return
+
+        # Le menage AVANT l'annonce : la commande disparait, l'annonce prend sa place.
+        # Si la generation echoue ensuite, le repli statique parle quand meme — la
+        # commande ne peut donc pas s'evaporer sans rien laisser.
+        await effacer_la_commande(ctx, logger)
 
         try:
             resultat = await announcer.simuler_annonce(ctx.channel, login)

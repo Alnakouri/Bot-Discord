@@ -16,12 +16,15 @@ import asyncio
 import os
 import sys
 
+import discord
+
 RACINE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if RACINE not in sys.path:
     sys.path.insert(0, RACINE)
 
 from shared.twitch_announcer import (
     ALIAS_BOTS,
+    effacer_la_commande,
     TwitchAnnouncer,
     bot_vise,
     enregistrer_commande_annonce,
@@ -68,11 +71,31 @@ class _Auteur:
         return "quelqu-un"
 
 
+class _ReponseHttp:
+    """`discord.NotFound` et `discord.Forbidden` exigent une reponse HTTP a construire."""
+    def __init__(self, status):
+        self.status = status
+        self.reason = "test"
+
+
+class _Message:
+    """Le message `!annonce…` lui-meme. `leve` simule ce que Discord renverrait."""
+    def __init__(self, leve=None):
+        self.supprime = False
+        self._leve = leve
+
+    async def delete(self):
+        if self._leve is not None:
+            raise self._leve
+        self.supprime = True
+
+
 class _Contexte:
-    def __init__(self, gerant=True, guild=object()):
+    def __init__(self, gerant=True, guild=object(), leve=None):
         self.guild = guild
         self.author = _Auteur(gerant)
         self.channel = _Salon()
+        self.message = _Message(leve)
 
 
 class _BotFactice:
@@ -322,3 +345,72 @@ def test_les_accents_et_l_apostrophe_ne_perdent_pas_le_bot():
     assert bot_vise("SHEO") == "sheogorath"
     assert bot_vise("Sugar-Bot") == "sugar"
     assert bot_vise("streameuse_amie") is None
+
+
+def test_la_commande_s_efface_et_laisse_la_place_a_l_annonce():
+    bot, journal = _BotFactice(), _Journal()
+    annonceur = _annonceur(stream=STREAM_EN_DIRECT)
+    enregistrer_commande_annonce(bot, annonceur, journal)
+
+    ctx = _Contexte(gerant=True)
+    asyncio.run(bot.commandes["annonce"](ctx))
+
+    assert ctx.message.supprime is True, "le `!annonce` de l'utilisateur est reste a l'ecran"
+    assert len(ctx.channel.envois) == 1
+
+
+def test_un_refus_n_efface_PAS_le_message_de_l_utilisateur():
+    """Effacer sans rien faire en retour donnerait une commande qui disparait dans le vide."""
+    bot, journal = _BotFactice(), _Journal()
+    annonceur = _annonceur(stream=STREAM_EN_DIRECT)
+    enregistrer_commande_annonce(bot, annonceur, journal)
+
+    ctx = _Contexte(gerant=False)
+    asyncio.run(bot.commandes["annonce"](ctx))
+    assert ctx.message.supprime is False
+
+
+def test_le_bot_qui_n_est_pas_VISE_ne_touche_a_rien():
+    bot, journal = _BotFactice(), _Journal()
+    annonceur = _annonceur(stream=STREAM_EN_DIRECT)
+    annonceur.bot_id = "alfred"
+    enregistrer_commande_annonce(bot, annonceur, journal)
+
+    ctx = _Contexte(gerant=True)
+    asyncio.run(bot.commandes["annonce"](ctx, "johnny"))
+    assert ctx.message.supprime is False and ctx.channel.envois == []
+
+
+def test_a_six_le_message_deja_supprime_est_le_cas_NOMINAL():
+    """Cinq bots sur six tombent sur un NotFound : ni cri au journal, ni annonce perdue."""
+    bot, journal = _BotFactice(), _Journal()
+    annonceur = _annonceur(stream=STREAM_EN_DIRECT)
+    enregistrer_commande_annonce(bot, annonceur, journal)
+
+    ctx = _Contexte(gerant=True, leve=discord.NotFound(_ReponseHttp(404), "deja supprime"))
+    asyncio.run(bot.commandes["annonce"](ctx))
+
+    assert len(ctx.channel.envois) == 1, "l'annonce doit partir meme si le menage a rate"
+    assert not [l for l in journal.lignes if "⚠️" in l or "impossible" in l], (
+        "le cas nominal a six bots ne doit pas alarmer : " + str(journal.lignes)
+    )
+
+
+def test_sans_la_permission_l_annonce_part_QUAND_MEME():
+    bot, journal = _BotFactice(), _Journal()
+    annonceur = _annonceur(stream=STREAM_EN_DIRECT)
+    enregistrer_commande_annonce(bot, annonceur, journal)
+
+    ctx = _Contexte(gerant=True, leve=discord.Forbidden(_ReponseHttp(403), "pas le droit"))
+    asyncio.run(bot.commandes["annonce"](ctx))
+
+    assert len(ctx.channel.envois) == 1
+    assert any("Gerer les messages" in l for l in journal.lignes)
+
+
+def test_effacer_la_commande_rend_VRAI_seulement_quand_elle_a_efface():
+    journal = _Journal()
+    ctx = _Contexte()
+    assert asyncio.run(effacer_la_commande(ctx, journal)) is True
+    assert asyncio.run(effacer_la_commande(
+        _Contexte(leve=discord.NotFound(_ReponseHttp(404), "x")), journal)) is False
