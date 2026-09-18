@@ -1288,11 +1288,22 @@ def test_la_recitation_de_la_fiche_est_MESUREE():
         "Monsieur confond un majordome avec une encyclopedie.", fiche)
     assert petite < _RECITATION_MIN, f"faux positif : {petite} caracteres"
 
-    compte = compte_recitation([
-        {"bot": "alfred", "responses_brutes": ["Mieux avant cette question, hélas."]},
-    ])
-    # La vraie fiche d'Alfred est chargee ici : la phrase en vient, elle doit tomber.
+    # Cablage sur la VRAIE fiche : on lui rend un morceau d'elle-meme, pris a l'execution.
+    # ⚠️ Ne PAS coder en dur une phrase de la fiche ici : elle a justement ete reecrite le
+    # 2026-09-18 pour en retirer les repliques, et ce test serait tombe avec elle alors que
+    # la mesure, elle, marchait.
+    from tests.eval.persona_loader import load_persona
+
+    vraie = load_persona("alfred")["system_prompt"]
+    morceau = vraie[400:400 + 60]
+    compte = compte_recitation([{"bot": "alfred", "responses_brutes": [morceau]}])
     assert compte["alfred"]["citations"] == 1, compte
+
+    # Et une reponse qui ne vient pas de la fiche ne doit rien declencher.
+    propre = compte_recitation([
+        {"bot": "alfred", "responses_brutes": ["Le chat du voisin a encore mange la pizza."]},
+    ])
+    assert propre["alfred"]["citations"] == 0, propre
 
 
 def test_la_recitation_est_ECRITE_dans_le_rapport():

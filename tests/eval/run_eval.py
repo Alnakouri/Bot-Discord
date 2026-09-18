@@ -352,6 +352,13 @@ def plus_longue_citation(reponse: str, persona: str) -> tuple[int, str]:
 
     ⚠️ C'est le risque exact d'un changement de modele vers plus obeissant : ce qui fait
     disparaitre les didascalies fait aussi recopier les demonstrations.
+
+    ⚠️ La mesure ne distingue pas une REPLIQUE recopiee d'une DESIGNATION de lore, et
+    c'est pour cela que le rapport imprime le fragment : il faut le lire. Exemple reel du
+    2026-09-18, apres la reecriture de la fiche d'Alfred — l'unique fragment au-dessus du
+    seuil etait « hallucination persistante du maitre », le nom que sa fiche lui DONNE
+    pour Sheogorath. Un vocabulaire impose n'est pas une replique servie : 35 caracteres,
+    zero probleme. Le cas fautif, lui, etait une phrase entiere avec sa chute et son emoji.
     """
     a, b = _normaliser_pour_citation(reponse), _normaliser_pour_citation(persona)
     if not a or not b:

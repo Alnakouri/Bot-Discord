@@ -207,11 +207,29 @@ citee. Sa baisse de 0,50 en fidelite est dans le bruit (+/-0,4) ; la recitation,
 ni le juge (4.20, il la trouve fidele) ni l'anti-tic (il compare les reponses entre elles)
 ne peuvent la voir. [[gotcha-un-modele-obeissant-RECITE-la-fiche]]
 
-**Deux sorties, DECISION D'AHMED :**
-1. remettre Alfred sur ministral — ses 10 didascalies sur 17 reviennent, mais il improvise ;
-2. **de-citer sa fiche** : remplacer les repliques d'exemple par des DESCRIPTIONS du
-   registre. On garde le gain et on tue la recitation. C'est la meme lecon que les
-   didascalies : ce qu'une fiche DEMONTRE, un modele le REPRODUIT.
+**Tranche le 18/09 : la fiche a ete DE-CITEE**, et c'etait le bon choix. Une trentaine de
+repliques pretes a servir (10 comebacks, 4 piques, 6 reponses contextuelles, 6 exemples de
+duel, 2 de sollicitude) sont devenues des DESCRIPTIONS de technique. Meme modele, seule la
+fiche change (`eval_20260918_1456.json`) :
+
+                                  fidelite   ton   longueur  didascalies  recitation
+    ministral (11:09)               4.70     5.00    4.60     10/17 -> 0       —
+    gemma + ancienne fiche (14:00)  4.20     4.90    4.50      0/17 -> 0   2/17, record 83
+    gemma + fiche DE-CITEE (14:56)  4.80     5.00    5.00      0/17 -> 0   1/17, record 35
+
+**Retirer les exemples n'a pas affaibli le personnage, il l'a renforce** : fidelite au plus
+haut des trois etats, longueur 5,00/5, zero didascalie. C'est la lecon du 17/09 sur Sugar,
+confirmee cette fois par la mesure — la fiche qui DECRIT bat la fiche qui DEMONTRE.
+
+⚠️ La recitation restante se LIT, elle ne se compte pas : le seul fragment au-dessus du
+seuil est « hallucination persistante du maitre », le nom que la fiche DONNE a Sheogorath.
+Un vocabulaire impose n'est pas une replique servie. Le cas fautif du 14:00 etait une
+phrase entiere, avec sa chute et son emoji, rendue deux fois. C'est pour cela que le
+rapport imprime le fragment.
+
+⚠️ Les colonnes `recitation` des deux anciens runs ci-dessus sont RE-MESUREES contre la
+fiche d'aujourd'hui (la mesure charge la fiche vivante) — d'ou l'ecriture du chiffre DANS
+le rapport au moment du run.
 
 ---
 
