@@ -67,6 +67,33 @@ GROQ_REASONING_MODELS = ("gpt-oss",)
 # ⚠️ `models.list()` MENT une fois de plus : `nemotron-nano-3-30b-a3b`,
 # `llama-3.1-nemotron-70b-instruct` et `-51b-instruct` sont au catalogue et rendent 404.
 NVIDIA_FAST = "nvidia/nemotron-3.5-lightning-30b-a3b"
+
+# Choisi le 2026-09-18 pour sortir Alfred et Johnny de ministral-14b, qui produit une
+# didascalie entre asterisques dans 77 % de ses reponses (59 sur 77, mesure du harnais
+# d'eval sur cinq fiches differentes) quand gemma-4 n'en produit AUCUNE.
+#
+# Sonde reelle sur les VRAIES personas (tools/sonde_modeles_persona.py, 3 cas par bot) :
+#   bot      latence        longueur           didascalies
+#   johnny   2,7 a 4,7 s    3-4 phr / 22-47 mots   0/3     (ministral : 10 phr / 140 mots)
+#   alfred   1,25 a 5,1 s   3 phr   /  7-30 mots   0/3
+#   sheo     1,9 a 2,75 s   4-5 phr / 31-43 mots   0/3
+# Francais impeccable, registre tenu dans les trois cas (« choom » et Arasaka chez
+# Johnny, « Monsieur » chez Alfred, Haskill et les majuscules chez Sheogorath).
+#
+# ⚠️ Ce sont les poids Gemma de Google, mais servis par NVIDIA : autre point d'entree,
+# autre quota, aucun rapport avec l'API Gemini. Les deux peuvent cohabiter dans une
+# cascade sans partager un plafond.
+#
+# ⚠️ DEMARRAGE A FROID : le premier appel sur une fonction NVIDIA endormie depasse 20 s
+# (mesure : 2 fois sur 2). En tete de cascade, le premier message apres une periode calme
+# sera donc refuse par la borne de 15 s du direct et retombera sur l'echelon suivant —
+# ministral, c'est-a-dire l'etat d'avant. Le gain est reel mais il n'est pas total, et
+# c'est la raison pour laquelle ministral reste JUSTE derriere.
+#
+# ⚠️ Sur 14 candidats NVIDIA reellement appeles ce jour-la, 8 rendent 404 malgre le
+# catalogue et 4 depassent la borne du direct. Celui-ci est le seul survivant ; ne pas
+# remettre les autres sur la foi de `models.list()` ([[gotcha-catalogue-nvidia-ment]]).
+NVIDIA_GEMMA = "google/gemma-4-31b-it"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
@@ -223,7 +250,13 @@ CASCADES_PERSONA = {
     # Son releve reste acceptable (4 phrases / 22 mots contre 6/92 et 8/95), son score
     # `longueur` est le moins mauvais des trois (3.00), et flash-lite avait deja ete
     # ecarte pour lui ci-dessus (« ton fade et tic helas »). On ne change pas ce qui tient.
-    "alfred": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
+    # ⚠️ 18/09 : gemma-4 passe DEVANT ministral. Le releve de ministral restait « le moins
+    # mauvais des trois » sur la longueur, mais il produit une didascalie 3 fois sur 4, et
+    # trois interventions sur les fiches n'y ont rien change. gemma-4 rend 3 phrases de 7 a
+    # 30 mots, sans une astérisque, en gardant le « Monsieur » et l'ironie seche.
+    # ministral reste juste derriere : c'est lui qui repond quand NVIDIA demarre a froid.
+    "alfred": [("nvidia", NVIDIA_GEMMA), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST),
+               ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Rockerboy de Night City : argot cru, phrases qui cognent.
     # ⚠️ Teste sur les TROIS tetes, en conditions d'eval (10 scenarios avec transcript),
@@ -239,12 +272,26 @@ CASCADES_PERSONA = {
     # ⚠️ La sonde courte annoncait 3 phrases / 28 mots chez Groq — elle utilise 3 messages
     # SANS transcript. Une sonde qui ne reproduit pas les conditions reelles mesure autre
     # chose : [[gotcha-la-longueur-est-un-defaut-de-MODELE]].
-    "johnny": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
+    # ⚠️ 18/09 : gemma-4 passe DEVANT ministral. Le releve du 17/09 ci-dessus disait que le
+    # MODELE ne changeait rien a sa verbosite — c'etait vrai des trois tetes testees ce
+    # jour-la (ministral, gpt-oss, flash-lite), qui rendent 8 a 10 phrases. gemma-4 en rend
+    # 3 a 4, de 22 a 47 mots, sans une astérisque, en gardant « choom » et Arasaka. La
+    # permission qu'il s'accorde dans son prompt reste a traiter ; elle ne suffisait juste
+    # pas a expliquer les 140 mots.
+    "johnny": [("nvidia", NVIDIA_GEMMA), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST),
+               ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
     # Wabbajack, Haskill et le fromage de lui-meme, en francais correct. Il ouvre
     # souvent par « Ah, » — le filet anti-tics de Sheo est justement la pour ca.
-    "sheo": [("groq", GROQ_FAST), ("mistral", MISTRAL_MAIN), ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
+    # ⚠️ 18/09 : gemma-4 s'intercale en DEUXIEME, pas en tete. gpt-oss reste la tete parce
+    # qu'il sort le Wabbajack, Haskill et le fromage de lui-meme — c'est une raison de
+    # PERSONA, et elle n'a pas bouge. Mais dans les deux dernieres passes d'eval, Groq
+    # etait throttle et c'est ministral qui a repondu 17 fois sur 17, avec 15 didascalies.
+    # L'echelon qui sert vraiment de secours doit donc etre le bon : gemma-4 rend 4-5
+    # phrases, Haskill et les majuscules, sans une astérisque.
+    "sheo": [("groq", GROQ_FAST), ("nvidia", NVIDIA_GEMMA), ("mistral", MISTRAL_MAIN),
+             ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Piques courtes et sechees. gemini-flash-lite tranche sans meubler et garde le
     # vocabulaire maison (« aussi fragile qu'un sucre glace un jour de pluie, peteur »).

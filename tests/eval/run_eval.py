@@ -15,6 +15,8 @@ import shutil
 import random
 import re
 import time
+import difflib
+import unicodedata
 from collections import Counter
 from datetime import datetime
 
@@ -330,6 +332,69 @@ def _resume_echelons(compteur) -> str:
     return ", ".join(f"{nom} x{n}" for nom, n in parts)
 
 
+# Nombre de caracteres consecutifs recopies de sa propre fiche a partir duquel une
+# reponse n'est plus « en personnage » mais RECITEE. Mesure du 2026-09-18 chez Alfred :
+# une reponse de gemma-4 reprenait 35 caracteres d'affilee (« mieux avant cette question,
+# helas. », un EXEMPLE de la fiche, au mot pres), quand une reponse de ministral plafonnait
+# a 11 (« , monsieur »). Le seuil separe les deux sans etre au ras de l'un ou de l'autre.
+_RECITATION_MIN = 30
+
+
+def plus_longue_citation(reponse: str, persona: str) -> tuple[int, str]:
+    """Le plus long fragment que la reponse recopie MOT POUR MOT de son prompt.
+
+    Une fiche de persona contient des EXEMPLES de repliques — c'est ce qui la rend
+    enseignable. Un modele tres obeissant les ressort tels quels : la troisieme fois qu'on
+    demande « ca va ? », Alfred rend la phrase exacte du fichier. Le defaut est invisible
+    pour le juge, qui trouve la reponse parfaitement fidele — elle l'est, c'est bien le
+    probleme — et invisible aussi pour l'anti-tic, qui compare les reponses ENTRE elles et
+    ne voit rien a la premiere occurrence.
+
+    ⚠️ C'est le risque exact d'un changement de modele vers plus obeissant : ce qui fait
+    disparaitre les didascalies fait aussi recopier les demonstrations.
+    """
+    a, b = _normaliser_pour_citation(reponse), _normaliser_pour_citation(persona)
+    if not a or not b:
+        return 0, ""
+    bloc = difflib.SequenceMatcher(None, a, b, autojunk=False).find_longest_match(
+        0, len(a), 0, len(b))
+    return bloc.size, a[bloc.a:bloc.a + bloc.size]
+
+
+def _normaliser_pour_citation(texte: str) -> str:
+    """Minuscules, sans accents, espaces ramenes a un seul : « Hélas ! » == « helas ! »."""
+    t = unicodedata.normalize("NFD", (texte or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return " ".join(t.split())
+
+
+def compte_recitation(results: list[dict]) -> dict:
+    """Par bot : combien de reponses recopient >= `_RECITATION_MIN` caracteres de la fiche."""
+    from tests.eval.persona_loader import load_persona
+
+    personas, par_bot = {}, {}
+    for res in results:
+        bot = res["bot"]
+        if bot not in personas:
+            try:
+                # `load_persona` rend un dict {system_prompt, bot_label} — et pour
+                # Sheogorath, l'humeur « neutral » de son dictionnaire d'humeurs.
+                personas[bot] = (load_persona(bot) or {}).get("system_prompt", "")
+            except Exception:
+                personas[bot] = ""
+        if not personas[bot]:
+            continue
+        e = par_bot.setdefault(bot, {"citations": 0, "total": 0, "max": 0, "pire": ""})
+        for rep in (res.get("responses_brutes") or res.get("responses") or []):
+            e["total"] += 1
+            taille, fragment = plus_longue_citation(rep, personas[bot])
+            if taille >= _RECITATION_MIN:
+                e["citations"] += 1
+            if taille > e["max"]:
+                e["max"], e["pire"] = taille, fragment
+    return par_bot
+
+
 def compte_asterisques(results: list[dict]) -> dict:
     """Compte, par bot, les réponses qui portent des `*…*` AVANT puis APRÈS le filtre.
 
@@ -570,6 +635,9 @@ async def main():
         "ordre_bots": bots_evalues,
         "sante": sante,
         "top_3_chutes": top_3_chutes,
+        # Garde la mesure a cote des reponses : recalculee plus tard, elle dependrait de
+        # la fiche du JOUR, pas de celle qui a produit ces reponses-la.
+        "recitation": compte_recitation(results),
         "results": results
     }
 
@@ -649,6 +717,21 @@ async def main():
             print(f"   {'':<12}   echelons : {_resume_echelons(e['echelons'])}")
     else:
         print(" Aucune reponse mesuree.")
+
+    # Le modele recite-t-il sa propre fiche ? (2026-09-18)
+    print("" + "=" * 80)
+    print("RECITATION DE LA FICHE (fragments recopies mot pour mot)")
+    print("=" * 80)
+    recit = compte_recitation(results)
+    if recit:
+        for bot, e in recit.items():
+            drapeau = "⚠️ " if e["citations"] else "   "
+            print(f" - {bot:<12} : {drapeau}{e['citations']:>2}/{e['total']:<3} reponses "
+                  f"recopient >= {_RECITATION_MIN} car. (record : {e['max']})")
+            if e["max"] >= _RECITATION_MIN:
+                print(f"   {'':<12}   « {e['pire'][:90]} »")
+    else:
+        print(" Aucune fiche chargee : rien a comparer.")
 
     # Top 3 chutes (Lot 1.3)
     print("\n" + "=" * 80)

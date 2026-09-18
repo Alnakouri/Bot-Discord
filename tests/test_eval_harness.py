@@ -1261,3 +1261,55 @@ def test_la_verification_des_arguments_passe_AVANT_le_premier_appel():
         "`verifie_arguments()` n'est plus la PREMIERE instruction de `main` : "
         "ce qui la precede s'execute pour un argument qui sera refuse"
     )
+
+
+def test_la_recitation_de_la_fiche_est_MESUREE():
+    """Un modele tres obeissant ressort les EXEMPLES de sa fiche mot pour mot.
+
+    Vu le 2026-09-18 chez Alfred : « Mieux avant cette question, helas. » est une ligne
+    de demonstration du prompt, rendue telle quelle par gemma-4. Le juge ne peut pas le
+    voir — il trouve la reponse parfaitement fidele, et elle l'est. L'anti-tic non plus :
+    il compare les reponses ENTRE elles, jamais a la fiche.
+    """
+    from tests.eval.run_eval import plus_longue_citation, compte_recitation, _RECITATION_MIN
+
+    fiche = ("Tu es Alfred, majordome. Exemples : 'Comment ca va ?' -> "
+             "'Mieux avant cette question, helas.' ; 'T'es nul' -> 'Fort possible.'")
+
+    taille, fragment = plus_longue_citation("Bonjour. Mieux avant cette question, hélas. ☕", fiche)
+    assert taille >= _RECITATION_MIN, f"recitation manquee ({taille} car.)"
+    assert "mieux avant cette question" in fragment
+
+    # Les accents et la casse ne doivent pas faire rater la citation.
+    assert plus_longue_citation("MIEUX AVANT CETTE QUESTION, HELAS", fiche)[0] >= _RECITATION_MIN
+
+    # Une reponse originale qui partage juste du vocabulaire ne doit PAS etre comptee.
+    petite, _ = plus_longue_citation(
+        "Monsieur confond un majordome avec une encyclopedie.", fiche)
+    assert petite < _RECITATION_MIN, f"faux positif : {petite} caracteres"
+
+    compte = compte_recitation([
+        {"bot": "alfred", "responses_brutes": ["Mieux avant cette question, hélas."]},
+    ])
+    # La vraie fiche d'Alfred est chargee ici : la phrase en vient, elle doit tomber.
+    assert compte["alfred"]["citations"] == 1, compte
+
+
+def test_la_recitation_est_ECRITE_dans_le_rapport():
+    """Recalculee plus tard, elle dependrait de la fiche du jour, pas de celle du run."""
+    import ast
+
+    chemin = os.path.join(RACINE, "tests", "eval", "run_eval.py")
+    with open(chemin, encoding="utf-8") as f:
+        arbre = ast.parse(f.read(), filename=chemin)
+
+    rapports = [
+        n for n in ast.walk(arbre)
+        if isinstance(n, ast.Dict)
+        and any(isinstance(k, ast.Constant) and k.value == "version_bareme" for k in n.keys)
+    ]
+    assert rapports, "le dictionnaire du rapport a disparu"
+    assert any(
+        any(isinstance(k, ast.Constant) and k.value == "recitation" for k in r.keys)
+        for r in rapports
+    ), "le rapport n'ecrit pas `recitation` : la mesure ne survivrait pas au run"
