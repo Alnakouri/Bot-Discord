@@ -220,8 +220,20 @@ OPENROUTER_ECARTE = "nvidia/nemotron-3-super-120b-a12b:free"
 #                      prompt), ministral-8b (« (Note : j'ai respecte la contrainte) »).
 # 4. PAS DE VIDE       un 200 OK au contenu vide casse la cascade (cf. _est_vide dans
 #                      llm_cascade). deepseek-v4-flash : 2 reponses vides sur 5.
-# 5. LATENCE           sous ~2 s. Ecarte gemini-3.5-flash (10,3 s median) et
-#                      hermes-3-70b (3,0 s).
+# 5. LATENCE           sous ~2 s EN TETE de cascade. Ecarte gemini-3.5-flash (10,3 s
+#                      median) et hermes-3-70b (3,0 s).
+#                      ⚠️ Precise le 2026-09-19 : ce critere se lit par PLACE, et il
+#                      avait ete oublie en promouvant gemma-4 (12,5 s de mediane) le
+#                      18/09 — soit PIRE que le flash ecarte ici meme. Un echelon lent
+#                      en tete taxe TOUT le trafic, pas seulement la part qui echoue :
+#                      12,5 s d'attente sur chaque message qui aboutit, contre 1,8 s
+#                      pour ministral. En DEUXIEME le meme modele ne coute rien tant que
+#                      la premiere place repond — c'est la place de gemma-4 depuis, et
+#                      c'est pour ca qu'il reste dans les cascades sans passer ce
+#                      critere. Avant de promouvoir un modele EN TETE, lire sa latence
+#                      reelle dans `data/api_usage.db` :
+#                        SELECT model, COUNT(*), AVG(latency_ms) FROM api_calls
+#                        WHERE success=1 GROUP BY model;
 # 6. TIC D'OUVERTURE   combien de reponses commencent par le meme mot. Ce n'est pas
 #                      eliminatoire mais ca se paie : gpt-oss-120b ouvre par « Ah, »
 #                      5 fois sur 5, d'ou build_anti_tic_consigne cote Sheo.
