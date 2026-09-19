@@ -298,8 +298,20 @@ def strip_markdown_emphasis(reply):
     # `**gras**` puis `*italique*` ; `_..._` seulement entre limites de mots, pour ne pas
     # amputer un pseudo comme `le_dev`.
     # ⚠️ `**gras**` d'abord, sinon `**x**` laisse un asterisque orphelin.
-    nettoye = re.sub(r'\*\*(\S(?:[^*]*\S)?)\*\*', r'\1', reply)
-    nettoye = re.sub(r'\*(\S(?:[^*]*\S)?)\*', r'\1', nettoye)
+    # ⚠️ 2026-09-20 : les bornes `[^*]*` laissaient passer DEUX cas, verifies ici meme.
+    #  1. l'imbrication : `**a *b* c** et **d *e* f**` ressortait en
+    #     `**a b c* et *d e f** fin.` — pire que l'entree, les spans se melangent ;
+    #  2. le marqueur ORPHELIN (`Et toi, **sa te`), laisse par une reponse coupee en
+    #     plein mot par `max_tokens` : l'ouvrant n'a jamais recu son partenaire.
+    # Boucle jusqu'au point fixe en autorisant l'imbrication, puis retrait de ce qui
+    # n'a plus de paire. Meme correctif que les cinq `*_filtres.py`.
+    nettoye = reply
+    prev = None
+    while prev != nettoye:
+        prev = nettoye
+        nettoye = re.sub(r'\*\*(.+?)\*\*', r'\1', nettoye, flags=re.S)
+        nettoye = re.sub(r'\*([^*\n]+)\*', r'\1', nettoye)
+    nettoye = re.sub(r'\*+', '', nettoye)
     nettoye = re.sub(r'(?<![\w])_([^_]+?)_(?![\w])', r'\1', nettoye)
     return nettoye
 

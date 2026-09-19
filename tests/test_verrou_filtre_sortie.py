@@ -305,3 +305,56 @@ def test_une_didascalie_est_COURTE_et_la_prose_est_conservee():
         assert filtre("*pose son torchon* Le thé est servi.") == "Le thé est servi.", (
             f"{bot_id} ne retire plus les didascalies courtes"
         )
+
+
+def test_les_filtres_survivent_a_l_emphase_IMBRIQUEE():
+    """⚠️ Mesure du 2026-09-20 : les bornes `[^*]+` ne voient pas l'imbrication.
+
+    Dans `**a *b* c**`, le contenu du gras contient une asterisque, donc `[^*]+` ne peut
+    pas le couvrir : le gras n'est jamais reconnu et la passe italique s'accroche de
+    travers. Sur deux spans, elle les FUSIONNE — `**a *b* c** et **d *e* f**` ressortait
+    en `*a b c et d e f*` chez cinq bots, et en `**a b c* et *d e f**` chez Sheogorath.
+    Le texte en sortait plus abime qu'en entrant.
+
+    Le cas vient d'une vraie reponse de Malena : `**1 Trouve ton *rose* a toi**`.
+    """
+    for bot_id in FILTRES:
+        filtre = load_filtre(bot_id)
+        for entree in ("**1 Trouve ton *rose* a toi** et la suite du texte.",
+                       "**a *b* c** et **d *e* f** fin."):
+            sortie = filtre(entree, "raconte")
+            assert "*" not in sortie, (
+                f"{bot_id} laisse des asterisques sur de l'emphase imbriquee : {sortie!r}"
+            )
+
+
+def test_les_filtres_retirent_le_marqueur_ORPHELIN_d_une_reponse_tronquee():
+    """⚠️ Les 6 fuites relevees sur 306 sorties brutes finissaient TOUTES en plein mot :
+
+        « ... je suis la pour **l'emotion »      « ... il m'a dit : *"C'est »
+
+    Ce n'est pas le filtre qui fautait, c'est `max_tokens` qui coupait la reponse AVANT
+    le marqueur fermant. L'ouvrant restait seul et aucune paire ne le ramassait — et
+    l'asterisque orpheline n'etait que la trace visible d'une replique ENVOYEE tronquee.
+
+    Malena etait la seule touchee : la seule a taper son plafond de tokens. Sa regle de
+    longueur reecrite le 2026-09-19 en tarit la source ; ce filet ferme le reste.
+    """
+    for bot_id in FILTRES:
+        filtre = load_filtre(bot_id)
+        for entree in ("Et toi, **sa te", 'Le patron il m\'a dit : *"C\'est'):
+            sortie = filtre(entree, "salut")
+            assert "*" not in sortie, (
+                f"{bot_id} laisse un marqueur orphelin : {sortie!r}"
+            )
+
+
+def test_les_filtres_n_abiment_pas_un_texte_SANS_emphase():
+    """Le pendant obligatoire : un nettoyeur qui mange du texte propre n'est pas un
+    nettoyeur. Mesure : sur les 306 sorties brutes, AUCUN texte deja propre n'a bouge."""
+    for bot_id in FILTRES:
+        filtre = load_filtre(bot_id)
+        intact = "Oh la la, tu crois vraiment que je vais repondre a ca, toi ?"
+        assert filtre(intact, "salut") == intact, (
+            f"{bot_id} modifie un texte qui n'avait rien a nettoyer"
+        )

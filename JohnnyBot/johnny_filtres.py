@@ -57,8 +57,25 @@ def _strip_didascalies(text):
     # derriere elle. Le gras ne disparaissait pas : il DEVENAIT de l'italique.
     # Sheogorath n'a jamais eu ce defaut (`strip_markdown_emphasis` traite `**` en
     # premier) et c'est le seul des six a sortir 0/17 sur ce meme run.
-    text = _re.sub(r"\*\*([^*]+)\*\*", r"\1", text)        # gras
-    text = _re.sub(r"\*([^*]+)\*", r"\1", text)            # reste = simple emphase
+    # ⚠️ Deux defauts mesures le 2026-09-20, qu'une borne `[^*]+` ne voit NI l'un NI
+    # l'autre :
+    #  1. l'EMPHASE IMBRIQUEE. Dans `**1 Trouve ton *rose* a toi**`, le contenu du gras
+    #     contient une asterisque : `[^*]+` ne peut pas le couvrir, le gras n'est jamais
+    #     reconnu, et la passe italique s'accroche de travers. Sur deux spans —
+    #     `**a *b* c** et **d *e* f**` — elle les FUSIONNE en `*a b c et d e f*` ;
+    #  2. le MARQUEUR ORPHELIN. Les 6 fuites relevees sur 306 sorties brutes finissent
+    #     toutes en plein mot (« ... pour **l'emotion », « ... m'a dit : *"C'est ») :
+    #     `max_tokens` a coupe la reponse AVANT le marqueur fermant, et l'ouvrant reste
+    #     seul. Aucune paire ne le ramasse.
+    # D'ou une boucle jusqu'au point fixe qui AUTORISE l'imbrication, puis le retrait de
+    # ce qui n'a plus de partenaire. Mesure : 6 fuites sur 306 -> 0, et aucun des textes
+    # deja propres n'est modifie.
+    prev = None
+    while prev != text:
+        prev = text
+        text = _re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=_re.S)   # gras, imbrication OK
+        text = _re.sub(r"\*([^*\n]+)\*", r"\1", text)                # italique
+    text = _re.sub(r"\*+", "", text)                                 # orphelin de troncature
     return _re.sub(r"\s{2,}", " ", text).strip()
 
 
