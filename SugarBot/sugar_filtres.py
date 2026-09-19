@@ -96,6 +96,67 @@ def _strip_lead_vocative(text):
         return text
     return rest[0].upper() + rest[1:]
 
+# ── BUDGET DE MOTS (filet déterministe) ──────────────────────────────────────
+# ⚠️ Sa fiche dit « 2 phrases GRAND MAXIMUM, idéalement UNE seule punchline. Vise
+# ~30 mots, JAMAIS plus » (`sugar_data.py:30`). Mesure sur les 85 réponses des
+# rapports d'éval du 16 au 19/09 : **18 dépassent 30 mots**, jusqu'à 67.
+#
+# ⚠️ Et un plafond de PHRASES n'y suffit pas — c'est la mesure qui l'a montré, pas une
+# intuition. En coupant à 2 phrases (son maximum affiché), seules **5 des 18** repassent
+# sous 30 mots, et il en reste une à 47 : ses phrases font 20 à 25 mots chacune, donc
+# deux phrases « réglementaires » pèsent déjà 48 mots. Les deux moitiés de sa propre
+# règle se contredisent en pratique, et le modèle satisfait celle qui l'arrange.
+#
+# D'où un budget en MOTS. Il garde des phrases ENTIÈRES tant qu'il tient dans le budget,
+# et jamais moins d'une : couper au milieu d'une phrase estropie la chute, et une
+# punchline amputée est pire qu'une punchline longue
+# ([[gotcha-nettoyeur-laisse-ce-qui-rattachait]]).
+#
+# Simulation sur ces 85 réponses : 67/85 sous 30 mots aujourd'hui -> **82/85**, et
+# SEULES les 19 déjà en faute sont modifiées. Les 3 qui restent au-dessus sont des
+# punchlines d'une seule phrase (max 34 mots) : les raccourcir voudrait dire couper
+# dedans, et « ~30 » est approximatif dans sa fiche.
+#
+# ⚠️ Aucune exception « raconte » ici, contrairement au plafond de Johnny : sa fiche
+# dit « JAMAIS plus », sans reserve. Le cas `sugar_30_mots` du harnais est absolu lui
+# aussi, et c'est bien SA regle qu'il mesure (`deterministic.py:35`).
+_BUDGET_MOTS = 30
+
+_EMOJI_FINAL = re.compile(r"(\s*[\U0001F300-\U0001FAFF☀-➿️]+\s*)$")
+
+
+def budget_de_mots(texte, max_mots=_BUDGET_MOTS):
+    """Tronque a des phrases ENTIERES pour tenir dans `max_mots`. Jamais moins d'une.
+
+    L'emoji de ton final est preserve et recolle : il ne compte pas dans le budget.
+    Les « ... » ne sont pas des fins de phrase.
+    """
+    if not texte:
+        return texte
+    fin = ""
+    m = _EMOJI_FINAL.search(texte)
+    if m:
+        fin = " " + m.group(1).strip()
+        texte = texte[:m.start()].rstrip()
+    _POINTS = chr(1)   # sentinelle : aucun texte de Discord ne la contient
+    protege = re.sub(r"\.\.\.+|…", _POINTS, texte)
+    # \s+ et non ' +' : une frontiere de phrase est une ponctuation suivie de N'IMPORTE
+    # QUEL blanc. Avec un espace seul, les phrases separees par un SAUT DE LIGNE ne sont
+    # pas comptees et le filet ne se declenche jamais.
+    phrases = [s for s in re.split(r"(?<=[.!?])\s+", protege.strip()) if s.strip()]
+    if not phrases:
+        return (texte + fin).strip()
+    gardees = [phrases[0]]
+    total = len(phrases[0].split())
+    for ph in phrases[1:]:
+        n = len(ph.split())
+        if total + n > max_mots:
+            break
+        gardees.append(ph)
+        total += n
+    return (" ".join(gardees).replace(_POINTS, "...") + fin).strip()
+
+
 def filtre_sortie(texte, message_utilisateur=None):
     """Ce que Sugar retire de TOUTE reponse, sans rien savoir du salon ni de l'historique.
 
@@ -115,4 +176,7 @@ def filtre_sortie(texte, message_utilisateur=None):
     texte = re.sub(r"</[a-z_-]+>", "", texte, flags=re.IGNORECASE).strip()
     texte = _strip_didascalies(texte)
     texte = _strip_lead_vocative(texte)
+    # En DERNIER : les etapes ci-dessus retirent du texte, donc comptent des mots qui
+    # ne seront pas envoyes. Budgeter avant elles rognerait deux fois.
+    texte = budget_de_mots(texte)
     return texte.strip()
