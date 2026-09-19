@@ -121,8 +121,30 @@ def _strip_lead_vocative(text):
 # dit « JAMAIS plus », sans reserve. Le cas `sugar_30_mots` du harnais est absolu lui
 # aussi, et c'est bien SA regle qu'il mesure (`deterministic.py:35`).
 _BUDGET_MOTS = 30
+_BUDGET_MOTS_LONG = 60
+
+# ⚠️ Ajoute le 2026-09-19 sur decision d'Ahmed. Le budget etait ABSOLU au depart, parce
+# que sa fiche disait « JAMAIS plus ». Il a tranche l'inverse : elle doit pouvoir
+# developper quand on le lui demande EXPLICITEMENT. Sa fiche a ete amendee en meme temps
+# (`sugar_data.py`), sinon le prompt et le filet se contrediraient.
+#
+# 60 mots, soit le double de sa norme — meme proportion que le 6->10 phrases de Johnny.
+# Developper, pour Sugar, ce n'est pas monologuer : elle reste breve de nature.
+#
+# Meme motif que `johnny_filtres._INVITATION` : deux filets qui ne reconnaissent pas la
+# MEME demande se contrediraient d'un bot a l'autre.
+_INVITATION = re.compile(
+    r"\b(raconte|racontes?-moi|explique|développe|developpe|continue|détaille|detaille|"
+    r"histoire|conte|poème|poeme|chante|décris|decris)\b", re.IGNORECASE)
 
 _EMOJI_FINAL = re.compile(r"(\s*[\U0001F300-\U0001FAFF☀-➿️]+\s*)$")
+
+
+def budget_demande(message_utilisateur):
+    """30 mots, ou 60 si l'interlocuteur invite explicitement a developper."""
+    if message_utilisateur and _INVITATION.search(message_utilisateur):
+        return _BUDGET_MOTS_LONG
+    return _BUDGET_MOTS
 
 
 def budget_de_mots(texte, max_mots=_BUDGET_MOTS):
@@ -160,8 +182,10 @@ def budget_de_mots(texte, max_mots=_BUDGET_MOTS):
 def filtre_sortie(texte, message_utilisateur=None):
     """Ce que Sugar retire de TOUTE reponse, sans rien savoir du salon ni de l'historique.
 
-    `message_utilisateur` n'est pas utilise ici : il est la pour que les six bots exposent
-    la MEME porte, appelable par le harnais sans savoir lequel il tient.
+    `message_utilisateur` sert au budget de mots : il decide si l'interlocuteur a
+    explicitement invite Sugar a developper (« raconte », « explique »). Passe-le
+    toujours — sans lui, le budget court s'applique et elle est coupee la ou sa fiche
+    l'autorise a s'etendre.
 
     Meme enchainement que le chemin Discord (`bot_sugar.py`), amputee des seules etapes
     qui dependent d'un etat : la cadence des petits noms sucres a besoin de la reponse
@@ -178,5 +202,5 @@ def filtre_sortie(texte, message_utilisateur=None):
     texte = _strip_lead_vocative(texte)
     # En DERNIER : les etapes ci-dessus retirent du texte, donc comptent des mots qui
     # ne seront pas envoyes. Budgeter avant elles rognerait deux fois.
-    texte = budget_de_mots(texte)
+    texte = budget_de_mots(texte, budget_demande(message_utilisateur))
     return texte.strip()

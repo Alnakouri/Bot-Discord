@@ -1015,7 +1015,10 @@ async def on_message(message):
         # Un SEUL chemin de nettoyage, partage mot pour mot avec le harnais d'evaluation :
         # deux enchainements paralleles finissent toujours par diverger, et c'est alors le
         # score qui ment. Cf. [[gotcha-le-harnais-mesure-le-modele-pas-le-bot]].
-        response_text = filtre_sortie(response_text)
+        # ⚠️ `user_msg_content` et NON `user_message` : ce dernier a pu recevoir le
+        # texte de substitution des images (« L'utilisateur montre une image... »). Le
+        # budget de mots doit lire ce que l'interlocuteur a REELLEMENT ecrit.
+        response_text = filtre_sortie(response_text, user_msg_content)
 
     response_text = response_text.strip()
 

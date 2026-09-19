@@ -103,3 +103,102 @@ def test_le_budget_preserve_l_emoji_final_et_ne_le_compte_pas():
     assert rendu.endswith("\U0001F36C"), "l'emoji de ton a disparu"
     # L'emoji ne doit pas manger une place dans le budget.
     assert len(rendu.replace("\U0001F36C", "").split()) <= 30
+
+
+def test_sugar_peut_developper_quand_on_le_lui_demande():
+    """⚠️ Decision d'Ahmed le 2026-09-19, APRES la livraison du budget absolu.
+
+    Le budget etait absolu parce que sa fiche disait « JAMAIS plus ». Il a tranche
+    l'inverse : elle doit pouvoir developper quand on le lui demande EXPLICITEMENT.
+    Sans ce cas, le filet la coupe la ou sa fiche l'autorise desormais a s'etendre —
+    exactement le defaut qui avait fait tomber `longueur` a 0.50/5 chez un autre bot
+    ([[gotcha-le-juge-punissait-la-ou-la-fiche-autorise]]).
+    """
+    from SugarBot.sugar_filtres import filtre_sortie, budget_demande
+
+    assert budget_demande("c'est quoi ton jeu prefere ?") == 30
+    assert budget_demande("Raconte-moi ta philosophie de vie") == 60
+    assert budget_demande("explique-moi ce truc") == 60
+
+    long_texte = " ".join("Phrase numero %d de test ici." % i for i in range(1, 16))
+    assert len(filtre_sortie(long_texte, "salut").split()) <= 30
+    rendu_long = filtre_sortie(long_texte, "raconte-moi ta vie").split()
+    assert 30 < len(rendu_long) <= 60, (
+        f"{len(rendu_long)} mots : l'invitation n'ouvre pas le budget, ou l'ouvre trop."
+    )
+
+
+def test_la_fiche_de_sugar_et_le_filet_disent_la_MEME_chose():
+    """⚠️ Un filet plus permissif que le prompt laisse passer ce que la fiche interdit ;
+    un filet plus strict coupe ce qu'elle autorise. Les deux doivent bouger ENSEMBLE.
+
+    C'est la raison d'etre de ce verrou : le budget a ete change dans le code le
+    2026-09-19, et la fiche devait suivre dans le meme commit.
+    """
+    import sugar_data
+
+    prompt = sugar_data.PERSONALITY_PROMPT
+    # ⚠️ La formule EXACTE, pas « jamais plus » tout court : la fiche dit aussi
+    # « JAMAIS plusieurs paragraphes », qui n'a rien a voir et que le motif large
+    # attrapait ([[gotcha-verrou-trop-faible]]).
+    assert "~30 mots, jamais plus" not in prompt.lower(), (
+        "La fiche interdit encore de depasser, alors que le filet l'autorise sur "
+        "invitation : le modele obeira a la fiche et la permission ne servira jamais."
+    )
+    assert "~60 mots" in prompt, "La fiche ne nomme pas le budget long."
+    assert "~30 mots" in prompt, "La fiche ne nomme plus le budget normal."
+
+
+def test_le_bot_passe_le_VRAI_message_au_filtre():
+    """⚠️ Le budget est inerte si l'appelant ne lui donne pas le message.
+
+    Et ce doit etre `user_msg_content`, pas `user_message` : ce dernier a pu recevoir
+    le texte de substitution des images. Verrou AST sur le fichier du bot, jamais une
+    reconstitution ([[gotcha-test-qui-retape-la-logique]]).
+    """
+    import ast
+
+    chemin = os.path.join(_parent_dir, "SugarBot", "bot_sugar.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read(), filename="bot_sugar.py")
+    appels = [n for n in ast.walk(arbre)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+              and n.func.id == "filtre_sortie"]
+    assert appels, "bot_sugar.py n'appelle plus filtre_sortie"
+
+    nus = [n.lineno for n in appels if len(n.args) < 2]
+    assert not nus, (
+        f"filtre_sortie appele sans le message ligne(s) {nus} : le budget ne peut plus "
+        "voir un « raconte » et coupera a 30 mots quoi qu'on lui demande."
+    )
+    mauvais = [n.lineno for n in appels
+               if isinstance(n.args[1], ast.Name) and n.args[1].id != "user_msg_content"]
+    assert not mauvais, f"ligne(s) {mauvais} : passer le message NON modifie par le code."
+
+
+def test_le_harnais_mesure_le_budget_APPLICABLE_pas_30_en_aveugle():
+    """⚠️ La mesure et le bot doivent lire le meme barème.
+
+    Si le harnais juge tout a 30 mots alors que le bot en autorise 60 sur invitation,
+    il rend `False` sur une reponse parfaitement conforme — et on « corrige » un bot
+    qui n'avait rien de casse.
+    """
+    import sys as _sys
+    _tests_dir = os.path.dirname(os.path.abspath(__file__))
+    if _tests_dir not in _sys.path:
+        _sys.path.insert(0, _tests_dir)
+    from eval.deterministic import evaluate_deterministic
+
+    cinquante_cinq = " ".join(["mot"] * 55)
+
+    ok = evaluate_deterministic("sugar_30_mots", "sugar",
+                                [cinquante_cinq], ["Raconte-moi ta philosophie"])
+    assert ok["succes"] is True, "55 mots sur un « raconte » tiennent dans le budget de 60"
+
+    pas_ok = evaluate_deterministic("sugar_30_mots", "sugar",
+                                    [cinquante_cinq], ["et sinon ca va ?"])
+    assert pas_ok["succes"] is False, "55 mots sur une banalite depassent le budget de 30"
+
+    # Un autre bot n'est pas concerne par la regle de Sugar.
+    autre = evaluate_deterministic("sugar_30_mots", "johnny",
+                                   [cinquante_cinq], ["et sinon ca va ?"])
+    assert autre["succes"] is True, "le critere des 30 mots n'appartient qu'a Sugar"
