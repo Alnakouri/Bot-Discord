@@ -1165,7 +1165,11 @@ async def on_message(message):
         if fact_text:
             fact_memory.add_fact(user_id, fact_text)
             
-    response_text = filtre_sortie(response_text)
+    # ⚠️ `user_msg_content` et NON `user_message` : ce dernier a recu les suffixes
+    # [VISION] / [VOCAL] plus haut. Le budget de phrases doit lire ce que le choom a
+    # REELLEMENT ecrit, sinon un « decris » injecte par le code ouvrirait le plafond
+    # long sur un message qui ne demandait rien.
+    response_text = filtre_sortie(response_text, user_msg_content)
 
     # Sauvegarde anti-répétition
     if message.guild:

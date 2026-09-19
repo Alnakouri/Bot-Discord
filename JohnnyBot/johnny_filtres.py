@@ -62,6 +62,63 @@ def _strip_didascalies(text):
     return _re.sub(r"\s{2,}", " ", text).strip()
 
 
+
+# ── PLAFOND DE PHRASES (filet déterministe) ───────────────────────────────────
+# ⚠️ Johnny rendait 8 à 10 phrases (140 mots) quand sa propre règle en autorise 3, et
+# trois interventions sur le MODÈLE n'y avaient rien changé : ministral-14b, gpt-oss et
+# flash-lite rendent tous 8-10 phrases à prompt identique — 0.20 d'écart sur un run de
+# 10 scénarios, c'est-à-dire du bruit. Ce n'est donc pas un défaut de modèle, et la
+# règle de prompt seule ne suffit pas non plus : ce filet-ci ne dépend d'aucun tirage.
+#
+# Sheogorath a le même depuis le 2026-07 (`sheo_llm.force_short_response`) ; Johnny
+# n'en avait pas, et il est le seul des six à déborder. Copié plutôt qu'importé : ce
+# module reste SANS dépendance à `shared/` ni à `discord` (cf. l'en-tête du fichier).
+#
+# ⚠️ Le plafond est celui de SA règle, pas un plus sévère : c'est un filet contre
+# l'emballement, pas un outil de mise en forme — la densité est gouvernée par le prompt
+# ([[feedback-sheo-longueur-densite]] : seul le remplissage est le problème).
+_INVITATION = re.compile(
+    r"\b(raconte|racontes?-moi|explique|développe|developpe|continue|détaille|detaille|"
+    r"histoire|conte|poème|poeme|chante|décris|decris)\b", re.IGNORECASE)
+
+_EMOJI_FINAL = re.compile(r"(\s*[🌀-🫿☀-➿️]+\s*)$")
+
+
+def budget_de_phrases(message_utilisateur, plafond=6, plafond_long=10):
+    """6 phrases par défaut, 10 si le choom invite explicitement à développer.
+
+    ⚠️ Le cas « raconte » n'est pas cosmétique : sans lui, un filet aveugle punit là où
+    la fiche AUTORISE, et c'est exactement ce qui avait fait chuter la note `longueur`
+    à 0.50/5 ([[gotcha-le-juge-punissait-la-ou-la-fiche-autorise]]).
+    """
+    if message_utilisateur and _INVITATION.search(message_utilisateur):
+        return plafond_long
+    return plafond
+
+
+def plafonner_les_phrases(texte, max_phrases=6):
+    """Tronque au-delà de `max_phrases` VRAIES phrases. Préserve l'emoji final.
+
+    ⚠️ Les « ... » ne comptent pas comme fin de phrase, et une frontière de phrase est
+    une ponctuation suivie de N'IMPORTE QUEL blanc : avec un simple espace, les phrases
+    séparées par un SAUT DE LIGNE n'étaient pas comptées et le filet ne se déclenchait
+    jamais — le défaut live du 2026-07-15 chez Sheogorath.
+    """
+    if not texte:
+        return texte
+    fin = ""
+    m = _EMOJI_FINAL.search(texte)
+    if m:
+        fin = " " + m.group(1).strip()
+        texte = texte[:m.start()].rstrip()
+    _POINTS = chr(0)   # sentinelle : aucun texte de Discord ne la contient
+    protege = re.sub(r"\.\.\.+|…", _POINTS, texte)
+    phrases = re.split(r"(?<=[.!?])\s+", protege)
+    if len(phrases) > max_phrases:
+        protege = " ".join(phrases[:max_phrases])
+    return (protege.replace(_POINTS, "...") + fin).strip()
+
+
 def filtre_sortie(texte, message_utilisateur=None):
     """Ce que Johnny retire de TOUTE reponse, sans rien savoir du salon ni de l'historique.
 
@@ -74,4 +131,5 @@ def filtre_sortie(texte, message_utilisateur=None):
     texte = re.sub(r"<[a-z_-]+>", "", texte, flags=re.IGNORECASE)
     texte = re.sub(r"</[a-z_-]+>", "", texte, flags=re.IGNORECASE).strip()
     texte = _strip_didascalies(texte)
+    texte = plafonner_les_phrases(texte, budget_de_phrases(message_utilisateur))
     return texte.strip()
