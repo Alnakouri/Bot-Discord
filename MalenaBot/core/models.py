@@ -260,7 +260,18 @@ CASCADES_PERSONA = {
     # trois interventions sur les fiches n'y ont rien change. gemma-4 rend 3 phrases de 7 a
     # 30 mots, sans une astérisque, en gardant le « Monsieur » et l'ironie seche.
     # ministral reste juste derriere : c'est lui qui repond quand NVIDIA demarre a froid.
-    "alfred": [("nvidia", NVIDIA_GEMMA), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST),
+    # ⚠️ 19/09 : gemma-4 REDESCEND en deuxieme. Ce qui precede reste vrai sur la PROSE et
+    # n'est pas remis en cause — c'est le DELAI qui n'avait jamais ete pese. Sur les 70
+    # appels gemma REUSSIS de la base de suivi : mediane **12,5 s**, et 61 % seulement
+    # sous la borne du direct (15 s). En face, sur la meme base : ministral 1,8 s (99 %),
+    # gpt-oss 1,0 s (91 %), flash-lite 1,6 s (99 %). Gemma en TETE, c'est donc ~12,5 s
+    # d'attente sur CHAQUE message qui marche — un facteur 7 — et deux messages sur cinq
+    # qui tombent dans l'echelon suivant apres 15 s de silence.
+    # La passe qui l'avait valide tournait a 90 s de borne : a 90 s, 12,5 s est un succes
+    # sans histoire [[gotcha-la-borne-du-LOT-cache-ce-que-le-direct-refuse]].
+    # En DEUXIEME il garde son interet : c'est le secours quand Mistral est throttle, et
+    # la 2e place se paie en attente seulement quand la premiere a deja echoue.
+    "alfred": [("mistral", MISTRAL_MAIN), ("nvidia", NVIDIA_GEMMA), ("groq", GROQ_FAST),
                ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Rockerboy de Night City : argot cru, phrases qui cognent.
@@ -283,7 +294,12 @@ CASCADES_PERSONA = {
     # 3 a 4, de 22 a 47 mots, sans une astérisque, en gardant « choom » et Arasaka. La
     # permission qu'il s'accorde dans son prompt reste a traiter ; elle ne suffisait juste
     # pas a expliquer les 140 mots.
-    "johnny": [("nvidia", NVIDIA_GEMMA), ("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST),
+    # ⚠️ 19/09 : gemma-4 REDESCEND en deuxieme, meme raison que chez alfred ci-dessus —
+    # mediane 12,5 s sur 70 appels reussis, contre 1,8 s pour ministral. Le gain de
+    # concision (3-4 phrases au lieu de 8-10) est reel et mesure, mais il se payait
+    # ~10 s par message. La permission qu'il s'accorde dans son prompt reste la vraie
+    # cause de sa verbosite, et elle, elle est gratuite a traiter.
+    "johnny": [("mistral", MISTRAL_MAIN), ("nvidia", NVIDIA_GEMMA), ("groq", GROQ_FAST),
                ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
