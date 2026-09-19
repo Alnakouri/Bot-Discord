@@ -160,3 +160,75 @@ def test_le_protocole_est_bien_BRANCHE_dans_le_contexte():
         and len(n.args) == 1 and getattr(n.args[0], "id", None) == "member"
     ]
     assert appels, "protocole_maitre(member) n'est appele nulle part dans bot_alfred.py"
+
+
+def test_alfred_ne_publie_plus_le_conseil_du_vendredi():
+    """Alfred n'a plus de publication automatique du vendredi.
+
+    Decision d'Ahmed le 2026-09-19, sur piece : le message recu disait « un the
+    correctement prepare exige d'abord une tasse propre [...] si vous insistez pour en
+    faire une scene de crime, au moins nettoyez les traces avec du vinaigre blanc, pas
+    votre salive ».
+
+    Le modele n'avait rien invente : la consigne LUI DEMANDAIT ce registre —
+    `Sujets : savoir-vivre, hygiene, nettoyage de scenes de crime, preparation du the`
+    ([[gotcha-le-prompt-enseigne-le-tic-interdit]] : une demonstration bat une
+    interdiction, et ici c'etait une commande explicite). Le repli en dur parlait de
+    « larmes... ou de sang », et un statut Discord annoncait « Nettoyer le sang sur le
+    tapis ». Tout est parti avec la tache.
+
+    ⚠️ Le verrou ne se contente PAS de chercher le nom `weekly_protip_alfred` : le
+    renommer suffirait a le rendre vert alors que la publication serait revenue
+    ([[gotcha-verrou-trop-faible]]). Il interdit les trois choses ensemble — le nom, les
+    LITTERAUX de l'annonce, et le MECANISME : aucune tache `tasks.loop` d'Alfred ne doit
+    se brancher sur un jour de la semaine.
+    """
+    import ast
+
+    chemin = os.path.join(_parent_dir, "Alfred", "bot_alfred.py")
+    arbre = ast.parse(open(chemin, encoding="utf-8").read(), filename="bot_alfred.py")
+
+    fautes = []
+
+    for noeud in ast.walk(arbre):
+        # 1. Le nom de la tache supprimee.
+        if isinstance(noeud, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if "weekly_protip" in noeud.name:
+                fautes.append(f"ligne {noeud.lineno} : la tache `{noeud.name}` est revenue")
+
+        # 2. Les litteraux de l'annonce.
+        if isinstance(noeud, ast.Constant) and isinstance(noeud.value, str):
+            minuscules = noeud.value.lower()
+            for interdit in ("conseil du vendredi", "conseil du majordome",
+                             "scene de crime", "scène de crime",
+                             "scenes de crime", "scènes de crime"):
+                if interdit in minuscules:
+                    fautes.append(
+                        f"ligne {noeud.lineno} : « {interdit} » dans "
+                        f"{noeud.value[:60]!r}"
+                    )
+                    break
+
+    # 3. Le mecanisme : une boucle `tasks.loop` qui regarde le jour de la semaine.
+    for noeud in ast.walk(arbre):
+        if not isinstance(noeud, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        est_une_boucle = any(
+            "tasks.loop" in ast.unparse(d) for d in noeud.decorator_list
+        )
+        if not est_une_boucle:
+            continue
+        for interne in ast.walk(noeud):
+            if (isinstance(interne, ast.Call)
+                    and isinstance(interne.func, ast.Attribute)
+                    and interne.func.attr == "weekday"):
+                fautes.append(
+                    f"ligne {interne.lineno} : la tache `{noeud.name}` se branche de "
+                    "nouveau sur un jour de la semaine"
+                )
+
+    saut = chr(10)
+    assert not fautes, (
+        "La publication automatique du vendredi est de retour chez Alfred :"
+        + saut + "  " + (saut + "  ").join(fautes)
+    )

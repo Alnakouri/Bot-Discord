@@ -19,7 +19,7 @@ from core.secure_env import load_secure_env
 from core.boucles import installer_anti_rattrapage
 # Unsets conflicting Google Cloud env vars
 load_secure_env(Path(__file__).parent)
-from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, MISTRAL_MAIN, groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
+from core.models import GEMINI_FLASH, GEMINI_FLASH_LITE, GROQ_FAST, groq_kwargs, nvidia_kwargs, NVIDIA_BASE_URL
 # ⚠️ La cascade inline d'Alfred n'avait NI garde anti-fuite NI garde de reponse vide :
 # les deux vivaient dans le noyau, qu'elle recopie sans les emporter. On les importe au
 # lieu d'en faire une 8e copie. `generate_response` etait appele sans etre importe.
@@ -402,7 +402,6 @@ daily_bio = DiscordDailyBio(
 _STATUS_FALLBACK = [
     ("playing", "Cirer l'argenterie"),
     ("playing", "Préparer le thé Earl Grey"),
-    ("playing", "Nettoyer le sang sur le tapis (Encore)"),
     ("playing", "Recoudre un costume"),
     ("playing", "Soupirer de manière britannique"),
     ("playing", "Juger vos choix de vie"),
@@ -476,8 +475,6 @@ async def on_ready():
     
     if not status_loop_alfred.is_running():
         status_loop_alfred.start()
-    if not weekly_protip_alfred.is_running():
-        weekly_protip_alfred.start()  # Conseil Hebdomadaire (Vendredi)
     if not birthday_check_alfred.is_running():
         birthday_check_alfred.start()  # Anniversaires
     if daily_bio and not daily_bio_loop_alfred.is_running():
@@ -564,47 +561,6 @@ async def birthday_check_alfred():
     """Vérifie les anniversaires tous les 12h."""
     if DATABASE_AVAILABLE:
         await check_and_send_birthdays(bot, "Alfred")
-
-# CONSEILS DU MAJORDOME (Publié le vendredi)
-@tasks.loop(hours=1)
-async def weekly_protip_alfred():
-    """Vérifie si c'est vendredi 18h pour donner un conseil."""
-    now = datetime.now()
-    if now.weekday() == 4 and now.hour == 18 and now.minute < 15:
-        # Chercher le canal
-        target_channel = None
-        for guild in bot.guilds:
-            for channel in guild.text_channels:
-                if "taverne" in channel.name.lower() and "bot" in channel.name.lower():
-                    target_channel = channel
-                    break
-        
-        if target_channel:
-             # Générer un conseil via LLM
-            prompt = (
-                f"SYSTEM: {PERSONALITY_PROMPT}\n"
-                f"INSTRUCTION: Donne un 'Conseil du Majordome' raffiné et utile (ou sarcastique) aux membres du serveur. "
-                "Sujets : savoir-vivre, hygiène, nettoyage de scènes de crime, préparation du thé, gestion du stress."
-                "Reste bref (2 phrases). Utilise ton style britannique."
-            )
-            
-            try:
-                # Utilise Mistral ou Gemini
-                resp = "Un bon majordome a toujours un mouchoir propre. Pour les larmes... ou le sang."
-                if mistral_client:
-                    # `or resp` : le conseil de repli reste la reponse quand l'appel echoue.
-                    resp = await appel_hors_cascade(
-                        "mistral", mistral_client.chat.complete,
-                        key_manager=key_manager, bot_label="Alfred",
-                        modele=MISTRAL_MAIN, timeout=30,
-                        model=MISTRAL_MAIN, messages=[{"role": "user", "content": prompt}],
-                    ) or resp
-                
-                await target_channel.send(f"🧐 **[CONSEIL DU VENDREDI]** {resp}")
-                # Sleep pour ne pas spammer tout le quart d'heure
-                await asyncio.sleep(3600)
-            except Exception as e:
-                logger.error(f"❌ Conseil error: {e}")
 
 @tasks.loop(hours=1)
 async def daily_bio_loop_alfred():

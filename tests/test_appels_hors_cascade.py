@@ -3,8 +3,10 @@
 
 Le chantier du 2026-09-06 a branché `report_error` et `tracer_appel` sur les 11
 cascades. Il en restait dehors : `!rumeur`, les décrets, le rattrapage de mention,
-l'imposteur, la patrouille vocale et le conseil du vendredi tapent le SDK en direct,
-avec leur repli à deux échelons écrit à la main. Constaté en test live le 2026-09-07 à
+l'imposteur et la patrouille vocale tapent le SDK en direct, avec leur repli à deux
+échelons écrit à la main. (Le conseil du vendredi d'Alfred en faisait partie ; il a été
+supprimé le 2026-09-19 — voir `test_alfred_ne_publie_plus_le_conseil_du_vendredi`.)
+Constaté en test live le 2026-09-07 à
 22:41, journal de M'aiq :
 
     [GROQ RUMEUR] Error code: 429 ... Please try again in 1.785s
