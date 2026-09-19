@@ -249,3 +249,27 @@ def test_la_consigne_donne_au_bot_quelque_chose_de_VRAI_a_promettre():
     assert "tu ne le juges pas" in src, (
         "La consigne ne borne plus le lieu d'ou l'on ecrit."
     )
+
+
+def test_l_invitation_doit_etre_chaleureuse():
+    """⚠️ Demande explicite d'Ahmed le 2026-09-19 : une invitation doit donner envie de
+    venir, « chaleureusement et gentillement ».
+
+    Ce n'est PAS acquis par « reste en personnage » : la voix de Sugar est faite de
+    piques, et « dans ton style » lui faisait promettre « le meilleur venin rien que
+    pour toi ». En personnage, oui — accueillant, non.
+
+    Mesure sur la vraie cascade de Sugar, 10 tirages par version : phrases froides,
+    hostiles ou tournees vers le salon hote, **6/10 -> 1/10**. Contrairement a la passe
+    precedente sur le denigrement, l'ecart tient sur un echantillon entier et ne
+    s'inverse pas.
+    """
+    import inspect
+    from shared.twitch.dispatch import DispatchMixin
+
+    src = inspect.getsource(DispatchMixin._generate_link_line)
+    for exigence in ("CHALEUREUX", "GENTIL", "Pas de pique"):
+        assert exigence in src, (
+            f"La consigne ne demande plus « {exigence} » : l'invitation va se refermer "
+            "sur le ton du personnage, et pour Sugar ce ton mord."
+        )
