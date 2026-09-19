@@ -164,3 +164,88 @@ def test_l_instruction_demande_l_ENVIE_et_interdit_d_inventer():
     source = inspect.getsource(DispatchMixin._generate_link_line)
     for attendu in ("ENVIE", "n'invente ni chiffre", "emoji", "N'ÉCRIS PAS l'adresse"):
         assert attendu in source, f"l'instruction ne dit plus : {attendu}"
+
+
+# ---------------------------------------------------------------------------------------
+# Une invitation ne parle QUE de sa destination
+# ---------------------------------------------------------------------------------------
+
+def test_une_phrase_qui_denigre_le_salon_hote_est_rejetee():
+    """⚠️ Signale par Ahmed le 2026-09-19, sur une phrase reellement postee par Sugar
+    dans le chat d'un streamer :
+
+        « Les piques volent bas par ici, mais notre coin secret a autrement plus de
+          mordant. ✨ »
+
+    Le bot rabaisse le salon qui l'heberge pour vendre l'autre — sur une chaine qui
+    n'est meme pas la sienne.
+
+    ⚠️ Ce verrou existe parce que la CONSIGNE n'y suffit pas. Mesure du 19/09 sur deux
+    tirages de la vraie cascade de Sugar : 2/6 -> 1/6, puis 1/10 -> 3/10. Le verdict
+    s'inverse d'une passe a l'autre, donc la consigne reecrite ne prouve RIEN sur ce
+    point precis ([[gotcha-plancher-de-bruit-du-harnais]]). Le filet, lui, ne depend
+    d'aucun tirage.
+
+    Les cas ci-dessous ne sont pas inventes : ce sont les quatre fautes reelles des
+    20 phrases tirees ce jour-la.
+    """
+    fautes = [
+        "Les piques volent bas par ici, mais notre coin secret a autrement plus de mordant.",
+        "Les absents ont tort, et le salon a déjà plus d'esprit que la moitié du chat.",
+        "On est bien mieux dans les cachots du serveur qu'à traîner sur ce chat sans saveur.",
+        "Mon sucre t'attend là-bas, et crois-moi, il pique un peu plus qu'ici.",
+        "Viens goûter mon mordant sur mon serveur, le venin y est tellement plus savoureux qu'ici",
+        "Le chat Twitch a assez tourné en rond, viens voir de l'autre côté.",
+    ]
+    restantes = [p for p in fautes if _nettoyer_phrase_de_lien(p) is not None]
+    assert not restantes, (
+        "Ces phrases nomment ou jugent le salon d'ou elles sont ecrites :\n  "
+        + "\n  ".join(restantes)
+    )
+
+
+def test_une_invitation_normale_n_est_PAS_rejetee():
+    """⚠️ Le pendant obligatoire : un filet qui rejette tout rend le gabarit fixe a
+    chaque fois, et la phrase en personnage ne sert plus a rien.
+
+    Ces six phrases sont elles aussi de vraies sorties du 19/09.
+    """
+    bonnes = [
+        "Viens sur mon serveur, j'ai gardé une place rien que pour toi.",
+        "Rejoins-moi sur Discord, tu verras à quel point le sucre peut mordre.",
+        "Viens perdre tes illusions sur le Discord, j'ai gardé le venin le plus fin pour toi.",
+        "Mon sucre t'attend de l'autre côté, viens voir si tu as le cran de le goûter",
+        "Le meilleur du sucre et des piques t'attend sur le serveur, rejoins-nous.",
+        "Viens donc faire un tour sur notre Discord, l'air y est délicieusement vénéneux.",
+    ]
+    perdues = [p for p in bonnes if _nettoyer_phrase_de_lien(p) is None]
+    assert not perdues, (
+        "Le filet est trop large, il mange des invitations correctes :\n  "
+        + "\n  ".join(perdues)
+    )
+
+
+def test_la_consigne_donne_au_bot_quelque_chose_de_VRAI_a_promettre():
+    """⚠️ Le second reproche d'Ahmed : « ça ne donne pas envie aux gens de rejoindre ».
+
+    La cause etait dans la consigne : elle interdisait tout ce qui est concret sur la
+    destination, puis demandait de « promettre l'AMBIANCE ». Sans rien de vrai a offrir,
+    le modele rendait du superlatif creux (« la meilleure ambiance du coin ») ou vendait
+    par comparaison. La seule chose qu'un bot sache avec certitude, c'est LUI.
+
+    Le verrou lit la vraie consigne dans le code, il ne la recopie pas
+    ([[gotcha-test-qui-retape-la-logique]]).
+    """
+    import inspect
+    from shared.twitch.dispatch import DispatchMixin
+
+    src = inspect.getsource(DispatchMixin._generate_link_line)
+    assert "Promets l'AMBIANCE, jamais un fait" not in src, (
+        "L'ancienne consigne est revenue : elle ne laissait rien de vrai a promettre."
+    )
+    assert "c'est TOI" in src, (
+        "La consigne ne rend plus au bot ce qu'il peut promettre sans rien inventer."
+    )
+    assert "tu ne le juges pas" in src, (
+        "La consigne ne borne plus le lieu d'ou l'on ecrit."
+    )

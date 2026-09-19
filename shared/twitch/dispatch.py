@@ -17,6 +17,44 @@ _RESSEMBLE_A_UN_LIEN = re.compile(
 )
 
 
+# ⚠️ Le lieu d'ou l'on ECRIT n'a rien a faire dans une invitation.
+#
+# Signale par Ahmed le 2026-09-19, sur une phrase de Sugar postee dans le chat d'un
+# streamer : « Les piques volent bas par ici, mais notre coin secret a autrement plus de
+# mordant. » Le bot DENIGRE le salon qui l'heberge pour vendre l'autre — sur une chaine
+# qui n'est meme pas la sienne.
+#
+# La cause n'est pas la persona : c'est que la consigne interdit tout ce qui est CONCRET
+# sur la destination (ni chiffre, ni salon, ni evenement, ni recompense) et demande quand
+# meme de « promettre l'ambiance ». Il ne reste alors au modele rien de vrai a offrir, et
+# la seule chose qu'il puisse observer est le chat devant lui : il vend par contraste.
+# La consigne a donc ete reecrite pour lui rendre quelque chose de vrai a promettre (LUI,
+# sa presence et ce qu'il y fera) — et ca, c'est mesurable et ca marche.
+#
+# ⚠️ Mais la consigne NE SUFFIT PAS pour le denigrement lui-meme : mesure du 19/09 sur
+# deux tirages, 2/6 -> 1/6 puis 1/10 -> 3/10. Le verdict s'INVERSE d'une passe a l'autre,
+# c'est du bruit ([[gotcha-plancher-de-bruit-du-harnais]]). Une regle de prompt ne protege
+# que ce qu'un modele veut bien suivre : d'ou ce filet, qui lui ne depend d'aucun tirage.
+#
+# Rejette, ne repare pas — meme philosophie que l'adresse ci-dessous : le gabarit fixe est
+# fade, et fade bat cassé. Motif evalue sur les 20 phrases des deux tirages : il attrape
+# les 4 fautes reelles, 0 faux positif, 0 rate.
+# ⚠️ « par ici » N'EST PAS dans ce motif, et c'est delibere : il designe aussi bien la
+# DESTINATION (« Viens sucrer tes levres par ici ») que la source (« les piques volent bas
+# par ici »). Le premier jet le rejetait, et la suite de tests l'a attrape aussitot sur sa
+# propre phrase de reference. On ne garde donc que les tournures sans ambiguite : celles
+# qui NOMMENT le salon hote, et celles qui le COMPARENT.
+_NOMME_LA_SOURCE = re.compile(
+    r"(?:"
+    # Nommer le lieu d'ou l'on ecrit.
+    r"\bce chat\b|\bdu chat\b|\ble chat\b|chat twitch|\btwitch\b"
+    r"|\bce stream\b|\ble stream\b|en plein stream|\bce live\b|\ble live\b"
+    r"|\bce salon-ci\b|\bce tchat\b"
+    # Le comparer : « plus savoureux qu'ici », « autrement plus de mordant ».
+    r"|\bqu['’ ]?ici\b|autrement plus|\bmieux qu|\bmeilleur qu"
+    r")", re.IGNORECASE)
+
+
 def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
     """Rend la phrase prête à recevoir l'URL, ou None si rien d'exploitable.
 
@@ -33,6 +71,9 @@ def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
     phrase = " ".join(str(texte).split())
     phrase = strip_stage_directions(phrase)
     if _RESSEMBLE_A_UN_LIEN.search(phrase):
+        return None
+    # Voir le bloc au-dessus du motif : une invitation ne parle que de sa destination.
+    if _NOMME_LA_SOURCE.search(phrase):
         return None
     phrase = " ".join(phrase.split()).strip().strip('"').strip("«»").strip()
     # Un modèle finit souvent sur « rejoins-nous ici : » en attendant l'adresse ; c'est
@@ -346,13 +387,27 @@ class DispatchMixin:
         # L'emoji est explicitement autorisé (un seul) : rien ne le retire sur le chemin
         # Twitch — la troncature le recolle même à la fin — mais tant qu'on ne le demandait
         # pas, les phrases sortaient sèches.
+        # ⚠️ « Promets l'AMBIANCE » ne tenait pas debout : la phrase d'apres interdit TOUT
+        # ce qui est concret sur la destination. Il ne restait rien de vrai a offrir, et
+        # un modele a qui on demande de donner envie sans rien pouvoir promettre se
+        # rabat sur la seule chose qu'il observe — le chat devant lui — et vend par
+        # comparaison. D'ou les deux reproches d'Ahmed le 19/09 sur la MEME phrase :
+        # elle denigrait le salon hote, et elle ne donnait pas envie.
+        # On lui rend donc la seule chose qu'il sache avec certitude : LUI. Sa presence
+        # la-bas et ce qu'il y fera n'inventent rien, et c'est concret.
+        # Mesure : « l'air y est delicieusement veneneux » / « la meilleure ambiance du
+        # coin » deviennent « j'ai garde une place rien que pour toi » / « rejoins-moi,
+        # tu verras a quel point le sucre peut mordre ».
         instruction = (
             f"Écris UNE seule phrase très courte (max 120 caractères), en personnage, "
             f"qui donne ENVIE au chat Twitch de rejoindre {quoi} : une invitation adressée "
             f"directement à eux, pas une annonce. "
-            f"Promets l'AMBIANCE, jamais un fait : tu ne sais pas qui s'y trouve, ce qui "
-            f"s'y passe, ni combien ils sont — n'invente ni chiffre, ni salon, ni "
-            f"évènement, ni récompense. "
+            f"Ce que tu promets, c'est TOI : que tu y es, et ce que tu leur y feras, dans "
+            f"ton style. C'est la seule chose que tu saches avec certitude, et elle suffit. "
+            f"Tu ne sais rien d'autre : ni qui s'y trouve, ni ce qui s'y passe, ni combien "
+            f"ils sont — n'invente ni chiffre, ni salon, ni évènement, ni récompense. "
+            f"Ta phrase ne parle que de là-bas. L'endroit d'où tu écris n'y apparaît pas : "
+            f"tu ne le décris pas, tu ne le juges pas, et tu ne compares jamais les deux. "
             f"Tu peux finir par UN emoji, s'il colle à ton personnage. "
             f"N'ÉCRIS PAS l'adresse ni aucun lien : elle sera ajoutée juste après ta phrase. "
             f"Pas de guillemets, pas de didascalie."
