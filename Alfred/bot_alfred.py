@@ -1468,15 +1468,31 @@ async def on_message(message):
             # Si le mot "vocal", "surveillance", "ici" ou juste "repos" est présent
             _rattrapage = [w for w in ["vocal", "surveillance", "ici", "maintenant", "tout", "t'en", "la"]
                            if w in text_lower]
-            _part = bool(_rattrapage) or "repos" in text_lower
-            # Journal seul : on range la decision DEJA prise, on n'en change aucune.
-            # C'est la seule des trois qui declenche une ACTION, donc celle dont l'erreur
-            # se voit — « Alfred arrete de parler LA » coche `arrete` PUIS `la`, et le bot
-            # quitte le vocal. On garde le mot qui a mordu pour pouvoir relire les cas.
+            _repli = "repos" if (bool(_rattrapage) or "repos" in text_lower) else "bavardage"
+
+            # C'est la seule des trois decisions qui declenche une ACTION, donc celle
+            # dont l'erreur se voit : « Alfred arrete de parler LA » coche `arrete` PUIS
+            # `la`, et le bot quitte le vocal. Laya la rend 8/8 sur la sonde du 20/09,
+            # ce cas compris. `_repli` reste le plancher : si le service manque ou tarde,
+            # le comportement est exactement celui d'avant.
+            from core.laya_client import choisir, question_choice
+            _intention, _source, _conf = await choisir(
+                message.content, "intention",
+                question_choice(
+                    "Que demande-t-on au majordome dans ce message ?",
+                    {"repos": "lui demander de quitter le salon vocal, d'arreter de "
+                              "surveiller, de se mettre en repos",
+                     "nettoyage": "lui demander d'effacer ou de nettoyer des messages",
+                     "question": "lui poser une question ou demander un renseignement",
+                     "bavardage": "lui parler sans rien lui demander de precis"}),
+                repli=_repli)
+
             from core.journal_decisions import journalise, INTENTION
-            journalise("alfred", INTENTION, message.content,
-                       "repos" if _part else "bavardage",
-                       detail=f"stop={_mordu} rattrapage={_rattrapage}")
+            journalise("alfred", INTENTION, message.content, _intention,
+                       detail=f"source={_source} repli={_repli} conf={_conf} "
+                              f"stop={_mordu} rattrapage={_rattrapage}")
+
+            _part = (_intention == "repos")
             if _part:
                 await repos(ctx)
                 return

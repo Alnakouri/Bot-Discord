@@ -61,6 +61,15 @@ services:
       - ./Alfred:/app/bot:ro
       - ./logs:/app/bot/logs
       - ./Alfred/.master_key:/app/bot/.master_key:ro
+    environment:
+      - DATA_DIR=/app/data
+      # Alfred est le SEUL bot branché sur Laya : c'est la seule décision mesurée mûre
+      # (8/8 sur la sonde du 2026-09-20). Les cinq autres n'ont pas la variable, donc
+      # `laya_client` reste inerte chez eux et leur comportement est inchangé.
+      # ⚠️ Retirer cette ligne suffit à le débrancher : il retombe sur ses mots-clés.
+      - LAYA_URL=http://bots-laya:8700
+    depends_on:
+      - laya
     working_dir: /app/bot
     command: python bot_alfred.py
 
@@ -99,6 +108,44 @@ services:
       - ./MalenaBot/.master_key:/app/bot/.master_key:ro  # Clé locale Malena
     working_dir: /app/bot
     command: python bot_malena.py
+
+  # ═══════════════════════════════════════════════════════════════
+  # LAYA — trieur « System One » PARTAGÉ par les six bots. CPU uniquement.
+  # ───────────────────────────────────────────────────────────────
+  # Le modèle occupe 1 730 Mo de RSS par processus (mesuré le 2026-09-20). Embarqué
+  # dans les six conteneurs : 10,4 Go, quand le VM Docker en offre 7,75. Partagé :
+  # 1,73 Go une seule fois, et 37 s de chargement une fois au lieu de six.
+  #
+  # ⚠️ CONSULTATIF. Sans état, en lecture seule, et aucune décision de bot n'en dépend :
+  # `shared/laya_client.py` borne à 300 ms et retombe sur la règle en place. S'il tombe,
+  # on perd une amélioration, jamais un bot. Même contrat que `bots-ollama-vision` et
+  # `chatterbox-tts` ci-dessous : « dégrade proprement ».
+  #
+  # ⚠️ AUCUN PORT PUBLIÉ. Il n'est joignable que depuis `bots-network`, par son nom.
+  # Le sortir sur l'hôte exposerait un service sans authentification.
+  laya:
+    build: ./laya-server
+    container_name: bots-laya
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - bots-network
+    healthcheck:
+      # Le chargement des poids prend ~37 s : `start_period` couvre ce temps, sinon le
+      # service serait déclaré malade avant d'avoir eu une chance d'être prêt.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if __import__('json').load(urllib.request.urlopen('http://127.0.0.1:8700/health'))['ok'] else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
 # ═══════════════════════════════════════════════════════════════
 # SERVICES GPU RETIRÉS (feature parkée — voir FEATURE_VOIX_VISION_GPU.md)

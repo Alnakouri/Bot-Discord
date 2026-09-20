@@ -22,6 +22,7 @@ MODULES = [
     "repartee_lessons.py",
     "profil_interlocuteur.py",
     "journal_decisions.py",
+    "laya_client.py",
 ]
 
 MODULE_NAMES = [m[:-3] for m in MODULES]
