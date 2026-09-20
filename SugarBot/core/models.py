@@ -171,6 +171,13 @@ def groq_kwargs(model_name):
 # « une serpipe », « ca s'quille » — environ une faute reelle sur deux reponses. Il
 # etait le plus incisif et le plus bref, mais la brievete ne vaut pas ce prix.
 # Conserve ici pour que personne ne le re-choisisse sans savoir. Un test l'interdit.
+# ⚠️ 2026-09-20 : RE-PROPOSE, puis re-ecarte. En enumerant le catalogue reel des
+# quatre cles, il ressortait comme le meilleur candidat pour Alfred sur les
+# chiffres — 0,40 s de mediane, 2 phrases / 36 mots, 0 asterisque, contre 1,29 s
+# et 4 phrases / 51 mots pour ministral. Et il a produit « on nettoie, on LUSTRER
+# et on ignore » des le 3e message : le meme defaut, un mois plus tard, sur la
+# fiche d'Alfred cette fois. Le commentaire ci-dessus a fait son travail.
+# La brievete ne vaut toujours pas ce prix.
 GROQ_QWEN     = "qwen/qwen3.8-27b"
 GROQ_SMALL    = "openai/gpt-oss-20b"    # Groq — le plus rapide (0.45 s median)
 # MISTRAL_SMALL a servi de MISTRAL_MAIN du 2026-08-30 au 2026-09-04 ; il est depuis
@@ -283,8 +290,32 @@ CASCADES_PERSONA = {
     # sans histoire [[gotcha-la-borne-du-LOT-cache-ce-que-le-direct-refuse]].
     # En DEUXIEME il garde son interet : c'est le secours quand Mistral est throttle, et
     # la 2e place se paie en attente seulement quand la premiere a deja echoue.
-    "alfred": [("mistral", MISTRAL_MAIN), ("nvidia", NVIDIA_GEMMA), ("groq", GROQ_FAST),
-               ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
+    # ⚠️ 20/09 : flash-lite passe EN TETE, et gemma-4 sort de sa cascade.
+    #
+    # gemma-4 n'est pas « mort » comme on l'avait ecrit : il repond encore — en 115 s,
+    # mesure sans borne le 20/09. Tous ses « echecs » en base portent `error_code=0` et
+    # une latence de ~15 000 ms : c'etait NOTRE borne qui coupait. Et le jour de sa
+    # validation (18/09) il tournait deja a 17,5 s de moyenne, dont 26 appels sur 67
+    # au-dela de 15 s — il n'a jamais ete utilisable en direct, le harnais a 90 s le
+    # cachait [[gotcha-la-borne-du-LOT-cache-ce-que-le-direct-refuse]]. Sa latence est
+    # erratique (1,1 s puis 77 s puis 1,3 s au fil d'une meme salve) : c'est une FILE
+    # d'attente, pas un demarrage a froid, donc aucun ping ne le reveillerait. Il est
+    # sature chez NVIDIA comme sur l'API Google (500/503, reponses vides le 20/09).
+    # Le garder coutait 15 s de silence chaque fois que l'echelon precedent tombait.
+    #
+    # flash-lite, mesure le meme jour sur la fiche reelle d'Alfred et sa propre cle :
+    #   1,00 s de mediane, 2-3 phrases / 31-49 mots, en personnage
+    # contre ministral : 1,29 s, 4 phrases / 51 mots. Et cote quota, la crainte d'un
+    # « 3e bot sur Gemini » etait infondee deux fois : chaque bot a SA cle, les six
+    # projets sont separes, et la base ne montre qu'UN seul 429 Gemini en cinq jours
+    # (contre 18 chez Groq) alors que Sugar y a passe 112 appels en une journee.
+    # ⚠️ Son echelon Groq passe de `gpt-oss-120b` a `gpt-oss-20b`, et ce n'est pas un
+    # detail : le quota Groq est un ITPM PAR MODELE (« Limit 7000 », dit son propre 429).
+    # Alfred partageait donc le seau de `gpt-oss-120b` avec Sheogorath, dont le prompt
+    # fait 3 484 tokens et qui porte deja 18 des 21 refus du projet. Sur un modele
+    # distinct, les deux seaux sont separes. gpt-oss-20b sert deja de secours a M'aiq.
+    "alfred": [("gemini", GEMINI_FLASH_LITE), ("mistral", MISTRAL_MAIN),
+               ("groq", GROQ_SMALL), ("nvidia", NVIDIA_FAST)],
 
     # Rockerboy de Night City : argot cru, phrases qui cognent.
     # ⚠️ Teste sur les TROIS tetes, en conditions d'eval (10 scenarios avec transcript),

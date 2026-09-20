@@ -189,7 +189,31 @@ N'ajoute aucune introduction, aucune conclusion, pas de texte de présentation. 
             last_error = f"Gemini: {e}"
             logger.warning(f"Juge LLM : échec Gemini ({e})")
             error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
-            key_manager.report_error("gemini", gemini_key, error_code)
+            # ⚠️ LE JUGE NE MET PLUS LA CLE EN QUARANTAINE, ET C'EST VOLONTAIRE.
+            #
+            # Le quota Gemini est `GenerateRequestsPerMinutePerProjectPerModel` — 15/min
+            # PAR MODELE, Google le dit dans son propre 429. Le juge tourne sur
+            # `gemini-3.5-flash` et emet 17 appels par passe : il depasse donc SON seau a
+            # chaque run. Mais `report_error` pose le cooldown sur la CLE, pour tous les
+            # modeles — et l'echelon `flash-lite` du bot mesure, dont le seau est intact,
+            # se retrouvait saute.
+            #
+            # Mesure du 2026-09-20, deux passes de suite sur Alfred : flash-lite n'a servi
+            # que 4 et 5 fois sur 17, avec 12 a 13 sauts `quarantaine` a 0 ms — alors
+            # qu'Alfred n'avait fait que DEUX appels dans la minute concernee, sur une
+            # limite de quinze. Le juge empoisonnait ce qu'il mesurait, et ses propres
+            # appels n'etant pas traces dans `api_usage.db`, ca ne se voyait nulle part.
+            #
+            # Un juge est de l'INSTRUMENTATION : il n'a pas a modifier l'etat du systeme
+            # observe. Son echec le fait basculer sur Groq deux lignes plus bas, ce qui
+            # suffit amplement.
+            #
+            # ⚠️ LE MEME DEFAUT EXISTE EN PRODUCTION, et il n'est pas corrige ici : un 429
+            # sur `gemini-3.5-flash` (la vision) met en quarantaine l'echelon texte
+            # `flash-lite` du meme bot. Le vrai correctif est un cooldown par (cle, MODELE)
+            # dans `shared/api_manager.py`, a la mesure de ce que Google facture.
+            logger.debug("Juge LLM : echec Gemini NON reporte au pool "
+                         f"(code {error_code}) — le juge n'empoisonne pas ce qu'il mesure")
             # Attendre un tout petit peu avant le fallback
             time.sleep(1)
 
