@@ -232,3 +232,73 @@ def test_alfred_ne_publie_plus_le_conseil_du_vendredi():
         "La publication automatique du vendredi est de retour chez Alfred :"
         + saut + "  " + (saut + "  ").join(fautes)
     )
+
+
+def test_la_regle_de_longueur_d_alfred_est_posee_comme_sa_forme_NORMALE():
+    """La contrainte de longueur d'Alfred n'est plus une ligne enfouie.
+
+    Mesure du 2026-09-20, sur les 68 reponses d'Alfred servies par ministral dans les
+    rapports deja sur disque : mediane 4 a 5 phrases / 44 mots quand sa fiche dit
+    « 2 phrases maximum », et **66 sur 68** au-dela de deux phrases. Le juge le sanctionne
+    a chaque passe (`longueur` 2.90 puis 3.30, le plus faible des six bots), et il nomme
+    trois choses a la fois : les phrases en trop, le double paragraphe, la relance finale
+    entre parentheses.
+
+    ⚠️ AUCUN FILET N'EST LIVRE, et c'est la mesure qui l'a dit : une coupe a deux phrases
+    toucherait 97 % de ses repliques (66/68), la ou celle de Malena — deja jugee trop
+    destructrice — en touchait 69 %. C'est un changement de PROMPT seul
+    ([[gotcha-un-filet-ne-se-transpose-pas-d-un-bot-a-l-autre]]).
+
+    ⚠️ Et la regle n'est PAS demontree sur un exemple de replique, contrairement a celle
+    de Malena : Alfred est le bot qui RECITE sa fiche au caractere pres
+    ([[gotcha-un-modele-obeissant-RECITE-la-fiche]]). On decrit la FORME — une phrase qui
+    sert, une phrase qui pique — jamais la phrase elle-meme.
+
+    Le verrou porte sur quatre choses, parce que trois d'entre elles ont deja ete
+    annulees ailleurs dans ce depot :
+      1. la regle est posee comme la forme NORMALE, pas comme un plafond ;
+      2. ses puces s'affichent en LISTE : collees en un seul paragraphe, elles se noient
+         dans le mur de texte, ce qui est exactement le defaut corrige ;
+      3. elle interdit la relance (le tour en plus) ET le saut de ligne ;
+      4. la SOLLICITUDE DEGUISEE, qui decrit trois mouvements, ne sert plus de permission
+         de developper ([[gotcha-une-permission-bat-une-demonstration]]).
+    """
+    prompt = alfred_data.PERSONALITY_PROMPT
+    saut = chr(10)
+
+    debut = prompt.find("[CONTRAINTE DE LONGUEUR")
+    assert debut != -1, "la section de longueur d'Alfred a disparu"
+    fin = prompt.find("[RELATIONS]", debut)
+    section = prompt[debut:fin]
+
+    # 1. La forme NORMALE, pas un plafond a frôler.
+    assert "FORME NORMALE" in section, (
+        "la longueur est redevenue un simple plafond : c'est sous cette forme qu'elle "
+        "etait ignoree 66 fois sur 68"
+    )
+    assert "DEUX phrases" in section
+
+    # 2. Les puces sont une LISTE, pas un mur.
+    puces = [ligne for ligne in section.split(saut) if ligne.lstrip().startswith("- ")]
+    assert len(puces) >= 4, (
+        "les puces de la section de longueur sont recollees en un seul paragraphe "
+        f"(trouve : {len(puces)}) — la regle qu'on veut rendre visible s'y noie"
+    )
+
+    # 3. Ce que le juge reprochait, nomme explicitement.
+    assert "RELANCES" in section, "l'interdiction de relancer a saute"
+    assert "saut de ligne" in section, (
+        "« jamais de double paragraphe » seul ne disait pas au modele ce qu'est un "
+        "double paragraphe : 28 de ses 34 sorties brutes contenaient un saut de ligne"
+    )
+    # ⚠️ La question RHETORIQUE reste autorisee : c'est sa signature, et interdire le
+    # procede au lieu de la relance abimerait le personnage
+    # ([[gotcha-le-prompt-bornait-le-DECOR-pas-la-PERSONNE]]).
+    assert "questions rhétoriques" in section
+
+    # 4. La sollicitude ne rouvre pas la porte.
+    soll = prompt[prompt.find("SOLLICITUDE DÉGUISÉE"):prompt.find("LA FIERTÉ DU SERVICE")]
+    assert "DEUX phrases" in soll, (
+        "les trois mouvements de la sollicitude deguisee redeviennent une permission "
+        "de developper, et une permission bat une interdiction"
+    )
