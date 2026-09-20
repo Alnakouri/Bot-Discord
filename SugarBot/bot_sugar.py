@@ -796,6 +796,13 @@ async def on_message(message):
             # Carnet de rancunes : les événements de ton ne comptent que si le
             # message est ADRESSÉ à Sugar (sinon on lit juste le score courant).
             _grudge_addressed = bool(is_mentioned or is_reply or is_dm or is_name_mentioned)
+            if _grudge_addressed:
+                # Journal seul : on range la decision DEJA prise, on n'en change aucune.
+                # C'est le corpus qui dira a quelle frequence `classify_tone` se trompe —
+                # chiffre que personne ne connait, faute d'avoir jamais garde un texte.
+                from core.journal_decisions import journalise, TON
+                journalise("sugar", TON, user_message_temp,
+                           classify_tone(user_message_temp))
             grudge_addition = grudge_book.update(
                 user_id, user_message_temp, addressed=_grudge_addressed)
             # Raffinement LLM en tâche de fond (jamais dans le chemin de réponse)
@@ -841,6 +848,12 @@ async def on_message(message):
 
 
     # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
+    if not is_bot_talking and not should_respond and not has_image_early:
+        # Journal seul, AVANT le dé — voir la note identique chez Johnny : l'étiquette
+        # est « tirage » parce qu'aucun jugement de pertinence n'existe ici.
+        from core.journal_decisions import journalise, PERTINENCE
+        journalise("sugar", PERTINENCE, message.content, "tirage",
+                   detail=f"canal={getattr(message.channel, 'name', '?')}")
     if not is_bot_talking and not should_respond and not has_image_early and random.random() < 0.10:
         if await _other_bot_in_focus(message):
             logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Sugar Bot se tait.")

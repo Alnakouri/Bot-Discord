@@ -1462,10 +1462,22 @@ async def on_message(message):
         # 1. ORDONNER LE REPOS / DÉPART
         # Ex: "Alfred, tu peux partir", "Alfred repos", "Arrête de surveiller"
         stop_keywords = ["pars", "partir", "repos", "stop", "arrête", "arrete", "suffit", "dégage", "quitte", "t'en aller"]
-        if any(w in text_lower for w in stop_keywords):
+        _mordu = [w for w in stop_keywords if w in text_lower]
+        if _mordu:
             # On vérifie si c'est pertinent (pas juste "arrête de parler")
             # Si le mot "vocal", "surveillance", "ici" ou juste "repos" est présent
-            if any(w in text_lower for w in ["vocal", "surveillance", "ici", "maintenant", "tout", "t'en", "la"]) or "repos" in text_lower:
+            _rattrapage = [w for w in ["vocal", "surveillance", "ici", "maintenant", "tout", "t'en", "la"]
+                           if w in text_lower]
+            _part = bool(_rattrapage) or "repos" in text_lower
+            # Journal seul : on range la decision DEJA prise, on n'en change aucune.
+            # C'est la seule des trois qui declenche une ACTION, donc celle dont l'erreur
+            # se voit — « Alfred arrete de parler LA » coche `arrete` PUIS `la`, et le bot
+            # quitte le vocal. On garde le mot qui a mordu pour pouvoir relire les cas.
+            from core.journal_decisions import journalise, INTENTION
+            journalise("alfred", INTENTION, message.content,
+                       "repos" if _part else "bavardage",
+                       detail=f"stop={_mordu} rattrapage={_rattrapage}")
+            if _part:
                 await repos(ctx)
                 return
 

@@ -20,7 +20,8 @@ MODULES = [
     "boucles.py",
     "anti_tic.py",
     "repartee_lessons.py",
-    "profil_interlocuteur.py"
+    "profil_interlocuteur.py",
+    "journal_decisions.py",
 ]
 
 MODULE_NAMES = [m[:-3] for m in MODULES]

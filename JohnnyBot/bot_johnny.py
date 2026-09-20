@@ -929,6 +929,14 @@ async def on_message(message):
             log_interaction(message.author.id, "Johnny", "mention")
     
     # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
+    if not should_respond and not is_bot_talking and not has_image_early:
+        # Journal seul, AVANT le dé : on range le message que le bot a vu sans y être
+        # appelé. L'étiquette est « tirage » parce que c'est la vérité — il n'existe
+        # aujourd'hui AUCUN jugement de pertinence ici, juste une pièce lancée une fois
+        # sur dix. Le tirage étant uniforme, l'échantillon est non biaisé.
+        from core.journal_decisions import journalise, PERTINENCE
+        journalise("johnny", PERTINENCE, message.content, "tirage",
+                   detail=f"canal={getattr(message.channel, 'name', '?')}")
     if not should_respond and not is_bot_talking and not has_image_early and random.random() < 0.10:
         if await _other_bot_in_focus(message):
             logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Johnny se tait.")
