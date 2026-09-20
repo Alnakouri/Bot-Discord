@@ -101,6 +101,23 @@ NVIDIA_FAST = "nvidia/nemotron-3.5-lightning-30b-a3b"
 NVIDIA_GEMMA = "google/gemma-4-31b-it"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
+# AI/ML API — agregateur compatible OpenAI, ajoute le 2026-09-20.
+#
+# Un seul point d'entree, un seul quota, qui sert les modeles de plusieurs fournisseurs.
+# Il repond a deux impasses MESUREES, pas a une envie de catalogue :
+#   - `google/gemma-4-31b-it` est mort chez NVIDIA depuis le 18/09 au soir (3 depassements
+#     sur 3 a chaque sonde), et c'etait le seul modele qui tenait Alfred a 2-3 phrases ;
+#   - la famille `mistral-*` rend 429 par MODELE depuis le 04/09, ce qui nous a laisses
+#     sur `ministral-14b`, dont la verbosite est le defaut ouvert depuis quatre jours.
+#
+# ⚠️ AUCUN MODELE N'EST CABLE ICI, ET C'EST VOLONTAIRE. Un agregateur annonce des
+# milliers de references ; en recopier une depuis sa page revient a faire confiance a un
+# catalogue, et ce depot a deja paye pour savoir ce que ca vaut — 8 des 14 modeles NVIDIA
+# annonces rendaient 404, et 4 des 6 restants depassaient la borne du direct
+# ([[gotcha-catalogue-nvidia-ment]]). Les identifiants n'arriveront ici qu'apres
+# `tools/sonde_modeles_persona.py` sur les VRAIES fiches, avec latence et longueur.
+AIMLAPI_BASE_URL = "https://api.aimlapi.com/v1"
+
 
 def nvidia_kwargs(model_name=None):
     """Arguments a ajouter a un appel NVIDIA pour qu'il ne RECITE PAS son raisonnement.

@@ -79,8 +79,18 @@ NON_SECRETES = {"TWITCH_CHAT_CHANNELS", "TWITCH_PEER_BOTS", "PIPER_TTS_URL",
 # (429 permanent depuis ce jour-la) et nemotron, servi par l'API NVIDIA, est le repli
 # envisage. Un emplacement vide est ignore par les bots — le declarer ne casse rien et
 # evite qu'une cle NVIDIA finisse recopiee d'un bot a l'autre faute de champ.
+# ⚠️ AIMLAPI_API_KEY ajoute au socle le 2026-09-20. C'est un AGREGATEUR compatible
+# OpenAI (https://api.aimlapi.com/v1) : il sert les modeles de plusieurs fournisseurs
+# derriere un seul point d'entree, donc un seul quota, sous notre controle.
+# Il repond a deux impasses mesurees :
+#   - gemma-4 est MORT chez NVIDIA depuis le 2026-09-18 au soir ;
+#   - la famille `mistral-*` rend 429 par MODELE depuis le 2026-09-04.
+# ⚠️ Aucun modele n'est encore cable derriere : un agregateur annonce des milliers de
+# references et il faudra les SONDER pour de vrai avant d'en mettre un en cascade
+# ([[gotcha-catalogue-nvidia-ment]] : 8 des 14 modeles NVIDIA annonces rendaient 404).
+# Un emplacement vide est ignore par les bots — declarer le champ ne casse rien.
 SOCLE = ["DISCORD_TOKEN", "GEMINI_KEY_1", "GROQ_API_KEY", "MISTRAL_API_KEY",
-         "NVIDIA_API_KEY"]
+         "NVIDIA_API_KEY", "AIMLAPI_API_KEY"]
 
 ENTETE = """\
 # ------------------------------------------------------------------------------
