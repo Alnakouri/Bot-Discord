@@ -463,6 +463,27 @@ class DispatchMixin:
         # dérive ; chez les deux autres, qui ne l'ont pas, elle s'aggrave. La clause
         # collective est donc livree DANS la clause de Sugar, pas dans le texte commun.
         #
+        # ⚠️ ET LA QUESTION « POURQUOI PAS LES CINQ AUTRES ? » EST TRANCHEE, PAR LA MESURE.
+        # Le 2026-09-21 au soir, la clause complete de Sugar (anti-objet + variete +
+        # collectif) a ete essayee sur chacun, **sur sa vraie tete de cascade** — johnny
+        # sur ministral, sheo sur groq, les autres sur flash-lite. 4 generations par
+        # cellule :
+        #
+        #     bot      texte commun                   + clause de Sugar
+        #     alfred   3/4 objets, 1/4 « demeure »    2/4 objets, 0/4 possession   leger +
+        #     malena   0 objet, 0 possession          4/4 LA MEME ouverture         -
+        #     maiq     2/4 objets                     3/4 a 5/5 la meme ouverture   -
+        #     johnny   4/4 objets (bieres, clopes)    3/4 objets                    =
+        #     sheo     propre sur 3 generations       non mesure (429 Groq)         ?
+        #
+        # La clause n'est donc PAS etendue : elle abime Malena et M'aiq, dont les ouvertures
+        # s'effondrent sur une formule unique, et n'apporte rien de mesurable a Johnny.
+        # Chez Alfred le gain est dans le bruit a n=4.
+        # ⚠️ Ce que la mesure a montre au passage, et qui reste OUVERT : Johnny invente une
+        # boisson dans 4 generations sur 4 (« les premieres bieres sont a mon nom »), Alfred
+        # dans 3 sur 4 — le defaut signale sur Sugar existe chez eux aussi, en pire. Et
+        # leurs phrases depassent allegrement les 120 caracteres demandes.
+        #
         # ⚠️ Au passage, un defaut voisin, deja present SANS aucune rustine : Alfred sort
         # « Cette demeure », « Ces murs » et meme « La bibliotheque du serveur » — alors
         # que sa fiche lui interdit « le Manoir » et que cette instruction-ci lui interdit
