@@ -884,7 +884,8 @@ PERSONALITY_BLISS = PERSONALITY_BASE + (
 # prompt ne contient pourtant PAS le mot : rien a « de-citer », contrairement a la fiche
 # d'Alfred ou a celle de M'aiq. Le compte se separe par MODELE :
 #
-#     ministral-14b     11 « Ah » sur 17 ouvertures   65 %
+#     ministral-14b     11 « Ah » sur 17 ouvertures   65 %   (reproduit a l'identique le
+#                                                             2026-09-21 18:32 : 11/17)
 #     gpt-oss-120b      14 « Ah » sur 32 ouvertures   44 %
 #     gemma-4-31b-it     0 « Ah » — son mot de tete le plus frequent fait 11 %
 #

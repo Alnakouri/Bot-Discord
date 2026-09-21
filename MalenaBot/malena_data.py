@@ -110,9 +110,15 @@ Malena: Ki chui ?? Non mais tié sérieux là con ? Chui MALENA, la seule et uni
 # separe par MODELE, pas par formule.
 #
 #     ministral-14b          18 « Oh » sur 22 ouvertures   82 %
-#     gemini-3.5-flash-lite   6 « Oh » sur 45 ouvertures   13 %
+#     gemini-3.5-flash-lite  12 « Oh » sur 62 ouvertures   19 %
 #
-# Le meme texte produit 82 % chez l'un et 13 % chez l'autre. Malena est Mistral-FIRST
+# ⚠️ Le chiffre flash-lite est INSTABLE et la 1re version de ce commentaire l'a sous-estime :
+# 6/45 = 13 % sur les rapports anciens, puis 6/17 = 35 % sur la passe du 2026-09-21 18:32,
+# ou elle a ete servie 17 fois sur 17 par flash-lite. 19 % est le cumul des deux. L'ecart
+# avec ministral reste d'un facteur QUATRE, et c'est lui qui porte la conclusion — pas le
+# chiffre bas, qui varie du simple au triple d'une passe a l'autre.
+#
+# Le meme texte produit 82 % chez l'un et 19 % chez l'autre. Malena est Mistral-FIRST
 # (c'est ministral qui rend l'argot FR le plus naturel, cf. shared/models.py), donc c'est
 # ministral qui repond le plus souvent — et c'est lui qui martele l'interjection. Amputer
 # la fiche punirait le cas a 13 % pour un defaut que l'autre modele commet.
