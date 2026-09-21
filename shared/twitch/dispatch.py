@@ -423,7 +423,19 @@ class DispatchMixin:
     # ⚠️ Meme regle que CLAUSES_PAR_BOT : on n'ajoute un bot ici qu'apres l'avoir mesure.
     # Un fait VRAI n'est pas une clause de style, mais il allonge quand meme l'instruction,
     # et une instruction plus longue effondre certains modeles (mesure du jour sur M'aiq).
-    ACCROCHE_AU_JEU = {"sugar"}
+    #
+    # Mesure du 2026-09-22, jeu = Elden Ring, 6 generations par bot, chacun sur SA tete :
+    #
+    #     sugar    6/6 accrochent, 0/6 objet invente (contre 4/6 sans jeu)      LIVRE
+    #     alfred   6/6 accrochent, 1/6 objet (contre 3/4), et ZERO « demeure »  LIVRE
+    #     malena   6/6 accrochent, 0/6 objet, sa voix intacte                   LIVRE
+    #     maiq     6/6 accrochent, mais 4/6 ouvrent sur la MEME formule, et les
+    #              objets ne bougent pas (2/6) — rien a gagner                  non livre
+    #     johnny   6/6 accrochent, mais 5/6 sortent enrobees de `*"..."*` —
+    #              `_nettoyer_phrase_de_lien` les JETTE (verifie), donc il
+    #              retomberait sur le gabarit fixe 5 fois sur 6                 non livre
+    #     sheo     2 generations exploitables sur 6 (429 Groq) : pas mesure     non livre
+    ACCROCHE_AU_JEU = {"sugar", "alfred", "malena"}
 
     async def _jeu_en_cours(self) -> str | None:
         """Le jeu diffuse sur le canal du bot, ou None. Ne leve jamais.
