@@ -1815,7 +1815,7 @@ async def on_message(message):
             try:
                 # 1. GEMINI
                 if client_type == "gemini":
-                    api_key, _saut = _cle_du_pool(key_manager, "gemini", exigee=True)
+                    api_key, _saut = _cle_du_pool(key_manager, "gemini", exigee=True, modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -1894,7 +1894,7 @@ async def on_message(message):
 
                 # 2. MISTRAL
                 elif client_type == "mistral" and mistral_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "mistral")
+                    api_key, _saut = _cle_du_pool(key_manager, "mistral", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -1915,7 +1915,7 @@ async def on_message(message):
 
                 # 4. GROQ
                 elif client_type == "groq" and groq_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "groq")
+                    api_key, _saut = _cle_du_pool(key_manager, "groq", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -1942,7 +1942,7 @@ async def on_message(message):
                 # shared/llm_cascade.py et ses copies vendorisees : cette cascade-ci est
                 # INLINE, l'echelon `nvidia` y tombait donc dans le vide a chaque fois.
                 elif client_type == "nvidia" and nvidia_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "nvidia")
+                    api_key, _saut = _cle_du_pool(key_manager, "nvidia", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -1989,7 +1989,8 @@ async def on_message(message):
                 if api_key:
                     error_code = getattr(e, 'code', getattr(e, 'status_code', 0))
                     key_manager.report_error(client_type, api_key, error_code,
-                                             retry_delay_s=delai_de_reprise(e))
+                                             retry_delay_s=delai_de_reprise(e),
+                                             modele=model_name)
                 _raison = type(e).__name__
                 _code_erreur = getattr(e, 'code', getattr(e, 'status_code', 0))
                 continue

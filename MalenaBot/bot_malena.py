@@ -242,7 +242,7 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
             try:
                 # 1. GEMINI
                 if client_type == "gemini" and gemini_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "gemini")
+                    api_key, _saut = _cle_du_pool(key_manager, "gemini", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -295,7 +295,7 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
 
                 # 2. MISTRAL
                 elif client_type == "mistral" and mistral_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "mistral")
+                    api_key, _saut = _cle_du_pool(key_manager, "mistral", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -325,7 +325,7 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
 
                 # 4. GROQ
                 elif client_type == "groq" and groq_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "groq")
+                    api_key, _saut = _cle_du_pool(key_manager, "groq", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -363,7 +363,7 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
                 # shared/llm_cascade.py et ses copies vendorisees : cette cascade-ci est
                 # INLINE, l'echelon `nvidia` y tombait donc dans le vide a chaque fois.
                 elif client_type == "nvidia" and nvidia_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "nvidia")
+                    api_key, _saut = _cle_du_pool(key_manager, "nvidia", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -410,7 +410,8 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
                 logger.error(f"❌ Erreur {client_type.upper()} ({model_name}) : {type(e).__name__}: {error_msg}")
                 if api_key:
                     key_manager.report_error(client_type, api_key, _code_erreur,
-                                             retry_delay_s=delai_de_reprise(e))
+                                             retry_delay_s=delai_de_reprise(e),
+                                             modele=model_name)
                 continue
         finally:
             _latence = int((time.perf_counter() - _depart) * 1000)

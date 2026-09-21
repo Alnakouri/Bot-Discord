@@ -208,10 +208,15 @@ N'ajoute aucune introduction, aucune conclusion, pas de texte de présentation. 
             # observe. Son echec le fait basculer sur Groq deux lignes plus bas, ce qui
             # suffit amplement.
             #
-            # ⚠️ LE MEME DEFAUT EXISTE EN PRODUCTION, et il n'est pas corrige ici : un 429
-            # sur `gemini-3.5-flash` (la vision) met en quarantaine l'echelon texte
-            # `flash-lite` du meme bot. Le vrai correctif est un cooldown par (cle, MODELE)
-            # dans `shared/api_manager.py`, a la mesure de ce que Google facture.
+            # Le meme defaut existait en PRODUCTION — un 429 sur `gemini-3.5-flash` (la
+            # vision) mettait en quarantaine l'echelon texte `flash-lite` du meme bot.
+            # Corrige le 2026-09-21 : `shared/api_manager.py` pose desormais le cooldown
+            # sur le couple (cle, MODELE) chez Gemini, a la mesure de ce que Google
+            # compte. Cf. QUOTA_PAR_MODELE et tests/test_quota_par_modele.py.
+            #
+            # ⚠️ Ca ne rend pas ce non-report caduc pour autant : le juge tourne sur le
+            # MEME modele que l'echelon vision des bots. Le reporter reviendrait a saturer
+            # leur seau vision depuis l'instrument de mesure.
             logger.debug("Juge LLM : echec Gemini NON reporte au pool "
                          f"(code {error_code}) — le juge n'empoisonne pas ce qu'il mesure")
             # Attendre un tout petit peu avant le fallback

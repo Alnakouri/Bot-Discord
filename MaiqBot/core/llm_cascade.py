@@ -259,8 +259,14 @@ def _delai_dans_les_entetes(exc):
     return None
 
 
-def _cle_du_pool(key_manager, api_name, exigee=False):
+def _cle_du_pool(key_manager, api_name, exigee=False, modele=None):
     """Rend `(cle, raison_du_saut)` pour un échelon. `raison` non nulle => sauter.
+
+    `modele` nomme l'échelon qui va tourner. Le gestionnaire s'en sert pour lire le bon
+    seau de quota : chez Gemini le quota est `...PerProjectPerModel`, donc une clé
+    saturée sur `gemini-3.5-flash` sert encore `gemini-3.5-flash-lite`. Un gestionnaire
+    plus ancien (ou un faux de test) qui ne connaît pas l'argument est re-appelé sans
+    lui — l'échelon ne doit pas sauter pour une question de signature.
 
     `exigee=True` (Gemini) : l'échelon ne peut pas tourner sans la clé, il la passe au
     constructeur du client. Ailleurs le client est déjà bâti et porte sa propre clé ; la
@@ -278,7 +284,13 @@ def _cle_du_pool(key_manager, api_name, exigee=False):
     gestionnaire, c'est court-circuiter la seule autorité sur la question.
     """
     obtenir = getattr(key_manager, "get_key", None)
-    cle = obtenir(api_name) if callable(obtenir) else None
+    if callable(obtenir):
+        try:
+            cle = obtenir(api_name, modele=modele)
+        except TypeError:
+            cle = obtenir(api_name)
+    else:
+        cle = None
     # ⚠️ `isinstance(cle, str)` n'est pas de la ceinture-bretelles : plusieurs tests
     # passent un `MagicMock` en guise de gestionnaire. Son `get_key` rend un MagicMock,
     # qui n'est pas None — et cette fausse clé finissait bindée dans SQLite
@@ -433,7 +445,7 @@ async def generate_response(
             try:
                 # 1. GEMINI
                 if client_type == "gemini":
-                    api_key, _saut = _cle_du_pool(key_manager, "gemini", exigee=True)
+                    api_key, _saut = _cle_du_pool(key_manager, "gemini", exigee=True, modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -492,7 +504,7 @@ async def generate_response(
     
                 # 2. MISTRAL
                 elif client_type == "mistral" and mistral_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "mistral")
+                    api_key, _saut = _cle_du_pool(key_manager, "mistral", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -526,7 +538,7 @@ async def generate_response(
     
                 # 3. GROQ
                 elif client_type == "groq" and groq_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "groq")
+                    api_key, _saut = _cle_du_pool(key_manager, "groq", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -557,7 +569,7 @@ async def generate_response(
     
                 # 4. NVIDIA (nemotron) — 4e fournisseur, quota independant des 3 autres.
                 elif client_type == "nvidia" and nvidia_client:
-                    api_key, _saut = _cle_du_pool(key_manager, "nvidia")
+                    api_key, _saut = _cle_du_pool(key_manager, "nvidia", modele=model_name)
                     if _saut:
                         _raison = _saut
                         continue
@@ -627,9 +639,14 @@ async def generate_response(
                 # sur la MÊME clé morte dans la même seconde (05:30:45), deux de Sheo à
                 # 05:30:59. `report_error` ne fait rien si le pool lui est inconnu.
                 if api_key:
+                    # ⚠️ `modele` n'est pas decoratif : sans lui, un 429 sur l'echelon
+                    # VISION (`gemini-3.5-flash`) mettait en quarantaine l'echelon TEXTE
+                    # (`flash-lite`) de la meme cle, dont le seau etait intact — le quota
+                    # Google se compte PAR MODELE. Cf. QUOTA_PAR_MODELE.
                     key_manager.report_error(
                         client_type, api_key, _code_erreur,
                         retry_delay_s=delai_de_reprise(e),
+                        modele=model_name,
                     )
                 continue
         finally:
@@ -733,7 +750,8 @@ async def appel_hors_cascade(
     """
     if timeout is None:
         timeout = _BORNE_TEXTE
-    api_key, _saut = _cle_du_pool(key_manager, fournisseur, exigee=fabrique is not None)
+    api_key, _saut = _cle_du_pool(key_manager, fournisseur,
+                                  exigee=fabrique is not None, modele=modele)
 
     _depart = time.perf_counter()
     texte = None
@@ -778,6 +796,7 @@ async def appel_hors_cascade(
             key_manager.report_error(
                 fournisseur, api_key, _code_erreur,
                 retry_delay_s=delai_de_reprise(e),
+                modele=modele,
             )
         return None
     finally:
