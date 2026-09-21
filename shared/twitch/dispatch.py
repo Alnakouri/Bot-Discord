@@ -81,7 +81,39 @@ def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
     phrase = phrase.rstrip(" :;,-—–")
     if len(phrase) < 3:
         return None
-    return phrase[:200]
+    return _borner(phrase, 200)
+
+
+def _borner(phrase: str, maxi: int) -> str:
+    """Borne la phrase SANS couper un mot en deux.
+
+    ⚠️ `phrase[:200]` coupait au caractere pres. Mesure du 2026-09-21 sur 32 generations
+    de Johnny : ses phrases font 102 a 239 caracteres — l'instruction en demande 120 et
+    ministral l'ignore — donc une invitation sur cinq partait sur Twitch tranchee au
+    milieu d'un mot, juste avant l'URL. Meme famille que
+    [[gotcha-nettoyeur-laisse-ce-qui-rattachait]] : ce qu'un nettoyeur laisse derriere lui
+    compte autant que ce qu'il enleve.
+
+    On coupe donc a la derniere fin de PHRASE qui tient dans la borne — la replique reste
+    entiere, elle est juste plus courte. A defaut, au dernier espace, et on pose des points
+    de suspension : la coupe est alors visible, ce qui vaut mieux qu'un mot tronque qui
+    passe pour une faute de frappe du bot.
+    """
+    if len(phrase) <= maxi:
+        return phrase
+    # ⚠️ Le seuil est a maxi/3, pas a maxi/2 : une premiere phrase COMPLETE de 70
+    # caracteres vaut mieux qu'une seconde tranchee a 199. On ne refuse une fin de phrase
+    # que si elle laisserait un moignon.
+    tete = phrase[:maxi]
+    fin_de_phrase = max(tete.rfind(". "), tete.rfind("! "), tete.rfind("? "))
+    if fin_de_phrase >= maxi // 3:
+        return tete[:fin_de_phrase + 1].strip()
+    # Les points de suspension comptent dans la borne : sans ca, la coupe la DEPASSE.
+    tete = phrase[:maxi - 1]
+    espace = tete.rfind(" ")
+    if espace >= maxi // 3:
+        return tete[:espace].rstrip(" ,;:—–-") + "…"
+    return tete.rstrip(" ,;:—–-") + "…"
 
 
 class DispatchMixin:
@@ -360,6 +392,28 @@ class DispatchMixin:
             "moi », et tu n'invites pas comme si tu en étais l'hôtesse. Parle au NOUS "
             "quand tu parles de là-bas — « on t'attend », « viens nous voir » — et garde "
             "le « je » pour ce que toi seule y fais. "
+        ),
+        # ⚠️ Johnny promettait une tournee : sur 8 generations du texte commun, SIX
+        # offraient une biere, un verre ou une clope au lecteur (« les clopes sont
+        # gratuites », « je te sers le premier verre »). Mesure du 2026-09-21 sur sa vraie
+        # tete (ministral), 8 generations par variante :
+        #
+        #     texte commun seul .................... 6/8 promettent quelque chose
+        #     clause neutre de Sugar ............... 6/8  (aucun effet)
+        #     clause ci-dessous .................... 3/8
+        #
+        # ⚠️ Elle vise la PROMESSE, pas le mot : le whisky et la clope SONT son vocabulaire
+        # et doivent rester. Ce qui est interdit, c'est d'en offrir un au lecteur.
+        # ⚠️ Et elle nomme les objets interdits, ce qui va contre
+        # [[gotcha-le-prompt-enseigne-le-tic-interdit]] — c'est assume : la version SANS
+        # exemple a ete mesuree aussi (4/8), et elle faisait en plus sortir la phrase entre
+        # guillemets et asterisques 4 fois sur 8, ce que le nettoyeur jette.
+        "johnny": (
+            "⚠️ Tu ne promets rien qui les attendrait là-bas : ni tournée, ni verre, ni "
+            "place gardée — tu n'as rien à offrir et tu n'as jamais rien offert à "
+            "personne. Ce qui les attend, c'est toi : ta gueule, tes histoires, ce que tu "
+            "vas leur balancer. Tes clopes et ton whisky restent les TIENS, tu ne les "
+            "partages pas dans la phrase. "
         ),
     }
 

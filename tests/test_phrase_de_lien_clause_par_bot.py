@@ -40,7 +40,7 @@ from shared.twitch.dispatch import DispatchMixin
 RACINE = Path(__file__).resolve().parent.parent
 
 # Les seuls bots pour lesquels une clause a ete MESUREE. Cf. l'entete.
-BOTS_MESURES = {"sugar"}
+BOTS_MESURES = {"sugar", "johnny"}
 
 
 def test_seuls_les_bots_mesures_ont_une_clause():
@@ -70,6 +70,20 @@ def test_la_clause_de_sugar_porte_bien_les_trois_regles_mesurees():
         "(« Viens sur mon serveur »), alors qu'il est celui de la communaute."
     )
     assert "NOUS" in clause, "le « on/nous » n'est plus demande"
+
+
+def test_la_clause_de_johnny_vise_la_PROMESSE_pas_le_mot():
+    """Le whisky et la clope SONT son vocabulaire : les interdire l'appauvrirait.
+
+    Mesure du 2026-09-21 sur ministral, 8 generations par variante : 6/8 promettaient
+    une biere ou une clope au lecteur avec le texte commun, 3/8 avec cette clause.
+    """
+    clause = DispatchMixin.CLAUSES_PAR_BOT["johnny"]
+    assert "ne promets rien" in clause
+    assert "restent les TIENS" in clause, (
+        "la clause a ete durcie en interdisant le VOCABULAIRE : Johnny sans clope ni "
+        "whisky n'est plus Johnny. C'est la promesse qui est interdite, pas le mot."
+    )
 
 
 def test_la_clause_est_vraiment_LUE_par_la_fonction():
