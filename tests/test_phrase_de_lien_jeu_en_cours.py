@@ -37,9 +37,19 @@ def _faux_bot(bot_id="sugar", channels=("un_canal",), avec_cles=True):
     return f
 
 
-def _helix(rendu):
+def _helix(rendu, attend_live_only=True):
+    """⚠️ Le faux DOIT accepter `live_only`, et verifier qu'on le lui passe.
+
+    Sans cette assertion, le jour ou `_jeu_en_cours` cesserait de demander le direct, le
+    faux rendrait le jeu quand meme et le test resterait vert — alors qu'en prod
+    l'invitation se remettrait a parler du jeu de la veille, stream eteint.
+    """
     class H:
-        async def get_current_game(self, chan):
+        async def get_current_game(self, chan, live_only=False):
+            assert live_only is attend_live_only, (
+                "`_jeu_en_cours` doit demander le DIRECT : hors direct, Twitch rend "
+                "toujours la derniere categorie de la chaine."
+            )
             if isinstance(rendu, Exception):
                 raise rendu
             return rendu

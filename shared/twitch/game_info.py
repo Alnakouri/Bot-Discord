@@ -151,13 +151,31 @@ class HelixClient:
             logger.error(f"❌ [HelixClient] get_user_id error: {e}")
         return None
 
-    async def get_current_game(self, chan: str) -> tuple[str | None, str | None]:
+    async def get_current_game(self, chan: str, live_only: bool = False):
+        """Le jeu du canal. Rend (nom, id).
+
+        ⚠️ `live_only=True` change le SENS de la reponse : « ce qui est diffuse MAINTENANT »
+        au lieu de « la derniere categorie posee sur la chaine ». Les deux sont utiles et
+        ne se remplacent pas :
+          - repondre a une question sur le jeu marche tres bien hors direct, d'ou le repli
+            sur `helix/channels` en 2e etape ;
+          - une invitation qui s'accroche au jeu, elle, parlerait d'Elden Ring des heures
+            apres la fin du stream. Constate le 2026-09-22 : « le stream est termine » —
+            et `helix/channels` rendait toujours le jeu de la veille.
+        Le cache retient donc AUSSI si la reponse venait du direct.
+        """
         chan_key = chan.lower().lstrip("#")
         now = time.time()
-        
+
         if chan_key in HELIX_CACHE:
-            cached_game, cached_id, cached_ts = HELIX_CACHE[chan_key]
+            en_cache = HELIX_CACHE[chan_key]
+            # ⚠️ Entree a 3 elements = posee avant le 2026-09-22, liveness inconnue : on la
+            # traite comme HORS direct, le choix prudent pour `live_only`.
+            cached_game, cached_id, cached_ts = en_cache[:3]
+            cached_live = en_cache[3] if len(en_cache) > 3 else False
             if now - cached_ts < HELIX_CACHE_TTL:
+                if live_only and not cached_live:
+                    return None, None
                 return cached_game, cached_id
 
         try:
@@ -183,12 +201,17 @@ class HelixClient:
                         if streams:
                             game_name = streams[0].get("game_name")
                             game_id = streams[0].get("game_id")
-                            HELIX_CACHE[chan_key] = (game_name, game_id, now)
+                            HELIX_CACHE[chan_key] = (game_name, game_id, now, True)
                             return game_name, game_id
         except Exception as e:
             logger.error(f"❌ [HelixClient] get_streams error: {e}")
 
         # 2. Try offline fallback
+        # ⚠️ Cette etape repond « la derniere categorie posee », pas « ce qui passe en ce
+        # moment » : un appelant qui a besoin du DIRECT s'arrete ici.
+        if live_only:
+            HELIX_CACHE[chan_key] = (None, None, now, False)
+            return None, None
         uid = await self.get_user_id(chan_key)
         if not uid:
             return None, None
@@ -204,7 +227,7 @@ class HelixClient:
                         if channels:
                             game_name = channels[0].get("game_name")
                             game_id = channels[0].get("game_id")
-                            HELIX_CACHE[chan_key] = (game_name, game_id, now)
+                            HELIX_CACHE[chan_key] = (game_name, game_id, now, False)
                             return game_name, game_id
         except Exception as e:
             logger.error(f"❌ [HelixClient] get_channels error: {e}")

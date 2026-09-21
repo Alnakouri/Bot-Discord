@@ -543,7 +543,10 @@ class DispatchMixin:
             from shared.twitch.game_info import HelixClient
             if getattr(self, "_helix_client", None) is None:
                 self._helix_client = HelixClient(self.client_id, self.client_secret)
-            nom, _ = await self._helix_client.get_current_game(chan)
+            # ⚠️ `live_only=True` : hors direct, `helix/channels` rend toujours la
+            # derniere categorie de la chaine, et l'invitation parlerait du jeu d'hier.
+            # « Le stream est termine » -> pas de jeu -> annonce normale, comme demande.
+            nom, _ = await self._helix_client.get_current_game(chan, live_only=True)
             nom = (nom or "").strip()
             # « Just Chatting » et consorts ne sont pas des jeux : s'y accrocher ferait
             # dire au bot n'importe quoi. Hors de cette liste, on fait confiance a Twitch.
