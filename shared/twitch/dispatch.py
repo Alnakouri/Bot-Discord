@@ -355,6 +355,11 @@ class DispatchMixin:
             "Ce que tu annonces change à chaque fois : tantôt ce que tu y fais, tantôt ce "
             "que tu leur diras en arrivant, tantôt ce qui t'y amuse. Évite la formule "
             "d'attente toute faite : dis quelque chose que toi seul dirais. "
+            "⚠️ Ce serveur n'est pas le tien : il appartient à la communauté, et tu n'es "
+            "qu'une de celles qui s'y trouvent. Tu ne dis jamais « mon serveur » ni « chez "
+            "moi », et tu n'invites pas comme si tu en étais l'hôtesse. Parle au NOUS "
+            "quand tu parles de là-bas — « on t'attend », « viens nous voir » — et garde "
+            "le « je » pour ce que toi seule y fais. "
         ),
     }
 
@@ -441,6 +446,22 @@ class DispatchMixin:
         # D'ou `CLAUSES_PAR_BOT` ci-dessus : la variante C est livree POUR SUGAR SEUL,
         # ou elle est mesuree (4/6 -> 0/6), et le texte commun ne bouge pas d'une virgule
         # pour les cinq autres.
+        #
+        # ⚠️ 2e reproche d'Ahmed sur la meme phrase, le soir meme : **Sugar parlait du
+        # Discord comme du SIEN** (« Viens sur mon serveur »), alors qu'il est celui de la
+        # communaute. La cause est la clause « ce que tu promets, c'est TOI » ci-dessus :
+        # elle a supprime la vente par comparaison, et installe la possession a la place.
+        # Une clause collective (« il appartient a la communaute, parle au NOUS ») a ete
+        # mesuree, ajoutee a ce que chaque bot recoit deja :
+        #
+        #     sugar (avec sa clause)   0/6 « mon serveur », 0/6 objet, voix intacte
+        #     maiq  (texte commun)     5/5 ouvertures IDENTIQUES, et le feu de camp revient
+        #     alfred (texte commun)    5/5 inventent un the ou des tasses (contre 2/4 avant)
+        #
+        # Le mecanisme est celui du 19/09 : prive de ce qu'il peut promettre, le modele se
+        # rabat sur ce qu'il imagine du lieu. Chez Sugar la clause anti-objet retient cette
+        # dérive ; chez les deux autres, qui ne l'ont pas, elle s'aggrave. La clause
+        # collective est donc livree DANS la clause de Sugar, pas dans le texte commun.
         #
         # ⚠️ Au passage, un defaut voisin, deja present SANS aucune rustine : Alfred sort
         # « Cette demeure », « Ces murs » et meme « La bibliotheque du serveur » — alors

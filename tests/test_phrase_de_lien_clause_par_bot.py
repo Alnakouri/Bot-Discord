@@ -9,6 +9,16 @@ une recompense. Deux formulations ont ete mesurees pour le corriger :
     B : « tu n'offres rien de materiel »    1/6          3/5         3/5
     C : B + « varie ce que tu annonces »    0/6          1/4         2/4
 
+Second reproche le meme soir : Sugar parlait du Discord comme du SIEN (« Viens sur mon
+serveur »), alors qu'il est celui de la communaute. La clause collective mesuree :
+
+    sugar (avec sa clause)   0/6 « mon serveur », 0/6 objet, voix intacte
+    maiq  (texte commun)     5/5 ouvertures IDENTIQUES, le feu de camp revient
+    alfred (texte commun)    5/5 inventent un the ou des tasses (2/4 avant)
+
+Prive de ce qu'il peut promettre, le modele se rabat sur ce qu'il imagine du lieu : chez
+Sugar la clause anti-objet retient la derive, chez les autres elle s'aggrave.
+
 ⚠️ **B et C reparent Sugar et CASSENT M'aiq** : ses ouvertures s'effondrent sur une seule
 formule (5/5 « Les Plaines de l'Echo... » en B, 3/4 en C) quand le texte commun en rend
 quatre differentes. Aucune formulation partagee n'ameliore les six
@@ -48,13 +58,18 @@ def test_un_bot_absent_recoit_exactement_le_texte_commun():
     assert DispatchMixin.CLAUSES_PAR_BOT.get("un-bot-qui-n-existe-pas", "") == ""
 
 
-def test_la_clause_de_sugar_porte_bien_les_deux_regles_mesurees():
+def test_la_clause_de_sugar_porte_bien_les_trois_regles_mesurees():
     clause = DispatchMixin.CLAUSES_PAR_BOT["sugar"]
     assert "matériel" in clause, "la regle qui retire l'objet invente a disparu"
     assert "change à chaque fois" in clause, (
         "la regle de variete a disparu : sans elle, la seule interdiction fait tomber "
         "Sugar sur une formule d'attente toute faite (mesure : 3 fois sur 6)."
     )
+    assert "appartient à la communauté" in clause, (
+        "la regle collective a disparu : sans elle, Sugar parle du Discord comme du SIEN "
+        "(« Viens sur mon serveur »), alors qu'il est celui de la communaute."
+    )
+    assert "NOUS" in clause, "le « on/nous » n'est plus demande"
 
 
 def test_la_clause_est_vraiment_LUE_par_la_fonction():
