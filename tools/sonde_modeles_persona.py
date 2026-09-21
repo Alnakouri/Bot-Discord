@@ -40,9 +40,10 @@ MESSAGES = [
     ("ouverte", "raconte-moi un truc que personne ne sait"),
 ]
 
-# Fin de phrase reelle. Les « ... » sont volontairement exclus : ils gonflent le
-# compte et ont deja coute une punchline ([[feedback-sheo-longueur-densite]]).
-PONCTUATION_FIN = r"(?<=[.!?])\s+"
+# ⚠️ Le compte de phrases vit dans `tools/mesure_texte.py` depuis le 2026-09-21 :
+# compte a l'ancienne, l'emoji de ton final passait pour une TROISIEME phrase et Alfred
+# etait declare trop long trois passes de suite, a tort. Lire l'entete de ce module.
+from mesure_texte import PONCTUATION_FIN, compte_phrases  # noqa: E402
 
 CANDIDATS_GROQ = [
     "openai/gpt-oss-120b",
@@ -358,7 +359,7 @@ def main():
                 else:
                     drapeau = ""
                 mots = len((texte or "").split())
-                phr = len([s for s in re.split(PONCTUATION_FIN, texte or "") if s.strip()])
+                phr = compte_phrases(texte or "")
                 # Le critere du 2026-09-18 : la didascalie entre asterisques. Elle etait
                 # comptee a la main sur le JSON, donc jamais visible pendant la sonde.
                 ast = len(MOTIF_ASTERISQUE.findall(texte or ""))

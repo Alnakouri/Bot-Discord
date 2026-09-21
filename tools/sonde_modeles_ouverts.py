@@ -86,7 +86,12 @@ def mesure(appel):
         if not txt:
             err = err or "reponse VIDE"
             continue
-        phr.append(len([p for p in re.split(r"(?<=[.!?…])\s+", txt) if p.strip()]))
+        # ⚠️ Un fragment sans la moindre lettre n'est PAS une phrase : l'emoji de
+        # cloture passait pour une 3e phrase et gonflait le compte de 1. La regle vit
+        # dans tools/mesure_texte.py, mais ce bloc-ci tourne DANS le conteneur, qui ne
+        # monte pas `tools/` : elle est recopiee, pas importee.
+        _frags = [p for p in re.split(r"(?<=[.!?\u2026])\s+", txt) if p.strip()]
+        phr.append(len([p for p in _frags if any(c.isalnum() for c in p)]))
         mots.append(len(txt.split()))
         ast += txt.count("*")
         exemple = exemple or txt[:100]
