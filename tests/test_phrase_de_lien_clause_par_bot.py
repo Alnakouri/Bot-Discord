@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from shared.twitch.dispatch import DispatchMixin
+from shared.twitch.dispatch import DispatchMixin, _nettoyer_phrase_de_lien
 
 RACINE = Path(__file__).resolve().parent.parent
 
@@ -111,3 +111,37 @@ def test_la_clause_est_vraiment_LUE_par_la_fonction():
         assert getattr(appel.args[1], "value", None) == "", (
             "le defaut d'un bot non mesure doit etre la chaine VIDE."
         )
+
+
+# --------------------------------------------------------------------------------------
+# L'emballage : une replique entiere entre asterisques etait JETEE
+# --------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("brut, attendu", [
+    # Le cas mesure : avec l'accroche au jeu, ministral enrobe 5 repliques de Johnny
+    # sur 6. `strip_stage_directions` y voyait une didascalie et rendait None — cinq
+    # invitations ecrites pour rien, remplacees par le gabarit fixe.
+    ("""*"Viens, je te raconterai comment j'ai fait sauter Arasaka. 🎸"*""",
+     "Viens, je te raconterai comment j'ai fait sauter Arasaka. 🎸"),
+    ("""\"Viens nous voir la-bas, on t'attend. 🔥\"""",
+     "Viens nous voir la-bas, on t'attend. 🔥"),
+    ("*Viens donc nous voir maintenant.*", "Viens donc nous voir maintenant."),
+    ("Sans aucun emballage, viens donc. 🎸", "Sans aucun emballage, viens donc. 🎸"),
+])
+def test_une_replique_enrobee_est_deballee_pas_jetee(brut, attendu):
+    assert _nettoyer_phrase_de_lien(brut) == attendu
+
+
+@pytest.mark.parametrize("didascalie", [
+    "*sourit*",
+    "*hausse les epaules*",
+    "*Il sourit puis repart tranquillement*",
+])
+def test_une_VRAIE_didascalie_reste_jetee(didascalie):
+    """⚠️ Le garde-fou du deballage, et il a demande deux criteres.
+
+    Avec le seul compte de mots, `*Il sourit puis repart tranquillement*` — une vraie
+    didascalie de cinq mots — ressortait comme invitation. On exige donc AUSSI une
+    ponctuation de fin de phrase, qu'aucune didascalie de ces bots ne porte.
+    """
+    assert _nettoyer_phrase_de_lien(didascalie) is None

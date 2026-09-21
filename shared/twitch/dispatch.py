@@ -69,6 +69,32 @@ def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
     if not texte:
         return None
     phrase = " ".join(str(texte).split())
+    # ⚠️ DEBALLER AVANT DE NETTOYER. Certains modeles rendent toute la replique enrobee :
+    # `*"... viens donc. 🎸"*`. `strip_stage_directions` y voit une didascalie et supprime
+    # TOUT — la phrase devient vide, et le bot retombe sur le gabarit fixe. Mesure du
+    # 2026-09-22 : avec l'accroche au jeu, ministral enrobe 5 repliques de Johnny sur 6,
+    # donc cinq invitations ecrites pour rien. On retire donc l'emballage tant qu'il
+    # entoure la phrase ENTIERE — ce qui n'enleve aucune vraie didascalie, celles-ci
+    # n'occupant jamais la replique complete.
+    for _ in range(3):
+        avant = phrase
+        for ouvre, ferme in (("*", "*"), ('"', '"'), ("«", "»"), ("“", "”")):
+            if len(phrase) > 2 and phrase.startswith(ouvre) and phrase.endswith(ferme):
+                milieu = phrase[len(ouvre):-len(ferme)]
+                # Un emballage n'a pas de jumeau a l'interieur : `*a* et *b*` n'est pas
+                # une phrase enrobee, c'est une phrase AVEC deux didascalies.
+                # ⚠️ Et on n'ouvre que si l'interieur est une PHRASE : sans ce garde,
+                # `*sourit*` — une vraie didascalie, que le nettoyeur jetait a raison —
+                # deviendrait l'invitation « sourit ». Deux criteres, parce que le
+                # premier seul laissait passer `*Il sourit puis repart tranquillement*` :
+                # au moins quatre mots, ET une ponctuation de fin de phrase quelque part.
+                # Une didascalie de ces bots n'en a jamais.
+                if (ouvre not in milieu and ferme not in milieu
+                        and len(milieu.split()) >= 4
+                        and any(c in milieu for c in ".!?…")):
+                    phrase = milieu.strip()
+        if phrase == avant:
+            break
     phrase = strip_stage_directions(phrase)
     if _RESSEMBLE_A_UN_LIEN.search(phrase):
         return None
@@ -431,11 +457,11 @@ class DispatchMixin:
     #     malena   6/6 accrochent, 0/6 objet, sa voix intacte                   LIVRE
     #     maiq     6/6 accrochent, mais 4/6 ouvrent sur la MEME formule, et les
     #              objets ne bougent pas (2/6) — rien a gagner                  non livre
-    #     johnny   6/6 accrochent, mais 5/6 sortent enrobees de `*"..."*` —
-    #              `_nettoyer_phrase_de_lien` les JETTE (verifie), donc il
-    #              retomberait sur le gabarit fixe 5 fois sur 6                 non livre
+    #     johnny   6/6 accrochent. Il enrobe 5 repliques sur 6 de `*"..."*`, ce
+    #              qui les faisait JETER par le nettoyeur — corrige le 2026-09-22 :
+    #              l'emballage est desormais deballe, pas jete                  LIVRE
     #     sheo     2 generations exploitables sur 6 (429 Groq) : pas mesure     non livre
-    ACCROCHE_AU_JEU = {"sugar", "alfred", "malena"}
+    ACCROCHE_AU_JEU = {"sugar", "alfred", "malena", "johnny"}
 
     async def _jeu_en_cours(self) -> str | None:
         """Le jeu diffuse sur le canal du bot, ou None. Ne leve jamais.

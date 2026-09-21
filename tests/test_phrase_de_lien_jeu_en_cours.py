@@ -20,7 +20,7 @@ import pytest
 from shared.twitch.dispatch import DispatchMixin
 
 # Les bots pour lesquels l'accroche a ete MESUREE.
-BOTS_MESURES = {"sugar", "alfred", "malena"}
+BOTS_MESURES = {"sugar", "alfred", "malena", "johnny"}
 
 
 def _faux_bot(bot_id="sugar", channels=("un_canal",), avec_cles=True):
@@ -49,10 +49,9 @@ def _helix(rendu):
 def test_seuls_les_bots_mesures_accrochent_le_jeu():
     assert set(DispatchMixin.ACCROCHE_AU_JEU) == BOTS_MESURES, (
         "un bot a ete ajoute a ACCROCHE_AU_JEU. Trois des six en sont DEHORS pour des "
-        "raisons mesurees : M'aiq ouvre 4 phrases sur 6 avec la meme formule, Johnny en "
-        "sort 5 sur 6 enrobees de guillemets et d'asterisques — que le nettoyeur JETTE, "
-        "donc il retombe sur le gabarit fixe — et Sheogorath n'a jamais pu etre mesure "
-        "(429 Groq). Mesurer d'abord, 6 generations sur sa vraie tete de cascade."
+        "raisons mesurees : M'aiq ouvre 4 phrases sur 6 avec la meme formule sans rien "
+        "gagner, et Sheogorath n'a jamais pu etre mesure (429 Groq, 2 generations "
+        "exploitables sur 6). Mesurer d'abord, 6 generations sur sa vraie tete."
     )
 
 
