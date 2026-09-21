@@ -36,6 +36,7 @@ from tests.eval.runner import run_scenario_for_bot, attelage_du_bot, ECHEC_CASCA
 from tests.eval.gimmick import detect_gimmick
 from tests.eval.judge import evaluate_response, VERSION_BAREME
 from tests.eval.deterministic import evaluate_deterministic
+from shared.mesure_texte import compte_phrases
 
 # Une paire d'astérisques autour d'au moins deux caractères : didascalie ou emphase.
 _MOTIF_ASTERISQUE = re.compile(r"\*[^*\n]{2,}\*")
@@ -435,6 +436,25 @@ def compte_recitation(results: list[dict]) -> dict:
     return par_bot
 
 
+def mesure_longueur(results: list[dict]) -> dict:
+    """Par bot : la longueur REELLE de ses repliques, comptee, jamais notee.
+
+    ⚠️ Pourquoi cette section existe. Le 2026-09-21, trois sessions de suite ont conclu
+    qu'Alfred etait trop long — mediane 3 phrases contre 2 dans sa fiche, 11 reponses
+    sur 17 hors clous. C'etait son emoji de ton final, compte comme une phrase par un
+    decoupage naif. Compte NET : 0/17 sur les trois passes. La note du juge, elle, avait
+    fait le chemin inverse (2.50 -> 4.50) pendant que le texte s'allongeait vraiment.
+    Un chiffre compte ne depend d'aucun tirage ; une note, si.
+    """
+    par_bot = {}
+    for res in results:
+        e = par_bot.setdefault(res["bot"], {"phrases": [], "mots": []})
+        for rep_texte in (res.get("responses") or []):
+            e["phrases"].append(compte_phrases(rep_texte))
+            e["mots"].append(len((rep_texte or "").split()))
+    return {b: e for b, e in par_bot.items() if e["phrases"]}
+
+
 def compte_asterisques(results: list[dict]) -> dict:
     """Compte, par bot, les réponses qui portent des `*…*` AVANT puis APRÈS le filtre.
 
@@ -781,6 +801,21 @@ async def main():
             # ⚠️ Le compte AVANT appartient au MODELE autant qu'a la fiche : sans cette
             # ligne, une bascule d'echelon se lit comme une regression de persona.
             print(f"   {'':<12}   echelons : {_resume_echelons(e['echelons'])}")
+    else:
+        print(" Aucune reponse mesuree.")
+
+    # La longueur, COMPTEE et non notee (2026-09-21)
+    print("" + "=" * 80)
+    print("LONGUEUR (comptee — l'emoji de cloture n'est PAS une phrase)")
+    print("=" * 80)
+    longueurs = mesure_longueur(results)
+    if longueurs:
+        for bot, e in longueurs.items():
+            phr, mots = sorted(e["phrases"]), sorted(e["mots"])
+            med = phr[len(phr) // 2]
+            print(f" - {bot:<12} : {med} phrase(s) mediane (max {phr[-1]}), "
+                  f"{mots[len(mots) // 2]} mots median (max {mots[-1]}), "
+                  f"sur {len(phr)} reponses")
     else:
         print(" Aucune reponse mesuree.")
 

@@ -40,10 +40,10 @@ MESSAGES = [
     ("ouverte", "raconte-moi un truc que personne ne sait"),
 ]
 
-# ⚠️ Le compte de phrases vit dans `tools/mesure_texte.py` depuis le 2026-09-21 :
+# ⚠️ Le compte de phrases vit dans `shared/mesure_texte.py` depuis le 2026-09-21 :
 # compte a l'ancienne, l'emoji de ton final passait pour une TROISIEME phrase et Alfred
 # etait declare trop long trois passes de suite, a tort. Lire l'entete de ce module.
-from mesure_texte import PONCTUATION_FIN, compte_phrases  # noqa: E402
+from shared.mesure_texte import PONCTUATION_FIN, compte_phrases  # noqa: E402
 
 CANDIDATS_GROQ = [
     "openai/gpt-oss-120b",

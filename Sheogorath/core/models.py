@@ -5,6 +5,26 @@
 
 # Source unique de vérité des identifiants de modèles.
 # Vérifiés vivants le 2026-08-24 (sonde réelle, clés de prod).
+#
+# ⚠️ LIRE AVANT DE CITER UN « N PHRASES » DE CE FICHIER (ajouté le 2026-09-21).
+# Toutes les mesures « N phrases » ci-dessous viennent de `tools/sonde_modeles_persona.py`,
+# qui comptait l'emoji de clôture comme une phrase à part entière jusqu'à `2898ebc`. Elles
+# sont donc GONFLÉES, d'environ +0,7 à +1 phrase par réponse.
+#
+# Re-mesure du 2026-09-21 sur les 42 rapports d'éval déjà sur disque (591 réponses, aucun
+# appel payé), en n'appelant « phrase » qu'un fragment portant au moins une lettre :
+#
+#     modèle                    n     BRUT    NET   biais   mots
+#     ministral-14b-latest    264      5.0    4.0   +0.66     54
+#     gemini-3.5-flash-lite   229        3      2   +0.75     30
+#     gemma-4-31b-it           68      4.0    3.0   +0.76     36
+#     gpt-oss-120b             30      3.0    2.0   +1.00     35
+#
+# Le biais est presque uniforme d'un modèle à l'autre, et les MOTS n'en souffrent pas :
+# **l'ORDRE des modèles est inchangé, donc aucune décision prise ici n'est à rouvrir.**
+# Ce sont les valeurs ABSOLUES qui sont fausses — ne pas comparer un chiffre de ce fichier
+# à un chiffre compté après `2898ebc` sans retrancher ce biais.
+# Cf. [[gotcha-l-emoji-de-cloture-comptait-pour-une-phrase]].
 GEMINI_FLASH      = "gemini-3.5-flash"
 GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
 GROQ_FAST         = "openai/gpt-oss-120b"

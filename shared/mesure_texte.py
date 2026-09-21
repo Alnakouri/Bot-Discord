@@ -12,6 +12,10 @@ Un `re.split(r"(?<=[.!?])\\s+", ...)` compte ce `☕🦇` comme une TROISIEME ph
 fois les fragments sans la moindre lettre ecartes, les trois passes tombent a **0/17**
 au-dessus de la borne : le defaut n'existait pas, seule la mesure existait.
 
+⚠️ Ce module n'est PAS vendorise (il n'est pas dans `tools/vendor_core.py`) : il sert au
+harnais et aux sondes, pas au runtime des bots. Le bloc que `sonde_modeles_ouverts.py`
+injecte DANS un conteneur en recopie la regle, faute de pouvoir l'importer.
+
 Le runtime des bots, lui, avait raison depuis toujours — `shared/anti_tic.py` retire
 l'emoji final AVANT de decouper. Ce sont les SONDES qui comptaient a l'ancienne, et
 leurs chiffres ont nourri les commentaires de `shared/models.py` : chaque comparaison

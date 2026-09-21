@@ -21,9 +21,8 @@ from pathlib import Path
 import pytest
 
 RACINE = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RACINE / "tools"))
 
-from mesure_texte import compte_phrases, est_une_phrase, phrases  # noqa: E402
+from shared.mesure_texte import compte_phrases, est_une_phrase, phrases  # noqa: E402
 
 
 # La vraie replique d'Alfred qui a fait croire au defaut (eval_20260921_1341, fantome).
@@ -82,7 +81,7 @@ def test_phrases_rend_le_texte_sans_l_emoji():
 def test_la_sonde_persona_utilise_le_compte_partage():
     source = (RACINE / "tools" / "sonde_modeles_persona.py").read_text(encoding="utf-8")
     assert "compte_phrases(" in source, "la sonde recompte a la main"
-    assert "from mesure_texte import" in source
+    assert "from shared.mesure_texte import" in source
 
 
 def test_le_bloc_injecte_dans_le_conteneur_ecarte_bien_les_fragments_sans_lettre():
