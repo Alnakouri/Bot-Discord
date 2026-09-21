@@ -362,7 +362,23 @@ CASCADES_PERSONA = {
     # concision (3-4 phrases au lieu de 8-10) est reel et mesure, mais il se payait
     # ~10 s par message. La permission qu'il s'accorde dans son prompt reste la vraie
     # cause de sa verbosite, et elle, elle est gratuite a traiter.
-    "johnny": [("mistral", MISTRAL_MAIN), ("nvidia", NVIDIA_GEMMA), ("groq", GROQ_FAST),
+    # ⚠️ 21/09 : gemma-4 SORT de la cascade. Il ne repond plus sous la borne du direct,
+    # et depuis deux jours il ne repond plus du tout. Mesure, `tools/sonde_modeles_persona.py`
+    # a 20 s de borne : **6 appels, 6 APITimeoutError**. Et en base (`data/api_usage.db`) :
+    #   dernier succes SOUS les 15 s .... 19/09 08:01 (13,7 s, johnny)
+    #   19 et 20/09 ..................... 2 succes a 31 s et 43 s, le reste en TimeoutError
+    #   21/09 (passe d'eval) ............ 2 TimeoutError a 90 s, puis 15 sauts de quarantaine
+    # Meme quand il REUSSISSAIT, sa moyenne etait de 17 a 20 s : au-dessus des 15 s que le
+    # chat accorde. Le garder en 2e position coute donc 15 s de silence par message des que
+    # l'echelon de tete flanche — et il a flanche 611 s d'affilee chez sheo le 21/09 (429
+    # Groq). La quarantaine d'echelon (`bfea21c`) borne la casse a 3 messages, puis la
+    # reprend toutes les 5 minutes : elle limite, elle ne guerit pas.
+    # ⚠️ CE QU'ON PERD, et c'est reel : c'est lui qui rendait 3-4 phrases sans asterisque la
+    # ou ministral en rend 8-10 avec. Le gain de persona etait mesure (18/09). Il ne vaut
+    # plus rien s'il n'arrive jamais. NVIDIA reste dans la cascade avec nemotron, cf.
+    # [[decision-nvidia-reste-avec-la-borne-du-direct]] : c'est ce MODELE qui part, pas le
+    # fournisseur. A reproposer si un jour il repond en moins de 15 s, mesure a l'appui.
+    "johnny": [("mistral", MISTRAL_MAIN), ("groq", GROQ_FAST),
                ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Prince Daedra de la Folie : chaos, lore ESO, images viscerales. gpt-oss sort le
@@ -374,7 +390,12 @@ CASCADES_PERSONA = {
     # etait throttle et c'est ministral qui a repondu 17 fois sur 17, avec 15 didascalies.
     # L'echelon qui sert vraiment de secours doit donc etre le bon : gemma-4 rend 4-5
     # phrases, Haskill et les majuscules, sans une astérisque.
-    "sheo": [("groq", GROQ_FAST), ("nvidia", NVIDIA_GEMMA), ("mistral", MISTRAL_MAIN),
+    # ⚠️ 21/09 : gemma-4 retire ici aussi, meme mesure que chez johnny ci-dessus. C'est
+    # sheo qui en payait le prix fort : le 21/09 son echelon de TETE (Groq) a rendu un 429
+    # annoncant 611 s, et la cascade tombait alors sur un gemma-4 muet avant d'atteindre
+    # ministral. Son secours reel est donc ministral, avec les didascalies que son filtre
+    # de sortie retire deja (10/17 avant, 0/17 apres, passe du 21/09).
+    "sheo": [("groq", GROQ_FAST), ("mistral", MISTRAL_MAIN),
              ("gemini", GEMINI_FLASH_LITE), ("nvidia", NVIDIA_FAST)],
 
     # Piques courtes et sechees. gemini-flash-lite tranche sans meubler et garde le
