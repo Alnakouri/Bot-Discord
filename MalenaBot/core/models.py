@@ -346,7 +346,12 @@ CASCADES_PERSONA = {
     # 0.20 d'ecart total sur un run de 10 scenarios : du bruit. Il reste a 8-10 phrases
     # partout, quand sa regle en autorise 5-6 au MAXIMUM. Malena, elle, est passee de 12 a
     # 6 phrases en changeant de tete — pour elle c'etait bien le modele, pour lui NON.
-    # Sa cause est la PERMISSION qu'il s'accorde seul dans son prompt ; voir johnny_data.py.
+    # ⚠️ On a longtemps ecrit que sa cause etait la PERMISSION qu'il s'accorde dans son
+    # prompt (« tu peux depasser, rarement... »). **C'est faux, mesure le 2026-09-21** :
+    # permission retiree, plafond dur ecrit a la place, deux passes sous ministral, et les
+    # phrases medianes ne bougent pas (6 -> 6 ; au-dela de 3 phrases : 83 % -> 94 %). Sa
+    # verbosite tient au MODELE. Voir le bloc de longueur de johnny_data.py, qui porte la
+    # mesure pour que personne ne retente le meme durcissement.
     # On le laisse donc sur sa tete d'origine : changer de modele serait du brassage.
     # ⚠️ La sonde courte annoncait 3 phrases / 28 mots chez Groq — elle utilise 3 messages
     # SANS transcript. Une sonde qui ne reproduit pas les conditions reelles mesure autre
