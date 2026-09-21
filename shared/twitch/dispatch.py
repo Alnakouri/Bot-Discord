@@ -398,6 +398,34 @@ class DispatchMixin:
         # Mesure : « l'air y est delicieusement veneneux » / « la meilleure ambiance du
         # coin » deviennent « j'ai garde une place rien que pour toi » / « rejoins-moi,
         # tu verras a quel point le sucre peut mordre ».
+        #
+        # ⚠️ CE QUI RESTE CASSE, ET LES DEUX RUSTINES QUI NE MARCHENT PAS (mesure du
+        # 2026-09-21, apres un signalement d'Ahmed sur une phrase de Sugar : « je t'attends
+        # avec une bonne tasse de caramel chaud »). Le modele invente un OBJET — une
+        # boisson, un siege, un cadeau — dans environ une generation sur deux, alors que
+        # la clause ci-dessus lui interdit deja d'inventer une « recompense ». Compte sur
+        # 4 a 6 generations par cellule, tete flash-lite, temperature 1.0 :
+        #
+        #     variante                         sugar        maiq         alfred
+        #     A : le texte actuel              4/6 objets   2/4          2/4
+        #     B : + « tu n'offres rien de
+        #         materiel » (interdiction)    1/6          3/5          3/5
+        #     C : B + « varie ce que tu
+        #         annonces »                   0/6          1/4          2/4
+        #     D : « ce que tu offres est
+        #         immateriel » (positive)      1/5          3/5           -
+        #
+        # B et C reparent Sugar et CASSENT M'aiq : ses ouvertures s'effondrent sur une
+        # seule formule (5/5 « Les Plaines de l'Echo... » en B, 3/4 en C) la ou le texte
+        # actuel en rend quatre differentes. **Aucune formulation partagee n'ameliore les
+        # six** — troisieme demonstration du meme jour que
+        # [[gotcha-un-filet-ne-se-transpose-pas-d-un-bot-a-l-autre]].
+        # Rien n'a donc ete change ici : la rustine serait PAR BOT, pas dans ce texte.
+        #
+        # ⚠️ Au passage, un defaut voisin, deja present SANS aucune rustine : Alfred sort
+        # « Cette demeure », « Ces murs » et meme « La bibliotheque du serveur » — alors
+        # que sa fiche lui interdit « le Manoir » et que cette instruction-ci lui interdit
+        # d'inventer un salon. Non corrige, faute de mesure suffisante (2 cas sur 4).
         instruction = (
             f"Écris UNE seule phrase très courte (max 120 caractères), en personnage, "
             f"qui donne ENVIE au chat Twitch de rejoindre {quoi} : une invitation adressée "
