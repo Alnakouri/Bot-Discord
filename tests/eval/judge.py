@@ -48,6 +48,16 @@ logger = logging.getLogger("eval_judge")
 #       n'importe quel compte naif prend pour une 3e phrase (cf. `shared/mesure_texte`).
 #       Le juge note toujours la DENSITE et l'invitation — ca, ca reste son travail ;
 #       c'est le CHIFFRE qu'on cesse de lui faire inventer.
+#       ⚠️ EFFET DE BORD MESURE ET ASSUME, comme en version 2, mais sur un AUTRE critere
+#       que celui qu'on touchait : `fidelite` baisse d'environ un point. Deux passes
+#       bareme 4 sur Alfred rendent **3.80 les deux fois** (contre 4.30, 5.00 et 4.60 en
+#       bareme 3, fiche identique entre les deux dernieres). La cause se lit dans ses
+#       verdicts : voyant « 1 phrase » quand la fiche en exige deux, le juge compte
+#       desormais la replique TROP COURTE comme un manquement a la fiche. La contrainte
+#       de longueur d'Alfred est une FORME (« toutes tes reponses font cette taille-la »),
+#       pas un plafond : le juge a raison, il ne pouvait simplement pas le voir avant.
+#       ⚠️ Ce qui n'est PAS un effet du bareme : les verdicts « ignore la question »
+#       (3 a la 1re passe, 1 a la 2e). Tirage, pas tendance — mesure avant de conclure.
 VERSION_BAREME = 4
 
 
