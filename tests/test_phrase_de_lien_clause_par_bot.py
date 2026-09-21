@@ -145,3 +145,36 @@ def test_une_VRAIE_didascalie_reste_jetee(didascalie):
     ponctuation de fin de phrase, qu'aucune didascalie de ces bots ne porte.
     """
     assert _nettoyer_phrase_de_lien(didascalie) is None
+
+
+# --------------------------------------------------------------------------------------
+# Le passe commun invente : « On s'en reparlera des choix de Henry »
+# --------------------------------------------------------------------------------------
+# Signale par Ahmed le 2026-09-22 sur une vraie sortie Twitch. Trois fautes en sept mots :
+# « on s'en REparlera » suppose un echange qui n'a jamais eu lieu ; c'est un RENVOI a plus
+# tard, pas une invitation ; et « les choix de Henry » cite le jeu au lieu d'en dire
+# quelque chose. L'instruction l'interdisait deja — le modele passait outre.
+
+@pytest.mark.parametrize("phrase", [
+    "On s'en reparlera des choix de Henry, rejoins-nous sur le serveur.",
+    "Viens, on en reparle la-bas.",
+    "On en parlera plus tranquillement sur le serveur.",
+    "Comme je te disais, viens nous voir.",
+    "Viens te plaindre avec nous, on en rediscute.",
+])
+def test_une_conversation_qui_n_a_jamais_eu_lieu_est_rejetee(phrase):
+    assert _nettoyer_phrase_de_lien(phrase) is None
+
+
+@pytest.mark.parametrize("phrase", [
+    "Moins complique que de battre Malenia, viens donc nous retrouver sur le serveur.",
+    "Viens poser ton armure rouillee, on a bien assez de spadassins par ici.",
+    "Entre deux duels de boue, viens voir si nos epees brillent autant que mon esprit.",
+    "On t'attend la-bas, et crois-moi, j'ai prepare une replique pour ton arrivee.",
+    "Quitte a passer pour un paysan boueux, autant venir rire avec nous.",
+])
+def test_le_filet_du_passe_commun_ne_mord_pas_les_bonnes_phrases(phrase):
+    """⚠️ Un filet qui rejette du bon coute une invitation a chaque fois : le gabarit fixe
+    sort a la place. Motif evalue sur les 15 phrases reelles du 2026-09-22 : 5 fautes
+    attrapees, 0 faux positif."""
+    assert _nettoyer_phrase_de_lien(phrase) is not None

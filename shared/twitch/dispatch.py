@@ -44,6 +44,33 @@ _RESSEMBLE_A_UN_LIEN = re.compile(
 # par ici »). Le premier jet le rejetait, et la suite de tests l'a attrape aussitot sur sa
 # propre phrase de reference. On ne garde donc que les tournures sans ambiguite : celles
 # qui NOMMENT le salon hote, et celles qui le COMPARENT.
+# ⚠️ Une invitation ne peut pas invoquer une conversation qui n'a jamais eu lieu.
+#
+# Signale par Ahmed le 2026-09-22 sur une vraie sortie Twitch de Sugar :
+#
+#     « On s'en reparlera des choix de Henry, rejoins-nous sur le serveur. 🍬 »
+#
+# Trois fautes en sept mots. « On s'en REparlera » suppose un echange passe — le viewer
+# n'a jamais dit un mot a Sugar. Ce n'est pas une invitation mais un RENVOI a plus tard,
+# qui ne donne aucune raison de venir. Et « les choix de Henry » ne dit rien du jeu, ca le
+# cite. C'est la meme famille que l'objet invente, en plus retors : ce n'est pas un objet
+# qu'elle invente, c'est un PASSE COMMUN.
+#
+# L'instruction l'interdit deja en toutes lettres (« ne promets pas qu'on en parlera
+# la-bas ») et le modele passe outre. Une clause de plus n'y changera rien — trois
+# formulations essayees ce soir l'ont montre. D'ou ce filet, qui ne depend d'aucun tirage.
+# Evalue sur les 15 phrases reelles collectees ce soir : 5 fautes attrapees, 0 faux
+# positif sur les 10 bonnes.
+# ⚠️ Rejette, ne repare pas : retirer le membre de phrase laisserait un moignon, et le
+# gabarit fixe est fade — fade bat casse, comme pour l'adresse et le salon hote.
+_INVOQUE_UN_PASSE_COMMUN = re.compile(
+    r"\b(?:on|nous)\s+(?:s['’]en\s+|en\s+)?(?:re|ré)(?:parler|parlera|parlerons|discute"
+    r"|discutera|discuterons)\w*"
+    r"|\bon\s+en\s+(?:re)?(?:parlera|parlerons|parle|discutera|discute)\b"
+    r"|\bcomme\s+(?:je|on)\s+(?:te|vous)\s+(?:le\s+)?disai[ts]\b",
+    re.I,
+)
+
 _NOMME_LA_SOURCE = re.compile(
     r"(?:"
     # Nommer le lieu d'ou l'on ecrit.
@@ -100,6 +127,9 @@ def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
         return None
     # Voir le bloc au-dessus du motif : une invitation ne parle que de sa destination.
     if _NOMME_LA_SOURCE.search(phrase):
+        return None
+    # Et elle n'invoque pas une conversation qui n'a jamais eu lieu.
+    if _INVOQUE_UN_PASSE_COMMUN.search(phrase):
         return None
     phrase = " ".join(phrase.split()).strip().strip('"').strip("«»").strip()
     # Un modèle finit souvent sur « rejoins-nous ici : » en attendant l'adresse ; c'est
@@ -653,11 +683,16 @@ class DispatchMixin:
             # On lui donne donc le nom, et on borne aussitot ce qu'il peut en dire : le
             # nom est vrai, tout le reste serait devine.
             instruction += (
-                f" ⚠️ En ce moment, le chat regarde quelqu'un jouer à « {jeu} ». Accroche "
-                f"ton invitation à CE jeu : une allusion, un clin d'œil, une pique qui n'a "
-                f"de sens que pour qui y joue. Mais tu ne sais RIEN de la partie en cours — "
-                f"ni qui gagne, ni où ils en sont, ni ce qui vient de se passer : n'en "
-                f"raconte pas un moment, et ne promets pas qu'on en parlera là-bas."
+                f" ⚠️ En ce moment, le chat regarde quelqu'un jouer à « {jeu} ». Ta phrase "
+                f"DIT quelque chose de ce jeu : une comparaison, un constat qui fait "
+                f"sourire celui qui y joue, une pique sur ce que le JEU fait subir — "
+                f"jamais sur ceux qui regardent, jamais sur leur chat. Le nommer ne "
+                f"suffit pas, et citer son héros non plus — un nom n'est pas une remarque. "
+                f"Mais tu ne sais RIEN de la partie en cours — ni qui gagne, ni où ils en "
+                f"sont, ni ce qui vient de se passer : n'en raconte pas un moment, et ne "
+                f"promets pas qu'on en parlera là-bas. "
+                f"⚠️ Et ta phrase doit CLAQUER : une seule idée, la chute à la fin, rien "
+                f"avant qui la retarde. Si elle ne fait pas sourire à la lecture, recommence."
             )
 
         try:
