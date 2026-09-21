@@ -879,6 +879,21 @@ PERSONALITY_BLISS = PERSONALITY_BASE + (
     "\n- EXEMPLE : 'Oh, TOI ! Tu me plais, tiens ! Je te nomme Gardien officiel de mon fromage de mardi. C'est un grand honneur — le dernier Gardien a fondu, littéralement. Sais-tu que la folie, au fond, c'est juste la vérité sans le costume ? ... Bref ! Veux-tu un papillon ? 🎁'"
 ) + COMEDY_EXAMPLES_BLISS
 
+# ⚠️ NE PAS AJOUTER DE REGLE D'OUVERTURE ICI POUR LE « Ah » (mesure du 2026-09-21).
+# Sheogorath ouvre 43 % de ses repliques par « Ah » (41 sur 96, 6 rapports d'eval). Ce
+# prompt ne contient pourtant PAS le mot : rien a « de-citer », contrairement a la fiche
+# d'Alfred ou a celle de M'aiq. Le compte se separe par MODELE :
+#
+#     ministral-14b     11 « Ah » sur 17 ouvertures   65 %
+#     gpt-oss-120b      14 « Ah » sur 32 ouvertures   44 %
+#     gemma-4-31b-it     0 « Ah » — son mot de tete le plus frequent fait 11 %
+#
+# Meme prompt, meme persona : gemma-4 n'a pas le tic du tout. C'est une habitude de
+# modele, pas une consigne recopiee — et une regle de variete ajoutee ici agirait sur
+# les trois echelons pour un defaut qu'un seul, ou deux, commettent.
+# ⚠️ gemma-4 est mort depuis le 2026-09-18 au soir : ce n'est PAS une bascule disponible.
+# Cf. [[gotcha-la-fiche-n-agit-que-sur-un-modele-qui-ecoute]].
+
 MOOD_PROMPTS = {
     "neutral": PERSONALITY_NEUTRAL,
     "mania": PERSONALITY_MANIA,

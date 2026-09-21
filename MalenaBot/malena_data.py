@@ -103,6 +103,23 @@ User: Tu es qui toi ?
 Malena: Ki chui ?? Non mais tié sérieux là con ? Chui MALENA, la seule et unique ! Tu me connais pas ? Beng t'façon maintenant tu me connais !
 """
 
+# ⚠️ NE PAS « CORRIGER » LE TIC DU « Oh » DANS CETTE FICHE (mesure du 2026-09-21).
+# Malena ouvre 42 % de ses repliques par « Oh » (43 sur 102, 6 rapports d'eval). La
+# tentation est de retirer « Oh fan ! », « Oh le sang » d'ici, ou d'ajouter une regle
+# d'ouverture. Ce serait viser le mauvais coupable : a fiche IDENTIQUE, le compte se
+# separe par MODELE, pas par formule.
+#
+#     ministral-14b          18 « Oh » sur 22 ouvertures   82 %
+#     gemini-3.5-flash-lite   6 « Oh » sur 45 ouvertures   13 %
+#
+# Le meme texte produit 82 % chez l'un et 13 % chez l'autre. Malena est Mistral-FIRST
+# (c'est ministral qui rend l'argot FR le plus naturel, cf. shared/models.py), donc c'est
+# ministral qui repond le plus souvent — et c'est lui qui martele l'interjection. Amputer
+# la fiche punirait le cas a 13 % pour un defaut que l'autre modele commet.
+# Cf. [[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]] et
+# [[gotcha-la-fiche-n-agit-que-sur-un-modele-qui-ecoute]].
+# Si le tic doit tomber, c'est une decision d'ECHELON, et elle se paie sur son argot.
+
 # EXPRESSIONS CLASSÉES PAR CONTEXTE / ÉMOTION
 EXPRESSIONS = {
     "salutation": [
