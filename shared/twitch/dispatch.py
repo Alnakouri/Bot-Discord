@@ -340,6 +340,24 @@ class DispatchMixin:
             return True
         return False
 
+    # Clauses ajoutees a l'instruction POUR UN SEUL BOT. Vide par defaut : un bot absent
+    # de cette table recoit exactement le texte commun, inchange.
+    #
+    # ⚠️ Pourquoi par bot et pas dans le texte commun : la mesure du 2026-09-21 (detaillee
+    # dans `_generate_link_line`) montre que cette clause fait passer Sugar de 4 objets
+    # inventes sur 6 a ZERO, et qu'elle EFFONDRE les ouvertures de M'aiq (5/5 sur la meme
+    # formule). Ajouter un bot ici demande donc de mesurer ce bot-la, pas de supposer.
+    CLAUSES_PAR_BOT = {
+        "sugar": (
+            "⚠️ Et tu n'offres RIEN de matériel : si ta phrase contient une chose qu'on "
+            "pourrait tenir, boire ou déballer, c'est une invention, même modeste — "
+            "remplace-la par ce que TU y seras ou y feras. "
+            "Ce que tu annonces change à chaque fois : tantôt ce que tu y fais, tantôt ce "
+            "que tu leur diras en arrivant, tantôt ce qui t'y amuse. Évite la formule "
+            "d'attente toute faite : dis quelque chose que toi seul dirais. "
+        ),
+    }
+
     async def _generate_link_line(self, cmd: str, label: str, url: str) -> str | None:
         """Fait écrire au bot, EN PERSONNAGE, la phrase qui accompagne un lien.
 
@@ -420,7 +438,9 @@ class DispatchMixin:
         # actuel en rend quatre differentes. **Aucune formulation partagee n'ameliore les
         # six** — troisieme demonstration du meme jour que
         # [[gotcha-un-filet-ne-se-transpose-pas-d-un-bot-a-l-autre]].
-        # Rien n'a donc ete change ici : la rustine serait PAR BOT, pas dans ce texte.
+        # D'ou `CLAUSES_PAR_BOT` ci-dessus : la variante C est livree POUR SUGAR SEUL,
+        # ou elle est mesuree (4/6 -> 0/6), et le texte commun ne bouge pas d'une virgule
+        # pour les cinq autres.
         #
         # ⚠️ Au passage, un defaut voisin, deja present SANS aucune rustine : Alfred sort
         # « Cette demeure », « Ces murs » et meme « La bibliotheque du serveur » — alors
@@ -444,6 +464,10 @@ class DispatchMixin:
             f"N'ÉCRIS PAS l'adresse ni aucun lien : elle sera ajoutée juste après ta phrase. "
             f"Pas de guillemets, pas de didascalie."
         )
+        # ⚠️ La clause par bot s'insere AVANT la fin du texte commun serait plus propre,
+        # mais l'ordre ne change rien a la mesure : elle est ajoutee ici, et un bot absent
+        # de la table ne voit aucune difference.
+        instruction += " " + self.CLAUSES_PAR_BOT.get(self.bot_id, "")
 
         try:
             from shared.llm_cascade import generate_response
