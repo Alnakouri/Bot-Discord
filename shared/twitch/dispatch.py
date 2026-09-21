@@ -417,6 +417,45 @@ class DispatchMixin:
         ),
     }
 
+    # Bots dont la phrase de lien s'accroche au JEU diffuse sur le stream (demande
+    # d'Ahmed le 2026-09-21). Sans jeu — hors live, ou categorie « Just Chatting » —
+    # l'instruction ne bouge pas d'une virgule et l'invitation reste la normale.
+    # ⚠️ Meme regle que CLAUSES_PAR_BOT : on n'ajoute un bot ici qu'apres l'avoir mesure.
+    # Un fait VRAI n'est pas une clause de style, mais il allonge quand meme l'instruction,
+    # et une instruction plus longue effondre certains modeles (mesure du jour sur M'aiq).
+    ACCROCHE_AU_JEU = {"sugar"}
+
+    async def _jeu_en_cours(self) -> str | None:
+        """Le jeu diffuse sur le canal du bot, ou None. Ne leve jamais.
+
+        ⚠️ `HelixClient.get_current_game` a son propre cache : appeler ceci a chaque
+        `!discord` ne coute pas un appel Twitch a chaque fois.
+
+        Le canal retenu est le PREMIER de la liste : un bot en co-hosting en a plusieurs,
+        mais la commande ne nous dit pas d'ou elle vient, et le canal principal est la
+        seule reponse defendable. Sans canal, sans identifiants, ou au moindre incident :
+        None — l'invitation normale sort, ce qui est exactement le repli demande.
+        """
+        canaux = getattr(self, "channels", None) or []
+        chan = canaux[0] if canaux else None
+        if not chan or not getattr(self, "client_id", None) or not getattr(self, "client_secret", None):
+            return None
+        try:
+            from shared.twitch.game_info import HelixClient
+            if getattr(self, "_helix_client", None) is None:
+                self._helix_client = HelixClient(self.client_id, self.client_secret)
+            nom, _ = await self._helix_client.get_current_game(chan)
+            nom = (nom or "").strip()
+            # « Just Chatting » et consorts ne sont pas des jeux : s'y accrocher ferait
+            # dire au bot n'importe quoi. Hors de cette liste, on fait confiance a Twitch.
+            if nom.lower() in {"just chatting", "talk shows & podcasts", "special events",
+                               "music", "art", ""}:
+                return None
+            return nom
+        except Exception as e:
+            self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] jeu en cours indisponible : {e}")
+            return None
+
     async def _generate_link_line(self, cmd: str, label: str, url: str) -> str | None:
         """Fait écrire au bot, EN PERSONNAGE, la phrase qui accompagne un lien.
 
@@ -437,7 +476,12 @@ class DispatchMixin:
         cache = getattr(self, "_link_lines_cache", None)
         if cache is None:
             cache = self._link_lines_cache = {}
-        vue = cache.get(cmd)
+        jeu = await self._jeu_en_cours() if self.bot_id in self.ACCROCHE_AU_JEU else None
+        # ⚠️ Le jeu fait partie de la CLE du cache : sans ca, un changement de jeu en
+        # cours de live laisserait tourner pendant un quart d'heure une invitation qui
+        # parle du precedent — pire qu'une invitation neutre.
+        cle_cache = (cmd, jeu)
+        vue = cache.get(cle_cache)
         if vue and maintenant - vue[0] < 900:
             return f"{vue[1]} {url}"
 
@@ -564,6 +608,19 @@ class DispatchMixin:
         # mais l'ordre ne change rien a la mesure : elle est ajoutee ici, et un bot absent
         # de la table ne voit aucune difference.
         instruction += " " + self.CLAUSES_PAR_BOT.get(self.bot_id, "")
+        if jeu:
+            # ⚠️ Le jeu est la SEULE chose vraie qu'on puisse lui donner sur le moment
+            # present — et c'est justement ce qui manquait a cette phrase depuis le 19/09
+            # (cf. le bloc plus haut : prive de tout fait, le modele en invente un).
+            # On lui donne donc le nom, et on borne aussitot ce qu'il peut en dire : le
+            # nom est vrai, tout le reste serait devine.
+            instruction += (
+                f" ⚠️ En ce moment, le chat regarde quelqu'un jouer à « {jeu} ». Accroche "
+                f"ton invitation à CE jeu : une allusion, un clin d'œil, une pique qui n'a "
+                f"de sens que pour qui y joue. Mais tu ne sais RIEN de la partie en cours — "
+                f"ni qui gagne, ni où ils en sont, ni ce qui vient de se passer : n'en "
+                f"raconte pas un moment, et ne promets pas qu'on en parlera là-bas."
+            )
 
         try:
             from shared.llm_cascade import generate_response
@@ -600,8 +657,12 @@ class DispatchMixin:
         if not phrase:
             return None
 
-        cache[cmd] = (maintenant, phrase)
-        self.logger.info(f"✨ [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd} écrite par le bot : {phrase}")
+        cache[cle_cache] = (maintenant, phrase)
+        self.logger.info(
+            f"✨ [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd}"
+            + (f" (jeu : {jeu})" if jeu else "")
+            + f" écrite par le bot : {phrase}"
+        )
         return f"{phrase} {url}"
 
     async def _generate_interjection(self, chan: str) -> str | None:
