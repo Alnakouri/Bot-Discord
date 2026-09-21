@@ -63,6 +63,31 @@ _RESSEMBLE_A_UN_LIEN = re.compile(
 # positif sur les 10 bonnes.
 # ⚠️ Rejette, ne repare pas : retirer le membre de phrase laisserait un moignon, et le
 # gabarit fixe est fade — fade bat casse, comme pour l'adresse et le salon hote.
+# ⚠️ Une invitation ne prend pas son PUBLIC pour cible.
+#
+# Mesure du 2026-09-22 : en demandant a la phrase de « claquer », 2 generations sur 8
+# retournaient la pique contre le chat Twitch — « fatigue moins que de supporter vos
+# commentaires en boucle » — alors que la clause dit « jamais sur ceux qui regardent ».
+# Une interdiction de prompt tient a 75 %, c'est la lecon de toute la soiree.
+#
+# Ce motif-ci ne contient QUE des tournures qui ne peuvent designer que le public d'un
+# stream. Le mot « chat », lui, est dans la table par bot plus bas : c'est un mot
+# parfaitement legitime chez M'aiq, qui EST un Khajiit, et chez Malena qui appelle les
+# gens « mes p'tits chats ». Partager ce qui ne peut pas se tromper, isoler ce qui peut :
+# c'est exactement ce que [[gotcha-un-filet-ne-se-transpose-pas-d-un-bot-a-l-autre]] repete.
+_VISE_LE_PUBLIC = re.compile(
+    r"(?:vos|tes|ton|votre|leur|le)\s+tchats?\b"
+    r"|(?:vos|tes|leurs)\s+(?:commentaires?|messages)\b"
+    r"|\bvotre\s+(?:commentaire|message)\b",
+    re.I,
+)
+
+# Motifs supplementaires, PAR BOT, pour ce qu'on ne peut pas interdire a tout le monde.
+# Sugar n'a pas de chat dans son lore ; M'aiq en est un. D'ou la separation.
+_VISE_LE_PUBLIC_PAR_BOT = {
+    "sugar": re.compile(r"(?:ton|votre|le|leur)\s+chat\b", re.I),
+}
+
 _INVOQUE_UN_PASSE_COMMUN = re.compile(
     r"\b(?:on|nous)\s+(?:s['’]en\s+|en\s+)?(?:re|ré)(?:parler|parlera|parlerons|discute"
     r"|discutera|discuterons)\w*"
@@ -82,7 +107,7 @@ _NOMME_LA_SOURCE = re.compile(
     r")", re.IGNORECASE)
 
 
-def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
+def _nettoyer_phrase_de_lien(texte: str | None, bot_id: str | None = None) -> str | None:
     """Rend la phrase prête à recevoir l'URL, ou None si rien d'exploitable.
 
     ⚠️ Une phrase qui contient déjà une adresse est REJETÉE, pas réparée. Mesuré en
@@ -130,6 +155,12 @@ def _nettoyer_phrase_de_lien(texte: str | None) -> str | None:
         return None
     # Et elle n'invoque pas une conversation qui n'a jamais eu lieu.
     if _INVOQUE_UN_PASSE_COMMUN.search(phrase):
+        return None
+    # Ni ne prend son public pour cible.
+    if _VISE_LE_PUBLIC.search(phrase):
+        return None
+    propre_au_bot = _VISE_LE_PUBLIC_PAR_BOT.get(bot_id or "")
+    if propre_au_bot is not None and propre_au_bot.search(phrase):
         return None
     phrase = " ".join(phrase.split()).strip().strip('"').strip("«»").strip()
     # Un modèle finit souvent sur « rejoins-nous ici : » en attendant l'adresse ; c'est
@@ -695,6 +726,38 @@ class DispatchMixin:
                 f"avant qui la retarde. Si elle ne fait pas sourire à la lecture, recommence."
             )
 
+        # ⚠️ DEUX ESSAIS, ET PAS PLUS. Les filets ci-dessus REJETTENT au lieu de reparer :
+        # sans seconde chance, une faute au tirage coutait le gabarit fixe, et la mesure du
+        # 2026-09-22 en donne une sur quatre (2 generations sur 8 visaient le chat). Un
+        # second appel ramene ce risque a ~6 %, pour ~1,4 s de plus — la mediane mesuree de
+        # flash-lite le soir meme. On s'arrete la : quelqu'un attend devant son chat, et
+        # trois appels feraient du gabarit fixe le choix le plus RAPIDE, ce qui serait
+        # absurde.
+        texte = None
+        for essai in (1, 2):
+            texte = await self._ecrire_phrase_de_lien(instruction, system_prompt, cmd)
+            if texte is None:
+                return None          # panne franche : le gabarit fixe, tout de suite
+            phrase = _nettoyer_phrase_de_lien(texte, self.bot_id)
+            if phrase:
+                break
+            self.logger.info(
+                f"🔁 [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd} rejetee par les "
+                f"filets (essai {essai}/2) : « {' '.join(str(texte).split())[:90]} »"
+            )
+        else:
+            return None
+
+        cache[cle_cache] = (maintenant, phrase)
+        self.logger.info(
+            f"✨ [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd}"
+            + (f" (jeu : {jeu})" if jeu else "")
+            + f" écrite par le bot : {phrase}"
+        )
+        return f"{phrase} {url}"
+
+    async def _ecrire_phrase_de_lien(self, instruction, system_prompt, cmd):
+        """Un appel au modele. Rend le texte brut, ou None si l'appel a echoue."""
         try:
             from shared.llm_cascade import generate_response
             from shared.smart_router import classify_request
@@ -703,7 +766,7 @@ class DispatchMixin:
             except Exception:
                 routing = {"type": "text"}
 
-            texte = await generate_response(
+            return await generate_response(
                 routing=routing,
                 system_prompt=system_prompt + "\n\n" + ANTI_INJECTION_GUARD,
                 transcript="",
@@ -725,18 +788,6 @@ class DispatchMixin:
         except Exception as e:
             self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur phrase de lien !{cmd} : {e}")
             return None
-
-        phrase = _nettoyer_phrase_de_lien(texte)
-        if not phrase:
-            return None
-
-        cache[cle_cache] = (maintenant, phrase)
-        self.logger.info(
-            f"✨ [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd}"
-            + (f" (jeu : {jeu})" if jeu else "")
-            + f" écrite par le bot : {phrase}"
-        )
-        return f"{phrase} {url}"
 
     async def _generate_interjection(self, chan: str) -> str | None:
         system_prompt = self.personality_prompt
