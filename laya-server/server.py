@@ -29,6 +29,7 @@ persona sortie de son fichier, et le depot a deja paye pour ca.
 """
 import logging
 import os
+import threading
 import time
 
 from fastapi import FastAPI, HTTPException
@@ -51,6 +52,70 @@ _agent = None
 _charge_ms = None
 _modele = None
 
+# ── GARDER LES POIDS CHAUDS ───────────────────────────────────────────────────
+# ⚠️ MESURE DU 2026-09-22, et c'est la raison d'etre de ce bloc. Apres 45 h sans
+# aucun appel, la premiere rafale depuis le conteneur d'Alfred a donne :
+#
+#     appel 1 .... 694 ms          -> REPLI (borne du client : 300 ms)
+#     appels 2-5 . 301 ms, timeout -> REPLI
+#     appel 6 .... 277 ms          -> laya
+#     une fois chaud, 10 appels : mediane 135 ms, max 370
+#     puis, apres 3 min de pause seulement : 1er appel a 292 ms — 8 ms sous la borne
+#
+# **Cinq appels sur six repartis au repli.** En prod, Laya est appele rarement : le
+# PREMIER appel est donc souvent le SEUL, et c'est precisement celui qui rate la borne.
+# La fonction pour laquelle le service existe est celle qu'il servait le plus mal.
+#
+# Le healthcheck du compose ne corrigeait rien : il tape `/health`, qui ne fait AUCUNE
+# inference. Un ping HTTP ne rechauffe pas des poids.
+#
+# D'ou ce fil : une inference minuscule a intervalle regulier. 30 s est bien sous les
+# 3 min ou la latence remonte deja, et coute ~135 ms de CPU toutes les 30 s (0,5 %).
+# ⚠️ L'intervalle doit rester NETTEMENT sous le delai de refroidissement observe : le
+# remonter sans remesurer rouvre le defaut en silence.
+CHAUFFE_S = float(os.getenv("LAYA_CHAUFFE_S", "30"))
+
+# Volontairement minuscules : on ne mesure rien ici, on occupe les poids.
+ETAT_DE_CHAUFFE = "bonjour"
+QUESTION_DE_CHAUFFE = {"chauffe": {"type": "choice",
+                                   "instructions": "De quoi parle ce message ?",
+                                   "criteria": {"salutation": "une salutation",
+                                                "autre": "autre chose"}}}
+_chauffes = 0
+_chauffe_ms = None
+
+
+def _chauffe(agent):
+    """Une inference minuscule. Rend sa duree en ms."""
+    t0 = time.perf_counter()
+    agent.system_one(ETAT_DE_CHAUFFE, QUESTION_DE_CHAUFFE)
+    return round((time.perf_counter() - t0) * 1000)
+
+
+def _boucle_de_chauffe(agent, intervalle, arret=None, une_seule_fois=False):
+    """Chauffe, dort, recommence — jusqu'a l'arret.
+
+    ⚠️ Elle n'a JAMAIS le droit de tuer le service : une inference qui echoue se
+    journalise et la boucle continue. Le contrat du service est « consultatif », et un
+    fil de confort qui ferait tomber le serveur le violerait.
+    """
+    global _chauffes, _chauffe_ms
+    while True:
+        try:
+            _chauffe_ms = _chauffe(agent)
+            _chauffes += 1
+            if _chauffes == 1:
+                logger.info(f"chauffe active, une inference toutes les {intervalle:g}s "
+                            f"(premiere : {_chauffe_ms} ms)")
+        except Exception as e:
+            logger.warning(f"[CHAUFFE] echouee, sans consequence : {type(e).__name__}: {e}")
+        if une_seule_fois:
+            return
+        if arret is not None and arret.wait(intervalle):
+            return
+        if arret is None:
+            time.sleep(intervalle)
+
 
 class Demande(BaseModel):
     """Le texte a juger, et les questions typees que le BOT definit."""
@@ -71,11 +136,22 @@ def _charger():
     _charge_ms = round((time.perf_counter() - t0) * 1000)
     logger.info(f"pret en {_charge_ms} ms")
 
+    if CHAUFFE_S > 0:
+        threading.Thread(target=_boucle_de_chauffe, args=(_agent, CHAUFFE_S),
+                         name="chauffe", daemon=True).start()
+    else:
+        logger.info("chauffe DESACTIVEE (LAYA_CHAUFFE_S=0) : le premier appel apres une "
+                    "periode calme retombera au repli chez le client")
+
 
 @app.get("/health")
 def health():
     """Le client s'en sert au demarrage : inutile de borner un service pas encore pret."""
-    return {"ok": _agent is not None, "modele": _modele, "charge_ms": _charge_ms}
+    return {"ok": _agent is not None, "modele": _modele, "charge_ms": _charge_ms,
+            # Pour verifier DEPUIS DEHORS que la chauffe tourne : si `chauffes` ne bouge
+            # pas entre deux appels, les poids refroidissent et le client repartira au
+            # repli sans qu'aucune erreur ne soit levee nulle part.
+            "chauffes": _chauffes, "chauffe_ms": _chauffe_ms, "chauffe_s": CHAUFFE_S}
 
 
 @app.post("/decide")

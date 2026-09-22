@@ -138,6 +138,12 @@ services:
         max-file: "3"
     networks:
       - bots-network
+    environment:
+      # Intervalle de la CHAUFFE. Mesure du 22/09 : sans elle, après 45 h sans trafic,
+      # 5 appels sur 6 repartaient au repli (694 ms puis 4 timeouts à la borne de
+      # 300 ms du client). `/health` ne fait aucune inférence — un ping HTTP ne
+      # réchauffe pas des poids. 0 désactive la chauffe.
+      - LAYA_CHAUFFE_S=30
     healthcheck:
       # Le chargement des poids prend ~37 s : `start_period` couvre ce temps, sinon le
       # service serait déclaré malade avant d'avoir eu une chance d'être prêt.
