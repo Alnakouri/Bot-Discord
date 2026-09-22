@@ -765,7 +765,6 @@ class DispatchMixin:
         if cache is None:
             cache = self._link_lines_cache = {}
         jeu = await self._jeu_en_cours() if self.bot_id in self.ACCROCHE_AU_JEU else None
-        fiche = await self._fiche_du_jeu() if jeu else None
         # ⚠️ Le jeu fait partie de la CLE du cache : sans ca, un changement de jeu en
         # cours de live laisserait tourner pendant un quart d'heure une invitation qui
         # parle du precedent — pire qu'une invitation neutre.
@@ -773,6 +772,9 @@ class DispatchMixin:
         vue = cache.get(cle_cache)
         if vue and maintenant - vue[0] < 900:
             return f"{vue[1]} {url}"
+        # APRES le cache, jamais avant : un echec IGDB n'est pas mis en cache, et chaque
+        # `!discord` servi depuis le cache aurait paye jusqu'a 3 s d'attente pour rien.
+        fiche = await self._fiche_du_jeu() if jeu else None
 
         system_prompt = self.personality_prompt
         if self.system_prompt_provider:

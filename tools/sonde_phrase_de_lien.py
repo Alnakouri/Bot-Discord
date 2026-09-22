@@ -183,6 +183,10 @@ async def main():
                     help="clause par-bot a ESSAYER, sans toucher au code de prod")
     ap.add_argument("--force-accroche", action="store_true",
                     help="ajoute ce bot a ACCROCHE_AU_JEU le temps de la mesure")
+    ap.add_argument("--fiche", dest="fiche_jeu", default=None,
+                    help="fiche IGDB du jeu a donner au modele (LOT 1bis.5). Le faux Helix "
+                         "ne connait aucun igdb_id : sans cette option, la mesure se fait "
+                         "SANS fiche, comme quand IGDB est muet.")
     args = ap.parse_args()
 
     try:
@@ -218,10 +222,15 @@ async def main():
 
     jeu = None if args.sans_jeu else args.jeu
     f = faux_bot(args.bot, fiche, cles, jeu, args.tete)
+    if args.fiche_jeu is not None:
+        async def fiche_imposee():
+            return args.fiche_jeu
+        f._fiche_du_jeu = fiche_imposee
     print(f"{args.bot} | tete={args.tete} | fiche {len(fiche)} car. | jeu={jeu!r} | "
           f"n={args.n} | borne {args.timeout:g}s"
           + ("  | CLAUSE INJECTEE" if args.clause else "")
-          + ("  | ACCROCHE FORCEE" if args.force_accroche else ""))
+          + ("  | ACCROCHE FORCEE" if args.force_accroche else "")
+          + ("  | FICHE DU JEU" if args.fiche_jeu is not None else ""))
     print("=" * 78)
 
     phrases, replis = [], 0

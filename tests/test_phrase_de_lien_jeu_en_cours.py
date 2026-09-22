@@ -203,3 +203,31 @@ def test_instruction_sans_fiche_ne_contient_pas_de_fiche():
     res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
     assert "Voici la fiche officielle de ce jeu (en anglais) :" not in capture["instruction"]
 
+
+
+def test_une_phrase_EN_CACHE_ne_va_pas_chercher_la_fiche():
+    """La fiche se cherchait AVANT le cache : chaque `!discord` servi depuis le cache
+    payait la requete, et un IGDB en panne (echec jamais mis en cache) coutait jusqu'a
+    3 s d'attente par invitation, devant le chat.
+    """
+    import time
+
+    bot = _faux_bot("sugar")
+
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+
+    appels = []
+
+    async def faux_fiche():
+        appels.append(1)
+        return None
+
+    bot._jeu_en_cours = faux_jeu
+    bot._fiche_du_jeu = faux_fiche
+    bot._link_lines_cache = {("discord", "Kingdom Come: Deliverance II"):
+                             (time.time(), "Deja ecrite. 🍬")}
+
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://x.y"))
+    assert res == "Deja ecrite. 🍬 https://x.y"
+    assert appels == [], "la fiche a ete cherchee alors que la phrase sortait du cache"
