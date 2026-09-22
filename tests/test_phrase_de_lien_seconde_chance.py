@@ -117,3 +117,52 @@ def test_une_epoque_inventee_est_RATTRAPEE_par_le_second_essai():
     assert _lancer(bot) == "Entre deux roustes, viens souffler avec nous. 🍬 https://x.y"
     assert bot.appels == 2
 
+
+
+# ── Ce que la FICHE affirme est permis (live du 2026-09-23) ────────────────────
+# La fiche IGDB de KCD2 dit « 15th century ». Le modele a ecrit « XVe siecle » — JUSTE —
+# deux fois de suite, et le filet strict a rejete les deux : `discord : <lien>`, le
+# gabarit fixe, sur #ma_streameuse. On permet le siecle de la fiche, et RIEN d'autre.
+FICHE_KCD2 = ("Résumé : A thrilling story-driven action RPG, with a rich open world, set in "
+              "15th century Medieval Europe. Experience the ultimate medieval adventure - "
+              "through the eyes of young Henry | Thèmes : Action, Historical, Open world")
+KCD2 = "Kingdom Come: Deliverance II"
+
+
+@pytest.mark.parametrize("phrase,fiche,attendu", [
+    # les deux brouillons REELS rejetes le 23/09
+    ("Si vous survivez au XVe siècle de Kingdom Come II sans perdre une oreille, venez nous raco", FICHE_KCD2, False),
+    ("Mieux vaut affronter les boues du XVe siècle avec nous que de regarder Heinrich galérer to", FICHE_KCD2, False),
+    ("Le quinzième siècle sans armure, ça pique.", FICHE_KCD2, False),
+    ("Le 15e siècle sans armure, ça pique.", FICHE_KCD2, False),
+    # la faute du 22/09 reste rejetee, fiche ou pas
+    ("Le treizième siècle sans armure, ça pique.", FICHE_KCD2, True),
+    ("Au XIIIe, même les chevaliers viendraient.", FICHE_KCD2, True),
+    ("Le XVe siècle et le XIIIe siècle, viens.", FICHE_KCD2, True),
+    # une annee absente de la fiche aussi, et le siecle SANS fiche
+    ("En 1403 on se battait mal, viens.", FICHE_KCD2, True),
+    ("Au XVe, même les chevaliers viendraient.", None, True),
+    # ce qui n'est pas une epoque ne l'est toujours pas
+    ("Pour la 2e fois, viens nous voir.", FICHE_KCD2, False),
+    ("Le Moyen Âge use, viens souffler avec nous.", FICHE_KCD2, False),
+])
+def test_une_epoque_de_la_FICHE_est_permise(phrase, fiche, attendu):
+    from shared.twitch.dispatch import _affirme_une_epoque
+    assert _affirme_une_epoque(phrase, KCD2, fiche) is attendu
+
+
+def test_une_epoque_JUSTE_passe_au_premier_essai_quand_la_fiche_la_donne():
+    """De bout en bout : c'est `_generate_link_line` qui doit passer la fiche au filet."""
+    bot = _bot(["Mieux vaut affronter les boues du XVe siècle avec nous. ✨",
+                "Viens souffler avec nous. 🍬"])
+
+    async def jeu():
+        return KCD2
+
+    async def fiche():
+        return FICHE_KCD2
+    bot._jeu_en_cours = jeu
+    bot._fiche_du_jeu = fiche
+
+    assert _lancer(bot) == "Mieux vaut affronter les boues du XVe siècle avec nous. ✨ https://x.y"
+    assert bot.appels == 1

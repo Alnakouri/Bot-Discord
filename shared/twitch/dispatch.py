@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import re
 import time
+import unicodedata
 import random
 import collections
 import asyncio
@@ -106,19 +107,74 @@ _AFFIRME_UNE_EPOQUE = re.compile(r"\bsi[èe]cles?\b|\b(?:1\d|20)\d\d\b", re.I)
 _SIECLE_EN_CHIFFRES_ROMAINS = re.compile(r"\b[IVXL]{2,6}(?:e|è|ème)\b")
 
 
-def _affirme_une_epoque(phrase: str, jeu: str | None) -> bool:
-    """Vrai si la phrase DATE le jeu. Ne s'applique qu'a l'accroche (sans jeu : False).
+_ROMAINS = {"I": 1, "V": 5, "X": 10, "L": 50}
+_SIECLES_EN_LETTRES = {
+    "dixieme": 10, "onzieme": 11, "douzieme": 12, "treizieme": 13, "quatorzieme": 14,
+    "quinzieme": 15, "seizieme": 16, "dix-septieme": 17, "dix-huitieme": 18,
+    "dix-neuvieme": 19, "vingtieme": 20, "vingt-et-unieme": 21, "vingt et unieme": 21,
+}
+# « XVe », « XVe siecle », « Xe siecle », « 15e siecle », « quinzième siècle ».
+# ⚠️ Une seule lettre romaine ou un nombre en chiffres n'est un siecle que SUIVI de
+# « siecle » : sinon « Le » (L + e) et « la 2e fois » passeraient pour des epoques.
+# Les romains sont sensibles a la CASSE, comme `_SIECLE_EN_CHIFFRES_ROMAINS`.
+_UN_SIECLE = re.compile(
+    r"\b(?P<romain>[IVXL]{2,6})(?:e|è|ème)\b(?:\s+si[èe]cle)?"
+    r"|\b(?:(?P<romain1>[IVXL])|(?P<chiffre>\d{1,2}))(?:e|è|ème|eme)\s+si[èe]cle"
+    r"|\b(?P<lettres>(?:vingt[- ]et[- ]uni|dix-(?:sept|huit|neuv)|dix|onz|douz|treiz|"
+    r"quatorz|quinz|seiz|vingt)(?:i[èe]me))\s+si[èe]cle"
+)
+
+
+def _romain(texte: str) -> int | None:
+    valeurs = [_ROMAINS[c] for c in texte]
+    total = sum(-v if i + 1 < len(valeurs) and v < valeurs[i + 1] else v
+                for i, v in enumerate(valeurs))
+    return total or None
+
+
+def _siecles_de_la_fiche(fiche: str | None) -> set[int]:
+    """Les siecles que la fiche IGDB (en anglais) AFFIRME : « 15th century »."""
+    return {int(n) for n in re.findall(r"\b(\d{1,2})(?:st|nd|rd|th)[- ]century\b",
+                                       fiche or "", re.I)}
+
+
+def _affirme_une_epoque(phrase: str, jeu: str | None, fiche: str | None = None) -> bool:
+    """Vrai si la phrase DATE le jeu d'une epoque qu'on ne lui a PAS donnee.
+
+    Ne s'applique qu'a l'accroche (sans jeu : False).
 
     Les nombres du TITRE sont permis : « Cyberpunk 2077 », « Anno 1800 » sont des noms,
     pas des affirmations — les rejeter punirait la seule chose vraie qu'on a donnee.
+
+    ⚠️ Et ce que la FICHE affirme est permis aussi. Live du 2026-09-23 sur #ma_streameuse :
+    la fiche IGDB de KCD2 dit « 15th century », le modele a ecrit « XVe siecle » — JUSTE —
+    deux fois, et le filet strict a rejete les deux : gabarit fixe. On permet donc le
+    siecle et les annees que la fiche porte, et RIEN d'autre : « le treizieme siecle »
+    d'hier reste rejete, fiche ou pas. Un siecle qu'on ne sait pas lire est rejete.
     """
     if not jeu:
         return False
-    permis = set(re.findall(r"\d+", jeu))
-    for m in _AFFIRME_UNE_EPOQUE.finditer(phrase):
+    permis = set(re.findall(r"\d+", jeu)) | set(re.findall(r"\b\d{4}\b", fiche or ""))
+    siecles_permis = _siecles_de_la_fiche(fiche)
+
+    lu = phrase
+    for m in _UN_SIECLE.finditer(phrase):
+        if m.group("romain") or m.group("romain1"):
+            n = _romain(m.group("romain") or m.group("romain1"))
+        elif m.group("chiffre"):
+            n = int(m.group("chiffre"))
+        else:
+            cle = unicodedata.normalize("NFD", m.group("lettres").lower())
+            cle = "".join(c for c in cle if unicodedata.category(c) != "Mn")
+            n = _SIECLES_EN_LETTRES.get(cle.replace("  ", " "))
+        if n is None or n not in siecles_permis:
+            return True
+        lu = lu.replace(m.group(0), " ")      # siecle verifie : il ne compte plus
+
+    for m in _AFFIRME_UNE_EPOQUE.finditer(lu):
         if m.group(0) not in permis:
             return True
-    return bool(_SIECLE_EN_CHIFFRES_ROMAINS.search(phrase))
+    return bool(_SIECLE_EN_CHIFFRES_ROMAINS.search(lu))
 
 
 _NOMME_LA_SOURCE = re.compile(
@@ -938,7 +994,7 @@ class DispatchMixin:
             if texte is None:
                 return None          # panne franche : le gabarit fixe, tout de suite
             phrase = _nettoyer_phrase_de_lien(texte, self.bot_id)
-            if phrase and _affirme_une_epoque(phrase, jeu):
+            if phrase and _affirme_une_epoque(phrase, jeu, fiche):
                 phrase = None
             if phrase:
                 break
