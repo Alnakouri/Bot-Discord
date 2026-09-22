@@ -494,6 +494,29 @@ class DispatchMixin:
     # dans `_generate_link_line`) montre que cette clause fait passer Sugar de 4 objets
     # inventes sur 6 a ZERO, et qu'elle EFFONDRE les ouvertures de M'aiq (5/5 sur la meme
     # formule). Ajouter un bot ici demande donc de mesurer ce bot-la, pas de supposer.
+    #
+    # ⚠️ LES DEUX QUI N'EN ONT PAS, ET C'EST MESURE — ne pas retenter sans raison neuve.
+    # Balayage du 2026-09-22 sur ministral (Gemini rendait 503), 18 generations par bras,
+    # chaque bot dans son etat de prod :
+    #
+    #     MALENA   objets 11/18 sans clause -> 7/18 avec une clause qui NOMME ses objets
+    #              **p = 0,32 : aucun effet**. La meme forme donne pourtant 12/17 -> 1/17
+    #              chez Alfred et 12/18 -> 5/18 chez Sheogorath. 3e demonstration du jour
+    #              que [[gotcha-un-filet-ne-se-transpose-pas-d-un-bot-a-l-autre]].
+    #              ⚠️ Son vrai defaut est ailleurs et il est DEJA TRANCHE : « Oh ma vie »
+    #              ouvre **16 phrases sur 18** ici, ce qui confirme les 82 % mesures sous
+    #              ministral contre 13 % sous flash-lite, fiche identique. C'est
+    #              l'ECHELON, pas la fiche — decision `3cac596`, ne pas toucher sa fiche.
+    #
+    #     M'AIQ    objets **3/18 seulement** : il n'y a pas grand-chose a reparer, et son
+    #              risque connu est l'effondrement des ouvertures (deja 11/18 sur « Les
+    #              Plaines de... » ici). Le rapport gain/risque est contre la clause.
+    #              ⚠️ ET ATTENTION AU FAUX DEFAUT : il « invente » un lieu pour la
+    #              destination 17 fois sur 18 — « Les Plaines de l'Echo », « La Boite
+    #              Magique ». Ce n'est PAS une invention : sa fiche le lui PRESCRIT
+    #              (`maiq_data.py:52`, « 'Discord' n'existe pas »). Compter ca comme une
+    #              faute reviendrait a lui retirer sa voix
+    #              ([[gotcha-un-defaut-peut-etre-une-fonctionnalite]]).
     CLAUSES_PAR_BOT = {
         "sugar": (
             "⚠️ Et tu n'offres RIEN de matériel : si ta phrase contient une chose qu'on "
