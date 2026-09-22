@@ -377,6 +377,7 @@ class DispatchMixin:
             # jamais changer un comportement. D'ou la separation : `_question_de_jeu`
             # observe, `enable_game_qa` decide de la REPONSE.
             category = self._question_de_jeu(text, "mention")
+            self._defaite_observee(text)
             if category and getattr(self, "enable_game_qa", False):
                 facts_block, no_facts_warning = await self._fetch_game_facts_block(chan, category)
 
@@ -799,6 +800,23 @@ class DispatchMixin:
             # Un journal ne doit jamais couter une reponse : s'il casse, le bot continue.
             self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] journal jeu_question : {e}")
         return categorie
+
+    def _defaite_observee(self, texte):
+        """Le bot a-t-il ete declare battu ? On RANGE la reponse, on n'en fait RIEN.
+
+        ⚠️ Sur Twitch, le carnet de repartie n'existe pas : les bots n'y apprennent rien
+        et n'y appliquent aucune lecon. C'est pourtant la qu'il y a du monde. Avant de
+        l'y brancher — un troll qui ecrit « je t'ai eu » ferait reflechir le bot sur sa
+        persona — on mesure combien de defaites y sont declarees, et combien la liste
+        de motifs en rate (`aucune` est rangee aussi). Ne declenche aucune reflexion,
+        n'envoie rien, et un journal qui casse ne coute pas la reponse.
+        """
+        try:
+            from shared.repartee_lessons import detect_defeat_signal
+            return detect_defeat_signal(texte, bot_id=self.bot_id, detail="voie=twitch")
+        except Exception as e:
+            self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] journal defaite : {e}")
+            return None
 
     async def _generate_link_line(self, cmd: str, label: str, url: str) -> str | None:
         """Fait écrire au bot, EN PERSONNAGE, la phrase qui accompagne un lien.

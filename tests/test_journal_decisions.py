@@ -227,3 +227,42 @@ def test_le_ton_du_chat_TWITCH_de_sugar_est_range():
               and getattr(n.func, "id", None) == "journalise"]
     assert appels and any(getattr(a, "id", None) == "TON" for a in appels[0].args), \
         "_ton_twitch ne range pas la decision TON"
+
+
+# ── La defaite sur TWITCH : observee, jamais apprise (2026-09-23) ─────────────
+
+def test_le_chat_twitch_RANGE_la_defaite_sans_rien_declencher(journal, monkeypatch):
+    import types
+    from shared.twitch.dispatch import DispatchMixin
+
+    ranges = []
+    monkeypatch.setattr(journal, "journalise", lambda *a, **k: ranges.append((a, k)))
+
+    class Faux(DispatchMixin):
+        bot_id = "sugar"
+        logger = types.SimpleNamespace(debug=lambda *a, **k: None)
+
+    assert Faux()._defaite_observee("haha je t'ai eu") == "capitulation"
+    assert ranges == [(("sugar", journal.DEFAITE, "haha je t'ai eu", "capitulation"),
+                       {"detail": "voie=twitch"})]
+
+
+def test_la_defaite_twitch_est_observee_dans_la_branche_MENTION_et_n_apprend_rien():
+    """Appelee la ou le bot est interpelle ; et elle n'a le droit ni de reflechir, ni
+    d'injecter une lecon, ni d'ecrire dans le chat — le carnet sur Twitch reste une
+    DECISION a prendre sur mesure, pas un effet de bord du journal."""
+    import inspect
+    import textwrap
+    from shared.twitch.dispatch import DispatchMixin
+
+    privmsg = ast.parse(textwrap.dedent(inspect.getsource(DispatchMixin._handle_privmsg)))
+    appels = {getattr(n.func, "attr", None) for n in ast.walk(privmsg)
+              if isinstance(n, ast.Call)}
+    assert "_defaite_observee" in appels, "_handle_privmsg n'observe plus la defaite"
+
+    observe = ast.parse(textwrap.dedent(inspect.getsource(DispatchMixin._defaite_observee)))
+    noms = {getattr(n.func, "attr", None) or getattr(n.func, "id", None)
+            for n in ast.walk(observe) if isinstance(n, ast.Call)}
+    interdits = {"reflect_on_defeat", "format_for_prompt", "send_chat_safe",
+                 "_generate_response", "add_lesson"}
+    assert not (noms & interdits), f"_defaite_observee fait plus qu'observer : {noms & interdits}"

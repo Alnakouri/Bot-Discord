@@ -57,7 +57,8 @@ _MOTIFS_COMPILES = [
 ]
 
 
-def detect_defeat_signal(message_utilisateur: str, bot_id: Optional[str] = None) -> Optional[str]:
+def detect_defeat_signal(message_utilisateur: str, bot_id: Optional[str] = None,
+                         detail: Optional[str] = None) -> Optional[str]:
     """Rend la CATÉGORIE de défaite reconnue, ou None.
 
     ⚠️ Rend une étiquette de notre vocabulaire, jamais un morceau du message. Ce qui
@@ -79,7 +80,8 @@ def detect_defeat_signal(message_utilisateur: str, bot_id: Optional[str] = None)
         # couter une reponse : s'il casse, le bot continue.
         try:
             from core.journal_decisions import journalise, DEFAITE
-            journalise(bot_id, DEFAITE, message_utilisateur, categorie or "aucune")
+            journalise(bot_id, DEFAITE, message_utilisateur, categorie or "aucune",
+                       detail=detail)
         except Exception as e:
             logger.debug(f"journal defaite indisponible : {e}")
     return categorie
