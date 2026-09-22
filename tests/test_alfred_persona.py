@@ -302,3 +302,35 @@ def test_la_regle_de_longueur_d_alfred_est_posee_comme_sa_forme_NORMALE():
         "les trois mouvements de la sollicitude deguisee redeviennent une permission "
         "de developper, et une permission bat une interdiction"
     )
+
+
+def test_la_fiche_ne_CITE_pas_le_the():
+    """Une chose NOMMEE dans la fiche ressort ailleurs — mesure du 2026-09-22.
+
+    Sa fiche citait le the DEUX fois : « pose la theiere » parmi les didascalies
+    interdites, et « reprendre du the » comme exemple de suite concrete. Les deux
+    mecanismes deja mesures dans ce depot jouaient donc ensemble — une formule nommee
+    devient un tic ([[gotcha-une-formule-nommee-devient-un-tic]]), et une demonstration
+    bat une interdiction ([[gotcha-le-prompt-enseigne-le-tic-interdit]]).
+
+    Ca ressortait dans les phrases de lien Twitch, qui ne parlent pas de the du tout :
+
+        fiche citant le the ...  6/18 inventent un the ou une tasse
+        fiche de-citee ........  1/22                                  p = 0,033
+
+    Modele CONSTANT des deux cotes (100 % flash-lite, aucun repli dans la sonde), donc
+    ce n'est pas [[gotcha-le-compte-brut-est-fausse-par-l-echelon-qui-a-repondu]].
+
+    ⚠️ Le verrou porte sur la FICHE seule. Alfred a parfaitement le droit de servir un
+    the dans une replique en dur : ce qui est mesure ici, c'est qu'une MENTION dans le
+    prompt le fait surgir dans des sorties qui n'ont rien a voir.
+    ⚠️ La clause anti-objet de Sugar avait echoue chez lui (3/4 -> 2/4, dans le bruit) :
+    elle combattait le symptome pendant que la fiche replantait la cause a chaque appel.
+    """
+    from alfred_data import PERSONALITY_PROMPT
+    minuscules = PERSONALITY_PROMPT.lower()
+    for mot in ("thé", "the ", "théière", "tasse"):
+        assert mot not in minuscules, (
+            f"« {mot} » est revenu dans la fiche d'Alfred. Mesure du 22/09 : le citer "
+            f"fait passer les objets inventes de 1/22 a 6/18 dans ses phrases de lien "
+            f"(p = 0,033). Si c'est volontaire, remesurer d'abord.")
