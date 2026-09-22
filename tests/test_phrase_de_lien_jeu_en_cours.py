@@ -59,9 +59,14 @@ def _helix(rendu, attend_live_only=True):
 def test_seuls_les_bots_mesures_accrochent_le_jeu():
     assert set(DispatchMixin.ACCROCHE_AU_JEU) == BOTS_MESURES, (
         "un bot a ete ajoute a ACCROCHE_AU_JEU. Trois des six en sont DEHORS pour des "
-        "raisons mesurees : M'aiq ouvre 4 phrases sur 6 avec la meme formule sans rien "
-        "gagner, et Sheogorath n'a jamais pu etre mesure (429 Groq, 2 generations "
-        "exploitables sur 6). Mesurer d'abord, 6 generations sur sa vraie tete."
+        "raisons MESUREES : M'aiq ouvre 4 phrases sur 6 avec la meme formule sans rien "
+        "gagner ; Sheogorath a enfin ete mesure le 2026-09-22, sur ministral, 18 "
+        "generations par bras, et le jeu le DISQUALIFIE — il repare l'objet invente "
+        "mieux que tout (12/18 -> 1/18) mais fait disparaitre L'INVITATION une fois sur "
+        "deux (18/18 -> 9/18, p = 0,001) et concentre les ouvertures sur « Ah, ces... » "
+        "13 fois sur 18, pire que le 4/6 qui avait exclu M'aiq. Une invitation qui "
+        "n'invite plus n'est pas une invitation : il recoit une CLAUSE a la place "
+        "(cf. test_phrase_de_lien_clause_par_bot.py). Mesurer d'abord."
     )
 
 

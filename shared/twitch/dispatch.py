@@ -523,6 +523,33 @@ class DispatchMixin:
         # [[gotcha-le-prompt-enseigne-le-tic-interdit]] — c'est assume : la version SANS
         # exemple a ete mesuree aussi (4/8), et elle faisait en plus sortir la phrase entre
         # guillemets et asterisques 4 fois sur 8, ce que le nettoyeur jette.
+        # ⚠️ MESURE DU 2026-09-22, SUR MINISTRAL (Groq rate-limite a 3-4 appels, et
+        # ministral est justement son 2e echelon — celui qui le sert des que Groq refuse,
+        # ce qui lui arrive souvent : il porte 18 des 21 refus du projet). Sheogorath
+        # n'avait JAMAIS pu etre mesure depuis le 21/09. Trois bras, 18 generations :
+        #
+        #     bras                    accroche le jeu   PROMET un objet   INVITE encore
+        #     A  rien (etat actuel)        0/18            12/18              18/18
+        #     B  accroche au jeu          18/18             1/18               9/18  <-
+        #     C  clause ci-dessous         1/18             5/18              17/18
+        #
+        # ▶ **B EST DISQUALIFIE, ET PAS POUR L'OBJET.** Le jeu repare l'objet invente
+        # mieux que tout (12/18 -> 1/18, p = 0,0003) — mais il fait DISPARAITRE
+        # L'INVITATION une fois sur deux (18/18 -> 9/18, p = 0,001), et concentre les
+        # ouvertures sur « Ah, ces... » **13 fois sur 18**, pire que le 4/6 de M'aiq qui
+        # l'avait exclu. Une invitation qui n'invite plus n'est pas une invitation.
+        # ▶ C garde tout : objet 12/18 -> 5/18 (p = 0,044), invitation intacte (17/18),
+        # et la variete AUGMENTE (12 ouvertures distinctes contre 10, la plus frequente
+        # 4 fois contre 5). La longueur mediane tombe de 187 a 148 caracteres.
+        # ⚠️ Comme pour Alfred, elle NOMME les objets : c'est la seule forme qui agisse.
+        "sheogorath": (
+            "⚠️ Tu n'offres RIEN qui les attendrait là-bas : ni fromage, ni papillon, ni "
+            "chaise, ni festin. Tu n'as rien à leur servir et tu ne tiens aucun lieu. "
+            "Ce qui les attend, c'est TOI : ta folie, ta voix, ce que tu vas leur dire. "
+            "Ton fromage et tes papillons restent les TIENS, tu ne les promets pas dans "
+            "la phrase. "
+        ),
+
         # ⚠️ MESURE DU 2026-09-22, SUR MINISTRAL — et elle dit l'inverse de ce que la
         # fiche d'Alfred avait appris le meme jour. Sa fiche CITAIT le the ; la de-citer
         # a fait tomber l'objet invente de 6/18 a 1/22 SOUS FLASH-LITE (`2b4e7f1`). Mais

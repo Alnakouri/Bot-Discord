@@ -45,7 +45,12 @@ RACINE = Path(__file__).resolve().parent.parent
 # ne NOMME aucun objet, c'est-a-dire aucun effet. Sous flash-lite il est deja a 1/22 depuis
 # la de-citation de sa fiche : la clause y reste **non mesuree**, et le risque n'y est pas
 # l'objet mais la VARIETE des ouvertures. A remesurer des que Gemini repond.
-BOTS_MESURES = {"sugar", "johnny", "alfred"}
+# ⚠️ `sheogorath` ajoute le 2026-09-22, mesure sur ministral (Groq rate-limite a 3-4
+# appels, et ministral est son 2e echelon — celui qui le sert des que Groq refuse) :
+# 12/18 objets promis sans clause, 5/18 avec (p = 0,044), invitation intacte (17/18) et
+# variete en HAUSSE. Il reste volontairement HORS de ACCROCHE_AU_JEU : le jeu reparait
+# mieux l'objet (1/18) mais supprimait l'invitation une fois sur deux.
+BOTS_MESURES = {"sugar", "johnny", "alfred", "sheogorath"}
 
 
 def test_seuls_les_bots_mesures_ont_une_clause():
