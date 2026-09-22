@@ -163,6 +163,63 @@ class TestTwitchFeatures(unittest.TestCase):
         # Verify reserved name skipped
         self.assertNotIn("fromage", bot.commands)
 
+    def _lignes_info(self):
+        """Les messages passes a logger.info, a plat."""
+        return [c.args[0] for c in self.mock_logger.info.call_args_list if c.args]
+
+    @patch.dict(os.environ, {
+        "TWITCH_CLIENT_ID": "test_client_id",
+        "TWITCH_CLIENT_SECRET": "test_client_secret",
+        "TWITCH_BOT_USERNAME": "test_bot_user",
+        "TWITCH_OAUTH_TOKEN": "test_oauth_token",
+        "TWITCH_CHAT_CHANNELS": "test_channel"
+    })
+    @patch("shared.twitch_chat._load_dashboard_twitch_config")
+    def test_link_commands_journalisees_au_demarrage(self, mock_load_config):
+        """Ce qui est ARME doit se lire dans le journal.
+
+        Le 22/09 un `!discord` muet a coute une soiree : `link_commands` etait vide et
+        RIEN ne le disait — seuls les rejets (collision, nom reserve) se journalisaient.
+        Cf. [[gotcha-config-twitch-lue-au-demarrage-seulement]].
+        """
+        mock_load_config.return_value = {
+            "link_commands": [
+                {"cmd": "discord", "url": "https://discord.gg/test", "label": "Le Discord",
+                 "aliases": ["serveur", "invite"]},
+                {"cmd": "tipeee", "url": "https://tipeee.test", "label": "Tipeee",
+                 "message": "{label} : {url}"},
+            ]
+        }
+        self.assertIsNotNone(setup_twitch_chat("johnny", self.mock_logger))
+
+        ligne = [l for l in self._lignes_info() if "Commandes de lien armees" in l]
+        self.assertEqual(len(ligne), 1, f"une seule ligne attendue, vu : {self._lignes_info()}")
+        ligne = ligne[0]
+        # La commande, son nombre d'alias, et QUI ecrit la phrase : les trois comptent.
+        self.assertIn("!discord", ligne)
+        self.assertIn("+2 alias", ligne)
+        self.assertIn("phrase du bot", ligne)
+        self.assertIn("!tipeee", ligne)
+        self.assertIn("gabarit fixe", ligne)
+
+    @patch.dict(os.environ, {
+        "TWITCH_CLIENT_ID": "test_client_id",
+        "TWITCH_CLIENT_SECRET": "test_client_secret",
+        "TWITCH_BOT_USERNAME": "test_bot_user",
+        "TWITCH_OAUTH_TOKEN": "test_oauth_token",
+        "TWITCH_CHAT_CHANNELS": "test_channel"
+    })
+    @patch("shared.twitch_chat._load_dashboard_twitch_config")
+    def test_aucune_commande_de_lien_se_dit_aussi(self, mock_load_config):
+        """Le cas SILENCIEUX — celui qui a mordu — doit etre le plus bavard des deux."""
+        mock_load_config.return_value = {"link_commands": []}
+        self.assertIsNotNone(setup_twitch_chat("johnny", self.mock_logger))
+
+        ligne = [l for l in self._lignes_info() if "Aucune commande de lien" in l]
+        self.assertEqual(len(ligne), 1, f"une seule ligne attendue, vu : {self._lignes_info()}")
+        # Le journal doit nommer le FICHIER a corriger, sinon il ne sert a rien.
+        self.assertIn("twitch_config.json", ligne[0])
+
     @patch.dict(os.environ, {
         "TWITCH_CLIENT_ID": "test_client_id",
         "TWITCH_CLIENT_SECRET": "test_client_secret",

@@ -400,6 +400,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     bot_ref = {}
     link_cmds = {}
     link_aliases = {}
+    link_auto = {}
     reserved_names = {
         "decret", "decree", "fromage", "cheese", "folie", "faveur", "favor",
         "classement", "leaderboard", "humeur", "platform", "platforms",
@@ -456,6 +457,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         else:
             callback = lambda author, args, u=url, l=label, t=msg_tmpl: t.format(url=u, label=l)
         link_cmds[cmd] = callback
+        link_auto[cmd] = message_auto
         
         aliases = entry.get("aliases") or []
         if isinstance(aliases, str):
@@ -472,6 +474,27 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
                 continue
             link_aliases[alias] = cmd
             
+    # Le silence est le pire des cas : un !discord non arme ne laisse AUCUNE trace, qu'il
+    # soit absent de la config, en collision ou sur un nom reserve (les deux derniers cas
+    # se journalisent deja, le premier non). On dit donc ce qui est arme, et ce qui ne l'est
+    # pas. [[gotcha-config-twitch-lue-au-demarrage-seulement]] : lu AU DEMARRAGE seulement.
+    if link_cmds:
+        resume = []
+        for cmd in link_cmds:
+            details = []
+            n_alias = sum(1 for c in link_aliases.values() if c == cmd)
+            if n_alias:
+                details.append(f"+{n_alias} alias")
+            details.append("phrase du bot" if link_auto.get(cmd) else "gabarit fixe")
+            resume.append(f"!{cmd} ({', '.join(details)})")
+        logger.info(f"🔗 [TWITCH_CHAT:{bot_id}] Commandes de lien armees : {', '.join(resume)}")
+    else:
+        logger.info(
+            f"🔗 [TWITCH_CHAT:{bot_id}] Aucune commande de lien armee "
+            f"(`link_commands` vide dans data/twitch_config.json) — un !discord tape dans "
+            f"le chat ne repondra a personne."
+        )
+
     # Fusionner
     final_commands = {**link_cmds, **(commands or {})}
     final_aliases = {**link_aliases, **(command_aliases or {})}
