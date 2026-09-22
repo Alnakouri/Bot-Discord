@@ -1500,14 +1500,25 @@ async def on_message(message):
         # 2. ORDONNER LA SURVEILLANCE / VENUE
         # Ex: "Alfred viens dans le vocal", "Rejoins nous", "Surveille ce canal"
         join_keywords = ["viens", "vien", "rejoins", "rejoint", "surveille", "monte la garde", "écouter", "débarque", "ramène"]
-        if any(w in text_lower for w in join_keywords):
+        _joint = [w for w in join_keywords if w in text_lower]
+        if _joint:
+            # Meme journal que l'ordre de repos : c'est la MEME question — « que demande-t-on
+            # au majordome ? » — tranchee par une autre liste de mots. Deux decisions qui
+            # declenchent une ACTION, donc deux decisions dont l'erreur se voit.
+            from core.journal_decisions import journalise, INTENTION
+            journalise("alfred", INTENTION, message.content, "venue",
+                       detail=f"source=regle regle=join mots={_joint}")
             await surveille(ctx)
             return
 
         # 3. ORDONNER UNE LIBÉRATION / PARDON
         # Ex: "Alfred pardonne à Malena", "Libère Cendrillon", "Excuse le"
         pardon_keywords = ["pardon", "libère", "libere", "excuse", "amnistie", "relâche", "relache", "gracie"]
-        if any(w in text_lower for w in pardon_keywords):
+        _gracie = [w for w in pardon_keywords if w in text_lower]
+        if _gracie:
+            from core.journal_decisions import journalise, INTENTION
+            journalise("alfred", INTENTION, message.content, "pardon",
+                       detail=f"source=regle regle=pardon mots={_gracie}")
             target_member = None
             
             # A. Par mention explicite (@Cendrillon)
@@ -1540,6 +1551,12 @@ async def on_message(message):
 
         # COMMANDE DE NETTOYAGE (Admin/Owner seulement)
         if has_clean_request:
+            # Rangee AVANT le controle de permission : ce qui est mesure ici, c'est ce que
+            # la personne a DEMANDE, pas ce qu'elle avait le droit d'obtenir. `nettoyage`
+            # est deja l'une des quatre etiquettes de la question posee a Laya.
+            from core.journal_decisions import journalise, INTENTION
+            journalise("alfred", INTENTION, message.content, "nettoyage",
+                       detail="source=regle regle=nettoyage")
             # Vérification des permissions
             is_admin = message.author.guild_permissions.administrator
             is_owner = message.author.id == message.guild.owner_id
@@ -1550,6 +1567,15 @@ async def on_message(message):
             else:
                 await message.channel.send("🤵 **Alfred** : Mes excuses, mais seuls le Maître et ses lieutenants (Administrateurs) peuvent me donner de tels ordres. 🧤")
                 return
+
+        # ⚠️ ON ARRIVE ICI QUAND AUCUNE DES LISTES N'A MORDU, et c'est la ligne la plus
+        # instructive du journal : si quelqu'un demande a Alfred de venir ou de partir
+        # avec des mots absents des listes, la regle rend « aucune » et le bot se contente
+        # de repondre. Ne ranger que les cas ou une liste mord ne montrerait JAMAIS ce
+        # manque-la — c'est la meme raison qui fait journaliser `aucune` pour les
+        # questions sur le jeu.
+        from core.journal_decisions import journalise, INTENTION
+        journalise("alfred", INTENTION, message.content, "aucune", detail="source=regle regle=aucune")
 
         should_respond = True
         context_prefix = f"{user_context} (Il vous parle directement)."
