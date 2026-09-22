@@ -275,8 +275,7 @@ class DispatchMixin:
             facts_block = None
             no_facts_warning = False
             if getattr(self, "enable_game_qa", False):
-                from shared.twitch.game_info import detect_game_question
-                category = detect_game_question(text)
+                category = self._question_de_jeu(text, "mention")
                 if category:
                     facts_block, no_facts_warning = await self._fetch_game_facts_block(chan, category)
 
@@ -333,8 +332,7 @@ class DispatchMixin:
         if not spontaneous_sent and getattr(self, "enable_game_qa", False):
             chan_key = chan.lower().lstrip("#")
             if chan_key in getattr(self, "cohost_channels", []):
-                from shared.twitch.game_info import detect_game_question
-                category = detect_game_question(text)
+                category = self._question_de_jeu(text, "cohost")
                 if category:
                     now = time.time()
                     last_cohost_time = getattr(self, "_last_cohost_qa", {}).get(chan_key, 0)
@@ -557,6 +555,33 @@ class DispatchMixin:
         except Exception as e:
             self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] jeu en cours indisponible : {e}")
             return None
+
+    def _question_de_jeu(self, texte, voie):
+        """La categorie de question sur le jeu, et on RANGE la decision au passage.
+
+        ⚠️ Cette methode ne DECIDE rien de nouveau : `detect_game_question` tranche
+        exactement comme avant, et son resultat sort tel quel. Elle ne fait qu'observer.
+
+        Pourquoi la journaliser, elle : c'est la seule decision a mots-cles du depot qui
+        se declenche souvent. Les trois deja instrumentees (intention, ton, pertinence)
+        n'ont produit que 30 lignes en deux jours, dont ZERO pour `intention` — de quoi
+        ne mesurer rien du tout. Celle-ci tourne sur le chat Twitch.
+
+        ⚠️ Le cas `None` est journalise AUSSI, sous l'etiquette `aucune`, et c'est le
+        plus important : le defaut probable de 66 motifs regex n'est pas de se tromper
+        de categorie, c'est de RATER une question posee autrement. Un journal qui ne
+        garderait que les detections ne pourrait jamais montrer ce manque-la.
+        """
+        from shared.twitch.game_info import detect_game_question
+        categorie = detect_game_question(texte)
+        try:
+            from shared.journal_decisions import journalise, JEU_QUESTION
+            journalise(self.bot_id, JEU_QUESTION, texte, categorie or "aucune",
+                       detail=f"voie={voie}")
+        except Exception as e:
+            # Un journal ne doit jamais couter une reponse : s'il casse, le bot continue.
+            self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] journal jeu_question : {e}")
+        return categorie
 
     async def _generate_link_line(self, cmd: str, label: str, url: str) -> str | None:
         """Fait écrire au bot, EN PERSONNAGE, la phrase qui accompagne un lien.

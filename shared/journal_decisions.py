@@ -50,7 +50,17 @@ logger = logging.getLogger("journal_decisions")
 INTENTION = "intention"     # Alfred seul : stop_keywords + la liste de rattrapage
 TON = "ton"                 # Sugar seule : sugar_grudge.classify_tone
 PERTINENCE = "pertinence"   # les six : _other_bot_in_focus / intervention spontanee
-DECISIONS = (INTENTION, TON, PERTINENCE)
+# ⚠️ Ajoutee le 2026-09-22, et c'est la decision qui remplira ce journal. Les trois
+# premieres se declenchent si rarement qu'en DEUX JOURS elles n'ont produit que
+# 30 lignes, dont zero pour `intention`. `detect_game_question` tourne sur le chat
+# Twitch, cent fois plus souvent — c'est elle qui donnera un corpus utilisable, aux
+# autres decisions comprises.
+# C'est aussi le meilleur candidat du depot pour Laya : ensemble FERME d'etiquettes,
+# tout est DANS le texte, et la regle actuelle est un mur de 66 motifs regex
+# (`shared/twitch/game_info.py`). ⚠️ Mais on JOURNALISE d'abord, on branche ensuite,
+# sur un chiffre : sans corpus, « Laya ferait mieux » est une opinion.
+JEU_QUESTION = "jeu_question"   # les six sur Twitch : game_info.detect_game_question
+DECISIONS = (INTENTION, TON, PERTINENCE, JEU_QUESTION)
 
 # Au-dela, on jette plutot que d'attendre : le bot passe avant son journal.
 _TAILLE_FILE = 500
