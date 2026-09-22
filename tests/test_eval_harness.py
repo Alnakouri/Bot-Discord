@@ -817,12 +817,15 @@ def test_le_runner_rend_la_filtree_ET_la_brute():
     """
     import asyncio
     import tests.eval.runner as runner
+    from shared.api_manager import MultiAPIKeyManager
 
     async def _faux_appel(**kwargs):
         return "**Gras** et *pose son torchon* une didascalie."
 
     vrai = runner.generate_response
     runner.generate_response = _faux_appel
+    # En CI (pas de cles sur disque), un attelage factice evite d'exiger les secrets de prod
+    runner._ATTELAGES.setdefault("alfred", (MultiAPIKeyManager(), None, None, None))
     try:
         scenario = {"id": "sonde", "user_messages": ["salut"], "transcript": ""}
         filtrees, brutes, _echelons = asyncio.run(
@@ -892,6 +895,11 @@ def _sans_tracage():
     trouve, donc c'est bien ici qu'il faut couper.
     """
     import shared.llm_cascade as llm_cascade
+    import tests.eval.runner as runner
+    from shared.api_manager import MultiAPIKeyManager
+
+    # En CI (pas de cles sur disque), un attelage factice evite d'exiger les secrets de prod
+    runner._ATTELAGES.setdefault("alfred", (MultiAPIKeyManager(), None, None, None))
 
     vrai = llm_cascade.tracer_appel
     llm_cascade.tracer_appel = lambda *a, **k: None
