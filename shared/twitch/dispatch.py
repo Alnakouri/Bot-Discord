@@ -148,6 +148,20 @@ def _nettoyer_phrase_de_lien(texte: str | None, bot_id: str | None = None) -> st
         if phrase == avant:
             break
     phrase = strip_stage_directions(phrase)
+    # ⚠️ UNE PHRASE QUI COMMENCE AU MILIEU EST CASSEE — on la REJETTE, on ne la repare pas.
+    # Mesure du 2026-09-22, ministral : il met le nom du jeu en valeur, `*Elden Ring* vous
+    # fait courir apres des ombres...`, et `strip_stage_directions` prend cette tete pour
+    # une didascalie et la SUPPRIME. L'invitation partait alors sans son sujet — deux a
+    # trois fois sur dix-huit. En MILIEU de phrase le meme nettoyeur se contente d'oter
+    # les asterisques : c'est la POSITION qui decide, pas le contenu.
+    # On ne tente pas de deviner ce qui a ete enleve ([[gotcha-nettoyeur-laisse-ce-qui-
+    # rattachait]]) : on constate le degat sur le RESULTAT. Une invitation commence par
+    # une majuscule ; si la premiere lettre est minuscule, il manque quelque chose devant,
+    # que ce soit le nettoyeur ou le modele qui l'ait perdu. La seconde chance donne un
+    # autre brouillon, et le gabarit fixe reste le plancher.
+    premiere = next((c for c in phrase if c.isalpha()), "")
+    if premiere and premiere.islower():
+        return None
     if _RESSEMBLE_A_UN_LIEN.search(phrase):
         return None
     # Voir le bloc au-dessus du motif : une invitation ne parle que de sa destination.
@@ -509,6 +523,33 @@ class DispatchMixin:
         # [[gotcha-le-prompt-enseigne-le-tic-interdit]] — c'est assume : la version SANS
         # exemple a ete mesuree aussi (4/8), et elle faisait en plus sortir la phrase entre
         # guillemets et asterisques 4 fois sur 8, ce que le nettoyeur jette.
+        # ⚠️ MESURE DU 2026-09-22, SUR MINISTRAL — et elle dit l'inverse de ce que la
+        # fiche d'Alfred avait appris le meme jour. Sa fiche CITAIT le the ; la de-citer
+        # a fait tomber l'objet invente de 6/18 a 1/22 SOUS FLASH-LITE (`2b4e7f1`). Mais
+        # sous ministral, fiche de-citee, le the revient a **12/17**. Trois variantes,
+        # 17 a 18 generations chacune, meme fiche, meme jeu, ministral partout :
+        #
+        #     A  sans clause ......................... 12/17 inventent un the
+        #     B  clause ci-dessous, qui NOMME ........  1/17      p = 0,0002
+        #     C  « rien de materiel », qui ne nomme .. 11/18      p = 0,72  (aucun effet)
+        #
+        # ▶ NOMMER L'OBJET NE MARCHE QUE DANS LA CLAUSE, PAS DANS LA FICHE. Dans la fiche,
+        # le the cite en exemple entre dans son vocabulaire et ressort partout ; dans la
+        # clause, au moment d'ecrire, le nommer l'ecarte. C'est la 2e mesure du meme
+        # effet : la clause de Johnny nomme aussi ses bieres, et la version SANS exemple
+        # y avait ete mesuree moins bonne. Nuance donc
+        # [[gotcha-le-prompt-enseigne-le-tic-interdit]] : c'est la PLACE qui decide.
+        # ⚠️ Prix mesure : l'ouverture la plus frequente passe de 5/17 a 7/17. Reel, mais
+        # sans commune mesure avec les 4/4 qui ont disqualifie la clause de Sugar ailleurs.
+        # ⚠️ NON MESUREE SOUS FLASH-LITE : Gemini rendait 503 ce jour-la. Sous flash-lite
+        # le the est deja a 1/22 ; le risque n'est donc pas l'objet, c'est la VARIETE.
+        # A remesurer des que Gemini repond.
+        "alfred": (
+            "⚠️ Tu n'offres RIEN qui les attendrait là-bas : ni thé, ni tasse, ni siège, "
+            "ni service. Tu n'as rien à leur servir et tu ne tiens aucune maison là-bas. "
+            "Ce qui les attend, c'est toi : ta voix et tes remarques. Ton service reste "
+            "le TIEN, tu ne le proposes pas dans la phrase. "
+        ),
         "johnny": (
             "⚠️ Tu ne promets rien qui les attendrait là-bas : ni tournée, ni verre, ni "
             "place gardée — tu n'as rien à offrir et tu n'as jamais rien offert à "

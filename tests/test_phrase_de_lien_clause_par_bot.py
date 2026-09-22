@@ -40,7 +40,12 @@ from shared.twitch.dispatch import DispatchMixin, _nettoyer_phrase_de_lien
 RACINE = Path(__file__).resolve().parent.parent
 
 # Les seuls bots pour lesquels une clause a ete MESUREE. Cf. l'entete.
-BOTS_MESURES = {"sugar", "johnny"}
+# ⚠️ `alfred` ajoute le 2026-09-22, mesure SUR MINISTRAL (Gemini rendait 503 ce jour-la) :
+# 12/17 objets inventes sans clause, 1/17 avec, p = 0,0002 — et 11/18 avec une clause qui
+# ne NOMME aucun objet, c'est-a-dire aucun effet. Sous flash-lite il est deja a 1/22 depuis
+# la de-citation de sa fiche : la clause y reste **non mesuree**, et le risque n'y est pas
+# l'objet mais la VARIETE des ouvertures. A remesurer des que Gemini repond.
+BOTS_MESURES = {"sugar", "johnny", "alfred"}
 
 
 def test_seuls_les_bots_mesures_ont_une_clause():
@@ -178,3 +183,42 @@ def test_le_filet_du_passe_commun_ne_mord_pas_les_bonnes_phrases(phrase):
     sort a la place. Motif evalue sur les 15 phrases reelles du 2026-09-22 : 5 fautes
     attrapees, 0 faux positif."""
     assert _nettoyer_phrase_de_lien(phrase) is not None
+
+
+def test_alfred_a_sa_clause_et_elle_NOMME_les_objets():
+    """Mesure du 2026-09-22, sur ministral, meme fiche, meme jeu, ~18 generations :
+
+        sans clause .............................. 12/17 inventent un the
+        clause livree, qui NOMME les objets ......  1/17      p = 0,0002
+        « rien de materiel », qui ne nomme rien .. 11/18      p = 0,72
+
+    ⚠️ Nommer l'objet ne marche QUE dans la clause. Le meme jour, dans sa FICHE, citer
+    le the le faisait ressortir partout (6/18 -> 1/22 une fois de-citee, sous flash-lite).
+    C'est la PLACE qui decide, pas la mention — 2e mesure du meme effet apres Johnny.
+    Retirer les objets nommes de cette clause la ramene a la variante C, sans effet.
+    """
+    from shared.twitch.dispatch import DispatchMixin
+    clause = DispatchMixin.CLAUSES_PAR_BOT.get("alfred", "")
+    assert clause, "la clause d'Alfred a disparu : le the remonte a 12/17 sous ministral"
+    for objet in ("thé", "tasse"):
+        assert objet in clause.lower(), (
+            f"« {objet} » ne doit PAS sortir de cette clause : la variante qui ne nomme "
+            f"aucun objet a ete mesuree sans le moindre effet (11/18, p = 0,72).")
+
+
+def test_la_phrase_DECAPITEE_est_rejetee():
+    """Une invitation qui commence au milieu est cassee, pas imparfaite.
+
+    Mesure du 2026-09-22 : ministral met le nom du jeu en valeur — `*Elden Ring* vous
+    fait courir apres des ombres...` — et `strip_stage_directions` prend cette tete pour
+    une didascalie et la supprime. Sur 92 phrases reelles produites ce jour-la, le filet
+    en rejette **4, toutes reellement decapitees, zero faux positif**.
+    """
+    from shared.twitch.dispatch import _nettoyer_phrase_de_lien as nettoyer
+    assert nettoyer("*Elden Ring* vous fait courir apres des ombres, venez donc.", "alfred") is None
+    # En MILIEU de phrase, le meme emballage doit etre simplement deballe.
+    assert nettoyer("Le jeu *Elden Ring* vous apprend a trebucher, venez donc.", "alfred") == \
+        "Le jeu Elden Ring vous apprend a trebucher, venez donc."
+    # Une vraie didascalie suivie d'une vraie phrase reste traitee comme avant.
+    assert nettoyer("*sourit* Venez donc nous voir, ce sera plus gai.", "alfred") == \
+        "Venez donc nous voir, ce sera plus gai."
