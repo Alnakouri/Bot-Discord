@@ -96,6 +96,31 @@ _INVOQUE_UN_PASSE_COMMUN = re.compile(
     re.I,
 )
 
+# ⚠️ Une EPOQUE affirmee sur le jeu. Live du 2026-09-22 sur #ma_streameuse : « Le treizieme
+# siecle sans armure, ca pique » pour Kingdom Come: Deliverance II — qui se passe en 1403,
+# au XVe. Un spectateur l'a corrige dans le chat. Le modele ne recoit que le NOM du jeu :
+# ce qu'il en affirme vient de sa memoire, et une date est ce que le chat verifie le plus
+# vite. On rejette (seconde chance, puis gabarit fixe) : fade bat faux.
+_AFFIRME_UNE_EPOQUE = re.compile(r"\bsi[èe]cles?\b|\b(?:1\d|20)\d\d\b", re.I)
+# Sensible a la CASSE, volontairement : avec re.I, « vie » passerait pour un siecle.
+_SIECLE_EN_CHIFFRES_ROMAINS = re.compile(r"\b[IVXL]{2,6}(?:e|è|ème)\b")
+
+
+def _affirme_une_epoque(phrase: str, jeu: str | None) -> bool:
+    """Vrai si la phrase DATE le jeu. Ne s'applique qu'a l'accroche (sans jeu : False).
+
+    Les nombres du TITRE sont permis : « Cyberpunk 2077 », « Anno 1800 » sont des noms,
+    pas des affirmations — les rejeter punirait la seule chose vraie qu'on a donnee.
+    """
+    if not jeu:
+        return False
+    permis = set(re.findall(r"\d+", jeu))
+    for m in _AFFIRME_UNE_EPOQUE.finditer(phrase):
+        if m.group(0) not in permis:
+            return True
+    return bool(_SIECLE_EN_CHIFFRES_ROMAINS.search(phrase))
+
+
 _NOMME_LA_SOURCE = re.compile(
     r"(?:"
     # Nommer le lieu d'ou l'on ecrit.
@@ -663,6 +688,35 @@ class DispatchMixin:
             self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] jeu en cours indisponible : {e}")
             return None
 
+    async def _fiche_du_jeu(self) -> str | None:
+        """Fiche courte IGDB du jeu en cours, ou None. Ne lève jamais, borne 3 s."""
+        canaux = getattr(self, "channels", None) or []
+        chan = canaux[0] if canaux else None
+        if not chan or not getattr(self, "client_id", None) or not getattr(self, "client_secret", None):
+            return None
+        try:
+            async def _recuperer():
+                from shared.twitch.game_info import HelixClient, IGDBClient, fiche_courte
+                if getattr(self, "_helix_client", None) is None:
+                    self._helix_client = HelixClient(self.client_id, self.client_secret)
+                nom, game_id = await self._helix_client.get_current_game(chan, live_only=True)
+                if not game_id:
+                    return None
+                igdb_id = await self._helix_client.get_igdb_id(game_id)
+                if not igdb_id:
+                    return None
+                if getattr(self, "_igdb_client", None) is None:
+                    self._igdb_client = IGDBClient(self.client_id, self.client_secret)
+                game = await self._igdb_client.get_game_by_id(igdb_id)
+                if not game:
+                    return None
+                return fiche_courte(game)
+
+            return await asyncio.wait_for(_recuperer(), timeout=3.0)
+        except Exception as e:
+            self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] fiche du jeu indisponible : {e}")
+            return None
+
     def _question_de_jeu(self, texte, voie):
         """La categorie de question sur le jeu, et on RANGE la decision au passage.
 
@@ -711,6 +765,7 @@ class DispatchMixin:
         if cache is None:
             cache = self._link_lines_cache = {}
         jeu = await self._jeu_en_cours() if self.bot_id in self.ACCROCHE_AU_JEU else None
+        fiche = await self._fiche_du_jeu() if jeu else None
         # ⚠️ Le jeu fait partie de la CLE du cache : sans ca, un changement de jeu en
         # cours de live laisserait tourner pendant un quart d'heure une invitation qui
         # parle du precedent — pire qu'une invitation neutre.
@@ -857,6 +912,13 @@ class DispatchMixin:
                 f"Mais tu ne sais RIEN de la partie en cours — ni qui gagne, ni où ils en "
                 f"sont, ni ce qui vient de se passer : n'en raconte pas un moment, et ne "
                 f"promets pas qu'on en parlera là-bas. "
+            )
+            if fiche:
+                instruction += (
+                    f"Voici la fiche officielle de ce jeu (en anglais) : {fiche}. "
+                    f"C'est TOUT ce que tu sais de vrai sur lui : inspire-t'en, mais n'affirme rien qui n'y figure pas. "
+                )
+            instruction += (
                 f"⚠️ Et ta phrase doit CLAQUER : une seule idée, la chute à la fin, rien "
                 f"avant qui la retarde. Si elle ne fait pas sourire à la lecture, recommence."
             )
@@ -874,6 +936,8 @@ class DispatchMixin:
             if texte is None:
                 return None          # panne franche : le gabarit fixe, tout de suite
             phrase = _nettoyer_phrase_de_lien(texte, self.bot_id)
+            if phrase and _affirme_une_epoque(phrase, jeu):
+                phrase = None
             if phrase:
                 break
             self.logger.info(

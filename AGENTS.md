@@ -11,7 +11,7 @@
 2. **NE JAMAIS supprimer ou modifier un fichier `.master_key`** — clés de chiffrement Fernet
 3. **NE JAMAIS créer d'import direct entre deux bots** (ex: `from Alfred.bot_alfred import ...` dans Sheogorath)
 4. **NE JAMAIS factoriser le code "dupliqué" entre bots** — l'indépendance est VOULUE
-5. **NE JAMAIS changer le mode journal SQLite** (WAL) dans `shared_database.py`
+5. **NE JAMAIS passer une base de `data/` en WAL** — `shared_database.py` pose TRUNCATE, et c'est voulu : la base est partagée entre l'hôte Windows et six conteneurs Linux, et WAL exige une mémoire partagée (`-shm`) que les deux mondes ne peuvent pas partager. Live du 2026-09-13 : WAL a rendu les six bots MUETS. Verrou : `tests/test_base_partagee.py`.
 6. **NE JAMAIS commiter de fichiers `.env`, `.master_key`, ou `*.db`** dans Git
 7. **NE JAMAIS faire partager une clé API par deux bots** — voir la règle ci-dessous
 

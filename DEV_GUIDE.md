@@ -76,8 +76,8 @@ Le SDK `google-genai` lève systématiquement une erreur 400 si vous lui soumett
 ### 🔑 Rotation des Clés (MultiAPIKeyManager)
 N'interrogez jamais `os.getenv("GEMINI_KEY")` en direct pour vos appels d'inférence. Passez exclusivement par le `key_manager` partagé. Il assure :
 - La rotation des clés de manière équilibrée (Round-Robin).
-- Le cooldown automatique temporaire (quarantaine) des clés renvoyant des erreurs `429` (Quota dépassé) ou `503`.
-- Le basculement transparent vers les API de secours (Groq, Mistral, OpenRouter).
+- Le cooldown automatique temporaire (quarantaine) des clés renvoyant des erreurs `429` (Quota dépassé) — seul un 429 écarte la clé ; un 503 fait descendre d'un échelon sans quarantaine.
+- Le basculement transparent vers les API de secours (Groq, Mistral).
 
 ---
 
@@ -93,7 +93,7 @@ Pour doter un bot d'une nouvelle capacité (ex: interroger une API météo, donn
 
 ## 💾 Persistance des Données
 
-- **Base de Données Commune** : Une base SQLite unique (`data/bots_database.db`, générée au premier démarrage, hors dépôt) est partagée par tous les processus. Les requêtes s'effectuent via [shared/shared_database.py](shared/shared_database.py). Le mode de journalisation visé est **WAL**, qui supporte les écritures concurrentes — mais il exige un fichier de mémoire partagée `-shm` que les montages Docker sous Windows ne servent pas toujours. Quand WAL échoue, le mode n'est pas laissé au hasard : repli explicite sur **TRUNCATE**, vérifié sur la valeur rendue par SQLite, qui ne lève pas toujours.
+- **Base de Données Commune** : Une base SQLite unique (`data/bots_database.db`, générée au premier démarrage, hors dépôt) est partagée par tous les processus. Les requêtes s'effectuent via [shared/shared_database.py](shared/shared_database.py). NE JAMAIS passer une base de `data/` en WAL — `shared_database.py` pose TRUNCATE, et c'est voulu : la base est partagée entre l'hôte Windows et six conteneurs Linux, et WAL exige une mémoire partagée (`-shm`) que les deux mondes ne peuvent pas partager. Live du 2026-09-13 : WAL a rendu les six bots MUETS. Verrou : `tests/test_base_partagee.py`.
 - **Base de suivi des appels API** : `data/api_usage.db`, écrite par [shared/api_tracking.py](shared/api_tracking.py). Un unique thread écrivain dépile une file bornée, pour ne jamais bloquer la boucle asyncio d'un bot ni retarder une réponse. Elle est en **TRUNCATE**, pas en WAL : le dashboard la lit en `mode=ro`, et un lecteur read-only sur WAL a besoin du `-shm`.
 - **Sauvegarde de l'état (Punitions)** : Les métamorphoses temporaires infligées par Sheogorath (Wabbajack) sont sauvegardées dans `sheo_punishments.json`. En cas de crash ou de redémarrage du conteneur, le bot reprend le décompte des sanctions sur le serveur au démarrage.
 - **Règles Sensibles** : Ne modifiez ni ne supprimez jamais les fichiers secrets `.master_key` ou les bases de données SQLite existantes (se référer aux consignes de sécurité dans [AGENTS.md](AGENTS.md)).

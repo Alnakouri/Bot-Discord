@@ -49,4 +49,3 @@ M'aiq réagit de manière unique à certaines réactions ajoutées sur ses messa
 - [maiq_data.py](maiq_data.py) : Personnalité de M'aiq, invites système et liste de rumeurs prédéfinies.
 - [maiq_memory.py](maiq_memory.py) : Système de mémoire à long terme (Conversations / Profils utilisateurs).
 - [minigames.py](minigames.py) : Logique de validation et de distribution des récompenses d'énigmes.
-- [debug_db.py](debug_db.py) : Petit script de débogage pour examiner l'état de la base SQLite.

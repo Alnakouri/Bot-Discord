@@ -14,7 +14,7 @@ def load_secure_env(bot_path: Path):
     Supporte la clé maître à la racine ou dans le dossier du bot.
     """
     # 1. Tenter de charger .env (clair)
-    env_paths = [bot_path / ".env", bot_path.parent / ".env"]
+    env_paths = [bot_path / ".env"]
     for env_path in env_paths:
         if env_path.exists():
             with open(env_path, "r", encoding="utf-8") as f:

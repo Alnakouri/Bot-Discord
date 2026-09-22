@@ -8,10 +8,17 @@ import queue
 import sqlite3
 import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger("api_tracking")
+
+
+def _maintenant_utc() -> str:
+    """UTC naif ISO : la base est ecrite par six conteneurs (UTC) ET par des sondes sur
+    l'hote (heure locale). Une seule base de temps, sinon les fenetres du dashboard mentent."""
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
 
 _queue = queue.Queue(maxsize=1000)
 _writer_thread = None
@@ -148,7 +155,7 @@ def _writer_loop():
                                 total_errors=total_errors + CASE WHEN excluded.valid = 0 THEN 1 ELSE 0 END
                         """, (
                             task["api_name"], task["key_index"], task["valid"], task["cooldown_iso"],
-                            task["erreur"], datetime.now().isoformat()
+                            task["erreur"], _maintenant_utc()
                         ))
                     conn.commit()
                 except Exception as e:
@@ -185,7 +192,7 @@ def tracer_appel(bot, api, modele, index_cle, succes, code_erreur=None, latence_
     _ensure_thread()
     tache = {
         "type": "appel",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _maintenant_utc(),
         "bot_name": bot,
         "api_name": api,
         "model": modele,
@@ -208,7 +215,7 @@ def tracer_reponse(bot, total_ms, llm_ms=None, envoye=True, canal=None):
     _ensure_thread()
     _empiler({
         "type": "reponse",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _maintenant_utc(),
         "bot_name": bot,
         "total_ms": total_ms,
         "llm_ms": llm_ms,

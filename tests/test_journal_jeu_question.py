@@ -97,7 +97,7 @@ def test_observer_ne_fait_JAMAIS_parler_le_bot():
     fonction = next(n for n in ast.walk(arbre)
                     if isinstance(n, ast.FunctionDef) and n.name == "_question_de_jeu")
     interdits = {"send_chat_safe", "_generate_response", "_fetch_game_facts_block",
-                 "_generate_link_line", "generate_response"}
+                 "_generate_link_line", "generate_response", "_fiche_du_jeu"}
     for n in ast.walk(fonction):
         if isinstance(n, ast.Call):
             nom = getattr(n.func, "id", None) or getattr(n.func, "attr", None)

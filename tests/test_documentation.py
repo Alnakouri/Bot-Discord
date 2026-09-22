@@ -241,3 +241,17 @@ def test_la_regle_dit_de_prevenir_avant_de_partager_une_cle():
             f"{fichier} : la consigne « prévenir avant de partager » manque"
         assert "NOUVEAU FOURNISSEUR" in contenu, \
             f"{fichier} : les cas qui déclenchent le signalement ne sont pas listés"
+
+
+def test_aucun_document_ne_demande_de_garder_WAL():
+    """AGENTS.md ordonnait de PRESERVER WAL alors que le code l'interdit depuis le 13/09 :
+    un agent obeissant aurait rendu les six bots muets. Toute ligne qui parle de WAL doit
+    dire qu'il est interdit."""
+    fautes = []
+    for nom in ("AGENTS.md", "ARCHITECTURE.md", "DEV_GUIDE.md"):
+        for n, ligne in enumerate((_racine / nom).read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"\bWAL\b", ligne) and not re.search(
+                    r"jamais|interdit|TRUNCATE|pas en WAL", ligne, re.IGNORECASE):
+                fautes.append(f"{nom}:{n}: {ligne.strip()[:80]}")
+    assert not fautes, "WAL presente comme un mode a garder :\n" + "\n".join(fautes)
+

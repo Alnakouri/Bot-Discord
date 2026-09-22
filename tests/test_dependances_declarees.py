@@ -93,3 +93,33 @@ def test_le_lecteur_de_cmap_est_declare():
     boite .notdef sans rien signaler."""
     requirements = (_RACINE / "requirements.txt").read_text(encoding="utf-8").lower()
     assert "fonttools" in requirements
+
+
+# Fichiers que la suite charge PAR CHEMIN (importlib) : leurs imports ne sont pas dans
+# tests/, le scan ci-dessus ne les voit pas. Vecu le 22/09 : fastapi, 4 tests rouges en CI.
+_CHARGES_PAR_CHEMIN = [_RACINE / "laya-server" / "server.py"]
+
+
+def test_les_fichiers_charges_par_chemin_declarent_leurs_dependances():
+    """Seuls les imports du CORPS du module comptent : ce sont eux qu'un chargement
+    execute. Ceux faits dans une fonction (`laya`, `torch` dans `_charger()`) ne sont
+    pas executes par les tests."""
+    requirements = (_RACINE / "requirements.txt").read_text(encoding="utf-8").lower()
+    manquants = set()
+    for chemin in _CHARGES_PAR_CHEMIN:
+        assert chemin.exists(), f"{chemin} a disparu : mettre _CHARGES_PAR_CHEMIN a jour"
+        arbre = ast.parse(chemin.read_text(encoding="utf-8"), filename=str(chemin))
+        for noeud in arbre.body:
+            if isinstance(noeud, ast.Import):
+                modules = [a.name.split(".")[0] for a in noeud.names]
+            elif isinstance(noeud, ast.ImportFrom) and noeud.level == 0 and noeud.module:
+                modules = [noeud.module.split(".")[0]]
+            else:
+                continue
+            for module in modules:
+                if module in sys.stdlib_module_names or module in _LOCAUX:
+                    continue
+                if _NOM_PAQUET.get(module, module).lower() not in requirements:
+                    manquants.add(f"{module} ({chemin.name})")
+    assert not manquants, f"absents de requirements.txt : {sorted(manquants)}"
+

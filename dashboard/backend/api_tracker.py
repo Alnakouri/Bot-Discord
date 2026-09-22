@@ -35,7 +35,7 @@ class APITracker:
         try:
             cursor = conn.cursor()
             # Total des appels sur la période
-            cursor.execute("SELECT COUNT(*) FROM api_calls WHERE timestamp >= datetime('now', ?)", (f"-{hours} hours",))
+            cursor.execute("SELECT COUNT(*) FROM api_calls WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)", (f"-{hours} hours",))
             total = cursor.fetchone()[0]
             
             # Appels par API Name (Gemini, Groq, etc.)
@@ -54,7 +54,7 @@ class APITracker:
                        SUM(CASE WHEN success = 0 AND raison IN ('non_tentee','quarantaine')
                                 THEN 1 ELSE 0 END)
                 FROM api_calls
-                WHERE timestamp >= datetime('now', ?)
+                WHERE timestamp >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
                 GROUP BY api_name
             """, (f"-{hours} hours",))
 
@@ -128,9 +128,9 @@ class APITracker:
                 ) c ON c.api_name = s.api_name AND c.key_index = s.key_index
                 ORDER BY s.api_name ASC, s.key_index ASC
             """)
-            from datetime import datetime
+            from datetime import datetime, timezone
             keys = []
-            now = datetime.now()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             for row in cursor.fetchall():
                 d = dict(row)
                 valid = d.get("valid", 1)

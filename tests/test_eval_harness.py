@@ -1536,13 +1536,25 @@ def test_le_dossier_du_bot_est_DEDUIT_de_la_table_des_personas():
     for bot_id in PERSONAS:
         dossier = _dossier_du_bot(bot_id)
         assert dossier.is_dir(), f"{bot_id} pointe vers {dossier}, qui n'existe pas"
-        assert (dossier / ".env.encrypted").exists(), (
-            f"{bot_id} : {dossier.name} ne porte pas de .env.encrypted — le harnais "
-            "retomberait sur les cles du bot charge precedemment, en silence"
-        )
 
     dossiers = {str(_dossier_du_bot(b)) for b in PERSONAS}
     assert len(dossiers) == 6, (
         f"deux bots partagent un dossier de cles : {sorted(dossiers)} — ils partageraient "
         "alors un quota, ce que ce correctif existe precisement pour eviter"
     )
+
+
+def test_le_harnais_REFUSE_un_bot_sans_cles(tmp_path, monkeypatch):
+    """Sans cles lisibles, le harnais mesurait avec celles du bot charge AVANT, en silence.
+
+    `load_secure_env` ne leve jamais : il rend False. Le refus doit donc lire ce RETOUR.
+    Ce test ne demande aucune cle : il le verifie sur un dossier vide, ici comme en CI.
+    """
+    import pytest as _pytest          # style du fichier : pytest est importe localement
+    from tests.eval import runner
+
+    monkeypatch.setattr(runner, "_ATTELAGES", {})
+    monkeypatch.setattr(runner, "_dossier_du_bot", lambda bot_id: tmp_path)
+    with _pytest.raises(RuntimeError, match="aucune cle lisible"):
+        runner.attelage_du_bot("alfred")
+

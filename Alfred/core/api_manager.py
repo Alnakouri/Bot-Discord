@@ -4,7 +4,7 @@
 # La sonde tools/sonde_core_drift.py echoue si cette copie diverge.
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from core.api_tracking import tracer_etat_cle
 
 # Ne pas recréer de logger racine si le programme principal en gère déjà un
@@ -194,7 +194,7 @@ class MultiAPIKeyManager:
         if key_index != -1:
             cooldown_iso = None
             if status["cooldown"] > 0:
-                cooldown_iso = datetime.fromtimestamp(status["cooldown"]).isoformat()
+                cooldown_iso = datetime.fromtimestamp(status["cooldown"], timezone.utc).replace(tzinfo=None).isoformat()
             
             tracer_etat_cle(
                 api=api_name,

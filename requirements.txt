@@ -5,7 +5,7 @@ groq>=1.1.1,<2.0.0
 mistralai>=1.12.4,<2.0.0
 openai>=2.29.0,<3.0.0
 aiohttp>=3.13.3,<4.0.0
-cryptography>=46.0.5,<47.0.0
+cryptography>=48.0.1,<51.0.0
 Pillow>=10.0.0
 # Lecture de la `cmap` d'une police : c'est la SEULE facon de savoir si une police
 # possede un caractere. Le rendu, lui, ne dit rien — il dessine la boite .notdef sans
@@ -22,9 +22,17 @@ pytest-cov>=4.1.0
 # c'est exactement le piege qu'il existe pour fermer.
 pyflakes>=3.0.0
 
+# Charges par tests/test_laya_chauffe.py : `laya-server/server.py` les importe au niveau
+# module. Absents d'ici, les 4 tests de chauffe tombaient en CI (22/09) et passaient en
+# local, ou fastapi etait installe pour le dashboard.
+fastapi>=0.118.0,<1.0.0
+pydantic>=2.0.0,<3.0.0
+
 SpeechRecognition>=3.10.0
 discord-ext-voice-recv
 elevenlabs>=1.50.0,<2.0.0
+# ⚠️ CVE-2025-69277 : discord.py[voice] impose lui-meme PyNaCl<1.6,>=1.5.0, et l'avis
+# vise crypto_core_ed25519_is_valid_point, que la voix Discord n'utilise pas.
 PyNaCl>=1.5.0,<1.6.0
 
 # STT optionnel (Phase 5)

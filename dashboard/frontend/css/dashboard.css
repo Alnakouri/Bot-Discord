@@ -336,6 +336,15 @@ header {
     height: 350px;
 }
 
+#api-keys .charts-row {
+    align-items: start;
+}
+
+#api-keys .chart-container {
+    height: auto;
+    min-height: 350px;
+}
+
 /* Terminal (Logs) */
 .terminal-container {
     height: calc(100vh - 200px);

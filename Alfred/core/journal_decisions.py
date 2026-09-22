@@ -46,10 +46,17 @@ import os
 import queue
 import sqlite3
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 logger = logging.getLogger("journal_decisions")
+
+
+def _maintenant_utc() -> str:
+    """UTC naif ISO : la base est ecrite par six conteneurs (UTC) ET par des sondes sur
+    l'hote (heure locale). Une seule base de temps, sinon les fenetres du dashboard mentent."""
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
 
 # Les trois points de decision, tels qu'ils existent dans le code aujourd'hui.
 INTENTION = "intention"     # Alfred seul : stop_keywords + la liste de rattrapage
@@ -165,7 +172,7 @@ def journalise(bot, decision, texte, etiquette, detail=None):
     if not texte:
         return
     _demarre()
-    entree = (datetime.now().isoformat(), str(bot), decision,
+    entree = (_maintenant_utc(), str(bot), decision,
               str(texte)[:_MAX_TEXTE], str(etiquette),
               None if detail is None else str(detail)[:200])
     try:
@@ -199,7 +206,7 @@ def compte(decision=None):
 
 def purge(jours=90):
     """Efface les entrees plus vieilles que `jours`. Rend le nombre de lignes retirees."""
-    limite = (datetime.now() - timedelta(days=jours)).isoformat()
+    limite = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=jours)).isoformat()
     try:
         conn = _connexion()
     except sqlite3.Error:

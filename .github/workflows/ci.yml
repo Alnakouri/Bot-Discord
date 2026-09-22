@@ -24,11 +24,12 @@ jobs:
     # exigent un runner >= v2.327.1 (largement depasse sur les runners heberges).
     - uses: actions/checkout@v7
 
-    - name: Python 3.12
+    - name: Python 3.11
       uses: actions/setup-python@v7
       with:
-        # 3.12 comme en local : c'est la version qui fait foi pour la suite de tests.
-        python-version: "3.12"
+        # 3.11 : c'est la version des SIX conteneurs (Dockerfile, python:3.11-slim). La CI
+        # doit tester ce qui tourne. Mesure du 22/09 : prod 3.11, CI 3.12, .venv 3.13.
+        python-version: "3.11"
         cache: pip
 
     - name: Dependances systeme (audio pour discord.py[voice])

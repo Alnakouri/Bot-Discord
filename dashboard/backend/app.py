@@ -338,7 +338,10 @@ async def get_conversation_stats(days: int = 7, bot: str = None):
 # --- REPORTS ---
 @app.post("/api/reports/generate")
 async def generate_report(format: str = "md", scope: str = "all", hours: int = 24):
-    res = report_generator.generate(format, scope, hours)
+    try:
+        res = report_generator.generate(format, scope, hours)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     audit_analyzer.log("generate_report", details=f"Génération rapport scope={scope}, heures={hours}")
     return res
 

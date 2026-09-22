@@ -218,6 +218,22 @@ function initNavigation() {
                 v.classList.remove('active');
                 if(v.id === targetId) v.classList.add('active');
             });
+
+            // Update page header title
+            const headerTitle = document.querySelector('header h1');
+            const pageTitles = {
+                'overview': "Vue d'ensemble de l'écosystème",
+                'logs': "Logs en direct",
+                'errors': "Analyse des Erreurs",
+                'api-keys': "Gestion des Clés API",
+                'conversations': "Conversations",
+                'reports': "Rapports GenAI",
+                'audit-logs': "Journal d'Audit",
+                'bot-config': "Configuration des bots"
+            };
+            if (headerTitle && pageTitles[targetId]) {
+                headerTitle.textContent = pageTitles[targetId];
+            }
             
             // Trigger specific view loads
             if(targetId === 'logs') loadLogs();

@@ -92,6 +92,61 @@ class IGDBClient:
             logger.error(f"❌ [IGDBClient] Request error: {e}")
         return []
 
+    async def get_game_by_id(self, igdb_id) -> dict | None:
+        """Interroge IGDB par son id numérique. Cache IGDB_CACHE sous 'id:<n>', 24 h. Ne lève jamais."""
+        try:
+            n = int(igdb_id)
+        except (ValueError, TypeError):
+            return None
+
+        cache_key = f"id:{n}"
+        now = time.time()
+        if cache_key in IGDB_CACHE:
+            val, ts = IGDB_CACHE[cache_key]
+            if now - ts < IGDB_CACHE_TTL:
+                return val
+
+        try:
+            await self.ensure_token()
+        except Exception as e:
+            logger.debug(f"[IGDBClient] Authentication failed: {e}")
+            return None
+
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "text/plain"
+        }
+        query = f"fields name,summary,themes.name; where id = {n};"
+        url = "https://api.igdb.com/v4/games"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, data=query, timeout=10) as resp:
+                    if resp.status == 401:
+                        self.token = None
+                        await self.ensure_token()
+                        headers["Authorization"] = f"Bearer {self.token}"
+                        async with session.post(url, headers=headers, data=query, timeout=10) as retry_resp:
+                            if retry_resp.status == 200:
+                                res = await retry_resp.json()
+                                game = res[0] if res else None
+                                if game:
+                                    IGDB_CACHE[cache_key] = (game, now)
+                                return game
+                    elif resp.status == 200:
+                        res = await resp.json()
+                        game = res[0] if res else None
+                        if game:
+                            IGDB_CACHE[cache_key] = (game, now)
+                        return game
+                    else:
+                        err_text = await resp.text()
+                        logger.debug(f"[IGDBClient] Query failed ({resp.status}): {err_text}")
+        except Exception as e:
+            logger.debug(f"[IGDBClient] Request error: {e}")
+        return None
+
 class HelixClient:
     def __init__(self, client_id: str, client_secret: str):
         self.client_id = client_id
@@ -233,6 +288,66 @@ class HelixClient:
             logger.error(f"❌ [HelixClient] get_channels error: {e}")
 
         return None, None
+
+    async def get_igdb_id(self, game_id) -> str | None:
+        """GET https://api.twitch.tv/helix/games?id=<game_id> -> data[0]['igdb_id'], cache 24h. Ne lève jamais."""
+        if not game_id:
+            return None
+        gid_str = str(game_id).strip()
+        if not gid_str:
+            return None
+        cache_key = f"igdb_id:{gid_str}"
+        now = time.time()
+        if cache_key in HELIX_CACHE:
+            val, ts = HELIX_CACHE[cache_key][:2]
+            if now - ts < 86400:
+                return val
+
+        try:
+            await self.ensure_token()
+        except Exception as e:
+            logger.debug(f"[HelixClient] Authentication failed: {e}")
+            return None
+
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {self.token}"
+        }
+        url = "https://api.twitch.tv/helix/games"
+        params = {"id": gid_str}
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params=params, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        games = data.get("data", [])
+                        if games:
+                            igdb_id = games[0].get("igdb_id")
+                            HELIX_CACHE[cache_key] = (igdb_id, now)
+                            return igdb_id
+                    else:
+                        err_text = await resp.text()
+                        logger.debug(f"[HelixClient] get_igdb_id failed ({resp.status}): {err_text}")
+        except Exception as e:
+            logger.debug(f"[HelixClient] get_igdb_id error: {e}")
+        return None
+
+
+def fiche_courte(game: dict | None) -> str | None:
+    """Rend 'Résumé : <summary[:300]> | Thèmes : <…>', ou None sans résumé."""
+    if not game or not isinstance(game, dict):
+        return None
+    summary = (game.get("summary") or "").strip()
+    if not summary:
+        return None
+    summary_court = summary[:300]
+    themes_list = game.get("themes") or []
+    themes = [t.get("name") for t in themes_list if isinstance(t, dict) and t.get("name")]
+    if themes:
+        return f"Résumé : {summary_court} | Thèmes : {', '.join(themes)}"
+    return f"Résumé : {summary_court}"
+
 
 def normalize_name(name: str) -> str:
     name = name.lower().strip()

@@ -1672,7 +1672,6 @@ async def on_message(message):
     # Limite de taille max pour les images (sécurité)
     MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
     
-    image_data = None
     has_image = False
     # Uniquement si Alfred est déjà sollicité (mention/reply/nom/chaos) — pas de
     # commentaire spontané des images postées.
@@ -1690,18 +1689,7 @@ async def on_message(message):
                     logger.warning(f"[SÉCURITÉ] Image trop grande rejetée: {attachment.size / 1024 / 1024:.1f} MB")
                     continue
                 has_image = True
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(attachment.url) as resp:
-                         if resp.status == 200:
-                             # Double vérification avec content-length
-                             content_length = int(resp.headers.get('content-length', 0))
-                             if content_length > MAX_IMAGE_SIZE:
-                                 logger.warning(f"[SÉCURITÉ] Image content-length trop grand: {content_length / 1024 / 1024:.1f} MB")
-                                 continue
-                             image_data = await resp.read()
-                             context_prefix = "VISION: Le Maître vous montre une image. Analysez-la précisément et commentez avec élégance et sarcasme."
-                             logger.info(f"[VISION] Alfred analyse une image de {message.author.name}")
-                             break
+                break
 
     if not should_respond:
         return

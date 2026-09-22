@@ -89,3 +89,31 @@ def test_les_fautes_mesurees_sont_bien_celles_qui_declenchent_le_rattrapage(faut
     bot = _bot([faute, "Viens rire avec nous. 🍬"])
     assert _lancer(bot) == "Viens rire avec nous. 🍬 https://x.y"
     assert bot.appels == 2, f"cette faute n'a pas ete rejetee : {faute}"
+
+
+@pytest.mark.parametrize("phrase,jeu,attendu", [
+    ("Le treizième siècle sans armure, ça pique un peu, mais on t'attend de pied ferme sur le discord. ✨", "Kingdom Come: Deliverance II", True),
+    ("Entre deux roustes au Moyen Âge, viens donc faire un tour sur le serveur, on t'y garde une place au chaud. 🍬", "Kingdom Come: Deliverance II", False),
+    ("En 1403 on se battait moins bien que toi, viens nous voir.", "Kingdom Come: Deliverance II", True),
+    ("Au XVe, même les chevaliers auraient rejoint le serveur.", "Kingdom Come: Deliverance II", True),
+    ("La vie de chevalier use, viens souffler avec nous.", "Kingdom Come: Deliverance II", False),
+    ("Night City t'attend en 2077, viens nous voir.", "Cyberpunk 2077", False),
+    ("Le treizième siècle sans armure, ça pique un peu, mais on t'attend de pied ferme sur le discord. ✨", None, False),
+    ("Viens nous voir, on t'attend depuis des siècles. 🍬", "Kingdom Come: Deliverance II", True),
+])
+def test_affirme_une_epoque(phrase, jeu, attendu):
+    from shared.twitch.dispatch import _affirme_une_epoque
+    assert _affirme_une_epoque(phrase, jeu) is attendu
+
+
+def test_une_epoque_inventee_est_RATTRAPEE_par_le_second_essai():
+    bot = _bot(["Le treizième siècle sans armure, ça pique un peu, mais on t'attend. ✨",
+                "Entre deux roustes, viens souffler avec nous. 🍬"])
+
+    async def jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = jeu
+
+    assert _lancer(bot) == "Entre deux roustes, viens souffler avec nous. 🍬 https://x.y"
+    assert bot.appels == 2
+

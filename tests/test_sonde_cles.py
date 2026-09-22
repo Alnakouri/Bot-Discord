@@ -232,3 +232,9 @@ def test_un_token_expire_sans_refresh_est_une_vraie_panne(tmp_path, monkeypatch)
     etat, detail = sonde.token_twitch_vivant("JohnnyBot")
     assert etat == "mort", detail
     assert "twitch_authorize" in detail
+
+
+def test_cles_twitch_sont_surveillees():
+    for nom in ("TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_OAUTH_TOKEN", "TWITCH_REFRESH_TOKEN"):
+        assert nom in sonde.CLES_SURVEILLEES, f"{nom} absent de CLES_SURVEILLEES"
+

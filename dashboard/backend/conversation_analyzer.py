@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 class ConversationAnalyzer:
     def __init__(self, db_path):
@@ -21,7 +21,7 @@ class ConversationAnalyzer:
         
         try:
             cursor = conn.cursor()
-            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+            cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).isoformat()
             
             stats = {
                 "period_days": days,
@@ -73,7 +73,7 @@ class ConversationAnalyzer:
         
         try:
             cursor = conn.cursor()
-            cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+            cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)).isoformat()
             
             cursor.execute("""
                 SELECT strftime('%Y-%m-%dT%H:00', timestamp) as hr, COUNT(*)
@@ -87,12 +87,12 @@ class ConversationAnalyzer:
             db_data = {r[0]: r[1] for r in rows if r[0]}
             
             buckets = []
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             for i in range(hours):
                 dt = now - timedelta(hours=hours - 1 - i)
-                hour_str = dt.strftime('%Y-%m-%dT%H:00')
-                count = db_data.get(hour_str, 0)
-                buckets.append({"hour": hour_str, "count": count})
+                cle_utc = dt.strftime('%Y-%m-%dT%H:00')
+                buckets.append({"hour": dt.astimezone().strftime('%Y-%m-%dT%H:00'),
+                                "count": db_data.get(cle_utc, 0)})
                 
             conn.close()
             return {"buckets": buckets}

@@ -71,12 +71,13 @@ Bot Discord/
 │   ├── Dockerfile           # Image GPU (CUDA)
 │   └── voices/              # Échantillons de voix (.wav)
 │
+├── laya-server/             # 🧭 Laya — trieur « System One » CPU, PARTAGÉ, consultatif (borne 300 ms côté client)
+│
 ├── MaiqBot/                 # Bot M'aiq le Menteur (Khajiit sage)
 │   ├── bot_maiq.py          # Point d'entrée
 │   ├── maiq_data.py         # Répliques et rumeurs de M'aiq
 │   ├── maiq_memory.py       # Gestion de mémoire à long terme
-│   ├── minigames.py         # Mini-jeux (énigmes...)
-│   └── debug_db.py          # Outil de débogage DB
+│   └── minigames.py         # Mini-jeux (énigmes...)
 │
 ├── JohnnyBot/               # Bot Johnny Silverbot (Rockerboy Cyberpunk)
 │   ├── bot_johnny.py        # Point d'entrée
@@ -97,7 +98,7 @@ Bot Discord/
 │   ├── api_manager.py       # MultiAPIKeyManager (round-robin, cooldowns, TPM)
 │   ├── smart_router.py      # Classification des requêtes (TEXT/IMAGE/AUDIO/REASONING)
 │   ├── media_handler.py     # Vision (Gemini + Ollama Moondream) + Audio
-│   ├── shared_database.py   # SQLite centralisé (WAL mode)
+│   ├── shared_database.py   # SQLite centralisé (TRUNCATE — jamais WAL)
 │   ├── slash_commands.py    # Commandes slash Discord unifiées
 │   ├── server_events.py     # Événements serveur (join/leave/birthday)
 │   ├── secure_env.py        # Chargement .env chiffré (Fernet)
@@ -114,11 +115,11 @@ Bot Discord/
 │   └── frontend/            # Vanilla JS + CSS + Chart.js
 │
 ├── data/                    # 📦 Données persistées (volumes Docker)
-│   ├── bots_database.db     # SQLite partagé (WAL)
+│   ├── bots_database.db     # SQLite partagé (TRUNCATE — jamais WAL)
 │   └── api_usage.db         # Tracking usage API
 │
 ├── migrations/              # Scripts de migration DB
-├── docker-compose.yml       # Orchestration 6 bots + Ollama
+├── docker-compose.yml       # Orchestration 6 bots + Laya (trieur CPU partagé)
 ├── Dockerfile               # Image Python 3.11 + ffmpeg
 ├── requirements.txt         # Dépendances globales (Docker)
 └── .gitignore               # Exclut .env, .master_key, *.db
@@ -130,13 +131,13 @@ Bot Discord/
 
 | Composant | Technologie | Version |
 |---|---|---|
-| Runtime | Python | 3.12 (Docker et CI) |
+| Runtime | Python | 3.11 (Docker et CI) |
 | Framework Discord | discord.py | >=2.7.1 |
 | Modèles IA | — | **Voir [`shared/models.py`](shared/models.py), source unique.** Les recopier ici les rendrait périmés en silence. |
 | Fournisseurs IA | Gemini, Mistral, Groq | Chaque cascade en mélange plusieurs (quotas indépendants) |
 | Cascade par persona | `shared/models.py` | Une voix par bot, choisie sur mesures réelles (`tools/sonde_modeles_persona.py`) |
 | Vision locale (Parquée) | Ollama Moondream | moondream (conteneur Docker) |
-| Base de données | SQLite | WAL mode, accès concurrent |
+| Base de données | SQLite | TRUNCATE, accès concurrent — WAL interdit (base partagée hôte/conteneurs) |
 | Dashboard | FastAPI + Vanilla JS | Port 8501 (Orchestration Docker native) |
 | Synthèse Vocale (V2)| Chatterbox (Turbo) | Zero-Shot Voice Cloning (GPU CUDA) |
 | Conteneurisation | Docker Compose | 6 bots + 1 Ollama + 1 Chatterbox |
@@ -211,8 +212,8 @@ Les requêtes sont classifiées puis routées pour optimiser les coûts :
     └──────┬──────┘    └──────┬──────┘    └───────┬───────┘
            │                  │                    │
      Mistral/Groq       Gemini Flash         Gemini Pro
-     → OpenRouter       → Ollama local       (seul choix)
-     → Gemini Flash      (Moondream)
+     → Gemini Flash     → Ollama local       (seul choix)
+                        (Moondream)
 ```
 
 ---
@@ -223,7 +224,7 @@ Les requêtes sont classifiées puis routées pour optimiser les coûts :
 
 2. **Les IDs Discord des bots sont hardcodés** dans les fichiers `bot_*.py` pour la détection inter-bots. Si un token est changé, mettre à jour les IDs dans TOUS les bots.
 
-3. **La base SQLite est en mode WAL** pour supporter 6 processus concurrents. Ne pas changer le mode journal.
+3. **NE JAMAIS passer une base de `data/` en WAL** — `shared_database.py` pose TRUNCATE, et c'est voulu : la base est partagée entre l'hôte Windows et six conteneurs Linux, et WAL exige une mémoire partagée (`-shm`) que les deux mondes ne peuvent pas partager. Live du 2026-09-13 : WAL a rendu les six bots MUETS. Verrou : `tests/test_base_partagee.py`.
 
 4. **Silence total entre bots** : chaque `on_message` commence par `if message.author.bot: return`. Les bots ne se répondent JAMAIS entre eux (l'ancien « duel tracker » inter-bots a été retiré).
 

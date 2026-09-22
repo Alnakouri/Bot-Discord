@@ -47,9 +47,14 @@ Veuillez analyser ce traceback et me fournir la cause racine et une suggestion d
 
     def generate(self, format="md", scope="all", hours=24):
         """Génération manuelle via API."""
+        if format not in ("md", "json") or scope not in ("all", "status", "errors", "api", "conversations"):
+            raise ValueError(f"format ou scope invalide : {format!r}, {scope!r}")
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         filename = f"report_{scope}_{timestamp}.{format}"
         filepath = os.path.join(self.reports_dir, filename)
+        if not os.path.realpath(filepath).startswith(os.path.realpath(self.reports_dir) + os.sep):
+            raise ValueError(f"tentative de traversée de chemin : {filepath}")
         
         if format == "md":
             lines = []

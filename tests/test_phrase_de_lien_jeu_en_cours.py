@@ -32,6 +32,9 @@ def _faux_bot(bot_id="sugar", channels=("un_canal",), avec_cles=True):
     f.channels = list(channels)
     f.client_id = "id" if avec_cles else None
     f.client_secret = "secret" if avec_cles else None
+    f.personality_prompt = "tu es un bot"
+    f.system_prompt_provider = None
+    f.key_manager = object()
     f.logger = types.SimpleNamespace(debug=lambda *a, **k: None, info=lambda *a, **k: None,
                                      warning=lambda *a, **k: None, error=lambda *a, **k: None)
     return f
@@ -129,3 +132,74 @@ def test_le_jeu_entre_dans_la_cle_du_cache():
                 and getattr(n.func.value, "id", "") == "cache"]
     assert any(getattr(a, "id", "") == "cle_cache" for n in lectures for a in n.args), \
         "le cache est lu avec une autre cle que celle qui l'ecrit"
+
+
+def test_fiche_courte_comportement():
+    from shared.twitch.game_info import fiche_courte
+    assert fiche_courte(None) is None
+    assert fiche_courte({}) is None
+    assert fiche_courte({"summary": ""}) is None
+    
+    game = {
+        "summary": "Un jeu d'aventure historique médiéval.",
+        "themes": [{"id": 1, "name": "Action"}, {"id": 2, "name": "Historical"}]
+    }
+    assert fiche_courte(game) == "Résumé : Un jeu d'aventure historique médiéval. | Thèmes : Action, Historical"
+
+    # Sans thèmes
+    assert fiche_courte({"summary": "Texte court"}) == "Résumé : Texte court"
+
+
+def test_igdb_refuse_id_non_entier():
+    from shared.twitch.game_info import IGDBClient
+    client = IGDBClient("client_id", "client_secret")
+    assert asyncio.run(client.get_game_by_id("1; fields *")) is None
+    assert asyncio.run(client.get_game_by_id(None)) is None
+
+
+def test_fiche_du_jeu_ne_leve_jamais():
+    f = _faux_bot()
+    f._helix_client = _helix(RuntimeError("Twitch en panne"))
+    assert asyncio.run(f._fiche_du_jeu()) is None
+
+
+def test_instruction_inclut_la_fiche_si_disponible():
+    bot = _faux_bot("sugar")
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    async def faux_fiche():
+        return "Résumé : 15th century RPG | Thèmes : Action, Historical"
+
+    bot._jeu_en_cours = faux_jeu
+    bot._fiche_du_jeu = faux_fiche
+
+    capture = {}
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Venez nous voir !"
+
+    bot._ecrire_phrase_de_lien = faux_ecrire
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert "Voici la fiche officielle de ce jeu (en anglais) :" in capture["instruction"]
+    assert "15th century RPG" in capture["instruction"]
+
+
+def test_instruction_sans_fiche_ne_contient_pas_de_fiche():
+    bot = _faux_bot("sugar")
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    async def faux_fiche():
+        return None
+
+    bot._jeu_en_cours = faux_jeu
+    bot._fiche_du_jeu = faux_fiche
+
+    capture = {}
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Venez nous voir !"
+
+    bot._ecrire_phrase_de_lien = faux_ecrire
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert "Voici la fiche officielle de ce jeu (en anglais) :" not in capture["instruction"]
+

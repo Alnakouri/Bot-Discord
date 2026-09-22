@@ -104,11 +104,11 @@ class ErrorAnalyzer:
         }
 
     def count_recent(self, hours=24):
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         conn = self._get_connection()
         if not conn: return 0
         try:
-            cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+            cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)).isoformat()
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM error_events WHERE timestamp > ? AND resolved = 0", (cutoff,))
             count = cursor.fetchone()[0]

@@ -258,3 +258,21 @@ def test_le_partage_reste_juge_sur_les_SIX_bots_meme_en_ouvrant_un_seul(faux_dep
     contenu = (faux_depot / "MalenaBot" / ".env").read_text(encoding="utf-8")
     assert "PARTAGEE" in contenu, \
         "le partage avec un bot non traite n'est plus signale"
+
+
+def test_load_secure_env_ne_charge_pas_le_parent(tmp_path, monkeypatch):
+    """Un .env à la racine serait chargé par les six bots : load_secure_env ne doit
+    jamais fouiller le dossier parent."""
+    dossier_parent = tmp_path
+    dossier_bot = tmp_path / "FauxBot"
+    dossier_bot.mkdir()
+
+    cle_test = "VAR_TEST_NE_PAS_CHARGER_PARENT"
+    (dossier_parent / ".env").write_text(f"{cle_test}=valeur_piege\n", encoding="utf-8")
+
+    monkeypatch.delenv(cle_test, raising=False)
+
+    charge = load_secure_env(dossier_bot)
+    assert charge is False
+    assert cle_test not in os.environ
+

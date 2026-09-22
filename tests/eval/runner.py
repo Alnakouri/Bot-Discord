@@ -118,10 +118,11 @@ def attelage_du_bot(bot_id: str):
         return _ATTELAGES[bot_id]
 
     dossier = _dossier_du_bot(bot_id)
-    try:
-        load_secure_env(dossier)
-    except Exception as e:
-        print(f"Avertissement : cles de {bot_id} illisibles ({dossier.name}) : {e}")
+    if not load_secure_env(dossier):
+        raise RuntimeError(
+            f"{bot_id} : aucune cle lisible dans {dossier} — le harnais refuse de mesurer "
+            "avec les cles du bot charge precedemment"
+        )
 
     gemini = [os.getenv(f"GEMINI_KEY_{i}") for i in range(1, 5)]
     gemini = [k for k in gemini if k]
