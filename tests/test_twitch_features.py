@@ -31,7 +31,17 @@ class TestTwitchFeatures(unittest.TestCase):
         # Genre questions
         self.assertEqual(detect_game_question("c'est quoi le genre du jeu ?"), "genre")
         self.assertEqual(detect_game_question("c'est un rpg ?"), "genre")
-        
+        self.assertEqual(detect_game_question("c'est quel genre de jeu ?"), "genre")
+        self.assertEqual(detect_game_question("c'est quoi comme type de jeu ?"), "genre")
+
+        # ⚠️ « genre » et « type » NUS ne sont pas des questions sur le genre. Les deux
+        # seules detections sur 360 messages du chat de #ma_streameuse (22/09) etaient
+        # celles-ci : le tic de langage, qui aurait fait repondre « c'est un RPG ».
+        self.assertIsNone(detect_game_question("sa baise la genre?"))
+        self.assertIsNone(detect_game_question(
+            "Mais cest quoi le problème ?genre dire mathilde panot ?"))
+        self.assertIsNone(detect_game_question("c'est qui ce type ?"))
+
         # Studio questions
         self.assertEqual(detect_game_question("qui a developpe ce jeu ?"), "studio")
         self.assertEqual(detect_game_question("quel studio a fait ca ?"), "studio")

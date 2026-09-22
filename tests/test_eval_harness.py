@@ -807,7 +807,20 @@ def test_le_harnais_construit_ET_passe_un_client_nvidia():
 # ────────── La réponse BRUTE est gardée à côté de la filtrée (2026-09-17) ──────────────
 
 
-def test_le_runner_rend_la_filtree_ET_la_brute():
+def _attelage_factice(monkeypatch):
+    """Un attelage SANS cle pour Alfred, le temps d'UN test.
+
+    Ces tests remplacent `generate_response` et n'appellent aucun fournisseur, mais le
+    runner construit quand meme l'attelage du bot — et sur un clone (la CI) il n'y a pas
+    de cles : le harnais refuse, a raison. `setitem` le RETIRE a la fin du test ; le
+    `setdefault` d'avant le laissait a tous les tests suivants de la session.
+    """
+    import tests.eval.runner as runner
+    from shared.api_manager import MultiAPIKeyManager
+    monkeypatch.setitem(runner._ATTELAGES, "alfred", (MultiAPIKeyManager(), None, None, None))
+
+
+def test_le_runner_rend_la_filtree_ET_la_brute(monkeypatch):
     """⚠️ Sans la brute, on ne peut pas dire QUI a agi.
 
     Le 2026-09-17, après avoir posé un filet déterministe (LOT 1) ET réécrit les fiches
@@ -817,15 +830,13 @@ def test_le_runner_rend_la_filtree_ET_la_brute():
     """
     import asyncio
     import tests.eval.runner as runner
-    from shared.api_manager import MultiAPIKeyManager
 
     async def _faux_appel(**kwargs):
         return "**Gras** et *pose son torchon* une didascalie."
 
+    _attelage_factice(monkeypatch)
     vrai = runner.generate_response
     runner.generate_response = _faux_appel
-    # En CI (pas de cles sur disque), un attelage factice evite d'exiger les secrets de prod
-    runner._ATTELAGES.setdefault("alfred", (MultiAPIKeyManager(), None, None, None))
     try:
         scenario = {"id": "sonde", "user_messages": ["salut"], "transcript": ""}
         filtrees, brutes, _echelons = asyncio.run(
@@ -888,25 +899,22 @@ def _scenario(*messages):
     return {"id": "sonde", "user_messages": list(messages), "transcript": ""}
 
 
-def _sans_tracage():
+def _sans_tracage(monkeypatch):
     """Remplace le vrai traceur par un muet : un test n'écrit pas dans `api_usage.db`.
 
     [[gotcha-pytest-pollue-data]] — et l'espion du runner DÉLÈGUE au traceur qu'il
     trouve, donc c'est bien ici qu'il faut couper.
     """
     import shared.llm_cascade as llm_cascade
-    import tests.eval.runner as runner
-    from shared.api_manager import MultiAPIKeyManager
 
-    # En CI (pas de cles sur disque), un attelage factice evite d'exiger les secrets de prod
-    runner._ATTELAGES.setdefault("alfred", (MultiAPIKeyManager(), None, None, None))
+    _attelage_factice(monkeypatch)
 
     vrai = llm_cascade.tracer_appel
     llm_cascade.tracer_appel = lambda *a, **k: None
     return llm_cascade, vrai
 
 
-def test_le_runner_nomme_l_echelon_qui_a_repondu():
+def test_le_runner_nomme_l_echelon_qui_a_repondu(monkeypatch):
     """⚠️ Le compte d'astérisques AVANT filtrage appartient au MODÈLE autant qu'à la fiche.
 
     Sugar est passée de 0/17 le 17/09 à 11/17 le 18/09 sans qu'un mot de sa fiche ne
@@ -917,7 +925,7 @@ def test_le_runner_nomme_l_echelon_qui_a_repondu():
     import asyncio
     import tests.eval.runner as runner
 
-    llm_cascade, vrai_traceur = _sans_tracage()
+    llm_cascade, vrai_traceur = _sans_tracage(monkeypatch)
 
     async def _faux_appel(**kwargs):
         # Comme la vraie cascade : l'échelon raté, puis celui qui répond.
@@ -940,7 +948,7 @@ def test_le_runner_nomme_l_echelon_qui_a_repondu():
     )
 
 
-def test_une_cascade_MUETTE_ne_nomme_aucun_echelon():
+def test_une_cascade_MUETTE_ne_nomme_aucun_echelon(monkeypatch):
     """⚠️ Le trou qu'une mutation a ouvert : sans le filtre sur `succes`, l'espion garde
     le DERNIER échelon tracé — et quand toute la cascade a échoué, c'est un échelon qui
     n'a rien produit. Le rapport nommerait alors nemotron comme auteur d'une réponse qui
@@ -953,7 +961,7 @@ def test_une_cascade_MUETTE_ne_nomme_aucun_echelon():
     import asyncio
     import tests.eval.runner as runner
 
-    llm_cascade, vrai_traceur = _sans_tracage()
+    llm_cascade, vrai_traceur = _sans_tracage(monkeypatch)
 
     async def _cascade_muette(**kwargs):
         for api, modele in (("gemini", "flash-lite"), ("mistral", "ministral-14b"),
@@ -1011,7 +1019,7 @@ def runner_echelon():
     return runner._echelon_qui_repond()
 
 
-def test_l_historique_rend_le_texte_FILTRE_par_defaut():
+def test_l_historique_rend_le_texte_FILTRE_par_defaut(monkeypatch):
     """⚠️ Sur Discord, le tour suivant relit le message ENVOYÉ — donc filtré.
 
     Un harnais qui renvoie la sortie brute au modèle mesure une conversation qui n'a
@@ -1020,7 +1028,7 @@ def test_l_historique_rend_le_texte_FILTRE_par_defaut():
     import asyncio
     import tests.eval.runner as runner
 
-    llm_cascade, vrai_traceur = _sans_tracage()
+    llm_cascade, vrai_traceur = _sans_tracage(monkeypatch)
     histoires = []
 
     async def _faux_appel(**kwargs):
@@ -1041,7 +1049,7 @@ def test_l_historique_rend_le_texte_FILTRE_par_defaut():
     assert "pose son torchon" not in memoire, "la didascalie devait tomber avec le filtre"
 
 
-def test_l_historique_brut_remet_le_texte_NON_filtre():
+def test_l_historique_brut_remet_le_texte_NON_filtre(monkeypatch):
     """Le drapeau qui isole la variable restée ouverte le 2026-09-17.
 
     Depuis que l'historique est assaini, le modèle s'imite lui-même sans astérisques : la
@@ -1052,7 +1060,7 @@ def test_l_historique_brut_remet_le_texte_NON_filtre():
     import asyncio
     import tests.eval.runner as runner
 
-    llm_cascade, vrai_traceur = _sans_tracage()
+    llm_cascade, vrai_traceur = _sans_tracage(monkeypatch)
     histoires = []
 
     async def _faux_appel(**kwargs):

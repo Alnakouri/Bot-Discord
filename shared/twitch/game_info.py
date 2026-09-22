@@ -427,8 +427,14 @@ PATTERNS = {
         r"\bplaystation\b", r"\bnintendo\b", r"\bsur quoi\b", r"\bsur quel\b"
     ],
     "genre": [
-        r"\bgenre\b", r"\btype de jeu\b", r"\bstyle de jeu\b", r"\bfps\b", r"\brpg\b",
-        r"\brogue\b", r"\bmmo\b", r"\brts\b", r"\bsimulateur\b", r"\btype\b"
+        # ⚠️ Jamais « genre » ni « type » NUS. Chat de #ma_streameuse, 22/09 : les deux
+        # seules « questions » detectees sur 360 messages etaient « sa baise la genre? »
+        # et « c'est quoi le probleme ?genre dire ... » — le tic de langage. Et « type »
+        # nu, c'est « c'est qui ce type ? ». Il faut le mot qui en fait une question SUR
+        # le genre : « quel genre », « le genre du jeu », « comme type ».
+        r"\b(?:quel(?:le)?|le|son|du|comme|de)\s+(?:genre|type)\b",
+        r"\btype de jeu\b", r"\bstyle de jeu\b", r"\bfps\b", r"\brpg\b",
+        r"\brogue\b", r"\bmmo\b", r"\brts\b", r"\bsimulateur\b",
     ],
     "studio": [
         r"\bstudio\b", r"\bdeveloppeur\b", r"\bediteur\b", r"\bqui a fait\b", r"\bdeveloper\b",
