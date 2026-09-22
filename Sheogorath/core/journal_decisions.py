@@ -72,7 +72,12 @@ PERTINENCE = "pertinence"   # les six : _other_bot_in_focus / intervention spont
 # (`shared/twitch/game_info.py`). ⚠️ Mais on JOURNALISE d'abord, on branche ensuite,
 # sur un chiffre : sans corpus, « Laya ferait mieux » est une opinion.
 JEU_QUESTION = "jeu_question"   # les six sur Twitch : game_info.detect_game_question
-DECISIONS = (INTENTION, TON, PERTINENCE, JEU_QUESTION)
+# ⚠️ Ajoutee le 2026-09-23. `detect_defeat_signal` reconnait une DECLARATION de victoire
+# (« je t'ai eu »), pas une victoire ; sa docstring dit que reconnaitre une vraie
+# defaite demanderait « un appel LLM par message ». Laya ne coute rien par message :
+# c'est un candidat — mais on mesure d'abord ce que la liste rate.
+DEFAITE = "defaite"             # les six : repartee_lessons.detect_defeat_signal
+DECISIONS = (INTENTION, TON, PERTINENCE, JEU_QUESTION, DEFAITE)
 
 # Au-dela, on jette plutot que d'attendre : le bot passe avant son journal.
 _TAILLE_FILE = 500

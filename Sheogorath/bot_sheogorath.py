@@ -2338,7 +2338,7 @@ async def on_message(message):
         if bloc_lecons:
             system_instruction += bloc_lecons
             
-        motif_defaite = detect_defeat_signal(user_message)
+        motif_defaite = detect_defeat_signal(user_message, bot_id="sheogorath")
         if motif_defaite and recent_responses:
             asyncio.create_task(
                 reflect_on_defeat(

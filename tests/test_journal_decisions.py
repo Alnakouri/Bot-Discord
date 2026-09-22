@@ -145,3 +145,85 @@ def test_le_module_est_vendorise_pour_les_six():
         assert "journal_decisions.py" in texte, (
             f"{outil} ignore journal_decisions.py — les deux listes doivent être égales"
         )
+
+
+# ── La DEFAITE en repartie (2026-09-23) ───────────────────────────────────────
+# `detect_defeat_signal` ne voit que les DECLARATIONS de victoire. Pour savoir ce
+# qu'elle rate, il faut ranger aussi les messages ou elle rend `None`.
+
+def test_une_defaite_est_rangee_AUCUNE_comprise(journal, monkeypatch):
+    from shared import repartee_lessons as rl
+    ranges = []
+    monkeypatch.setattr(journal, "journalise",
+                        lambda *a, **k: ranges.append(a))
+    assert rl.detect_defeat_signal("je t'ai eu", bot_id="sugar") == "capitulation"
+    assert rl.detect_defeat_signal("les papillons n'ont pas de plume, idiot",
+                                   bot_id="sheogorath") is None
+    assert ranges == [
+        ("sugar", journal.DEFAITE, "je t'ai eu", "capitulation"),
+        ("sheogorath", journal.DEFAITE, "les papillons n'ont pas de plume, idiot", "aucune"),
+    ]
+
+
+def test_sans_bot_id_rien_n_est_range(journal, monkeypatch):
+    """Les sondes et les tests appellent la fonction nue : ils ne remplissent pas le corpus."""
+    from shared import repartee_lessons as rl
+    ranges = []
+    monkeypatch.setattr(journal, "journalise", lambda *a, **k: ranges.append(a))
+    rl.detect_defeat_signal("je t'ai eu")
+    assert ranges == []
+
+
+def test_un_journal_qui_casse_ne_coute_pas_la_detection(journal, monkeypatch):
+    from shared import repartee_lessons as rl
+
+    def casse(*a, **k):
+        raise RuntimeError("disque plein")
+    monkeypatch.setattr(journal, "journalise", casse)
+    assert rl.detect_defeat_signal("t'as perdu", bot_id="johnny") == "capitulation"
+
+
+_BOTS_DEFAITE = {
+    "Alfred/bot_alfred.py": "alfred", "JohnnyBot/bot_johnny.py": "johnny",
+    "MaiqBot/bot_maiq.py": "maiq", "MalenaBot/bot_malena.py": "malena",
+    "Sheogorath/bot_sheogorath.py": "sheogorath", "SugarBot/bot_sugar.py": "sugar",
+}
+
+
+@pytest.mark.parametrize("fichier,bot_id", sorted(_BOTS_DEFAITE.items()))
+def test_les_six_bots_passent_LEUR_nom_a_la_detection_de_defaite(fichier, bot_id):
+    """Sans `bot_id`, la detection tourne mais ne range rien : un oubli serait muet.
+
+    Et le nom doit etre le BON : une ligne de Malena rangee sous « sugar » fausserait
+    le corpus des deux.
+    """
+    arbre = ast.parse(open(os.path.join(_parent_dir, fichier), encoding="utf-8").read())
+    appels = [n for n in ast.walk(arbre) if isinstance(n, ast.Call)
+              and getattr(n.func, "id", None) == "detect_defeat_signal"]
+    assert appels, f"{fichier} n'appelle plus detect_defeat_signal"
+    for appel in appels:
+        noms = {k.arg: getattr(k.value, "value", None) for k in appel.keywords}
+        assert noms.get("bot_id") == bot_id, (
+            f"{fichier} : detect_defeat_signal doit recevoir bot_id={bot_id!r} "
+            f"(recu : {noms.get('bot_id')!r})")
+
+
+def test_le_ton_du_chat_TWITCH_de_sugar_est_range():
+    """Sur Twitch, le ton n'est juge que par la regex, et c'est la que Sugar a du monde.
+
+    Le fournisseur de consigne passe a `setup_twitch_chat` doit etre `_ton_twitch`, et
+    `_ton_twitch` doit journaliser TON — pas une lambda qui appelle `tone_directive` nue.
+    """
+    arbre = ast.parse(open(os.path.join(_parent_dir, "SugarBot", "bot_sugar.py"),
+                           encoding="utf-8").read())
+    fournisseurs = [k.value for n in ast.walk(arbre) if isinstance(n, ast.Call)
+                    for k in n.keywords if k.arg == "tone_directive_provider"]
+    assert fournisseurs and all(getattr(f, "id", None) == "_ton_twitch"
+                                for f in fournisseurs), \
+        "le chat Twitch de Sugar ne passe plus par _ton_twitch"
+    fonction = next(n for n in ast.walk(arbre)
+                    if isinstance(n, ast.FunctionDef) and n.name == "_ton_twitch")
+    appels = [n for n in ast.walk(fonction) if isinstance(n, ast.Call)
+              and getattr(n.func, "id", None) == "journalise"]
+    assert appels and any(getattr(a, "id", None) == "TON" for a in appels[0].args), \
+        "_ton_twitch ne range pas la decision TON"

@@ -817,7 +817,7 @@ async def on_message(message):
                     from core.repartee_lessons import (
                         detect_defeat_signal, reflect_on_defeat, format_for_prompt)
                     _anti_tic += format_for_prompt("Malena")
-                    _categorie = detect_defeat_signal(user_msg)
+                    _categorie = detect_defeat_signal(user_msg, bot_id="malena")
                     if _categorie and _recent:
                         asyncio.create_task(
                             reflect_on_defeat(

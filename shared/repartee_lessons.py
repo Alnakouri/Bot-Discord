@@ -52,7 +52,7 @@ _MOTIFS_COMPILES = [
 ]
 
 
-def detect_defeat_signal(message_utilisateur: str) -> Optional[str]:
+def detect_defeat_signal(message_utilisateur: str, bot_id: Optional[str] = None) -> Optional[str]:
     """Rend la CATÉGORIE de défaite reconnue, ou None.
 
     ⚠️ Rend une étiquette de notre vocabulaire, jamais un morceau du message. Ce qui
@@ -67,7 +67,21 @@ def detect_defeat_signal(message_utilisateur: str) -> Optional[str]:
     six par jour. Le jour où on voudra ce comportement, ce sera un choix de coût assumé,
     pas un elargissement de cette liste — qui, elle, doit rester precise : c'est ce qui
     empeche une conversation ordinaire de faire reecrire la persona d'un bot."""
-    msg = message_utilisateur.lower().translate(_APOSTROPHES)
+    categorie = _categorie_de_defaite(message_utilisateur)
+    if bot_id:
+        # Journal seul : on range la decision DEJA prise, `aucune` comprise — c'est elle
+        # qui montrera les defaites que la liste ne voit pas. Un journal ne doit jamais
+        # couter une reponse : s'il casse, le bot continue.
+        try:
+            from shared.journal_decisions import journalise, DEFAITE
+            journalise(bot_id, DEFAITE, message_utilisateur, categorie or "aucune")
+        except Exception as e:
+            logger.debug(f"journal defaite indisponible : {e}")
+    return categorie
+
+
+def _categorie_de_defaite(message_utilisateur: str) -> Optional[str]:
+    msg = (message_utilisateur or "").lower().translate(_APOSTROPHES)
     for categorie, motifs in _MOTIFS_COMPILES:
         for motif in motifs:
             if motif.search(msg):

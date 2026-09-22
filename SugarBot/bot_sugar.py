@@ -258,6 +258,22 @@ async def _daily_llm_call(system_prompt, user_message):
         groq_client=groq_client,  nvidia_client=nvidia_client,
         bot_label="Sugar Bot", temperature=0.5, max_tokens=60)
 
+def _ton_twitch(author, message):
+    """Consigne de ton du chat Twitch — et le journal de la decision, comme sur Discord.
+
+    Sur Twitch, le ton n'est juge que par la regex (pas de carnet, pas de LLM), et c'est
+    la que Sugar a du monde : 357 messages le soir du 22/09. Sans journal, personne ne
+    sait a quelle frequence `classify_tone` s'y trompe. Journal seul : il range la
+    decision deja prise, il n'en change aucune, et s'il casse le bot continue.
+    """
+    try:
+        from core.journal_decisions import journalise, TON
+        journalise("sugar", TON, message, classify_tone(message), detail="voie=twitch")
+    except Exception as e:
+        logger.debug(f"journal ton twitch indisponible : {e}")
+    return tone_directive(message)
+
+
 async def _grudge_llm_call(system_prompt, user_message):
     return await generate_response(
         routing={"type": RequestType.TEXT, "reason": "grudge_classify"},
@@ -480,7 +496,7 @@ async def on_ready():
             personality_prompt=PERSONALITY_PROMPT, key_manager=key_manager,
             mistral_client=mistral_client, groq_client=groq_client,
              nvidia_client=nvidia_client, bot_label="Sugar Bot",
-            tone_directive_provider=lambda author, message: tone_directive(message),
+            tone_directive_provider=_ton_twitch,
             enable_events=True,
             enable_interjections=False,   # décision « silence sauf si nommé »
             enable_greetings=False,       # idem
@@ -929,7 +945,7 @@ async def on_message(message):
         if bloc_lecons:
             anti_tic += bloc_lecons
             
-        motif_defaite = detect_defeat_signal(user_message)
+        motif_defaite = detect_defeat_signal(user_message, bot_id="sugar")
         if motif_defaite and recent_responses:
             asyncio.create_task(
                 reflect_on_defeat(
