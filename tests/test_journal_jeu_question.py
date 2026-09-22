@@ -83,3 +83,70 @@ def test_plus_aucun_appel_NU_a_detect_game_question():
             assert not appels, (
                 f"`{noeud.name}` appelle detect_game_question directement : sa decision "
                 f"echapperait au journal. Passer par `self._question_de_jeu`.")
+
+
+def test_observer_ne_fait_JAMAIS_parler_le_bot():
+    """La garantie demandee par Ahmed le 22/09 : « le bot ne posera pas de question aux
+    gens ? » — non, jamais, et voici le verrou plutot que la parole donnee.
+
+    `_question_de_jeu` lit un texte, range une ligne, rend une valeur. Elle n'envoie
+    rien, ne genere rien, n'appelle aucun modele. Le jour ou quelqu'un y glisserait un
+    envoi, ce test tombe.
+    """
+    arbre = ast.parse(DISPATCH.read_text(encoding="utf-8"))
+    fonction = next(n for n in ast.walk(arbre)
+                    if isinstance(n, ast.FunctionDef) and n.name == "_question_de_jeu")
+    interdits = {"send_chat_safe", "_generate_response", "_fetch_game_facts_block",
+                 "_generate_link_line", "generate_response"}
+    for n in ast.walk(fonction):
+        if isinstance(n, ast.Call):
+            nom = getattr(n.func, "id", None) or getattr(n.func, "attr", None)
+            assert nom not in interdits, (
+                f"`_question_de_jeu` appelle `{nom}` : elle OBSERVE, elle ne parle pas. "
+                f"Le journal a ete construit pour ne jamais changer un comportement.")
+
+
+def test_la_REPONSE_reste_conditionnee_a_game_qa():
+    """Observer ne doit pas allumer la fonctionnalite.
+
+    ⚠️ C'est le defaut trouve le 22/09 : la detection etait SOUS `enable_game_qa`, qui
+    est a False chez les sept bots — le journal ne pouvait donc rien enregistrer, et le
+    cocher pour observer aurait mis les bots a repondre aux questions sur le jeu.
+    Les deux sont maintenant separes, et ce test verifie que la separation tient DANS LES
+    DEUX SENS : la detection hors du garde, l'appel aux faits IGDB dedans.
+    """
+    src = DISPATCH.read_text(encoding="utf-8")
+    arbre = ast.parse(src)
+    lignes_fetch, lignes_garde = [], []
+    for n in ast.walk(arbre):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", None) == "_fetch_game_facts_block":
+            lignes_fetch.append(n.lineno)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "getattr":
+            if len(n.args) >= 2 and getattr(n.args[1], "value", None) == "enable_game_qa":
+                lignes_garde.append(n.lineno)
+    assert lignes_fetch, "plus aucun appel aux faits du jeu : la fonctionnalite a disparu"
+    assert lignes_garde, "`enable_game_qa` ne garde plus rien"
+    # Chaque appel aux faits IGDB doit avoir un garde `enable_game_qa` au-dessus de lui.
+    for ligne in lignes_fetch:
+        assert any(g <= ligne for g in lignes_garde), (
+            f"l'appel aux faits du jeu ligne {ligne} n'est plus garde par `enable_game_qa` : "
+            f"journaliser allumerait la fonctionnalite chez les six bots.")
+
+
+def test_les_messages_PASSIFS_sont_ranges_eux_aussi():
+    """C'est eux, le corpus. Les mentions sont une poignee ; le chat, c'est le reste.
+
+    Sans cette voie, le journal se remplirait au rythme des trois decisions d'avant —
+    30 lignes en deux jours — et ne trancherait jamais rien sur Laya.
+    """
+    arbre = ast.parse(DISPATCH.read_text(encoding="utf-8"))
+    voies = set()
+    for n in ast.walk(arbre):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", None) == "_question_de_jeu":
+            for a in n.args:
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    voies.add(a.value)
+    assert "passif" in voies, (
+        f"la voie `passif` a disparu : seules {sorted(voies)} restent, et le corpus "
+        f"ne se remplira plus qu'au compte-gouttes.")
+    assert "mention" in voies

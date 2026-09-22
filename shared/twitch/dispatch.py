@@ -274,10 +274,16 @@ class DispatchMixin:
             # Réponse (mention) - Réponse questions jeu
             facts_block = None
             no_facts_warning = False
-            if getattr(self, "enable_game_qa", False):
-                category = self._question_de_jeu(text, "mention")
-                if category:
-                    facts_block, no_facts_warning = await self._fetch_game_facts_block(chan, category)
+            # ⚠️ ON DETECTE ET ON RANGE TOUJOURS, ON NE REPOND QUE SI C'EST COCHE.
+            # Avant, la detection etait sous le `if enable_game_qa` — et comme ce reglage
+            # est a False chez les SEPT bots (verifie le 22/09 dans `twitch_config.json`),
+            # le journal ne pouvait rien enregistrer. Le cocher pour observer aurait
+            # ALLUME la fonctionnalite, alors que ce journal a ete construit pour ne
+            # jamais changer un comportement. D'ou la separation : `_question_de_jeu`
+            # observe, `enable_game_qa` decide de la REPONSE.
+            category = self._question_de_jeu(text, "mention")
+            if category and getattr(self, "enable_game_qa", False):
+                facts_block, no_facts_warning = await self._fetch_game_facts_block(chan, category)
 
             reply = await self._generate_response(chan, author, text, game_facts_block=facts_block, no_facts_warning=no_facts_warning)
             if reply:
@@ -289,6 +295,16 @@ class DispatchMixin:
         if chan_lower not in self.channel_recent:
             self.channel_recent[chan_lower] = collections.deque(maxlen=8)
         self.channel_recent[chan_lower].append(f"{author}: {text}")
+
+        # ⚠️ LE GROS DU CORPUS EST ICI. Sur un chat Twitch, les messages qui mentionnent
+        # le bot sont une poignee ; tout le reste passe par cette branche. Ne journaliser
+        # que les mentions remplirait ce journal aussi lentement que les trois decisions
+        # d'avant — 30 lignes en deux jours — c'est-a-dire pas du tout.
+        # ⚠️ Cet appel n'envoie RIEN et ne declenche RIEN : il lit le texte, range une
+        # ligne, et rend une valeur dont la branche passive ne se sert pas. La reponse
+        # co-host plus bas reste conditionnee a `enable_game_qa`, et REUTILISE cette
+        # valeur — sans quoi un message de canal co-host serait compte deux fois.
+        categorie_jeu = self._question_de_jeu(text, "passif")
 
         # Suivi des viewers (accueil)
         author_lower = author.lower()
@@ -332,7 +348,7 @@ class DispatchMixin:
         if not spontaneous_sent and getattr(self, "enable_game_qa", False):
             chan_key = chan.lower().lstrip("#")
             if chan_key in getattr(self, "cohost_channels", []):
-                category = self._question_de_jeu(text, "cohost")
+                category = categorie_jeu      # deja detecte et range plus haut
                 if category:
                     now = time.time()
                     last_cohost_time = getattr(self, "_last_cohost_qa", {}).get(chan_key, 0)
