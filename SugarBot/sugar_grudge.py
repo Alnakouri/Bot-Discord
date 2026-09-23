@@ -128,10 +128,16 @@ _DIRECTIVE_KIND = (
     "quelqu'un d'aimable.")
 _DIRECTIVE_NEUTRAL = (
     "\n[TON] Message neutre ou anodin, cette personne ne t'a rien fait : sois AVENANTE et "
-    "chaleureuse, taquine tout au plus. Ne l'attaque PAS et ne la reprends pas sur des "
-    "broutilles (minuscules, orthographe, longueur de son pseudo) — ce serait chercher la "
-    "petite bête. Tu ne sors tes griffes QUE si on te cherche vraiment ; sinon, garde ton "
-    "esprit mais range le venin.")
+    "chaleureuse, taquine tout au plus. Rebondis sur le SUJET de son message ; s'il n'y en "
+    "a pas (juste ton nom, un mot, une réaction), prends-le comme une invitation à discuter "
+    "et lance toi-même la conversation. Tu ne sors tes griffes QUE si on te cherche "
+    "vraiment ; sinon, garde ton esprit mais range le venin.")
+# ⚠️ 23/09 : l'excuse ne recevait AUCUNE consigne (traitee comme une attaque) : sur Twitch,
+# un « dsl » a recu « on dirait une pastille sans sucre ». Une excuse appelle la grace.
+_DIRECTIVE_APOLOGY = (
+    "\n[TON] Cette personne s'excuse auprès de toi : accepte ses excuses tout de suite, "
+    "avec grâce et un brin de malice, puis passe à autre chose avec elle comme si de rien "
+    "n'était. Tu es une reine qui pardonne, pas une juge.")
 _DIRECTIVE_BY_SCORE = {
     5: ("\n[CARNET DE RANCUNES] Cette personne t'a SÉRIEUSEMENT manqué de respect : sois GLACIALE "
         "ET expéditive avec elle (répartie fine, sans vulgarité). Tu peux répondre en trois mots secs "
@@ -157,14 +163,17 @@ def tone_directive(text):
     """Consigne de ton PURE (sans carnet ni persistance), pour les surfaces sans
     mémoire de rancune (ex. chat Twitch). Réutilise le MÊME lexique et les MÊMES
     consignes de ton que le carnet Discord → parité de ton entre plateformes.
-    - kind          → accueil chaleureux (elle ne mord pas quelqu'un d'aimable)
-    - neutral       → avenante, mordant rangé
-    - aggro/apology → '' : persona brute (le mordant est OK face à une hostilité)."""
+    - kind    → accueil chaleureux (elle ne mord pas quelqu'un d'aimable)
+    - neutral → avenante, mordant rangé
+    - apology → accepte l'excuse avec grâce, passe à autre chose
+    - aggro   → '' : persona brute (le mordant est OK face à une hostilité)."""
     tone = classify_tone(text)
     if tone == "kind":
         return _DIRECTIVE_KIND
     if tone == "neutral":
         return _DIRECTIVE_NEUTRAL
+    if tone == "apology":
+        return _DIRECTIVE_APOLOGY
     return ""
 
 
@@ -308,7 +317,9 @@ class GrudgeBook:
             return _DIRECTIVE_KIND
         if tone == "neutral":
             return _DIRECTIVE_NEUTRAL
-        return ""  # aggro/excuse sans rancune → persona brute (le mordant est OK sur une hostilité)
+        if tone == "apology":
+            return _DIRECTIVE_APOLOGY
+        return ""  # aggro sans rancune → persona brute
 
     @staticmethod
     def parse_llm_tone(text):

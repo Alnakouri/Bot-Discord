@@ -343,9 +343,26 @@ class TestToneDirective(unittest.TestCase):
         neutral_dir = tone_directive("quel temps fait-il ?")
         self.assertTrue(neutral_dir.startswith("\n[TON] Message neutre"))
         
+        # Test apology text
+        self.assertTrue(tone_directive("dsl").startswith("\n[TON] Cette personne s'excuse"))
+
         # Test aggro text (returns empty string)
         self.assertEqual(tone_directive("ferme la"), "")
         self.assertEqual(tone_directive("t'es nulle"), "")
+
+    def test_verrou_mots_interdits_dans_directive_neutre(self):
+        from SugarBot.sugar_grudge import _DIRECTIVE_NEUTRAL
+        for mot in ("longueur", "orthographe", "minuscules"):
+            self.assertNotIn(mot, _DIRECTIVE_NEUTRAL.lower())
+
+    def test_grudgebook_apology_sans_rancune(self):
+        import tempfile
+        from SugarBot.sugar_grudge import GrudgeBook, _DIRECTIVE_APOLOGY
+        with tempfile.TemporaryDirectory() as tmp:
+            book_path = os.path.join(tmp, "grudge.json")
+            book = GrudgeBook(book_path, llm_enabled=False)
+            directive = book.update(12345, "désolé")
+            self.assertEqual(directive, _DIRECTIVE_APOLOGY)
 
 
 class TestGrudgeRythme(unittest.TestCase):
