@@ -64,7 +64,8 @@ class DailyProfileMixin:
         prompt = (
             f"Tu es {persona_name}. Choisis ta bio de chaîne Twitch et ta couleur de pseudo pour "
             f"aujourd'hui, fidèles à ta personnalité. Réponds UNIQUEMENT par un JSON :\n"
-            f'{{"bio": "<1-2 phrases, 1re personne, en personnage, ≤280 caractères, sans guillemets ni didascalies>", '
+            f'{{"bio": "<1-2 phrases, 1re personne, en personnage, ≤280 caractères, sans guillemets ni didascalies, '
+            f'sans juron ni appel à la violence : elle doit passer la modération de Twitch>", '
             f'"color": "<un nom EXACT parmi: blue, blue_violet, cadet_blue, chocolate, coral, '
             f'dodger_blue, firebrick, golden_rod, green, hot_pink, orange_red, red, sea_green, spring_green, yellow_green>"}}'
         )
@@ -164,7 +165,21 @@ class DailyProfileMixin:
 
             # Application du profil
             if self.profile_helper:
-                await self.profile_helper.update_profile(bio=bio, chat_color=color)
+                resultat = await self.profile_helper.update_profile(bio=bio, chat_color=color)
+                # ⚠️ 23/09 : la bio GENEREE de Johnny (juron + appel a « faire peter » une
+                # corpo) etait refusee par la moderation Twitch a chaque demarrage, et rien
+                # ne suivait : sa bio restait celle d'un vieux jour. On retombe sur la bio
+                # FIXE du bot et on l'ECRIT dans l'etat du jour, sinon chaque redemarrage
+                # renverrait la bio refusee. Pas de bio fixe (Sugar) : on n'envoie rien.
+                # ⚠️ Comparer a la CHAINE : un AsyncMock rend un MagicMock, qui est vrai.
+                repli = getattr(self, "profile_bio", None) or ""
+                if resultat == "bio_refusee" and repli and bio != repli:
+                    self.logger.warning(
+                        f"⚠️ [TWITCH_CHAT:{self.bot_id}] Bio du jour refusee par la moderation "
+                        f"Twitch : repli sur la bio fixe."
+                    )
+                    await self.profile_helper.update_profile(bio=repli)
+                    self._save_profile_state({"date": today, "bio": repli, "color": color})
                 self._profile_day = today
         except Exception as e:
             self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Exception dans _ensure_daily_profile : {e}", exc_info=True)

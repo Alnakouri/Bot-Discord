@@ -1,301 +1,218 @@
-# PLAN — La phrase de lien `!discord` : le tic du « XVe siècle », et la question de Sugar
+# PLAN — La bio Twitch de Johnny, refusée par la modération chaque jour
 
 Rédaction : Claude, le **2026-09-23**. Exécution : **Antigravity**, sauf les étapes marquées
-**[Ahmed]**. Le plan précédent (audit du 22/09) est livré, sauf le LOT 7 et deux questions,
-recopiés en fin de fichier. Il reste lisible dans git (`5d36894:PLAN.md`).
+**[Ahmed]**. Le plan précédent (phrase de lien : fiche sans date + clause Sugar) est livré
+(`2bb82b5`, CI verte, en prod depuis le 23/09 13:32 UTC). Il reste lisible dans git
+(`2bb82b5:PLAN.md`).
 
-Un seul fichier touché dans le code : `shared/twitch/dispatch.py`. Il n'est **pas** vendoré :
-`dispatch.py` n'est pas dans `MODULES` de `tools/vendor_core.py`, donc pas de
-`vendor_core.py` à relancer. Il sert aux six bots, mais seuls ceux de `ACCROCHE_AU_JEU`
-(`sugar`, `alfred`, `malena`, `johnny`) voient le changement 1, et Sugar seule le changement 2.
-
----
-
-## CE QUI A ÉTÉ MESURÉ (23/09, `tools/sonde_phrase_de_lien.py`, KCD2, n = 18, Gemini)
-
-La sonde appelle le vrai `_generate_link_line` de la prod ; `--fiche` impose la fiche IGDB
-réelle de KCD2 (« …set in 15th century Medieval Europe… »).
-
-| bot | siècle cité, sans fiche | siècle cité, AVEC fiche | autre effet de la fiche |
-|---|---|---|---|
-| alfred | 0/18 | **18/18** | débuts de phrase : 9 formes → **4** ; « La boue du quinzième siècle » **13/18** |
-| malena | 0/18 | 16/18 | — |
-| sugar | 0/18 | 14/18 | — |
-| johnny | 0/18 | 14/18 | ✅ « Henri V » (faux) disparaît ; au-delà de 120 car. : 15/17 → **7/18** |
-
-▶ **La date de la fiche devient un tic.** Même mécanisme que « Il semblerait »
-([[gotcha-une-formule-nommee-devient-un-tic]]) : ce qu'on écrit dans le prompt ressort partout.
-▶ **Le reste de la fiche est utile** : plus aucun fait inventé sur le jeu, Johnny raccourcit.
-On retire donc **la date seulement**, pas la fiche.
-
-**Sugar + clause « question aux lecteurs »** (demande d'Ahmed : « Vous galérez autant en
-Bohême que Henry ? venez nous partager ça »), clause injectée par `--clause`, avec fiche :
-
-| | sans la clause | avec la clause |
-|---|---|---|
-| question sur l'expérience DES LECTEURS + invitation à la raconter | ~0/18 | **~13/18** ✅ |
-| contenu du Discord inventé (« nos débats », « on discute de chevalerie là-bas ») | 3/18 | **0/18** ✅ |
-| longueur médiane | 112 car. | **176 car.** ❌ |
-| au-delà de 120 car. | 5/17 | **17/18** ❌ |
-| sans invitation du tout | 0 | 2 (#2, #6) ❌ |
-| question sur Henry au lieu des lecteurs | — | 2 (#9, #18) ❌ |
-
-▶ **L'intention passe, la longueur non.** La clause mesurée demandait deux choses (poser une
-question PUIS inviter) dans une phrase de 120 caractères : le modèle a fait deux phrases
-collées. La nouvelle version exige que les deux tiennent dans la même phrase courte.
+Deux fichiers de code, tous deux dans `shared/twitch/`, **non vendorés** (ni `profile` ni
+`daily_profile` dans `tools/vendor_core.py`) : pas de `vendor_core.py` à relancer.
+`profile.py` et `daily_profile.py` servent aux six bots, mais seuls Johnny et Sheogorath
+passent un `profile_bio` (`JohnnyBot/bot_johnny.py:614`, `Sheogorath/bot_sheogorath.py:868`).
 
 ---
 
-# LOT 1 — La fiche est donnée au modèle SANS sa date
+## CE QUI A ÉTÉ CONSTATÉ (23/09)
 
-## 1.1 — Nouvelle fonction `_fiche_sans_epoque`
+- À chaque démarrage (00:00, 01:18, 09:47, 13:32 le 23/09), Johnny journalise :
+  `⚠️ [TWITCH_PROFILE:johnny] Erreur mise à jour bio (400): {... "message":"Description failed moderation."}`
+- La bio envoyée n'est **pas** `TWITCH_BIO` : c'est celle que le LLM génère chaque jour
+  (`shared/twitch/daily_profile.py:_generate_daily_profile`), gardée dans
+  `data/twitch_profile_johnny.json`. Celle du 23/09 :
+  « Johnny Silverhand en direct depuis le chaos : whisky, clopes et la dernière **putain** de
+  corporation à faire **péter**. … »
+- **Le repli n'existe pas** : un refus est journalisé, puis rien. La bio de Johnny sur
+  Twitch reste celle d'un jour ancien, sans que rien ne le signale hors du journal.
+- **`TWITCH_BIO` passe la modération** : essayé le 23/09 par Claude dans le conteneur de
+  Johnny, avec son propre jeton → `✅ Description mise à jour avec succès.` C'est la bio en
+  ligne en ce moment.
+- Sugar n'a pas de `profile_bio` : son repli est la chaîne vide, et il doit le rester
+  (aucune bio envoyée plutôt qu'une bio vide).
 
-Dans `shared/twitch/dispatch.py`, **juste après `_siecles_de_la_fiche`** (fin l.138), ajouter :
+---
+
+# LOT 1 — `update_profile` dit si la bio a été REFUSÉE par la modération
+
+`shared/twitch/profile.py`, méthode `update_profile` (l.15).
+
+1. Signature : `-> str | None`. Docstring, ajouter :
+   « Rend `"bio_refusee"` si Twitch a refusé la bio par sa modération (400
+   « failed moderation »), sinon `None`. La couleur n'entre pas dans ce retour. »
+2. Initialiser `resultat = None` **juste avant** `async with aiohttp.ClientSession() as session:` (l.32).
+3. Dans la branche `else:` de la bio (l.44-46), **après** le `self.logger.warning(...)` existant :
 
 ```python
-# Ce qu'on retire de la fiche AVANT de la donner au modele — et SEULEMENT a lui.
-# ⚠️ Le siecle SEUL, sans sa preposition : « set in 15th century Medieval Europe » doit
-# devenir « set in Medieval Europe », pas « set Medieval Europe ». L'annee, AVEC sa
-# preposition (et sa virgule) : « In 1403, Henry… » -> « Henry… ». Une annee nue n'est pas
-# retiree : « Over 1000 quests » n'est pas une date.
-_EPOQUE_DE_LA_FICHE = re.compile(
-    r"\s*\b\d{1,2}(?:st|nd|rd|th)[- ]century\b"
-    r"|\s*\b(?:in|since|from|during)\s+1\d{3}\b,?",
-    re.I,
-)
-
-
-def _fiche_sans_epoque(fiche: str | None) -> str | None:
-    """La fiche IGDB sans ses siecles ni ses annees, pour l'INSTRUCTION du modele.
-
-    ⚠️ Mesure du 2026-09-23 (KCD2, n=18, Gemini) : avec « 15th century » dans la fiche, le
-    siecle sort dans 18/18 phrases d'Alfred, 16/18 de Malena, 14/18 de Sugar et de Johnny,
-    contre 0/18 sans fiche. Les ouvertures d'Alfred passent de 9 formes a 4. Une date
-    ecrite dans le prompt devient un tic ([[gotcha-une-formule-nommee-devient-un-tic]]).
-    Le reste de la fiche est garde : il fait disparaitre les faits inventes (« Henri V »).
-
-    ⚠️ Le FILET, lui, recoit la fiche COMPLETE (`_affirme_une_epoque(phrase, jeu, fiche)`) :
-    si le modele cite quand meme le XVe siecle de sa memoire, c'est juste, et ca passe.
-    """
-    if not fiche:
-        return fiche
-    propre = _EPOQUE_DE_LA_FICHE.sub("", fiche)
-    return " ".join(propre.split()).replace(" ,", ",").replace(" .", ".")
+                            if resp.status == 400 and "moderation" in err_text.lower():
+                                resultat = "bio_refusee"
 ```
 
-⚠️ **Piège à éviter** : ne PAS mettre ce nettoyage dans `_fiche_du_jeu` (l.748) ni dans
-`fiche_courte` (`shared/twitch/game_info.py:337`). La variable `fiche` de
-`_generate_link_line` doit rester complète, parce qu'elle est aussi passée au filtre
-l.1015 : `_affirme_une_epoque(phrase, jeu, fiche)`. Si le filtre reçoit la fiche sans date,
-« XVe siècle » (juste) redevient un rejet → gabarit fixe, soit le défaut corrigé par
-`70aacb1`. Et `fiche_courte` sert aussi ailleurs.
+4. Tout en bas de la méthode (après le bloc couleur, l.77), **hors** du `async with`, au
+   même niveau d'indentation que `async with` : `return resultat`.
 
-## 1.2 — Brancher dans l'instruction
+⚠️ Les deux `return` anticipés (l.20 et l.25) rendent déjà `None` : ne pas y toucher.
+⚠️ Le bloc couleur doit continuer à s'exécuter après un refus de bio (la couleur, elle,
+passe) : **pas** de `return` dans la branche bio.
 
-`shared/twitch/dispatch.py:992-996`, **avant** :
+---
+
+# LOT 2 — Sur refus, `_ensure_daily_profile` retombe sur la bio FIXE, et la garde
+
+`shared/twitch/daily_profile.py`, `_ensure_daily_profile`, **avant** (l.165-168) :
 
 ```python
-            if fiche:
-                instruction += (
-                    f"Voici la fiche officielle de ce jeu (en anglais) : {fiche}. "
+            # Application du profil
+            if self.profile_helper:
+                await self.profile_helper.update_profile(bio=bio, chat_color=color)
+                self._profile_day = today
 ```
 
 **après** :
 
 ```python
-            if fiche:
-                instruction += (
-                    f"Voici la fiche officielle de ce jeu (en anglais) : {_fiche_sans_epoque(fiche)}. "
+            # Application du profil
+            if self.profile_helper:
+                resultat = await self.profile_helper.update_profile(bio=bio, chat_color=color)
+                # ⚠️ 23/09 : la bio GENEREE de Johnny (juron + appel a « faire peter » une
+                # corpo) etait refusee par la moderation Twitch a chaque demarrage, et rien
+                # ne suivait : sa bio restait celle d'un vieux jour. On retombe sur la bio
+                # FIXE du bot et on l'ECRIT dans l'etat du jour, sinon chaque redemarrage
+                # renverrait la bio refusee. Pas de bio fixe (Sugar) : on n'envoie rien.
+                # ⚠️ Comparer a la CHAINE : un AsyncMock rend un MagicMock, qui est vrai.
+                repli = getattr(self, "profile_bio", None) or ""
+                if resultat == "bio_refusee" and repli and bio != repli:
+                    self.logger.warning(
+                        f"⚠️ [TWITCH_CHAT:{self.bot_id}] Bio du jour refusee par la moderation "
+                        f"Twitch : repli sur la bio fixe."
+                    )
+                    await self.profile_helper.update_profile(bio=repli)
+                    self._save_profile_state({"date": today, "bio": repli, "color": color})
+                self._profile_day = today
 ```
 
-La ligne suivante (« C'est TOUT ce que tu sais de vrai… ») ne change pas. Rien d'autre ne
-bouge : l.1015 garde `fiche`.
-
-## 1.3 — Tests
-
-**a) Un test existant CASSE, c'est voulu** : `tests/test_phrase_de_lien_jeu_en_cours.py:184`
-affirme `"15th century RPG" in capture["instruction"]`. Le remplacer par :
-
-```python
-    assert "RPG" in capture["instruction"]
-    # ⚠️ La date de la fiche ne va plus au modele : elle devenait un tic (23/09).
-    assert "15th century" not in capture["instruction"]
-```
-
-**b) Nouveau**, dans `tests/test_phrase_de_lien_seconde_chance.py` (qui a déjà `FICHE_KCD2`
-l.126), après `test_une_epoque_JUSTE_passe_au_premier_essai_quand_la_fiche_la_donne` :
-
-```python
-@pytest.mark.parametrize("fiche,absent,present", [
-    (FICHE_KCD2, "15th century", "set in Medieval Europe"),
-    ("Résumé : In 1403, Henry seeks revenge. | Thèmes : Action", "1403", "Résumé : Henry seeks revenge"),
-    ("Résumé : Bohemia in 1403 is torn by war.", "1403", "Bohemia is torn by war"),
-    ("Résumé : Set during the 13th-century wars.", "13th", "Set during the wars"),
-])
-def test_la_fiche_du_MODELE_perd_sa_date(fiche, absent, present):
-    from shared.twitch.dispatch import _fiche_sans_epoque
-    propre = _fiche_sans_epoque(fiche)
-    assert absent not in propre and present in propre
-
-
-def test_une_fiche_sans_date_ne_bouge_pas():
-    from shared.twitch.dispatch import _fiche_sans_epoque
-    assert _fiche_sans_epoque(None) is None
-    assert _fiche_sans_epoque("Résumé : A space RPG. | Thèmes : Sci-fi") == \
-        "Résumé : A space RPG. | Thèmes : Sci-fi"
-    # une annee NUE n'est pas une date : elle reste
-    assert _fiche_sans_epoque("Résumé : Over 1000 quests.") == "Résumé : Over 1000 quests."
-```
-
-⚠️ **Le test de bout en bout existant DOIT rester vert sans être modifié** :
-`test_une_epoque_JUSTE_passe_au_premier_essai_quand_la_fiche_la_donne` (l.154). C'est lui
-qui prouve que le filtre reçoit encore la fiche complète. S'il casse, c'est que le piège de
-1.1 a été commis.
+⚠️ **Piège 1** : `resultat == "bio_refusee"`, **pas** `if resultat:`. Les tests existants
+mockent `profile_helper` par `AsyncMock()`, dont l'`await` rend un `MagicMock` **vrai** :
+`if resultat:` déclencherait le repli dans les 4 tests existants.
+⚠️ **Piège 2** : le second appel ne repasse **pas** `chat_color` : la couleur est déjà posée.
+⚠️ **Piège 3** : `bio != repli` empêche une boucle si la bio fixe était elle-même refusée un
+jour : un seul repli, jamais deux.
+⚠️ `getattr(..., "profile_bio", None)` : l'hôte de test `_Host` n'a pas cet attribut.
 
 ---
 
-# LOT 2 — Sugar pose une question aux lecteurs, EN UNE phrase courte
+# LOT 3 — Le prompt demande une bio qui passe la modération
 
-## 2.1 — Une table de clauses qui ne s'applique QU'AVEC un jeu
-
-La clause parle de « ce jeu » : hors live ou en « Just Chatting », elle n'a pas de sens.
-Elle ne va donc **pas** dans `CLAUSES_PAR_BOT` (qui s'applique toujours, l.975) mais dans
-une nouvelle table, lue dans le bloc `if jeu:`.
-
-Dans `shared/twitch/dispatch.py`, **juste après `ACCROCHE_AU_JEU = {…}`** (l.712), ajouter :
+`shared/twitch/daily_profile.py:67`, **avant** :
 
 ```python
-    # Clauses ajoutees POUR UN SEUL BOT, et SEULEMENT quand un jeu est diffuse : elles
-    # parlent de « ce jeu », et hors live elles n'auraient pas de sens.
-    #
-    # ⚠️ SUGAR — demande d'Ahmed le 2026-09-23 : qu'elle interroge les lecteurs sur LEUR
-    # experience du jeu (« Vous galerez autant en Boheme que Henry ? venez nous partager
-    # ca »). Sans exemple dans le texte : une formule citee devient un tic.
-    # Premiere version mesuree le 23/09 (KCD2 + fiche, n=18, Gemini) :
-    #     question aux lecteurs + invitation ... ~13/18   (contre ~0 sans)
-    #     contenu du Discord invente ..........   0/18   (contre 3/18)
-    #     longueur mediane ....................  176 car. (contre 112)  <- REFUSE
-    #     au-dela de 120 car. .................  17/18
-    # Elle demandait « une question PUIS une invitation » : le modele collait deux
-    # phrases. Cette version-ci exige que les deux tiennent dans UNE phrase courte.
-    CLAUSES_JEU_PAR_BOT = {
-        "sugar": (
-            "⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu : ta phrase est "
-            "UNE question sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont "
-            "joué — jamais sur la partie en cours, jamais une pique sur eux — et cette "
-            "même question les invite à venir le raconter là-bas. Question et invitation "
-            "tiennent dans la MÊME phrase, sous les 120 caractères : pas de mise en scène "
-            "avant, pas de seconde phrase après. "
-        ),
-    }
+            f'{{"bio": "<1-2 phrases, 1re personne, en personnage, ≤280 caractères, sans guillemets ni didascalies>", '
 ```
 
-## 2.2 — La lire dans le bloc `if jeu:`
-
-`shared/twitch/dispatch.py:992-1000` : insérer **entre** la fin du bloc `if fiche:`
-(l.996) et `instruction += (f"⚠️ Et ta phrase doit CLAQUER…` (l.997) :
+**après** :
 
 ```python
-            instruction += self.CLAUSES_JEU_PAR_BOT.get(self.bot_id, "")
+            f'{{"bio": "<1-2 phrases, 1re personne, en personnage, ≤280 caractères, sans guillemets ni didascalies, '
+            f'sans juron ni appel à la violence : elle doit passer la modération de Twitch>", '
 ```
 
-⚠️ Même indentation que `if fiche:` (12 espaces, dans `if jeu:`), **pas** dans le `if fiche:` :
-la question vaut aussi quand IGDB est muet.
-
-## 2.3 — Tests
-
-Dans `tests/test_phrase_de_lien_jeu_en_cours.py`, sur le modèle de
-`test_instruction_inclut_la_fiche_si_disponible` (l.166) : un faux bot, un faux
-`_ecrire_phrase_de_lien` qui capture l'instruction. Trois cas :
-
-1. `sugar` + jeu → `CLAUSES_JEU_PAR_BOT["sugar"]` est dans l'instruction ;
-2. `sugar` **sans** jeu (`_jeu_en_cours` rend `None`) → elle n'y est **pas** ;
-3. `alfred` + jeu → elle n'y est **pas**.
-
-Comparer au texte de la table (`DispatchMixin.CLAUSES_JEU_PAR_BOT["sugar"]`), pas à une
-copie retapée dans le test ([[gotcha-test-qui-retape-la-logique]]).
+Pourquoi en plus du LOT 2 : sans lui, Johnny n'aurait **plus jamais** de bio du jour, le
+repli la remplacerait chaque matin. Le LOT 2 reste le filet : le prompt réduit les refus,
+il ne les supprime pas.
+⚠️ Aucun mot interdit n'est **cité** dans la consigne : une formule écrite dans le prompt
+ressort dans la sortie.
 
 ---
 
-# LOT 3 — Vérifier, dans cet ordre
+# LOT 4 — Tests
 
-1. `python -m pyflakes shared/twitch/dispatch.py tests/test_phrase_de_lien_*.py`
+## 4.1 — `tests/test_twitch_daily_profile.py`
+
+Ne **pas** toucher à `_Host` (il reste sans `profile_bio` : c'est le cas Sugar). Ajouter,
+après `_Host` :
+
+```python
+class _HostAvecRepli(_Host):
+    """Un bot qui a une bio FIXE (Johnny) et dont la bio du jour est refusee."""
+
+    def __init__(self):
+        super().__init__()
+        self.profile_bio = "bio fixe qui passe"
+        self.profile_helper.update_profile = AsyncMock(side_effect=["bio_refusee", None])
+```
+
+Et dans `TestDailyProfileCache` :
+
+1. `test_bio_refusee_retombe_sur_la_bio_fixe` : `_HostAvecRepli`, `_ensure_daily_profile()`.
+   Vérifier : `update_profile.await_count == 2` ; `await_args_list[1] == call(bio="bio fixe qui passe")`
+   (importer `call` de `unittest.mock`) ; l'état persistant a `bio == "bio fixe qui passe"`
+   et `color == "blue_violet"`.
+2. `test_bio_refusee_sans_bio_fixe_n_envoie_rien_de_plus` : `_Host`, avec
+   `host.profile_helper.update_profile = AsyncMock(return_value="bio_refusee")`.
+   Vérifier `await_count == 1` et l'état garde `"ma bio du jour"`.
+3. `test_bio_acceptee_pas_de_repli` : `_HostAvecRepli` puis
+   `host.profile_helper.update_profile = AsyncMock(return_value=None)` → `await_count == 1`.
+4. `test_redemarrage_apres_repli_n_appelle_pas_le_llm` : après le cas 1, un **nouvel**
+   `_HostAvecRepli` avec `update_profile = AsyncMock(return_value=None)` :
+   `gen_calls == 0` et `update_profile` attendu avec `bio="bio fixe qui passe"`.
+
+## 4.2 — Nouveau `tests/test_twitch_profile_moderation.py`
+
+`TwitchProfile("johnny", logger, "cid", auth)` avec `auth.get_valid_token = AsyncMock(return_value="tok")`.
+Patcher `shared.twitch.profile.aiohttp.ClientSession` pour que `session.put(...)` rende
+(en contexte async) une réponse `status=400` dont `text()` rend
+`'{"status":400,"message":"Description failed moderation."}'`.
+- `update_profile(bio="x")` → `== "bio_refusee"` ;
+- même montage avec `"message":"Invalid parameter"` → `is None` ;
+- `status=200` → `is None`.
+
+Seul modèle existant dans la suite qui patche `ClientSession` : `tests/test_laya_client.py`.
+⚠️ Aucun appel réseau réel : si le patch est mal posé, le test doit échouer, pas appeler Twitch
+(`get_valid_token` mocké garantit qu'aucun vrai jeton n'est lu).
+
+---
+
+# LOT 5 — Vérifier, dans cet ordre
+
+1. `python -m pyflakes shared/twitch/profile.py shared/twitch/daily_profile.py tests/test_twitch_daily_profile.py tests/test_twitch_profile_moderation.py`
 2. La suite complète, **un seul pytest à la fois** (port 8599) :
    `uv run --no-project --python 3.11 --with-requirements requirements.txt -- python -m pytest -q`
-   Attendu : tout vert (1329 + les nouveaux).
+   Attendu : tout vert.
 3. Commit, push, puis **`gh run list --limit 1` → `success`**. Rien n'est livré avant.
 
 ---
 
-# LOT 4 — Mesure AVANT la prod **[Antigravity ou Claude, quota de prod : jamais pendant un live]**
+# LOT 6 — Prod **[Ahmed : hors live]**
 
-Même protocole que le 23/09, pour comparer à l'identique (la sonde appelle le code de prod,
-donc elle mesure les LOTS 1 et 2 sans `--clause`) :
+`docker restart bot-johnny bot-sheogorath` (les deux seuls bots avec une bio fixe ; les
+autres ne changent pas de comportement, inutile de les redémarrer).
 
-```bash
-FICHE="Résumé : A thrilling story-driven action RPG, with a rich open world, set in 15th century Medieval Europe. Experience the ultimate medieval adventure - through the eyes of young Henry - as you embark on a journey of epic proportions. | Thèmes : Action, Historical, Open world"
-for b in sugar alfred malena johnny; do
-  PYTHONIOENCODING=utf-8 uv run --no-project --python 3.11 --with-requirements requirements.txt -- \
-    python tools/sonde_phrase_de_lien.py --bot $b --jeu "Kingdom Come: Deliverance II" \
-    --fiche "$FICHE" --n 18 --pause 5 > mesure_${b}.txt 2>&1
-done
-```
-
-(fichiers de sortie dans un dossier temporaire, **jamais commités**)
-
-**Critères fixés MAINTENANT, avant de voir les chiffres :**
-
-| critère | seuil | aujourd'hui |
-|---|---|---|
-| siècle cité (XVe, quinzième, 15e) | **≤ 4/18** pour chaque bot | 14 à 18/18 |
-| repli sur le gabarit fixe | ≤ 2/18 par bot | 0 à 1/18 |
-| débuts de phrase distincts, Alfred | **≥ 8** | 4 |
-| Sugar : longueur médiane | **≤ 130 car.** | 176 |
-| Sugar : question aux lecteurs + invitation, dans la même phrase | **≥ 12/18** (lecture phrase par phrase) | ~13/18 |
-| Sugar : question sur Henry au lieu des lecteurs | ≤ 2/18 | 2/18 |
-| faits inventés sur le jeu (dates, noms, « bugs de sauvegarde ») | ≤ 1/18 par bot | 1 (Sugar) |
-
-⚠️ **À surveiller, sans seuil** : « Medieval Europe » reste dans la fiche. Si « médiéval »
-ou « Moyen Âge » devient le nouveau tic (≥ 12/18), le noter : le problème serait alors le
-fait de NOMMER une époque, pas le siècle.
-
-⚠️ Plancher de bruit à n = 18 : environ ±3/18 ([[gotcha-plancher-de-bruit-du-harnais]]).
-Un écart plus petit que ça n'est pas un résultat.
-
-**Décision :**
-- tout passe → LOT 5 ;
-- LOT 1 passe mais pas Sugar → livrer le LOT 1 seul (retirer l'entrée `sugar` de
-  `CLAUSES_JEU_PAR_BOT`, **garder la table vide** et ses tests 2 et 3), et rapporter à Ahmed ;
-- le LOT 1 échoue → ne rien déployer, rapporter les chiffres.
+⚠️ Le profil du 23/09 est déjà dans `data/twitch_profile_johnny.json` avec la bio refusée :
+au redémarrage, elle est renvoyée, refusée, puis **remplacée** par la bio fixe — c'est le
+test en vrai. Dans `docker logs --since 5m bot-johnny`, attendre :
+`Bio du jour refusee par la moderation Twitch : repli sur la bio fixe.` puis
+`✅ [TWITCH_PROFILE:johnny] Description mise à jour avec succès.`
+Au redémarrage suivant : plus aucun `failed moderation`.
 
 ---
 
-# LOT 5 — Prod **[Ahmed : hors live]**
+## RESTE DES PLANS PRÉCÉDENTS
 
-`dispatch.py` est chargé au démarrage (montage lié, modules déjà importés) :
-`docker restart bot-sugar bot-alfred bot-malena bot-johnny`. Pas de rebuild, aucune
-dépendance ne bouge. Vérifier dans `docker logs --since 5m <bot>` la ligne « Twitch
-connecté », puis au prochain live un `!discord` sur `#ma_streameuse` : la ligne
-`✨ … Phrase de lien !discord (jeu : …) écrite par le bot` donne la phrase réelle.
-
----
-
-## RESTE DU PLAN PRÉCÉDENT (22/09)
-
-- **LOT 7 [Ahmed]** — recréer `.venv` en 3.11 (aujourd'hui 3.13 sans pyflakes) :
+- **LOT 7 du 22/09 [Ahmed]** — recréer `.venv` en 3.11 (aujourd'hui 3.13 sans pyflakes) :
   `uv venv --python 3.11 .venv` puis
   `uv pip install --python .venv\Scripts\python.exe -r requirements.txt`.
 - **Questions ouvertes** : (1) Sheogorath réagit par emoji aux messages des AUTRES bots
   (`bot_sheogorath.py`, réactions avant la garde `author.bot`) — voulu ? (2) la borne de
-  300 ms de Laya.
+  300 ms de Laya (Laya est GARDÉ, décision d'Ahmed du 23/09).
 - Petite dette : `610fdac` pose un attelage factice par `setdefault` sur
   `runner._ATTELAGES` sans le retirer (fuite d'état entre tests ; `monkeypatch` serait propre).
+- **À lire après le live du 23/09 au soir** : les lignes
+  `Phrase de lien !discord (jeu : …) écrite par le bot` de Sugar et Johnny (première
+  mesure réelle de `2bb82b5`) ; le tic « boue / médiéval » n'est à traiter que s'il se voit.
 
 ## INTERDITS DE CE PLAN
 
-- Aucun `.env`, `.master_key`, `.env.encrypted`, ni base de `data/` touché.
-- Aucune clé d'un bot utilisée pour un autre : la sonde charge les clés du bot mesuré
-  depuis son propre dossier, ne pas contourner.
+- Aucun `.env`, `.master_key`, `.env.encrypted`, ni base de `data/` touché — y compris
+  `data/twitch_profile_*.json` : c'est le code qui le réécrit, pas l'exécutant.
+- Aucun jeton d'un bot utilisé pour un autre.
 - Aucun import entre bots ; aucune factorisation.
-- Ne pas toucher à `fiche_courte`, `_fiche_du_jeu`, ni au filtre `_affirme_une_epoque`.
+- Ne pas changer `TWITCH_BIO` de Johnny : elle passe la modération (vérifié le 23/09).
 - **Un seul `pytest` à la fois.** Aucun lot « livré » tant que la CI n'est pas `success`.

@@ -12,9 +12,12 @@ class TwitchProfile:
         self.client_id = client_id
         self.auth = auth
 
-    async def update_profile(self, bio: str | None = None, chat_color: str | None = None):
+    async def update_profile(self, bio: str | None = None, chat_color: str | None = None) -> str | None:
         """
         Met à jour la bio et/ou la couleur de chat en best-effort.
+
+        Rend "bio_refusee" si Twitch a refusé la bio par sa modération (400
+        « failed moderation »), sinon None. La couleur n'entre pas dans ce retour.
         """
         if not bio and not chat_color:
             return
@@ -29,6 +32,7 @@ class TwitchProfile:
             "Authorization": f"Bearer {token}"
         }
 
+        resultat = None
         async with aiohttp.ClientSession() as session:
             # 1. Update Bio (description)
             if bio:
@@ -44,6 +48,8 @@ class TwitchProfile:
                         else:
                             err_text = await resp.text()
                             self.logger.warning(f"⚠️ [TWITCH_PROFILE:{self.bot_id}] Erreur mise à jour bio ({resp.status}): {err_text}")
+                            if resp.status == 400 and "moderation" in err_text.lower():
+                                resultat = "bio_refusee"
                 except Exception as e:
                     self.logger.error(f"❌ [TWITCH_PROFILE:{self.bot_id}] Exception lors de la mise à jour de la bio: {e}")
 
@@ -75,3 +81,6 @@ class TwitchProfile:
                                 self.logger.warning(f"⚠️ [TWITCH_PROFILE:{self.bot_id}] Erreur mise à jour couleur ({resp.status}): {err_text}")
                     except Exception as e:
                         self.logger.error(f"❌ [TWITCH_PROFILE:{self.bot_id}] Exception lors de la mise à jour de la couleur: {e}")
+
+        return resultat
+

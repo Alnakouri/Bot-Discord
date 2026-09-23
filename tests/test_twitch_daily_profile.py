@@ -14,7 +14,7 @@ import shutil
 import unittest
 from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
@@ -38,6 +38,15 @@ class _Host(DailyProfileMixin):
         # Remplace l'appel LLM réel : on compte les invocations.
         self.gen_calls += 1
         return ("ma bio du jour", "blue_violet")
+
+
+class _HostAvecRepli(_Host):
+    """Un bot qui a une bio FIXE (Johnny) et dont la bio du jour est refusee."""
+
+    def __init__(self):
+        super().__init__()
+        self.profile_bio = "bio fixe qui passe"
+        self.profile_helper.update_profile = AsyncMock(side_effect=["bio_refusee", None])
 
 
 class TestDailyProfileCache(unittest.IsolatedAsyncioTestCase):
@@ -95,6 +104,47 @@ class TestDailyProfileCache(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(host.gen_calls, 1)
         state = host._load_profile_state()
         self.assertEqual(state["date"], datetime.now().strftime("%Y-%m-%d"))
+
+    async def test_bio_refusee_retombe_sur_la_bio_fixe(self):
+        host = _HostAvecRepli()
+        await host._ensure_daily_profile()
+        self.assertEqual(host.profile_helper.update_profile.await_count, 2)
+        self.assertEqual(
+            host.profile_helper.update_profile.await_args_list[1],
+            call(bio="bio fixe qui passe"),
+        )
+        state = host._load_profile_state()
+        self.assertIsNotNone(state)
+        self.assertEqual(state["bio"], "bio fixe qui passe")
+        self.assertEqual(state["color"], "blue_violet")
+
+    async def test_bio_refusee_sans_bio_fixe_n_envoie_rien_de_plus(self):
+        host = _Host()
+        host.profile_helper.update_profile = AsyncMock(return_value="bio_refusee")
+        await host._ensure_daily_profile()
+        self.assertEqual(host.profile_helper.update_profile.await_count, 1)
+        state = host._load_profile_state()
+        self.assertIsNotNone(state)
+        self.assertEqual(state["bio"], "ma bio du jour")
+
+    async def test_bio_acceptee_pas_de_repli(self):
+        host = _HostAvecRepli()
+        host.profile_helper.update_profile = AsyncMock(return_value=None)
+        await host._ensure_daily_profile()
+        self.assertEqual(host.profile_helper.update_profile.await_count, 1)
+
+    async def test_redemarrage_apres_repli_n_appelle_pas_le_llm(self):
+        host1 = _HostAvecRepli()
+        await host1._ensure_daily_profile()
+        self.assertEqual(host1.gen_calls, 1)
+
+        host2 = _HostAvecRepli()
+        host2.profile_helper.update_profile = AsyncMock(return_value=None)
+        await host2._ensure_daily_profile()
+        self.assertEqual(host2.gen_calls, 0)
+        host2.profile_helper.update_profile.assert_awaited_with(
+            bio="bio fixe qui passe", chat_color="blue_violet"
+        )
 
 
 if __name__ == "__main__":
