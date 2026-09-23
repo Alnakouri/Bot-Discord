@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 import os
 import sys
 
@@ -13,8 +13,6 @@ from shared.twitch_chat import setup_twitch_chat
 from shared.twitch.game_info import (
     detect_game_question,
     format_facts_block,
-    normalize_name,
-    get_similarity,
     find_best_match
 )
 
@@ -300,3 +298,144 @@ class TestTwitchFeatures(unittest.TestCase):
         out2 = _truncate_for_twitch(no_boundary, 480)
         self.assertTrue(out2.endswith("🧀"))
         self.assertIn("…", out2)
+
+    @patch.dict(os.environ, {
+        "TWITCH_CLIENT_ID": "test_client_id",
+        "TWITCH_CLIENT_SECRET": "test_client_secret",
+        "TWITCH_BOT_USERNAME": "test_bot_user",
+        "TWITCH_OAUTH_TOKEN": "test_oauth_token",
+        "TWITCH_CHAT_CHANNELS": "test_channel"
+    })
+    @patch("shared.twitch_chat._load_dashboard_twitch_config")
+    def test_link_timers_registration(self, mock_load_config):
+        # 1. auto_minutes: 20 -> entrée avec every == 1200, min_msgs == 5 par défaut
+        mock_load_config.return_value = {
+            "link_commands": [
+                {"cmd": "discord", "url": "https://discord.gg/test", "auto_minutes": 20}
+            ]
+        }
+        bot = setup_twitch_chat("johnny", self.mock_logger)
+        self.assertEqual(len(bot.link_timers), 1)
+        self.assertEqual(bot.link_timers[0]["cmd"], "discord")
+        self.assertEqual(bot.link_timers[0]["every"], 1200)
+        self.assertEqual(bot.link_timers[0]["min_msgs"], 5)
+
+        # 2. auto_minutes: 0 -> liste vide
+        mock_load_config.return_value = {
+            "link_commands": [
+                {"cmd": "discord", "url": "https://discord.gg/test", "auto_minutes": 0}
+            ]
+        }
+        bot = setup_twitch_chat("johnny", self.mock_logger)
+        self.assertEqual(len(bot.link_timers), 0)
+
+    @patch("shared.twitch.dispatch.send_chat_safe", new_callable=AsyncMock)
+    @patch("shared.twitch.dispatch.time.time")
+    def test_try_link_timer(self, mock_time, mock_send_chat):
+        import asyncio
+        import collections
+        from shared.twitch.dispatch import DispatchMixin
+
+        async def _test():
+            class FauxBot(DispatchMixin):
+                pass
+
+            bot = FauxBot()
+            bot.bot_id = "test_bot"
+            bot.logger = self.mock_logger
+            bot.global_msg_timestamps = collections.deque()
+            bot._canal_en_direct = AsyncMock()
+
+            cb = MagicMock(return_value="Viens sur Discord: https://discord.gg/test")
+            bot.link_timers = [
+                {"cmd": "discord", "every": 1200, "min_msgs": 5, "callback": cb}
+            ]
+            bot._etat_timers = {
+                ("test_channel", "discord"): {"depuis": 1000.0, "msgs": 0}
+            }
+            ws = MagicMock()
+
+            # 1. Avant l'intervalle (t=1500, diff=500 < 1200) -> rien envoyé
+            mock_time.return_value = 1500.0
+            bot._etat_timers[("test_channel", "discord")]["msgs"] = 10
+            sent = await bot._try_link_timer("test_channel", ws)
+            self.assertFalse(sent)
+            mock_send_chat.assert_not_called()
+
+            # 2. Intervalle passé (t=2300, diff=1300 >= 1200) mais msgs < min_msgs (msgs=4 < 5) -> rien
+            mock_time.return_value = 2300.0
+            bot._etat_timers[("test_channel", "discord")]["msgs"] = 4
+            sent = await bot._try_link_timer("test_channel", ws)
+            self.assertFalse(sent)
+            mock_send_chat.assert_not_called()
+
+            # 3. Les deux OK mais hors direct -> rien, état NON remis à zéro
+            bot._etat_timers[("test_channel", "discord")]["msgs"] = 5
+            bot._canal_en_direct.return_value = False
+            sent = await bot._try_link_timer("test_channel", ws)
+            self.assertFalse(sent)
+            mock_send_chat.assert_not_called()
+            self.assertEqual(bot._etat_timers[("test_channel", "discord")]["depuis"], 1000.0)
+            self.assertEqual(bot._etat_timers[("test_channel", "discord")]["msgs"], 5)
+
+            # 4. Les deux OK et en direct -> envoyé une fois, état remis à zéro, 2e appel immédiat -> rien
+            bot._canal_en_direct.return_value = True
+            sent = await bot._try_link_timer("test_channel", ws)
+            self.assertTrue(sent)
+            mock_send_chat.assert_called_once_with(
+                ws, "test_channel", "Viens sur Discord: https://discord.gg/test",
+                bot_id="test_bot", logger=bot.logger
+            )
+            self.assertEqual(bot._etat_timers[("test_channel", "discord")]["depuis"], 2300.0)
+            self.assertEqual(bot._etat_timers[("test_channel", "discord")]["msgs"], 0)
+
+            # 2e appel immédiat -> rien
+            mock_send_chat.reset_mock()
+            sent2 = await bot._try_link_timer("test_channel", ws)
+            self.assertFalse(sent2)
+            mock_send_chat.assert_not_called()
+
+            # 5. min_msgs = 0 -> l'intervalle seul suffit
+            bot.link_timers[0]["min_msgs"] = 0
+            mock_time.return_value = 3600.0
+            sent3 = await bot._try_link_timer("test_channel", ws)
+            self.assertTrue(sent3)
+            mock_send_chat.assert_called_once()
+
+        asyncio.run(_test())
+
+    def test_canal_en_direct(self):
+        import asyncio
+        from shared.twitch.dispatch import DispatchMixin
+
+        async def _test():
+            class FauxBot(DispatchMixin):
+                pass
+
+            bot = FauxBot()
+            bot.bot_id = "test_bot"
+            bot.logger = self.mock_logger
+
+            # Sans client_id / secret -> False
+            bot.client_id = None
+            bot.client_secret = None
+            self.assertFalse(await bot._canal_en_direct("test_chan"))
+
+            # Avec client_id / secret
+            bot.client_id = "cid"
+            bot.client_secret = "csecret"
+
+            # Mock HelixClient
+            mock_helix = MagicMock()
+            bot._helix_client = mock_helix
+
+            mock_helix.get_current_game = AsyncMock(return_value=("Elden Ring", "123"))
+            self.assertTrue(await bot._canal_en_direct("test_chan"))
+
+            mock_helix.get_current_game = AsyncMock(return_value=(None, None))
+            self.assertFalse(await bot._canal_en_direct("test_chan"))
+
+            mock_helix.get_current_game = AsyncMock(side_effect=Exception("API down"))
+            self.assertFalse(await bot._canal_en_direct("test_chan"))
+
+        asyncio.run(_test())

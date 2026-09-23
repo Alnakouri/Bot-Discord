@@ -432,6 +432,13 @@ class DispatchMixin:
         # valeur — sans quoi un message de canal co-host serait compte deux fois.
         categorie_jeu = self._question_de_jeu(text, "passif")
 
+        for t in getattr(self, "link_timers", []):
+            if not hasattr(self, "_etat_timers"):
+                self._etat_timers = {}
+            etat = self._etat_timers.setdefault((chan_lower, t["cmd"]),
+                                                {"depuis": time.time(), "msgs": 0})
+            etat["msgs"] += 1
+
         # Suivi des viewers (accueil)
         author_lower = author.lower()
         is_first_session_msg = False
@@ -492,6 +499,10 @@ class DispatchMixin:
                                 self.global_msg_timestamps.append(now)
                                 await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
                                 spontaneous_sent = True
+
+        # Option A.3 : annonce automatique d'un lien (reglee dans le dashboard, 23/09)
+        if not spontaneous_sent and getattr(self, "link_timers", None):
+            spontaneous_sent = await self._try_link_timer(chan, ws)
 
         # Option B : Accueil de session
         if not spontaneous_sent and is_first_session_msg and self.enable_greetings:
@@ -598,6 +609,55 @@ class DispatchMixin:
             await send_chat_safe(ws, chan, reply, bot_id=self.bot_id, logger=self.logger)
             return True
         return False
+
+    async def _try_link_timer(self, chan: str, ws) -> bool:
+        """Poste un lien regle en « auto » dans le dashboard, si son heure est venue.
+
+        Trois conditions : l'intervalle, le nombre de messages depuis la derniere annonce,
+        et le DIRECT (hors live, le chat d'une chaine ne doit pas recevoir de pub). Le
+        texte est celui de la commande elle-meme : meme callback, meme cache.
+        """
+        now = time.time()
+        chan_lower = chan.lower()
+        for t in getattr(self, "link_timers", []):
+            etat = getattr(self, "_etat_timers", {}).get((chan_lower, t["cmd"]))
+            if not etat or now - etat["depuis"] < t["every"] or etat["msgs"] < t["min_msgs"]:
+                continue
+            if not await self._canal_en_direct(chan_lower):
+                return False
+            while self.global_msg_timestamps and now - self.global_msg_timestamps[0] > 30.0:
+                self.global_msg_timestamps.popleft()
+            if len(self.global_msg_timestamps) >= 14:
+                return False
+            try:
+                cb = t["callback"]
+                res = await cb("timer", "") if asyncio.iscoroutinefunction(cb) else cb("timer", "")
+            except Exception as e:
+                self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] annonce auto !{t['cmd']} : {e}")
+                return False
+            etat["depuis"], etat["msgs"] = now, 0
+            if not res:
+                return False
+            self.global_msg_timestamps.append(now)
+            self.logger.info(f"⏰ [TWITCH_CHAT:{self.bot_id}] Annonce auto !{t['cmd']} sur #{chan_lower}")
+            await send_chat_safe(ws, chan, res, bot_id=self.bot_id, logger=self.logger)
+            return True
+        return False
+
+    async def _canal_en_direct(self, chan: str) -> bool:
+        """Vrai si CE canal est en direct. Faux au moindre doute (pas d'identifiants, erreur)."""
+        if not getattr(self, "client_id", None) or not getattr(self, "client_secret", None):
+            return False
+        try:
+            from shared.twitch.game_info import HelixClient
+            if getattr(self, "_helix_client", None) is None:
+                self._helix_client = HelixClient(self.client_id, self.client_secret)
+            nom, _ = await self._helix_client.get_current_game(chan, live_only=True)
+            return nom is not None
+        except Exception as e:
+            # HelixClient ou réseau indisponible : on considère hors-ligne par sécurité
+            self.logger.debug(f"[TWITCH_CHAT:{self.bot_id}] direct indisponible pour #{chan} : {e}")
+            return False
 
     # Clauses ajoutees a l'instruction POUR UN SEUL BOT. Vide par defaut : un bot absent
     # de cette table recoit exactement le texte commun, inchange.

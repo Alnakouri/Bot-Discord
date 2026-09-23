@@ -385,12 +385,27 @@ class TwitchConfigManager:
                 continue
             seen_cmds.add(cmd)
             
+            # Annonce automatique (23/09) : minutes entre deux annonces, 0 = eteinte.
+            # Plancher de 5 min : une faute de frappe (« 1 ») ne doit pas faire spammer le chat.
+            try:
+                auto_minutes = int(item.get("auto_minutes") or 0)
+                brut_msgs = item.get("auto_min_messages")
+                auto_min_messages = 5 if brut_msgs in (None, "") else int(brut_msgs)
+            except (TypeError, ValueError):
+                raise ValueError(f"Les valeurs d'annonce auto de '{cmd}' doivent être des nombres entiers.")
+            if auto_minutes < 0 or auto_min_messages < 0:
+                raise ValueError(f"Les valeurs d'annonce auto de '{cmd}' ne peuvent pas être négatives.")
+            if 0 < auto_minutes < 5:
+                raise ValueError(f"L'annonce auto de '{cmd}' : 5 minutes minimum (0 pour l'éteindre).")
+
             cleaned_items.append({
                 "cmd": cmd,
                 "url": url,
                 "label": label,
                 "message": msg,
-                "aliases": cleaned_aliases
+                "aliases": cleaned_aliases,
+                "auto_minutes": auto_minutes,
+                "auto_min_messages": auto_min_messages
             })
             
         config = self.get_all()

@@ -1490,15 +1490,15 @@ window.renderLinksTable = function(links) {
     const tbody = document.getElementById('twitch-links-table-body');
     tbody.innerHTML = '';
     if (!links || links.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; opacity:0.5; padding: 15px;">Aucune commande de lien configurée.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; opacity:0.5; padding: 15px;">Aucune commande de lien configurée.</td></tr>`;
         return;
     }
     links.forEach(link => {
-        addLinkRow(link.cmd, link.url, link.label, link.message, link.aliases);
+        addLinkRow(link.cmd, link.url, link.label, link.message, link.aliases, link.auto_minutes, link.auto_min_messages);
     });
 }
 
-window.addLinkRow = function(cmd = '', url = '', label = '', message = '', aliases = []) {
+window.addLinkRow = function(cmd = '', url = '', label = '', message = '', aliases = [], autoMinutes = 0, autoMinMessages = 5) {
     const tbody = document.getElementById('twitch-links-table-body');
     if (tbody.children.length === 1 && tbody.children[0].cells.length === 1) {
         tbody.innerHTML = '';
@@ -1512,6 +1512,8 @@ window.addLinkRow = function(cmd = '', url = '', label = '', message = '', alias
     tr.onmouseleave = () => tr.style.background = 'transparent';
     
     const aliasesStr = Array.isArray(aliases) ? aliases.join(', ') : aliases;
+    const minsVal = autoMinutes !== undefined && autoMinutes !== null ? autoMinutes : 0;
+    const msgsVal = autoMinMessages !== undefined && autoMinMessages !== null ? autoMinMessages : 5;
     
     tr.innerHTML = `
         <td style="padding: 12px;"><input type="text" class="link-cmd-input form-input" placeholder="Ex: discord" value="${escapeHtml(cmd)}"></td>
@@ -1519,6 +1521,8 @@ window.addLinkRow = function(cmd = '', url = '', label = '', message = '', alias
         <td style="padding: 12px;"><input type="text" class="link-label-input form-input" placeholder="Ex: Discord" value="${escapeHtml(label)}"></td>
         <td style="padding: 12px;"><input type="text" class="link-message-input form-input" placeholder="Ex: Rejoins-nous : {url}" value="${escapeHtml(message)}"></td>
         <td style="padding: 12px;"><input type="text" class="link-aliases-input form-input" placeholder="Ex: serveur, community" value="${escapeHtml(aliasesStr)}"></td>
+        <td style="padding: 12px;"><input type="number" min="0" step="1" class="link-auto-minutes-input form-input" placeholder="0" value="${escapeHtml(String(minsVal))}"></td>
+        <td style="padding: 12px;"><input type="number" min="0" step="1" class="link-auto-msgs-input form-input" placeholder="5" value="${escapeHtml(String(msgsVal))}"></td>
         <td style="padding: 12px; text-align:right;">
             <button style="appearance:none; -webkit-appearance:none; background:transparent; margin:0; padding:0; font:inherit; box-sizing:border-box; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; color:#8f99ad; border:1px solid #23233a; font-size:11px; transition:all 0.2s;" onmouseenter="this.style.color='#fca5a5'; this.style.borderColor='#4a2230'" onmouseleave="this.style.color='#8f99ad'; this.style.borderColor='#23233a'" title="Supprimer" onclick="this.closest('tr').remove(); if(document.getElementById('twitch-links-table-body').children.length === 0) { renderLinksTable([]); }">
                 <i class="fa-solid fa-trash"></i>
@@ -1543,13 +1547,17 @@ window.saveLinkCommands = async function() {
         const message = row.querySelector('.link-message-input').value.trim();
         const aliasesRaw = row.querySelector('.link-aliases-input').value;
         const aliases = aliasesRaw.split(',').map(a => a.trim()).filter(a => a.length > 0);
+        const autoMinRaw = row.querySelector('.link-auto-minutes-input')?.value.trim();
+        const autoMsgRaw = row.querySelector('.link-auto-msgs-input')?.value.trim();
+        const auto_minutes = parseInt(autoMinRaw, 10) || 0;
+        const auto_min_messages = (autoMsgRaw === '' || autoMsgRaw === undefined) ? 5 : (parseInt(autoMsgRaw, 10) || 0);
         
         if (!cmd || !url) {
             toast("Erreur: Chaque ligne doit avoir au moins une Commande et une URL.", 'error');
             return;
         }
         
-        links.push({ cmd, url, label, message, aliases });
+        links.push({ cmd, url, label, message, aliases, auto_minutes, auto_min_messages });
     }
     
     try {

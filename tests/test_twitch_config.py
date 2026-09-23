@@ -1,6 +1,5 @@
 import unittest
 import os
-import json
 import shutil
 from pathlib import Path
 import sys
@@ -133,6 +132,47 @@ class TestTwitchConfig(unittest.TestCase):
         # Rejects invalid twitch channel name
         with self.assertRaises(ValueError):
             self.manager.update_chat_channels("johnny", "ninja, invalid-name")
+
+    def test_update_link_commands_auto(self):
+        # 1. auto_minutes 20 conservé, auto_min_messages absent -> 5
+        items = self.manager.update_link_commands("johnny", [
+            {"cmd": "discord", "url": "https://discord.gg/test", "auto_minutes": 20}
+        ])
+        self.assertEqual(items[0]["auto_minutes"], 20)
+        self.assertEqual(items[0]["auto_min_messages"], 5)
+
+        # 2. absent -> auto_minutes = 0
+        items = self.manager.update_link_commands("johnny", [
+            {"cmd": "discord", "url": "https://discord.gg/test"}
+        ])
+        self.assertEqual(items[0]["auto_minutes"], 0)
+        self.assertEqual(items[0]["auto_min_messages"], 5)
+
+        # 3. auto_min_messages = 0 accepté
+        items = self.manager.update_link_commands("johnny", [
+            {"cmd": "discord", "url": "https://discord.gg/test", "auto_minutes": 10, "auto_min_messages": 0}
+        ])
+        self.assertEqual(items[0]["auto_minutes"], 10)
+        self.assertEqual(items[0]["auto_min_messages"], 0)
+
+        # 4. -1 refusé (auto_minutes)
+        with self.assertRaises(ValueError):
+            self.manager.update_link_commands("johnny", [
+                {"cmd": "discord", "url": "https://discord.gg/test", "auto_minutes": -1}
+            ])
+
+        # 5. 3 refusé (< 5 min)
+        with self.assertRaises(ValueError):
+            self.manager.update_link_commands("johnny", [
+                {"cmd": "discord", "url": "https://discord.gg/test", "auto_minutes": 3}
+            ])
+
+        # 6. "abc" refusé
+        with self.assertRaises(ValueError):
+            self.manager.update_link_commands("johnny", [
+                {"cmd": "discord", "url": "https://discord.gg/test", "auto_minutes": "abc"}
+            ])
+
 
 if __name__ == "__main__":
     unittest.main()

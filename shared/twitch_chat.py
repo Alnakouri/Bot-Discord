@@ -162,6 +162,8 @@ class TwitchChatBot(
         self.enable_greetings = enable_greetings
         self.enable_game_qa = enable_game_qa
         self.cohost_channels = [c.lower().strip() for c in (cohost_channels or []) if c.strip()]
+        self.link_timers = []
+        self._etat_timers = {}
         self.commands = commands or {}
         self.command_aliases = command_aliases or {}
         self.passive_handler = passive_handler
@@ -401,6 +403,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     link_cmds = {}
     link_aliases = {}
     link_auto = {}
+    link_timers = []
     reserved_names = {
         "decret", "decree", "fromage", "cheese", "folie", "faveur", "favor",
         "classement", "leaderboard", "humeur", "platform", "platforms",
@@ -458,6 +461,15 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
             callback = lambda author, args, u=url, l=label, t=msg_tmpl: t.format(url=u, label=l)
         link_cmds[cmd] = callback
         link_auto[cmd] = message_auto
+
+        try:
+            auto_min = int(entry.get("auto_minutes") or 0)
+            auto_msgs = int(entry.get("auto_min_messages", 5) or 0)
+        except (TypeError, ValueError):
+            auto_min, auto_msgs = 0, 5
+        if auto_min >= 5:
+            link_timers.append({"cmd": cmd, "every": auto_min * 60,
+                                "min_msgs": max(auto_msgs, 0), "callback": callback})
         
         aliases = entry.get("aliases") or []
         if isinstance(aliases, str):
@@ -486,6 +498,9 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
             if n_alias:
                 details.append(f"+{n_alias} alias")
             details.append("phrase du bot" if link_auto.get(cmd) else "gabarit fixe")
+            timer_entry = next((t for t in link_timers if t["cmd"] == cmd), None)
+            if timer_entry:
+                details.append(f"auto {timer_entry['every'] // 60} min / {timer_entry['min_msgs']} msgs")
             resume.append(f"!{cmd} ({', '.join(details)})")
         logger.info(f"🔗 [TWITCH_CHAT:{bot_id}] Commandes de lien armees : {', '.join(resume)}")
     else:
@@ -541,4 +556,5 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
     )
     # Les callbacks de lien construits plus haut peuvent maintenant atteindre le bot.
     bot_ref["bot"] = bot
+    bot.link_timers = link_timers
     return bot
