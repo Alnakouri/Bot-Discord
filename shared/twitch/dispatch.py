@@ -138,6 +138,36 @@ def _siecles_de_la_fiche(fiche: str | None) -> set[int]:
                                        fiche or "", re.I)}
 
 
+# Ce qu'on retire de la fiche AVANT de la donner au modele — et SEULEMENT a lui.
+# ⚠️ Le siecle SEUL, sans sa preposition : « set in 15th century Medieval Europe » doit
+# devenir « set in Medieval Europe », pas « set Medieval Europe ». L'annee, AVEC sa
+# preposition (et sa virgule) : « In 1403, Henry… » -> « Henry… ». Une annee nue n'est pas
+# retiree : « Over 1000 quests » n'est pas une date.
+_EPOQUE_DE_LA_FICHE = re.compile(
+    r"\s*\b\d{1,2}(?:st|nd|rd|th)[- ]century\b"
+    r"|\s*\b(?:in|since|from|during)\s+1\d{3}\b,?",
+    re.I,
+)
+
+
+def _fiche_sans_epoque(fiche: str | None) -> str | None:
+    """La fiche IGDB sans ses siecles ni ses annees, pour l'INSTRUCTION du modele.
+
+    ⚠️ Mesure du 2026-09-23 (KCD2, n=18, Gemini) : avec « 15th century » dans la fiche, le
+    siecle sort dans 18/18 phrases d'Alfred, 16/18 de Malena, 14/18 de Sugar et de Johnny,
+    contre 0/18 sans fiche. Les ouvertures d'Alfred passent de 9 formes a 4. Une date
+    ecrite dans le prompt devient un tic ([[gotcha-une-formule-nommee-devient-un-tic]]).
+    Le reste de la fiche est garde : il fait disparaitre les faits inventes (« Henri V »).
+
+    ⚠️ Le FILET, lui, recoit la fiche COMPLETE (`_affirme_une_epoque(phrase, jeu, fiche)`) :
+    si le modele cite quand meme le XVe siecle de sa memoire, c'est juste, et ca passe.
+    """
+    if not fiche:
+        return fiche
+    propre = _EPOQUE_DE_LA_FICHE.sub("", fiche)
+    return " ".join(propre.split()).replace(" ,", ",").replace(" .", ".")
+
+
 def _affirme_une_epoque(phrase: str, jeu: str | None, fiche: str | None = None) -> bool:
     """Vrai si la phrase DATE le jeu d'une epoque qu'on ne lui a PAS donnee.
 
@@ -711,6 +741,30 @@ class DispatchMixin:
     #     sheo     2 generations exploitables sur 6 (429 Groq) : pas mesure     non livre
     ACCROCHE_AU_JEU = {"sugar", "alfred", "malena", "johnny"}
 
+    # Clauses ajoutees POUR UN SEUL BOT, et SEULEMENT quand un jeu est diffuse : elles
+    # parlent de « ce jeu », et hors live elles n'auraient pas de sens.
+    #
+    # ⚠️ SUGAR — demande d'Ahmed le 2026-09-23 : qu'elle interroge les lecteurs sur LEUR
+    # experience du jeu (« Vous galerez autant en Boheme que Henry ? venez nous partager
+    # ca »). Sans exemple dans le texte : une formule citee devient un tic.
+    # Premiere version mesuree le 23/09 (KCD2 + fiche, n=18, Gemini) :
+    #     question aux lecteurs + invitation ... ~13/18   (contre ~0 sans)
+    #     contenu du Discord invente ..........   0/18   (contre 3/18)
+    #     longueur mediane ....................  176 car. (contre 112)  <- REFUSE
+    #     au-dela de 120 car. .................  17/18
+    # Elle demandait « une question PUIS une invitation » : le modele collait deux
+    # phrases. Cette version-ci exige que les deux tiennent dans UNE phrase courte.
+    CLAUSES_JEU_PAR_BOT = {
+        "sugar": (
+            "⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu : ta phrase est "
+            "UNE question sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont "
+            "joué — jamais sur la partie en cours, jamais une pique sur eux — et cette "
+            "même question les invite à venir le raconter là-bas. Question et invitation "
+            "tiennent dans la MÊME phrase, sous les 120 caractères : pas de mise en scène "
+            "avant, pas de seconde phrase après. "
+        ),
+    }
+
     async def _jeu_en_cours(self) -> str | None:
         """Le jeu diffuse sur le canal du bot, ou None. Ne leve jamais.
 
@@ -991,12 +1045,13 @@ class DispatchMixin:
             )
             if fiche:
                 instruction += (
-                    f"Voici la fiche officielle de ce jeu (en anglais) : {fiche}. "
+                    f"Voici la fiche officielle de ce jeu (en anglais) : {_fiche_sans_epoque(fiche)}. "
                     f"C'est TOUT ce que tu sais de vrai sur lui : inspire-t'en, mais n'affirme rien qui n'y figure pas. "
                 )
+            instruction += self.CLAUSES_JEU_PAR_BOT.get(self.bot_id, "")
             instruction += (
-                f"⚠️ Et ta phrase doit CLAQUER : une seule idée, la chute à la fin, rien "
-                f"avant qui la retarde. Si elle ne fait pas sourire à la lecture, recommence."
+                "⚠️ Et ta phrase doit CLAQUER : une seule idée, la chute à la fin, rien "
+                "avant qui la retarde. Si elle ne fait pas sourire à la lecture, recommence."
             )
 
         # ⚠️ DEUX ESSAIS, ET PAS PLUS. Les filets ci-dessus REJETTENT au lieu de reparer :

@@ -179,9 +179,11 @@ def test_instruction_inclut_la_fiche_si_disponible():
         return "Venez nous voir !"
 
     bot._ecrire_phrase_de_lien = faux_ecrire
-    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
     assert "Voici la fiche officielle de ce jeu (en anglais) :" in capture["instruction"]
-    assert "15th century RPG" in capture["instruction"]
+    assert "RPG" in capture["instruction"]
+    # ⚠️ La date de la fiche ne va plus au modele : elle devenait un tic (23/09).
+    assert "15th century" not in capture["instruction"]
 
 
 def test_instruction_sans_fiche_ne_contient_pas_de_fiche():
@@ -200,7 +202,7 @@ def test_instruction_sans_fiche_ne_contient_pas_de_fiche():
         return "Venez nous voir !"
 
     bot._ecrire_phrase_de_lien = faux_ecrire
-    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
     assert "Voici la fiche officielle de ce jeu (en anglais) :" not in capture["instruction"]
 
 
@@ -231,3 +233,49 @@ def test_une_phrase_EN_CACHE_ne_va_pas_chercher_la_fiche():
     res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://x.y"))
     assert res == "Deja ecrite. 🍬 https://x.y"
     assert appels == [], "la fiche a ete cherchee alors que la phrase sortait du cache"
+
+
+def test_clause_jeu_specifique_sugar():
+    from shared.twitch.dispatch import DispatchMixin
+    clause_sugar = DispatchMixin.CLAUSES_JEU_PAR_BOT["sugar"]
+
+    # 1. sugar + jeu -> clause présente
+    bot_sugar = _faux_bot("sugar")
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot_sugar._jeu_en_cours = faux_jeu
+    capture = {}
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Venez nous voir !"
+    bot_sugar._ecrire_phrase_de_lien = faux_ecrire
+
+    asyncio.run(bot_sugar._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert clause_sugar in capture["instruction"]
+
+    # 2. sugar sans jeu -> clause absente
+    bot_sugar_sans_jeu = _faux_bot("sugar")
+    async def faux_jeu_none():
+        return None
+    bot_sugar_sans_jeu._jeu_en_cours = faux_jeu_none
+    capture_sans_jeu = {}
+    async def faux_ecrire_sans_jeu(instruction, system_prompt, cmd):
+        capture_sans_jeu["instruction"] = instruction
+        return "Venez nous voir !"
+    bot_sugar_sans_jeu._ecrire_phrase_de_lien = faux_ecrire_sans_jeu
+
+    asyncio.run(bot_sugar_sans_jeu._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert clause_sugar not in capture_sans_jeu["instruction"]
+
+    # 3. alfred + jeu -> clause absente
+    bot_alfred = _faux_bot("alfred")
+    bot_alfred._jeu_en_cours = faux_jeu
+    capture_alfred = {}
+    async def faux_ecrire_alfred(instruction, system_prompt, cmd):
+        capture_alfred["instruction"] = instruction
+        return "Venez nous voir !"
+    bot_alfred._ecrire_phrase_de_lien = faux_ecrire_alfred
+
+    asyncio.run(bot_alfred._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert clause_sugar not in capture_alfred["instruction"]
+

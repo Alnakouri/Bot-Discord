@@ -166,3 +166,25 @@ def test_une_epoque_JUSTE_passe_au_premier_essai_quand_la_fiche_la_donne():
 
     assert _lancer(bot) == "Mieux vaut affronter les boues du XVe siècle avec nous. ✨ https://x.y"
     assert bot.appels == 1
+
+
+@pytest.mark.parametrize("fiche,absent,present", [
+    (FICHE_KCD2, "15th century", "set in Medieval Europe"),
+    ("Résumé : In 1403, Henry seeks revenge. | Thèmes : Action", "1403", "Résumé : Henry seeks revenge"),
+    ("Résumé : Bohemia in 1403 is torn by war.", "1403", "Bohemia is torn by war"),
+    ("Résumé : Set during the 13th-century wars.", "13th", "Set during the wars"),
+])
+def test_la_fiche_du_MODELE_perd_sa_date(fiche, absent, present):
+    from shared.twitch.dispatch import _fiche_sans_epoque
+    propre = _fiche_sans_epoque(fiche)
+    assert absent not in propre and present in propre
+
+
+def test_une_fiche_sans_date_ne_bouge_pas():
+    from shared.twitch.dispatch import _fiche_sans_epoque
+    assert _fiche_sans_epoque(None) is None
+    assert _fiche_sans_epoque("Résumé : A space RPG. | Thèmes : Sci-fi") == \
+        "Résumé : A space RPG. | Thèmes : Sci-fi"
+    # une annee NUE n'est pas une date : elle reste
+    assert _fiche_sans_epoque("Résumé : Over 1000 quests.") == "Résumé : Over 1000 quests."
+
