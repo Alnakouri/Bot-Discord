@@ -1836,6 +1836,30 @@ def _twitch_recent_responses():
     except Exception:
         return []
 
+# Les reactions emoji de Sheogorath, par MOT ENTIER (un « s » final accepte).
+# ⚠️ 23/09 : la recherche par SOUS-CHAINE faisait reagir a « Gabriel » (brie -> 🧀) et a
+# « desordre » (ordre -> ⚖️). Et elle passait AVANT la garde `author.bot` : chaque « wesh
+# le sang » de Malena recevait 🩸. Decision d'Ahmed : aux humains seulement, mots entiers.
+REACTIONS_MOTS = {
+    "fromage": "🧀", "cheese": "🧀", "roquefort": "🧀", "brie": "🧀",
+    "folie": "🤪", "démence": "🧠", "madness": "🤪",
+    "wabbajack": "✨", "jyggalag": "⚖️", "ordre": "⚖️",
+    "haskill": "👔", "papillon": "🦋", "butterfly": "🦋",
+    "sang": "🩸", "entrailles": "🥩",
+}
+_MOTIFS_REACTIONS = {
+    mot: re.compile(rf"\b{re.escape(mot)}s?\b") for mot in REACTIONS_MOTS
+}
+
+
+def _emojis_des_mots(texte: str) -> list[str]:
+    """Les emojis a poser sur ce texte, sans doublon, dans l'ordre de la table."""
+    bas = (texte or "").lower()
+    return list(dict.fromkeys(
+        REACTIONS_MOTS[mot] for mot, motif in _MOTIFS_REACTIONS.items() if motif.search(bas)
+    ))
+
+
 async def _other_bot_in_focus(message):
     """True si la conversation est manifestement tournée vers un AUTRE bot."""
     if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
@@ -1875,26 +1899,17 @@ async def on_message(message):
     if ctx.valid:
         return
 
-    # 1. AUTO-REACTIONS (Ajoute des emojis selon les mots-clés)
-    reactions_map = {
-        "fromage": "🧀", "cheese": "🧀", "roquefort": "🧀", "brie": "🧀",
-        "folie": "🤪", "démence": "🧠", "madness": "🤪",
-        "wabbajack": "✨", "jyggalag": "⚖️", "ordre": "⚖️",
-        "haskill": "👔", "papillon": "🦋", "butterfly": "🦋",
-        "sang": "🩸", "entrailles": "🥩"
-    }
-    
-    msg_lower = message.content.lower()
-    for word, emoji in reactions_map.items():
-        if word in msg_lower:
-            try:
-                await message.add_reaction(emoji)
-            except discord.HTTPException as e:
-                logger.debug(f"[REACTION] emoji refuse par Discord : {e}")
-
     # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    # ⚠️ Ni par emoji : les reactions viennent APRES cette garde (23/09).
     if message.author.bot:
         return
+
+    # 1. AUTO-REACTIONS (emojis sur des mots ENTIERS, messages humains seulement)
+    for emoji in _emojis_des_mots(message.content):
+        try:
+            await message.add_reaction(emoji)
+        except discord.HTTPException as e:
+            logger.debug(f"[REACTION] emoji refuse par Discord : {e}")
 
     # Gestion des mentions ou réponses
     is_mentioned = bot.user.mentioned_in(message)

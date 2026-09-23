@@ -1,178 +1,182 @@
-# PLAN — La bio Twitch de Johnny, refusée par la modération chaque jour
+# PLAN — Les réactions emoji de Sheogorath : aux humains seulement, sur des mots entiers
 
 Rédaction : Claude, le **2026-09-23**. Exécution : **Antigravity**, sauf les étapes marquées
-**[Ahmed]**. Le plan précédent (phrase de lien : fiche sans date + clause Sugar) est livré
-(`2bb82b5`, CI verte, en prod depuis le 23/09 13:32 UTC). Il reste lisible dans git
-(`2bb82b5:PLAN.md`).
+**[Ahmed]**. Décision d'Ahmed (option 3 de trois proposées) : Sheogorath ne réagit plus
+qu'aux messages des HUMAINS, et seulement sur des mots ENTIERS. Le plan précédent (bio
+Twitch de Johnny) est livré (`5e45377`, CI verte, vérifié en prod à 16:13) ; lisible dans
+git (`5e45377:PLAN.md`).
 
-Deux fichiers de code, tous deux dans `shared/twitch/`, **non vendorés** (ni `profile` ni
-`daily_profile` dans `tools/vendor_core.py`) : pas de `vendor_core.py` à relancer.
-`profile.py` et `daily_profile.py` servent aux six bots, mais seuls Johnny et Sheogorath
-passent un `profile_bio` (`JohnnyBot/bot_johnny.py:614`, `Sheogorath/bot_sheogorath.py:868`).
+Un seul fichier de code : `Sheogorath/bot_sheogorath.py`. Aucun `shared/`, rien à vendorer.
 
 ---
 
 ## CE QUI A ÉTÉ CONSTATÉ (23/09)
 
-- À chaque démarrage (00:00, 01:18, 09:47, 13:32 le 23/09), Johnny journalise :
-  `⚠️ [TWITCH_PROFILE:johnny] Erreur mise à jour bio (400): {... "message":"Description failed moderation."}`
-- La bio envoyée n'est **pas** `TWITCH_BIO` : c'est celle que le LLM génère chaque jour
-  (`shared/twitch/daily_profile.py:_generate_daily_profile`), gardée dans
-  `data/twitch_profile_johnny.json`. Celle du 23/09 :
-  « Johnny Silverhand en direct depuis le chaos : whisky, clopes et la dernière **putain** de
-  corporation à faire **péter**. … »
-- **Le repli n'existe pas** : un refus est journalisé, puis rien. La bio de Johnny sur
-  Twitch reste celle d'un jour ancien, sans que rien ne le signale hors du journal.
-- **`TWITCH_BIO` passe la modération** : essayé le 23/09 par Claude dans le conteneur de
-  Johnny, avec son propre jeton → `✅ Description mise à jour avec succès.` C'est la bio en
-  ligne en ce moment.
-- Sugar n'a pas de `profile_bio` : son repli est la chaîne vide, et il doit le rester
-  (aucune bio envoyée plutôt qu'une bio vide).
+`Sheogorath/bot_sheogorath.py:1878-1897`, dans `on_message` :
+
+```python
+    # 1. AUTO-REACTIONS (Ajoute des emojis selon les mots-clés)
+    reactions_map = {
+        "fromage": "🧀", "cheese": "🧀", "roquefort": "🧀", "brie": "🧀",
+        ...
+        "sang": "🩸", "entrailles": "🥩"
+    }
+    msg_lower = message.content.lower()
+    for word, emoji in reactions_map.items():
+        if word in msg_lower:
+            ...await message.add_reaction(emoji)...
+
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    if message.author.bot:
+        return
+```
+
+1. **Les réactions passent AVANT la garde `author.bot`** : Sheogorath réagit aux messages
+   des cinq autres bots (seuls les siens sont exclus, l.1858). Exemple : chaque « Wesh le
+   sang » de Malena reçoit 🩸.
+2. **`word in msg_lower` cherche une SOUS-CHAÎNE** : « Gabriel » contient `brie` → 🧀,
+   « désordre » contient `ordre` → ⚖️.
+3. Un message qui dit « fromage » et « brie » reçoit 🧀 deux fois (Discord l'ignore, mais
+   c'est un appel réseau pour rien).
 
 ---
 
-# LOT 1 — `update_profile` dit si la bio a été REFUSÉE par la modération
+# LOT 1 — La table et la détection sortent de `on_message`, en mots entiers
 
-`shared/twitch/profile.py`, méthode `update_profile` (l.15).
+## 1.1 — Au niveau du module
 
-1. Signature : `-> str | None`. Docstring, ajouter :
-   « Rend `"bio_refusee"` si Twitch a refusé la bio par sa modération (400
-   « failed moderation »), sinon `None`. La couleur n'entre pas dans ce retour. »
-2. Initialiser `resultat = None` **juste avant** `async with aiohttp.ClientSession() as session:` (l.32).
-3. Dans la branche `else:` de la bio (l.44-46), **après** le `self.logger.warning(...)` existant :
+Dans `Sheogorath/bot_sheogorath.py`, **juste avant** `async def _other_bot_in_focus(message):`
+(l.1839), ajouter :
 
 ```python
-                            if resp.status == 400 and "moderation" in err_text.lower():
-                                resultat = "bio_refusee"
+# Les reactions emoji de Sheogorath, par MOT ENTIER (un « s » final accepte).
+# ⚠️ 23/09 : la recherche par SOUS-CHAINE faisait reagir a « Gabriel » (brie -> 🧀) et a
+# « desordre » (ordre -> ⚖️). Et elle passait AVANT la garde `author.bot` : chaque « wesh
+# le sang » de Malena recevait 🩸. Decision d'Ahmed : aux humains seulement, mots entiers.
+REACTIONS_MOTS = {
+    "fromage": "🧀", "cheese": "🧀", "roquefort": "🧀", "brie": "🧀",
+    "folie": "🤪", "démence": "🧠", "madness": "🤪",
+    "wabbajack": "✨", "jyggalag": "⚖️", "ordre": "⚖️",
+    "haskill": "👔", "papillon": "🦋", "butterfly": "🦋",
+    "sang": "🩸", "entrailles": "🥩",
+}
+_MOTIFS_REACTIONS = {
+    mot: re.compile(rf"\b{re.escape(mot)}s?\b") for mot in REACTIONS_MOTS
+}
+
+
+def _emojis_des_mots(texte: str) -> list[str]:
+    """Les emojis a poser sur ce texte, sans doublon, dans l'ordre de la table."""
+    bas = (texte or "").lower()
+    return list(dict.fromkeys(
+        REACTIONS_MOTS[mot] for mot, motif in _MOTIFS_REACTIONS.items() if motif.search(bas)
+    ))
 ```
 
-4. Tout en bas de la méthode (après le bloc couleur, l.77), **hors** du `async with`, au
-   même niveau d'indentation que `async with` : `return resultat`.
+⚠️ `re` est déjà importé (l.19). `\b` de Python est Unicode : « démence » est un mot entier.
+⚠️ La table est **recopiée à l'identique** de l'actuelle (mêmes 15 mots, mêmes emojis) :
+ne rien ajouter ni retirer, ce n'est pas l'objet du plan.
 
-⚠️ Les deux `return` anticipés (l.20 et l.25) rendent déjà `None` : ne pas y toucher.
-⚠️ Le bloc couleur doit continuer à s'exécuter après un refus de bio (la couleur, elle,
-passe) : **pas** de `return` dans la branche bio.
+## 1.2 — Dans `on_message` : supprimer l'ancien bloc, le remettre APRÈS la garde
+
+**Avant** (l.1878-1897) : le bloc cité plus haut, du commentaire
+`# 1. AUTO-REACTIONS` jusqu'au `return` de `if message.author.bot:`.
+
+**Après** :
+
+```python
+    # SILENCE TOTAL ENTRE BOTS — un bot ne répond JAMAIS à un autre bot.
+    # ⚠️ Ni par emoji : les reactions viennent APRES cette garde (23/09).
+    if message.author.bot:
+        return
+
+    # 1. AUTO-REACTIONS (emojis sur des mots ENTIERS, messages humains seulement)
+    for emoji in _emojis_des_mots(message.content):
+        try:
+            await message.add_reaction(emoji)
+        except discord.HTTPException as e:
+            logger.debug(f"[REACTION] emoji refuse par Discord : {e}")
+```
+
+La ligne suivante reste `# Gestion des mentions ou réponses` / `is_mentioned = ...`.
+
+⚠️ **Piège** : ne pas laisser l'ancien `reactions_map` ni la boucle `if word in msg_lower`
+en place « en plus ». Après le lot, `grep -n "reactions_map" Sheogorath/bot_sheogorath.py`
+ne rend **rien**.
+✅ Supprimer le `msg_lower = message.content.lower()` de l.1887 est sûr : vérifié le 23/09,
+`on_message` le **redéfinit** l.1907 avant tout autre usage (l.1908 et suivantes). Garder
+celui de l.1907.
 
 ---
 
-# LOT 2 — Sur refus, `_ensure_daily_profile` retombe sur la bio FIXE, et la garde
+# LOT 2 — Tests : nouveau `tests/test_reactions_sheogorath.py`
 
-`shared/twitch/daily_profile.py`, `_ensure_daily_profile`, **avant** (l.165-168) :
-
-```python
-            # Application du profil
-            if self.profile_helper:
-                await self.profile_helper.update_profile(bio=bio, chat_color=color)
-                self._profile_day = today
-```
-
-**après** :
+Le fichier du bot n'est pas importé dans les tests (trop lourd) : on le lit en AST, comme
+`tests/test_classement_sans_bots.py:143`. On **n'écrit pas** une copie de la fonction
+dans le test : on exécute celle du fichier.
 
 ```python
-            # Application du profil
-            if self.profile_helper:
-                resultat = await self.profile_helper.update_profile(bio=bio, chat_color=color)
-                # ⚠️ 23/09 : la bio GENEREE de Johnny (juron + appel a « faire peter » une
-                # corpo) etait refusee par la moderation Twitch a chaque demarrage, et rien
-                # ne suivait : sa bio restait celle d'un vieux jour. On retombe sur la bio
-                # FIXE du bot et on l'ECRIT dans l'etat du jour, sinon chaque redemarrage
-                # renverrait la bio refusee. Pas de bio fixe (Sugar) : on n'envoie rien.
-                # ⚠️ Comparer a la CHAINE : un AsyncMock rend un MagicMock, qui est vrai.
-                repli = getattr(self, "profile_bio", None) or ""
-                if resultat == "bio_refusee" and repli and bio != repli:
-                    self.logger.warning(
-                        f"⚠️ [TWITCH_CHAT:{self.bot_id}] Bio du jour refusee par la moderation "
-                        f"Twitch : repli sur la bio fixe."
-                    )
-                    await self.profile_helper.update_profile(bio=repli)
-                    self._save_profile_state({"date": today, "bio": repli, "color": color})
-                self._profile_day = today
+import ast
+import re
+from pathlib import Path
+
+RACINE = Path(__file__).resolve().parent.parent
+CHEMIN = RACINE / "Sheogorath" / "bot_sheogorath.py"
+SOURCE = CHEMIN.read_text(encoding="utf-8")
+ARBRE = ast.parse(SOURCE, filename=str(CHEMIN))
+
+
+def _charger():
+    """Execute REACTIONS_MOTS, _MOTIFS_REACTIONS et _emojis_des_mots DU FICHIER DU BOT."""
+    noeuds = [n for n in ARBRE.body
+              if (isinstance(n, ast.Assign) and any(getattr(t, "id", "") in
+                  ("REACTIONS_MOTS", "_MOTIFS_REACTIONS") for t in n.targets))
+              or (isinstance(n, ast.FunctionDef) and n.name == "_emojis_des_mots")]
+    assert len(noeuds) == 3, "table, motifs ou fonction introuvables au niveau du module"
+    espace = {"re": re}
+    exec(compile(ast.Module(body=noeuds, type_ignores=[]), str(CHEMIN), "exec"), espace)
+    return espace["_emojis_des_mots"]
 ```
 
-⚠️ **Piège 1** : `resultat == "bio_refusee"`, **pas** `if resultat:`. Les tests existants
-mockent `profile_helper` par `AsyncMock()`, dont l'`await` rend un `MagicMock` **vrai** :
-`if resultat:` déclencherait le repli dans les 4 tests existants.
-⚠️ **Piège 2** : le second appel ne repasse **pas** `chat_color` : la couleur est déjà posée.
-⚠️ **Piège 3** : `bio != repli` empêche une boucle si la bio fixe était elle-même refusée un
-jour : un seul repli, jamais deux.
-⚠️ `getattr(..., "profile_bio", None)` : l'hôte de test `_Host` n'a pas cet attribut.
+Cas (paramétrés) :
+
+| texte | attendu |
+|---|---|
+| `"J'adore le fromage"` | `["🧀"]` |
+| `"Des fromages et du brie"` | `["🧀"]` (un seul, pas deux) |
+| `"Gabriel est là"` | `[]` |
+| `"Quel désordre"` | `[]` |
+| `"L'ORDRE de Jyggalag"` | `["⚖️"]` (un seul) |
+| `"Wesh le sang"` | `["🩸"]` (mot entier : attendu, c'est la décision) |
+| `"sanglier"` | `[]` |
+| `"La démence !"` | `["🧠"]` |
+| `""` et `None` | `[]` |
+
+Et **le verrou d'ordre**, sur le corps d'`on_message` :
+
+```python
+def test_les_reactions_viennent_APRES_la_garde_des_bots():
+    fn = next(n for n in ast.walk(ARBRE)
+              if isinstance(n, ast.AsyncFunctionDef) and n.name == "on_message")
+    lignes_garde = [n.lineno for n in ast.walk(fn)
+                    if isinstance(n, ast.If) and ast.unparse(n.test) == "message.author.bot"]
+    lignes_reaction = [n.lineno for n in ast.walk(fn)
+                       if isinstance(n, ast.Attribute) and n.attr == "add_reaction"]
+    assert lignes_garde and lignes_reaction
+    assert min(lignes_garde) < min(lignes_reaction), \
+        "une reaction est posee AVANT la garde author.bot : Sheogorath reagit aux autres bots"
+```
+
+⚠️ `ast.unparse(n.test) == "message.author.bot"` vise le `if message.author.bot:` **nu**
+(les autres, `if not message.author.bot and ...`, ne correspondent pas). S'il n'y en a
+qu'un, c'est celui du lot 1.2. Et le test doit **casser** sur le code d'aujourd'hui :
+le lancer une fois AVANT le lot 1.2 pour le voir rouge.
 
 ---
 
-# LOT 3 — Le prompt demande une bio qui passe la modération
+# LOT 3 — Vérifier, dans cet ordre
 
-`shared/twitch/daily_profile.py:67`, **avant** :
-
-```python
-            f'{{"bio": "<1-2 phrases, 1re personne, en personnage, ≤280 caractères, sans guillemets ni didascalies>", '
-```
-
-**après** :
-
-```python
-            f'{{"bio": "<1-2 phrases, 1re personne, en personnage, ≤280 caractères, sans guillemets ni didascalies, '
-            f'sans juron ni appel à la violence : elle doit passer la modération de Twitch>", '
-```
-
-Pourquoi en plus du LOT 2 : sans lui, Johnny n'aurait **plus jamais** de bio du jour, le
-repli la remplacerait chaque matin. Le LOT 2 reste le filet : le prompt réduit les refus,
-il ne les supprime pas.
-⚠️ Aucun mot interdit n'est **cité** dans la consigne : une formule écrite dans le prompt
-ressort dans la sortie.
-
----
-
-# LOT 4 — Tests
-
-## 4.1 — `tests/test_twitch_daily_profile.py`
-
-Ne **pas** toucher à `_Host` (il reste sans `profile_bio` : c'est le cas Sugar). Ajouter,
-après `_Host` :
-
-```python
-class _HostAvecRepli(_Host):
-    """Un bot qui a une bio FIXE (Johnny) et dont la bio du jour est refusee."""
-
-    def __init__(self):
-        super().__init__()
-        self.profile_bio = "bio fixe qui passe"
-        self.profile_helper.update_profile = AsyncMock(side_effect=["bio_refusee", None])
-```
-
-Et dans `TestDailyProfileCache` :
-
-1. `test_bio_refusee_retombe_sur_la_bio_fixe` : `_HostAvecRepli`, `_ensure_daily_profile()`.
-   Vérifier : `update_profile.await_count == 2` ; `await_args_list[1] == call(bio="bio fixe qui passe")`
-   (importer `call` de `unittest.mock`) ; l'état persistant a `bio == "bio fixe qui passe"`
-   et `color == "blue_violet"`.
-2. `test_bio_refusee_sans_bio_fixe_n_envoie_rien_de_plus` : `_Host`, avec
-   `host.profile_helper.update_profile = AsyncMock(return_value="bio_refusee")`.
-   Vérifier `await_count == 1` et l'état garde `"ma bio du jour"`.
-3. `test_bio_acceptee_pas_de_repli` : `_HostAvecRepli` puis
-   `host.profile_helper.update_profile = AsyncMock(return_value=None)` → `await_count == 1`.
-4. `test_redemarrage_apres_repli_n_appelle_pas_le_llm` : après le cas 1, un **nouvel**
-   `_HostAvecRepli` avec `update_profile = AsyncMock(return_value=None)` :
-   `gen_calls == 0` et `update_profile` attendu avec `bio="bio fixe qui passe"`.
-
-## 4.2 — Nouveau `tests/test_twitch_profile_moderation.py`
-
-`TwitchProfile("johnny", logger, "cid", auth)` avec `auth.get_valid_token = AsyncMock(return_value="tok")`.
-Patcher `shared.twitch.profile.aiohttp.ClientSession` pour que `session.put(...)` rende
-(en contexte async) une réponse `status=400` dont `text()` rend
-`'{"status":400,"message":"Description failed moderation."}'`.
-- `update_profile(bio="x")` → `== "bio_refusee"` ;
-- même montage avec `"message":"Invalid parameter"` → `is None` ;
-- `status=200` → `is None`.
-
-Seul modèle existant dans la suite qui patche `ClientSession` : `tests/test_laya_client.py`.
-⚠️ Aucun appel réseau réel : si le patch est mal posé, le test doit échouer, pas appeler Twitch
-(`get_valid_token` mocké garantit qu'aucun vrai jeton n'est lu).
-
----
-
-# LOT 5 — Vérifier, dans cet ordre
-
-1. `python -m pyflakes shared/twitch/profile.py shared/twitch/daily_profile.py tests/test_twitch_daily_profile.py tests/test_twitch_profile_moderation.py`
+1. `python -m pyflakes Sheogorath/bot_sheogorath.py tests/test_reactions_sheogorath.py`
 2. La suite complète, **un seul pytest à la fois** (port 8599) :
    `uv run --no-project --python 3.11 --with-requirements requirements.txt -- python -m pytest -q`
    Attendu : tout vert.
@@ -180,17 +184,12 @@ Seul modèle existant dans la suite qui patche `ClientSession` : `tests/test_lay
 
 ---
 
-# LOT 6 — Prod **[Ahmed : hors live]**
+# LOT 4 — Prod **[Ahmed : hors live]**
 
-`docker restart bot-johnny bot-sheogorath` (les deux seuls bots avec une bio fixe ; les
-autres ne changent pas de comportement, inutile de les redémarrer).
-
-⚠️ Le profil du 23/09 est déjà dans `data/twitch_profile_johnny.json` avec la bio refusée :
-au redémarrage, elle est renvoyée, refusée, puis **remplacée** par la bio fixe — c'est le
-test en vrai. Dans `docker logs --since 5m bot-johnny`, attendre :
-`Bio du jour refusee par la moderation Twitch : repli sur la bio fixe.` puis
-`✅ [TWITCH_PROFILE:johnny] Description mise à jour avec succès.`
-Au redémarrage suivant : plus aucun `failed moderation`.
+`docker restart bot-sheogorath` (lui seul). `docker logs --since 5m bot-sheogorath` : la
+connexion Discord, aucune `Traceback`. Test à la main sur Discord : un humain écrit
+« du fromage » → 🧀 ; « Gabriel » → rien ; un message d'un autre bot contenant « folie »
+→ rien.
 
 ---
 
@@ -199,20 +198,16 @@ Au redémarrage suivant : plus aucun `failed moderation`.
 - **LOT 7 du 22/09 [Ahmed]** — recréer `.venv` en 3.11 (aujourd'hui 3.13 sans pyflakes) :
   `uv venv --python 3.11 .venv` puis
   `uv pip install --python .venv\Scripts\python.exe -r requirements.txt`.
-- **Questions ouvertes** : (1) Sheogorath réagit par emoji aux messages des AUTRES bots
-  (`bot_sheogorath.py`, réactions avant la garde `author.bot`) — voulu ? (2) la borne de
-  300 ms de Laya (Laya est GARDÉ, décision d'Ahmed du 23/09).
-- Petite dette : `610fdac` pose un attelage factice par `setdefault` sur
-  `runner._ATTELAGES` sans le retirer (fuite d'état entre tests ; `monkeypatch` serait propre).
+- **Question ouverte** : la borne de 300 ms de Laya (Laya est GARDÉ, décision d'Ahmed du 23/09).
 - **À lire après le live du 23/09 au soir** : les lignes
   `Phrase de lien !discord (jeu : …) écrite par le bot` de Sugar et Johnny (première
   mesure réelle de `2bb82b5`) ; le tic « boue / médiéval » n'est à traiter que s'il se voit.
+- ~~Dette `runner._ATTELAGES`~~ : déjà soldée (`tests/test_eval_harness.py:810-820`,
+  `monkeypatch.setitem`).
 
 ## INTERDITS DE CE PLAN
 
-- Aucun `.env`, `.master_key`, `.env.encrypted`, ni base de `data/` touché — y compris
-  `data/twitch_profile_*.json` : c'est le code qui le réécrit, pas l'exécutant.
-- Aucun jeton d'un bot utilisé pour un autre.
-- Aucun import entre bots ; aucune factorisation.
-- Ne pas changer `TWITCH_BIO` de Johnny : elle passe la modération (vérifié le 23/09).
+- Aucun `.env`, `.master_key`, `.env.encrypted`, ni base de `data/` touché.
+- Aucun import entre bots ; aucune factorisation (la table reste DANS le fichier de Sheogorath).
+- Ne pas changer la liste des mots ni des emojis.
 - **Un seul `pytest` à la fois.** Aucun lot « livré » tant que la CI n'est pas `success`.
