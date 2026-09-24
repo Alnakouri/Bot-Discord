@@ -184,6 +184,44 @@ sur `sugar`. Si la question finale dépasse : remplacer la ligne 2 (137 car. auj
 (plus courte : la frontière `PROHIBITED_CONTENT` est à ~145-152 car.), vérifier `block_reason`, remesurer `--seulement 0`. Rapporter les
 chiffres, même s'ils passent.
 
+## SUITE 2 — « là-bas » dans l'invitation `!discord` de Sugar (Claude, 24/09 soir)
+
+**Constat** : la clause jeu de Sugar (`shared/twitch/dispatch.py`, `CLAUSES_JEU_PAR_BOT["sugar"]`)
+dit « les invite à venir le raconter **là-bas** » — le mot est dans le prompt, il sort dans la
+phrase, et il ne désigne plus rien : live du 23/09, « combien de fois vos armures ont-elles fini
+par plier **là-bas** ? » (là-bas = la Bohême ?). Le Discord n'est jamais nommé. Seulement 2 phrases
+réelles dans les journaux : **mesurer avant de toucher la prod.**
+
+⚠️ La longueur (132 car. pour « 120 ») n'est PAS un bug : `_borner` coupe à 200 exprès
+(21/09 : une coupe à 120 tranchait l'invitation). Ne pas y toucher.
+
+**[Antigravity, 25/09 après 9 h, hors live, APRÈS la mesure de la SUITE — même quota]**
+Sonde existante, option `--clause-jeu` ajoutée le 24/09 (n'altère pas la prod) :
+
+```
+python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "Kingdom Come: Deliverance II" --fiche "Résumé : 15th century RPG set in Bohemia | Thèmes : Action, Historical"
+python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "Kingdom Come: Deliverance II" --fiche "Résumé : 15th century RPG set in Bohemia | Thèmes : Action, Historical" --clause-jeu "<VARIANTE>"
+```
+
+`<VARIANTE>` = la clause actuelle, recopiée **à l'identique**, avec un seul changement :
+« les invite à venir le raconter là-bas » → « les invite à venir le raconter sur le serveur
+Discord ». (Pas d'autre mot touché : on mesure ce changement-là.)
+
+| critère (lecture phrase par phrase) | seuil pour livrer B |
+|---|---|
+| « là-bas » dans la phrase | B ≤ 2/18 |
+| la destination est nommée (Discord / serveur) | B ≥ 14/18 |
+| question aux lecteurs + invitation | B ≥ A − 3 |
+| objet / contenu du Discord inventé | B ≤ A |
+| longueur médiane | B ≤ A + 15 car. |
+| repli sur le gabarit fixe | B ≤ A |
+
+Tout passe → remplacer la clause dans `dispatch.py`, verrou dans
+`tests/test_phrase_de_lien_jeu_en_cours.py` (« là-bas » absent de `CLAUSES_JEU_PAR_BOT["sugar"]`),
+commit avec le tableau A/B complet. Sinon → rapporter les chiffres, ne rien livrer.
+⚠️ Ne pas toucher au texte COMMUN (l.1100 « Ta phrase ne parle que de là-bas ») : le changer
+touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malena.
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
@@ -191,8 +229,6 @@ chiffres, même s'ils passent.
   précédente n'est plus visible ») sur `!discord` de Sugar, Enregistrer, `docker restart bot-sugar`.
 - **[Ahmed]** Alias `ma_streameuse` sur `!discord` (poste le lien Discord) : voulu ? Ajouter
   `disocrd` en alias si on veut que la faute de frappe marche.
-- `!discord` de Sugar : invitation faible (« là-bas » ambigu) ; sur `#chaine_du_dev`,
-  elle parle du jeu de `ma_streameuse` (`dispatch.py:_jeu_en_cours` lit le PREMIER canal).
 - **Frontière `PROHIBITED_CONTENT`** : à comprendre un jour (longueur ? combinaison avec la
   garde anti-injection ?). Elle concerne potentiellement les SIX bots Twitch dès qu'une fiche
   s'allonge. Plan à écrire si Ahmed le veut.

@@ -181,6 +181,9 @@ async def main():
                          "PROSE quand le fournisseur est lent.")
     ap.add_argument("--clause", default=None,
                     help="clause par-bot a ESSAYER, sans toucher au code de prod")
+    ap.add_argument("--clause-jeu", default=None,
+                    help="clause JEU par-bot a essayer (CLAUSES_JEU_PAR_BOT), sans toucher "
+                         "au code de prod. Ne sert que si un jeu est diffuse.")
     ap.add_argument("--force-accroche", action="store_true",
                     help="ajoute ce bot a ACCROCHE_AU_JEU le temps de la mesure")
     ap.add_argument("--fiche", dest="fiche_jeu", default=None,
@@ -211,6 +214,9 @@ async def main():
     if args.clause is not None:
         DispatchMixin.CLAUSES_PAR_BOT = dict(DispatchMixin.CLAUSES_PAR_BOT)
         DispatchMixin.CLAUSES_PAR_BOT[args.bot] = args.clause
+    if args.clause_jeu is not None:
+        DispatchMixin.CLAUSES_JEU_PAR_BOT = dict(DispatchMixin.CLAUSES_JEU_PAR_BOT)
+        DispatchMixin.CLAUSES_JEU_PAR_BOT[args.bot] = args.clause_jeu
 
     fiche, cles = charger(args.bot)
     if args.tete == "gemini" and not cles:
@@ -229,6 +235,7 @@ async def main():
     print(f"{args.bot} | tete={args.tete} | fiche {len(fiche)} car. | jeu={jeu!r} | "
           f"n={args.n} | borne {args.timeout:g}s"
           + ("  | CLAUSE INJECTEE" if args.clause else "")
+          + ("  | CLAUSE JEU INJECTEE" if args.clause_jeu else "")
           + ("  | ACCROCHE FORCEE" if args.force_accroche else "")
           + ("  | FICHE DU JEU" if args.fiche_jeu is not None else ""))
     print("=" * 78)
