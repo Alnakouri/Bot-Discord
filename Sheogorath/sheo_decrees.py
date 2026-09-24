@@ -24,6 +24,43 @@ def espaces_francaises(texte):
 
 logger = logging.getLogger("sheogorath")
 
+# ─── Mise en forme du décret (24/09) ────────────────────────────────────────────
+# Le prompt demandait « 1-2 phrases » et en recevait quatre ; il demandait un titre de
+# 32 caractères et le code coupait au 29e avec « ... », au milieu d'un mot, sur l'image
+# ET sur le rôle Discord. Une consigne de volume ne tient pas seule
+# ([[gotcha-la-longueur-est-un-defaut-de-MODELE]]) : le filet est ici, en code.
+TITRE_MAX = 32
+PHRASES_MAX = 2
+_FIN_DE_PHRASE = re.compile(r"(?<=[.!?…])\s+(?=\S)")
+
+
+def titre_de_decret(titre):
+    """Titre ≤ 32 caractères, coupé à un MOT entier, sans « ... » (c'est un nom de rôle)."""
+    titre = " ".join((titre or "").split()).strip(" .,;:-")
+    if len(titre) <= TITRE_MAX:
+        return titre or "Sujet de la Folie"
+    coupe = titre[:TITRE_MAX + 1].rsplit(" ", 1)[0].strip(" .,;:-")
+    # Petits mots qui ne peuvent pas finir un titre (« Duc des », « Gardien de la »).
+    mots = coupe.split()
+    while len(mots) > 1 and mots[-1].lower() in {"de", "des", "du", "la", "le", "les", "l'", "d'", "et", "à", "aux", "au"}:
+        mots.pop()
+    coupe = " ".join(mots)
+    return coupe if coupe and len(coupe) <= TITRE_MAX else titre[:TITRE_MAX].rstrip()
+
+
+def texte_de_decret(texte, mention):
+    """Au plus deux phrases, et la mention de la cible toujours présente.
+
+    Couper à deux phrases peut faire tomber la phrase qui portait la mention : le décret
+    ne viserait alors plus personne. On la remet en tête dans ce cas.
+    """
+    texte = " ".join((texte or "").split())
+    phrases = _FIN_DE_PHRASE.split(texte)
+    garde = " ".join(phrases[:PHRASES_MAX]).strip()
+    if mention and mention not in garde:
+        garde = f"{mention}, {garde}" if garde else mention
+    return garde
+
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 PARCHMENT_PATH = os.path.join(ASSETS_DIR, "parchment.png")
 

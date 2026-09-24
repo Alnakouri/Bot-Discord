@@ -101,7 +101,8 @@ try:
         send_imposter_message, fetch_user_style_context,
         get_bot_persona, start_imposter_session, stop_imposter_session, get_active_session
     )
-    from sheo_decrees import generate_decree_image, apply_decree_role, cleanup_old_decree_roles
+    from sheo_decrees import (generate_decree_image, apply_decree_role, cleanup_old_decree_roles,
+                              titre_de_decret, texte_de_decret)
 except ImportError:
     from Sheogorath import sheo_data
     from Sheogorath.sheo_memory import DailyMemory, FactMemory
@@ -117,7 +118,8 @@ except ImportError:
         send_imposter_message, fetch_user_style_context,
         get_bot_persona, start_imposter_session, stop_imposter_session, get_active_session
     )
-    from Sheogorath.sheo_decrees import generate_decree_image, apply_decree_role, cleanup_old_decree_roles
+    from Sheogorath.sheo_decrees import (generate_decree_image, apply_decree_role, cleanup_old_decree_roles,
+                                         titre_de_decret, texte_de_decret)
 
 # LOGGING STRUCTURÉ
 from core.bot_logger import setup_logger, enregistrer_reaction
@@ -778,7 +780,7 @@ async def on_ready():
                 return "Le Prince a rangé ses décrets dans un fromage. Reviens plus tard, mortel."  # en personnage
             prompt = (
                 f"Rédige un DÉCRET DAEDRA de la Folie visant @{author}. "
-                f"Style Sheogorath : obsessionnel (fromage, papillons, intestins), absurde et menaçant. "
+                f"Style Sheogorath : absurde et menaçant, autour d'UNE obsession de ton choix, inattendue. "
                 f"Écris une seule phrase de décret courte (max 200 caractères), en personnage, sans guillemets ni didascalies."
             )
             from core.llm_cascade import generate_response
@@ -1126,10 +1128,12 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     rumor_prompt = (
         f"SYSTEM: {sheo_data.PERSONALITY_BASE}\n"
         f"INSTRUCTION: Publie un DÉCRET DAEDRA de la Folie sur {target_user.display_name}. "
-        "Style Sheogorath : menaçant, absurde, obsessionnel (fromage, papillons, intestins).\n"
+        # ⚠️ Plus de liste de thèmes : « (fromage, papillons, intestins) » était récitée
+        # telle quelle, les trois à la fois (une formule nommée devient un tic).
+        "Style Sheogorath : menaçant, absurde, autour d'UNE seule obsession de ton choix, inattendue.\n"
         "TU DOIS FOURNIR DEUX CHOSES :\n"
-        "1. Un TITRE de noblesse ridicule entre balises <title>TITRE ICI</title> (max 32 caractères).\n"
-        "2. Le TEXTE du décret (1-2 phrases).\n"
+        "1. Un TITRE de noblesse ridicule entre balises <title>TITRE ICI</title> (trois ou quatre mots).\n"
+        "2. Le TEXTE du décret : UNE phrase, deux au plus.\n"
         f"IMPORTANT: Mentionne '<@{target_user.id}>' dans le texte."
     )
     
@@ -1186,9 +1190,10 @@ async def publish_daily_rumor_sheo(target_channel=None, target_user=None):
     else:
         clean_text = full_response
     
-    # Limitation taille titre pour Discord (32 chars)
-    if len(title) > 32:
-        title = title[:29] + "..."
+    # Titre ≤ 32 car. coupé à un mot entier, texte ≤ 2 phrases avec la mention : voir
+    # sheo_decrees.titre_de_decret / texte_de_decret (24/09).
+    title = titre_de_decret(title)
+    clean_text = texte_de_decret(clean_text, f"<@{target_user.id}>")
 
     # 1. GÉNÉRATION DE L'IMAGE
     # Les mentions Discord (<@id>) sont du texte brut dans une image : on les

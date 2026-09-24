@@ -164,6 +164,26 @@ pas recevoir la même phrase.
 
 ---
 
+# SUITE — relecture de `8bf1706` (Claude, 24/09 ~15:45)
+
+Livré, CI verte, **en prod** (`bot-sugar` redémarré 13:30 UTC). Nettement mieux que `1b17c98`
+(plus aucune récitation). Mais la validation complète a tourné sur **Mistral** (le repli), car le
+quota Gemini de Sugar était épuisé ; or la prod répond d'abord avec **Gemini**. Sur Gemini
+(sorties brutes `681bc267…/scratch/mesure_apres_isole.txt`) :
+
+- `sugar` : recopies 0/18 ✅ ; forme du message **6/18** (seuil ≤ 4, dans le bruit ±3 ; ~16/18 avant) ;
+- `sugar` : **~8/18 réponses finissent par une question** (« Tu cherches un bonbon ou… ? ») — la
+  fiche l'interdit ; 1/18 avec `1b17c98`. Effet probable de la posture « parle d'autre chose » ;
+- `c'est mechant` et `bot nul` : **2 réponses chacune** (quota) → non mesurés sur Gemini.
+
+**[Antigravity, après 09:00 Paris le 25/09, hors live]** :
+`--scenario isole --n 18 --seulement 2` puis `--seulement 3` (36 appels), et recompter la
+sous-série `sugar` existante. Critères : ceux du tableau du LOT 3 + **questions finales ≤ 3/18**
+sur `sugar`. Si la question finale dépasse : remplacer la ligne 2 (137 car. aujourd'hui) par
+`- Juste son prénom, sans rien d'autre → elle répond présente et parle d'autre chose (jeu, ambiance), sans question.`
+(plus courte : la frontière `PROHIBITED_CONTENT` est à ~145-152 car.), vérifier `block_reason`, remesurer `--seulement 0`. Rapporter les
+chiffres, même s'ils passent.
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le

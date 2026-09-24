@@ -5,9 +5,17 @@ import unicodedata
 import random
 import collections
 import asyncio
+import contextvars
 from datetime import datetime
 from shared.twitch.sanitize import strip_stage_directions, send_chat_safe
 from shared.twitch.llm import ANTI_INJECTION_GUARD
+
+# Canal d'ou vient la commande (ou l'annonce auto) en cours d'execution. Les callbacks de
+# commande ne recoivent que (author, args) : sans ceci, `_jeu_en_cours` lisait toujours le
+# PREMIER canal, et sur #chaine_du_dev Sugar parlait du jeu de ma_streameuse (23/09).
+# Une ContextVar, et pas un attribut du bot : deux commandes de deux canaux peuvent
+# s'entrelacer pendant l'appel LLM, et chacune doit garder SON canal.
+_CANAL_COURANT = contextvars.ContextVar("canal_courant", default=None)
 
 # Tout ce qui ressemble à une adresse dans la phrase écrite par le modèle. Le lien
 # officiel est accolé par le code : celui que le modèle invente est au mieux inutile,
@@ -543,10 +551,14 @@ class DispatchMixin:
             # Exécution
             try:
                 callback = self.commands[cmd_name]
-                if asyncio.iscoroutinefunction(callback):
-                    res = await callback(author, args)
-                else:
-                    res = callback(author, args)
+                jeton = _CANAL_COURANT.set(chan)
+                try:
+                    if asyncio.iscoroutinefunction(callback):
+                        res = await callback(author, args)
+                    else:
+                        res = callback(author, args)
+                finally:
+                    _CANAL_COURANT.reset(jeton)
                 
                 if res:
                     while self.global_msg_timestamps and now - self.global_msg_timestamps[0] > 30.0:
@@ -629,12 +641,15 @@ class DispatchMixin:
                 self.global_msg_timestamps.popleft()
             if len(self.global_msg_timestamps) >= 14:
                 return False
+            jeton = _CANAL_COURANT.set(chan)
             try:
                 cb = t["callback"]
                 res = await cb("timer", "") if asyncio.iscoroutinefunction(cb) else cb("timer", "")
             except Exception as e:
                 self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] annonce auto !{t['cmd']} : {e}")
                 return False
+            finally:
+                _CANAL_COURANT.reset(jeton)
             etat["depuis"], etat["msgs"] = now, 0
             if not res:
                 return False
@@ -825,19 +840,25 @@ class DispatchMixin:
         ),
     }
 
+    def _canal_du_jeu(self) -> str | None:
+        """Le canal d'ou vient la commande en cours ; a defaut, le premier configure."""
+        courant = _CANAL_COURANT.get()
+        if courant:
+            return courant.lower().lstrip("#")
+        canaux = getattr(self, "channels", None) or []
+        return canaux[0] if canaux else None
+
     async def _jeu_en_cours(self) -> str | None:
         """Le jeu diffuse sur le canal du bot, ou None. Ne leve jamais.
 
         ⚠️ `HelixClient.get_current_game` a son propre cache : appeler ceci a chaque
         `!discord` ne coute pas un appel Twitch a chaque fois.
 
-        Le canal retenu est le PREMIER de la liste : un bot en co-hosting en a plusieurs,
-        mais la commande ne nous dit pas d'ou elle vient, et le canal principal est la
-        seule reponse defendable. Sans canal, sans identifiants, ou au moindre incident :
-        None — l'invitation normale sort, ce qui est exactement le repli demande.
+        Le canal retenu est celui d'ou vient la commande (`_canal_du_jeu`). Sans canal,
+        sans identifiants, ou au moindre incident : None — l'invitation normale sort, ce
+        qui est exactement le repli demande.
         """
-        canaux = getattr(self, "channels", None) or []
-        chan = canaux[0] if canaux else None
+        chan = self._canal_du_jeu()
         if not chan or not getattr(self, "client_id", None) or not getattr(self, "client_secret", None):
             return None
         try:
@@ -861,8 +882,7 @@ class DispatchMixin:
 
     async def _fiche_du_jeu(self) -> str | None:
         """Fiche courte IGDB du jeu en cours, ou None. Ne lève jamais, borne 3 s."""
-        canaux = getattr(self, "channels", None) or []
-        chan = canaux[0] if canaux else None
+        chan = self._canal_du_jeu()
         if not chan or not getattr(self, "client_id", None) or not getattr(self, "client_secret", None):
             return None
         try:

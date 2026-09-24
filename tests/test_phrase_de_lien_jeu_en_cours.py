@@ -279,3 +279,71 @@ def test_clause_jeu_specifique_sugar():
     asyncio.run(bot_alfred._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
     assert clause_sugar not in capture_alfred["instruction"]
 
+
+
+def _helix_qui_note(vus):
+    class H:
+        async def get_current_game(self, chan, live_only=False):
+            vus.append(chan)
+            return ("Elden Ring", "42")
+    return H()
+
+
+def test_le_jeu_est_lu_sur_le_canal_de_la_commande_pas_le_premier():
+    """⚠️ 23/09 : sur #chaine_du_dev, Sugar parlait du jeu de ma_streameuse —
+    `_jeu_en_cours` lisait toujours le PREMIER canal configure."""
+    from shared.twitch import dispatch
+
+    vus = []
+    f = _faux_bot(channels=("ma_streameuse", "chaine_du_dev"))
+    f._helix_client = _helix_qui_note(vus)
+
+    async def depuis(chan):
+        jeton = dispatch._CANAL_COURANT.set(chan)
+        try:
+            return await f._jeu_en_cours()
+        finally:
+            dispatch._CANAL_COURANT.reset(jeton)
+
+    asyncio.run(depuis("#Chaine_Du_Dev"))
+    asyncio.run(f._jeu_en_cours())          # hors commande : repli sur le premier canal
+    assert vus == ["chaine_du_dev", "ma_streameuse"]
+
+
+def test_une_commande_transmet_SON_canal_au_callback(monkeypatch):
+    """De bout en bout, par le vrai `_handle_command` : le callback voit le canal d'ou
+    vient la commande, et deux commandes entrelacees ne se volent pas leur canal."""
+    import collections
+    from shared.twitch import dispatch
+
+    async def faux_envoi(*a, **k):
+        return None
+    monkeypatch.setattr(dispatch, "send_chat_safe", faux_envoi)
+
+    f = _faux_bot(channels=("ma_streameuse", "chaine_du_dev"))
+    f.command_aliases = {}
+    f.user_cooldowns, f.command_cooldowns = {}, {}
+    f.global_msg_timestamps = collections.deque()
+
+    vus = []
+
+    async def callback(author, args):
+        await asyncio.sleep(0.01)            # l'appel LLM, pendant lequel l'autre passe
+        vus.append((author, f._canal_du_jeu()))
+        return "ok"
+
+    f.commands = {"discord": callback}
+
+    # le cooldown global de 5 s par commande bloquerait la 2e : on le contourne par un
+    # second nom de commande pointant sur le meme callback
+    f.commands["discord2"] = callback
+
+    async def entrelacees():
+        await asyncio.gather(
+            f._handle_command("chaine_du_dev", "a", "!discord", None),
+            f._handle_command("ma_streameuse", "b", "!discord2", None),
+        )
+
+    asyncio.run(entrelacees())
+    assert sorted(vus) == [("a", "chaine_du_dev"), ("b", "ma_streameuse")]
+    assert dispatch._CANAL_COURANT.get() is None, "le canal fuit hors de la commande"
