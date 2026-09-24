@@ -96,6 +96,7 @@ MESSAGES_TEST = [
     "sugar",
     "@compte_bot_sugar dsl",
     "@compte_bot_sugar c'est mechant =(",
+    "@compte_bot_sugar t'es qu'un bot nul",
 ]
 
 
@@ -103,6 +104,8 @@ async def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--scenario", choices=("isole", "conversation"), default="isole",
                     help="isole = un message sur bot neuf ; conversation = enchaînement des 3 messages")
+    ap.add_argument("--seulement", type=int, default=None,
+                    help="index du message dans MESSAGES_TEST à exécuter seul (défaut : tous)")
     ap.add_argument("--n", type=int, default=18, help="nombre de répétitions (défaut 18)")
     ap.add_argument("--pause", type=float, default=4.5, help="pause en secondes entre appels (défaut 4.5s pour respecter 15 RPM)")
     ap.add_argument("--tete", choices=("gemini", "mistral"), default="gemini",
@@ -112,7 +115,7 @@ async def main():
     args = ap.parse_args()
 
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     except Exception:
         pass  # flux deja en UTF-8, ou redirige : la sonde mesure quand meme
 
@@ -155,8 +158,16 @@ async def main():
         return None, dt
 
     if args.scenario == "isole":
-        for idx_msg, msg in enumerate(MESSAGES_TEST, 1):
-            print(f"\n--- SOUS-SÉRIE {idx_msg}/3 : message = {msg!r} ---")
+        if args.seulement is not None:
+            if not (0 <= args.seulement < len(MESSAGES_TEST)):
+                print(f"[!] Index --seulement {args.seulement} invalide (0 à {len(MESSAGES_TEST)-1})")
+                return 1
+            selection = [(args.seulement + 1, MESSAGES_TEST[args.seulement])]
+        else:
+            selection = list(enumerate(MESSAGES_TEST, 1))
+
+        for idx_msg, msg in selection:
+            print(f"\n--- SOUS-SÉRIE {idx_msg}/{len(MESSAGES_TEST)} : message = {msg!r} ---")
             for i in range(args.n):
                 reinitialiser_etat(f)
                 rep, dt = await _appel_avec_retry(msg)
@@ -168,7 +179,7 @@ async def main():
         for i in range(args.n):
             reinitialiser_etat(f)
             print(f"\n--- CONVERSATION {i + 1}/{args.n} ---")
-            for msg in MESSAGES_TEST:
+            for msg in MESSAGES_TEST[:3]:
                 rep, dt = await _appel_avec_retry(msg)
                 print(f"  ({dt:4.1f}s) User: {msg}")
                 print(f"         Sugar: {rep}")

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import pytest
 
 _parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _parent_dir not in sys.path:
@@ -202,3 +201,18 @@ def test_le_harnais_mesure_le_budget_APPLICABLE_pas_30_en_aveugle():
     autre = evaluate_deterministic("sugar_30_mots", "johnny",
                                    [cinquante_cinq], ["et sinon ca va ?"])
     assert autre["succes"] is True, "le critere des 30 mots n'appartient qu'a Sugar"
+
+
+def test_les_exemples_ne_jugent_plus_le_message():
+    """⚠️ 24/09 : deux exemples jugeaient le MESSAGE de l'autre, et Sugar le faisait
+    ~16 fois sur 18 face a un simple « sugar ». Une demonstration bat une consigne."""
+    import sugar_data
+    prompt = sugar_data.PERSONALITY_PROMPT
+    debut = prompt.index("EXEMPLES DE VOIX")
+    exemples = prompt[debut:prompt.index("\n\n", debut)]
+    for motif in ("message entier", "rien d'intéressant qui suit", "Trois fois mon nom"):
+        assert motif not in exemples, motif
+    assert "Reproche gentil" in exemples
+    assert not any(l.rstrip().endswith("? »") for l in exemples.splitlines()), \
+        "un exemple finit par une question : la fiche l'interdit"
+
