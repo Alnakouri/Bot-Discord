@@ -775,48 +775,6 @@ async def on_ready():
                 lines.append(f"{i}. {name} ({pts} pts, {rank['emoji']} {rank['name']})")
             return f"Voici les courtisans qui ont le plus amusé le Prince de la Folie : " + " | ".join(lines)
 
-        async def cmd_decret(author: str, args: str) -> str:
-            if not is_feature_enabled("sheogorath", "decret_enabled", default=True):
-                return "Le Prince a rangé ses décrets dans un fromage. Reviens plus tard, mortel."  # en personnage
-            prompt = (
-                f"Rédige un DÉCRET DAEDRA de la Folie visant @{author}. "
-                f"Style Sheogorath : absurde et menaçant, autour d'UNE obsession de ton choix, inattendue. "
-                f"Écris une seule phrase de décret courte (max 200 caractères), en personnage, sans guillemets ni didascalies."
-            )
-            from core.llm_cascade import generate_response
-            from core.smart_router import RequestType
-            try:
-                text = await generate_response(
-                    routing={"type": RequestType.TEXT, "reason": "twitch_decret"},
-                    system_prompt=sheo_data.PERSONALITY_BASE,
-                    transcript="",
-                    user_message=prompt,
-                    conversation_history=[],
-                    media_data=None,
-                    mime_type="",
-                    key_manager=key_manager,
-                    mistral_client=mistral_client,
-                    groq_client=groq_client, nvidia_client=nvidia_client,
-                    bot_label="Sheogorath",
-                    temperature=1.0,
-                    max_tokens=80
-                )
-                if text:
-                    text = " ".join(text.split()).strip()
-                    from shared.twitch_chat import TwitchChatBot
-                    text = TwitchChatBot._strip_stage_directions(text)
-                    text = text.strip('"\'')
-                    return text[:450]
-            except Exception as e:
-                logger.error(f"❌ [TWITCH_CMD_DECRET] Erreur LLM : {e}")
-
-            fallback_decrees = [
-                f"Par décret de la folie, @{author} est condamné à manger du roquefort périmé pendant trois millénaires !",
-                f"Je décrète que les oreilles de @{author} appartiennent désormais aux papillons de démence !",
-                f"Par ma volonté, @{author} doit marcher à reculons jusqu'à la fin de la journée sous peine de Wabbajack !"
-            ]
-            return random.choice(fallback_decrees)
-
         # Anti-farm : 1 gain de Faveur max / 60 s / viewer (parité avec Johnny / try_award).
         _twitch_faveur_cooldowns = {}
 
@@ -850,12 +808,11 @@ async def on_ready():
             "folie": cmd_folie,
             "fromage": cmd_fromage,
             "faveur": cmd_faveur,
-            "decret": cmd_decret,
             "classement": cmd_classement
         }
+        # ⚠️ Pas de décret sur Twitch (Ahmed, 24/09) : il vit sur Discord SEULEMENT, où il
+        # a son parchemin et son rôle. Ni commande, ni alias, ni récompense de chaîne.
         command_aliases = {
-            "decree": "decret",
-            "décret": "decret",
             "cheese": "fromage",
             "favor": "faveur",
             "folly": "folie",
@@ -877,7 +834,6 @@ async def on_ready():
             viewer_memory_max=8,
             enable_eventsub=True,
             eventsub_reward_map={
-                "Décret": "decret",
                 "Fromage": "fromage",
                 "Folie": "folie"
             },

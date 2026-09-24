@@ -74,3 +74,32 @@ def test_le_bot_passe_par_les_deux_filets_et_ne_recite_plus_les_themes():
     lignes_de_prompt = [l for l in source.splitlines()
                         if "(fromage, papillons, intestins)" in l and not l.lstrip().startswith("#")]
     assert not lignes_de_prompt, lignes_de_prompt
+
+
+def test_le_decret_n_existe_pas_sur_twitch():
+    """Ahmed, 24/09 : le décret vit sur Discord SEULEMENT (parchemin + rôle). Sur Twitch,
+    ni commande, ni alias, ni récompense de chaîne ne doit y mener.
+
+    Verrou sur le fichier du bot : on lit les DICTIONNAIRES passés à `setup_twitch_chat`,
+    pas une copie de leur contenu."""
+    arbre = ast.parse(open(BOT, encoding="utf-8").read())
+    fonctions = {n.name for n in ast.walk(arbre)
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    assert "cmd_decret" not in fonctions, "la commande Twitch du décret est revenue"
+
+    vus = []
+    for n in ast.walk(arbre):
+        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ("commands", "command_aliases"):
+            if isinstance(n.value, ast.Dict):
+                vus.append(n.targets[0].id)
+                for k, v in zip(n.value.keys, n.value.values):
+                    for c in (k, v):
+                        if isinstance(c, ast.Constant) and isinstance(c.value, str):
+                            assert "decret" not in c.value.lower() and "décret" not in c.value.lower() \
+                                and "decree" not in c.value.lower(), (n.targets[0].id, c.value)
+        if isinstance(n, ast.keyword) and n.arg == "eventsub_reward_map" and isinstance(n.value, ast.Dict):
+            vus.append("eventsub_reward_map")
+            for v in n.value.values:
+                assert getattr(v, "value", "") != "decret", "une récompense Twitch mène au décret"
+    assert {"commands", "command_aliases", "eventsub_reward_map"} <= set(vus), \
+        f"le verrou ne trouve plus les tables Twitch de Sheogorath : {vus}"

@@ -39,7 +39,7 @@ Le Seigneur Daedra de la folie est imprévisible. Il adore distribuer des quête
   - `!quete` : Vous confie une tâche absurde ou une quête daedrique délirante.
   - `!fromage` : Lance le jeu du fromage mystère. Vous pouvez gagner de la faveur... ou récolter une intoxication alimentaire (- réputation).
   - `!wabbajack [user]` : Cible un joueur (ou vous-même) avec le bâton de folie. Les effets durent 10 minutes (changement de surnom, réactions).
-  - `!decret [user]` : Proclame un édit insensé imprimé sur un parchemin officiel.
+  - `!decret [user]` : Proclame un édit insensé imprimé sur un parchemin officiel. **Discord uniquement** (pas sur Twitch).
   - `!imposteur <user> [instruction]` : Usurpe l'identité d'un joueur par Webhook pour lui faire dire des bêtises.
   - `!solution` : Permet de soumettre une réponse aux énigmes du serveur.
   - `!join` / `!leave` : Ordonne à Sheogorath de rejoindre/quitter votre salon vocal Discord.
