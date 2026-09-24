@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import collections
 import os
+import re
 import sys
 import time
 import types
@@ -31,6 +32,53 @@ if str(dossier_sugar) not in sys.path:
 from shared.twitch.llm import LlmMixin
 from shared.twitch.sanitize import SanitizeMixin
 from core.api_manager import MultiAPIKeyManager
+
+
+def reponses_des_exemples(fiche: str) -> list[str]:
+    """Extrait les réponses des exemples de voix depuis la fiche de personnalité.
+
+    Dans le bloc qui commence à 'EXEMPLES DE VOIX' et se termine au premier '\n\n',
+    pour chaque ligne qui contient '→', prend le texte entre le dernier « et le
+    dernier » de la ligne. Les lignes sans «…» après la flèche sont ignorées.
+    """
+    debut = fiche.find("EXEMPLES DE VOIX")
+    if debut == -1:
+        return []
+    fin = fiche.find("\n\n", debut)
+    bloc = fiche[debut:fin] if fin != -1 else fiche[debut:]
+    reponses = []
+    for ligne in bloc.splitlines():
+        if "→" not in ligne:
+            continue
+        idx_fleche = ligne.rfind("→")
+        idx_ouvr = ligne.rfind("«")
+        idx_ferm = ligne.rfind("»")
+        if idx_ouvr > idx_fleche and idx_ferm > idx_ouvr:
+            reponses.append(ligne[idx_ouvr + 1:idx_ferm].strip())
+    return reponses
+
+
+def _mots(texte: str) -> list[str]:
+    texte_sans_apo = re.sub(r"['’]", " ", texte.lower())
+    return re.findall(r"[a-zà-öø-ÿœ0-9]+", texte_sans_apo)
+
+
+def est_recopie(reponse: str | None, exemples: list[str]) -> bool:
+    """True si la réponse partage une suite de 5 mots consécutifs avec un exemple."""
+    if not reponse or not exemples:
+        return False
+    mots_rep = _mots(reponse)
+    if len(mots_rep) < 5:
+        return False
+    ngrams_rep = set(tuple(mots_rep[i:i + 5]) for i in range(len(mots_rep) - 4))
+    for ex in exemples:
+        mots_ex = _mots(ex)
+        if len(mots_ex) < 5:
+            continue
+        for i in range(len(mots_ex) - 4):
+            if tuple(mots_ex[i:i + 5]) in ngrams_rep:
+                return True
+    return False
 
 
 def charger_sugar():
@@ -127,6 +175,7 @@ async def main():
             kw["call_timeout"] = args.timeout
             return await original(**kw)
         lc.generate_response = borne_desserree
+        lc._QUARANTAINE_ECHELON_SEUIL = 999
 
     fiche, cles, td_fn = charger_sugar()
     if args.tete == "gemini" and not cles:
@@ -157,6 +206,8 @@ async def main():
             await asyncio.sleep(20.0)
         return None, dt
 
+    exemples = reponses_des_exemples(fiche)
+
     if args.scenario == "isole":
         if args.seulement is not None:
             if not (0 <= args.seulement < len(MESSAGES_TEST)):
@@ -166,16 +217,39 @@ async def main():
         else:
             selection = list(enumerate(MESSAGES_TEST, 1))
 
+        total_recopies_isole = 0
+        total_silences_isole = 0
+        total_appels_isole = 0
+
         for idx_msg, msg in selection:
             print(f"\n--- SOUS-SÉRIE {idx_msg}/{len(MESSAGES_TEST)} : message = {msg!r} ---")
+            recopies_ss = 0
+            silences_ss = 0
             for i in range(args.n):
                 reinitialiser_etat(f)
                 rep, dt = await _appel_avec_retry(msg)
                 print(f"[{i + 1:2d}/{args.n}] ({dt:4.1f}s) User: {msg} -> Sugar: {rep}")
+                if rep is None:
+                    silences_ss += 1
+                elif est_recopie(rep, exemples):
+                    recopies_ss += 1
                 if i + 1 < args.n:
                     await asyncio.sleep(args.pause)
+            print(f"RECOPIES : {recopies_ss}/{args.n}")
+            print(f"SILENCES (None) : {silences_ss}/{args.n}")
+            total_recopies_isole += recopies_ss
+            total_silences_isole += silences_ss
+            total_appels_isole += args.n
+
+        if len(selection) > 1:
+            print(f"\nTOTAL ISOLE - RECOPIES : {total_recopies_isole}/{total_appels_isole}")
+            print(f"TOTAL ISOLE - SILENCES (None) : {total_silences_isole}/{total_appels_isole}")
 
     elif args.scenario == "conversation":
+        nb_messages_conv = len(MESSAGES_TEST[:3])
+        total_appels_conv = args.n * nb_messages_conv
+        total_recopies_conv = 0
+        total_silences_conv = 0
         for i in range(args.n):
             reinitialiser_etat(f)
             print(f"\n--- CONVERSATION {i + 1}/{args.n} ---")
@@ -183,7 +257,13 @@ async def main():
                 rep, dt = await _appel_avec_retry(msg)
                 print(f"  ({dt:4.1f}s) User: {msg}")
                 print(f"         Sugar: {rep}")
+                if rep is None:
+                    total_silences_conv += 1
+                elif est_recopie(rep, exemples):
+                    total_recopies_conv += 1
                 await asyncio.sleep(args.pause)
+        print(f"\nRECOPIES : {total_recopies_conv}/{total_appels_conv}")
+        print(f"SILENCES (None) : {total_silences_conv}/{total_appels_conv}")
 
     print("\n" + "=" * 78)
     print("Fin des mesures.")

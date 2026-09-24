@@ -210,9 +210,41 @@ def test_les_exemples_ne_jugent_plus_le_message():
     prompt = sugar_data.PERSONALITY_PROMPT
     debut = prompt.index("EXEMPLES DE VOIX")
     exemples = prompt[debut:prompt.index("\n\n", debut)]
-    for motif in ("message entier", "rien d'intéressant qui suit", "Trois fois mon nom"):
+    for motif in (
+        "message entier", "rien d'intéressant qui suit", "Trois fois mon nom",
+        "manquait justement", "Drôle de régime", "Je range les griffes",
+    ):
         assert motif not in exemples, motif
     assert "Reproche gentil" in exemples
     assert not any(l.rstrip().endswith("? »") for l in exemples.splitlines()), \
         "un exemple finit par une question : la fiche l'interdit"
+
+
+def test_sonde_detection_recopie():
+    """Vérifie la détection de recopie par la sonde sans réseau."""
+    from tools.sonde_ton_twitch import est_recopie, reponses_des_exemples
+    import sugar_data
+
+    # 1. Cas vrai : partage une suite de 5 mots consécutifs
+    exemples = ["Me voilà. Ce chat manquait justement d'un peu de peps."]
+    assert est_recopie("Me voilà. Ce chat manquait justement d'un peu de peps, Ahmed.", exemples) is True
+
+    # 2. Cas faux : pas de suite commune de 5 mots
+    assert est_recopie("Je réponds présente et le stream se passe très bien.", exemples) is False
+    assert est_recopie(None, exemples) is False
+    assert est_recopie("", exemples) is False
+    assert est_recopie("Me voilà.", exemples) is False
+
+    # 3. reponses_des_exemples renvoie autant de réponses que de lignes → «
+    prompt = sugar_data.PERSONALITY_PROMPT
+    debut = prompt.index("EXEMPLES DE VOIX")
+    fin = prompt.find("\n\n", debut)
+    bloc = prompt[debut:fin] if fin != -1 else prompt[debut:]
+    lignes_avec_fleche_et_guillemet = [
+        l for l in bloc.splitlines()
+        if "→" in l and l.rfind("«") > l.rfind("→")
+    ]
+    reps = reponses_des_exemples(prompt)
+    assert len(reps) == len(lignes_avec_fleche_et_guillemet)
+    assert all(r for r in reps)
 

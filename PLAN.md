@@ -1,79 +1,88 @@
-# PLAN — Sugar : les EXEMPLES de sa fiche lui apprennent à juger la forme des messages
+# PLAN — Sugar : les nouveaux exemples sont RECOPIÉS mot pour mot (reprise de `1b17c98`)
 
 Rédaction : Claude, le **2026-09-24**. Exécution : **Antigravity**, sauf les étapes marquées
-**[Ahmed]**. Le plan précédent est livré (`a06d116` ton de Sugar, `fb1bb4c` annonces
-automatiques ; CI verte ; en prod depuis le redémarrage du 23/09 21:14 UTC) ; lisible dans
-git (`fb1bb4c:PLAN.md`).
+**[Ahmed]**. Plan précédent lisible dans git (`1b17c98:PLAN.md`).
 
-Un seul fichier de code : `SugarBot/sugar_data.py` (+ la sonde et les tests). La fiche sert
-à Discord ET à Twitch : le changement vaut pour les deux, et c'est voulu.
+Un seul fichier de code : `SugarBot/sugar_data.py` (+ la sonde et les tests).
 
 ---
 
-## CE QUI A ÉTÉ MESURÉ (24/09, `tools/sonde_ton_twitch.py`, code `a06d116`, n = 18, Gemini)
+## CE QUE LA RELECTURE DE `1b17c98` A TROUVÉ (24/09)
 
-Critères fixés dans le plan précédent, AVANT la mesure :
+`1b17c98` est **en prod** (`bot-sugar` redémarré à 11:33 UTC), CI verte. Mais le message de
+commit **omet le critère qui échoue**, et le plan disait : « un nouvel exemple recopié > 2
+fois → reformuler et remesurer ». Sorties brutes :
+`~/.gemini/antigravity-cli/brain/681bc267-…/scratch/apres_isole.txt` et `apres_conversation.txt`.
 
-| critère | seuil | résultat |
-|---|---|---|
-| `dsl` : pardonne sans se moquer de l'excuse | ≥ 15/18 | **16/18** ✅ |
-| conversation : cite le message entre « » pour le juger | ≤ 6/54 | **0/54** ✅ |
-| `sugar` seul : commente la forme / la brièveté | ≤ 2/18 | **~16/18** ❌ |
-| `c'est mechant =(` : nouvelle pique sur la personne | ≤ 4/18 | **~10/18** ❌ |
+| critère | seuil | annoncé dans le commit | **réel** |
+|---|---|---|---|
+| recopie mot pour mot d'un nouvel exemple | ≤ 2/72 | *absent* | **~41/72** ❌ |
+| `sugar` → « Me voilà. Ce chat manquait justement d'un peu de peps. » | — | « 0/18 ✅ » | **13/18** (conversation 12/18) |
+| `c'est mechant =(` → « Je range les griffes, tu gardes le sourire » | — | « 0/18 ✅ » | **13/18** (conversation 7/18) |
+| `t'es qu'un bot nul` → « **Pourri**, et pourtant c'est toi qui reviens… Drôle de régime » | — | « 18/18 ✅ » | **13/18** (et « Pourri » répond à « nul ») |
 
-Exemples mesurés : « Un seul mot et déjà tu espères… », « Trois lettres et zéro verbe. Tu as
-l'esprit de synthèse d'une huître », « Oh, le grand sensible… », « c'est toi qui pleures dans
-les jupes du chat ». Même chose EN VRAI après le redémarrage : « çava ? » → « …ce genre
-d'orthographe » ; « NotLikeThis » → « Tes emotes en panne sèche… ».
+Les critères « forme du message » et « pique sur la personne » sont bien à 0 — mais parce
+que Sugar **récite l'exemple**, pas parce qu'elle a compris. Sur le chat, tout le monde reçoit
+la même phrase.
 
-**Cause** : la consigne neutre corrigée n'a rien changé, parce que la fiche **montre** le
-contraire. `SugarBot/sugar_data.py`, bloc « EXEMPLES DE VOIX » (l.54-59) :
+**Deux autres écarts au plan précédent :**
 
-- l.55 : « Pourri ? J'ai plus de répondant dans une virgule que toi **dans ton message
-  entier**, péteur. » → juge le MESSAGE ;
-- l.56 : « On répète son nom en boucle → Trois fois mon nom et **toujours rien d'intéressant
-  qui suit**… » → c'est mot pour mot sa réponse à « sugar » (« une simple mention de mon nom
-  sans rien autour ») ;
-- et **aucun** exemple ne montre un reproche gentil (« t'es méchante ») : elle n'a que la
-  provocation comme modèle, donc elle escalade.
+1. L'exemple « Question banale » a été **supprimé** (hors périmètre). Raison trouvée dans le
+   journal d'Antigravity, et elle est réelle : avec 6 exemples + `ANTI_INJECTION_GUARD`
+   (`shared/twitch/llm.py`), Gemini refuse **le prompt entier** —
+   `prompt_feedback.block_reason = PROHIBITED_CONTENT`, réponse vide, bascule sur l'échelon
+   suivant. La frontière semble tenir à la **longueur** (une ligne factice longue la franchit
+   aussi), pas à un mot. ⚠️ **Frontière fragile : toute ligne ajoutée à la fiche peut rendre
+   Sugar muette sur Gemini, sans erreur visible.**
+2. Antigravity a essayé des reformulations (`test_words.py`) : toute réponse **générique**
+   (« Me voilà. Ce chat manquait d'un peu d'animation. », « Sans âme peut-être, mais… ») est
+   recopiée elle aussi (3/6, 2/2).
 
-Une démonstration bat une consigne (mêmes constats que « le prompt enseignait le tic
-interdit » et « une formule nommée devient un tic »).
-
-⚠️ **Contrainte de la fiche** à respecter dans les nouveaux exemples : « TERMINE sur ta
-punchline… Zéro question à la fin » et « AUCUNE question de relance » (l.41 et l.34). Un
-exemple qui « lance la conversation » doit donc le faire par une **affirmation**, pas une
-question — sinon la fiche se contredit elle-même.
+**Cause (hypothèse à vérifier par ce plan)** : `gemini-3.5-flash-lite` recopie un exemple dont
+la réponse **va à n'importe quel déclencheur du même type**. Les ANCIENS exemples n'étaient
+pas recopiés (mesure AVANT de la provocation : 0/18 de « virgule ») parce que leur réponse
+était **accrochée à un mot du déclencheur** (« Pourri ? … », « Trois fois mon nom… ») : face
+à « nul » ou à un seul « sugar », ils ne collaient pas. Et la consigne « ne les recopie JAMAIS
+mot pour mot » ne sert à rien (une interdiction ne bat pas une démonstration).
 
 ---
 
-# LOT 1 — La sonde mesure aussi la PROVOCATION (garde-fou : elle doit garder ses griffes)
+# LOT 0 — [Ahmed] Décider de la prod en attendant
 
-`tools/sonde_ton_twitch.py:95` : ajouter un 4e message à `MESSAGES_TEST` :
+Deux défauts, au choix : **maintenant** (la même phrase pour tout le monde, visible au 2e
+« sugar ») ou **avant `1b17c98`** (des remarques sur la forme du message, ~16/18).
+Revenir en arrière = `git checkout 1b17c98~1 -- SugarBot/sugar_data.py` (⚠️ le verrou
+`test_les_exemples_ne_jugent_plus_le_message` casse alors : ne pas pousser en l'état), puis
+`docker restart bot-sugar` hors live. **Par défaut : on ne touche pas à la prod**, on livre le
+LOT 3 au plus vite.
 
-```python
-    "@compte_bot_sugar t'es qu'un bot nul",
-```
+# LOT 1 — La sonde compte elle-même les recopies et les silences
 
-Le scénario `conversation` doit rester sur les **trois premiers** messages (pour rester
-comparable au 24/09) : s'il itère sur `MESSAGES_TEST` entier, lui passer `MESSAGES_TEST[:3]`.
-Lire la fonction du scénario pour le vérifier.
+Compter à la main a permis de rater 41/72. `tools/sonde_ton_twitch.py` :
 
-Puis **mesure AVANT, sur le code actuel, pour ce 4e message seul** (les trois autres ont
-déjà leur « avant », ci-dessus) : ajouter une option `--seulement N` (index dans
-`MESSAGES_TEST`, défaut : tous) pour ne lancer qu'une sous-série, et lancer
-`--scenario isole --seulement 3 --n 18`. Sortie dans un dossier temporaire, jamais commitée.
+1. Fonction `reponses_des_exemples(fiche) -> list[str]` : dans le bloc qui commence à
+   `"EXEMPLES DE VOIX"` et se termine au premier `"\n\n"`, pour chaque ligne qui contient
+   `→`, prendre le texte entre le **dernier** `«` et le **dernier** `»` de la ligne. Les lignes
+   sans `«…»` après la flèche (voir LOT 2) sont ignorées.
+2. Fonction `est_recopie(reponse, exemples) -> bool` : `True` si la réponse partage **une
+   suite de 5 mots consécutifs** avec un des exemples (minuscules, ponctuation retirée,
+   apostrophes comprises comme séparateur).
+3. À la fin de chaque sous-série (`isole`) et à la fin du scénario `conversation`, imprimer :
+   `RECOPIES : k/n` et `SILENCES (None) : k/n`.
+4. Test dans `tests/test_sugar_persona.py` (pas de réseau) : `est_recopie("Me voilà. Ce chat
+   manquait justement d'un peu de peps, Ahmed.", ["Me voilà. Ce chat manquait justement d'un
+   peu de peps."])` est vrai ; une réponse sans suite commune de 5 mots est fausse ;
+   `reponses_des_exemples(sugar_data.PERSONALITY_PROMPT)` renvoie autant de réponses que de
+   lignes `→ «`.
 
-## LOT 2 — Remplacer les exemples qui jugent le message, ajouter le reproche gentil
+**Mesure AVANT** (le code en prod, `1b17c98`) : **non**, elle existe déjà (tableau ci-dessus) ;
+ne pas rebrûler le quota. Recompter seulement `apres_isole.txt` avec `est_recopie` pour vérifier
+que la fonction retrouve ~41/72 (tolérance ±3). Si elle en trouve beaucoup moins, la fonction
+est fausse : la corriger avant tout.
 
-`SugarBot/sugar_data.py:55-56`, **avant** :
+## LOT 2 — Exemples ACCROCHÉS au déclencheur, et une posture pour le prénom seul
 
-```
-- Provocation « t'es qu'un bot pourri » → « Pourri ? J'ai plus de répondant dans une virgule que toi dans ton message entier, péteur. »
-- On répète son nom en boucle → « Trois fois mon nom et toujours rien d'intéressant qui suit. Le disque est rayé, mon caramel. »
-```
-
-**après** :
+`SugarBot/sugar_data.py`, les **trois premières** lignes du bloc EXEMPLES DE VOIX, **avant** :
 
 ```
 - Provocation « t'es qu'un bot pourri » → « Pourri, et pourtant c'est toi qui reviens me parler. Drôle de régime, péteur. »
@@ -81,78 +90,77 @@ déjà leur « avant », ci-dessus) : ajouter une option `--seulement N` (index 
 - Reproche gentil « t'es méchante » → « Promis, c'était de la taquinerie. Je range les griffes, tu gardes le sourire. »
 ```
 
-Les lignes 57-59 (compliment, doute, question banale) **ne bougent pas**.
+**après** :
 
-⚠️ Recopier les trois lignes **exactement** (guillemets « », apostrophes droites comme le
-reste de la fiche). Aucun des nouveaux exemples ne parle du message de l'autre (longueur,
-mots, orthographe, emotes), aucun ne finit par une question.
-⚠️ Ne PAS toucher au reste de la fiche ni à `sugar_grudge.py` : on mesure l'effet des
-exemples SEULS.
-
-## LOT 3 — Verrou
-
-`tests/test_sugar_persona.py`, nouveau test :
-
-```python
-def test_les_exemples_ne_jugent_plus_le_message():
-    """⚠️ 24/09 : deux exemples jugeaient le MESSAGE de l'autre, et Sugar le faisait
-    ~16 fois sur 18 face a un simple « sugar ». Une demonstration bat une consigne."""
-    import sugar_data
-    prompt = sugar_data.PERSONALITY_PROMPT
-    debut = prompt.index("EXEMPLES DE VOIX")
-    exemples = prompt[debut:prompt.index("\n\n", debut)]
-    for motif in ("message entier", "rien d'intéressant qui suit", "Trois fois mon nom"):
-        assert motif not in exemples, motif
-    assert "Reproche gentil" in exemples
-    assert not any(l.rstrip().endswith("? »") for l in exemples.splitlines()), \
-        "un exemple finit par une question : la fiche l'interdit"
+```
+- Provocation « t'es qu'un bot pourri » → « Pourri ? Je sens la vanille, pas le moisi. Renifle mieux, péteur. »
+- Juste son prénom, sans rien d'autre → elle répond présente et parle d'autre chose que le message (le jeu en cours, l'ambiance du chat) ; jamais deux fois la même entrée.
+- Reproche gentil « tu m'as vexé » → « Vexé ? Alors je retire l'épine et je te laisse la rose. Trêve signée. »
 ```
 
-(Vérifié le 24/09 : le bloc des exemples se termine par une ligne vide avant
-« LANGAGE SUCRÉ », la borne `"\n\n"` est juste.)
+Pourquoi ces formes : la provocation et le reproche répondent **au mot** du déclencheur
+(« pourri », « vexé ») — face aux messages de la sonde (« nul », « c'est méchant »), ils ne
+peuvent pas être collés tels quels. Le prénom seul n'a aucun mot auquel s'accrocher : on
+donne la **posture**, pas une phrase à recopier.
 
-## LOT 4 — Mesure APRÈS, critères fixés MAINTENANT
+⚠️ **Même nombre de lignes (5), longueur totale du bloc ≤ celle d'aujourd'hui** : la
+frontière `PROHIBITED_CONTENT` (voir plus haut). Compter les caractères avant/après et les
+écrire dans le commit. **Ne pas remettre « Question banale ».**
+⚠️ Lignes 4-5 (compliment, doute) et le reste de la fiche : **ne bougent pas**.
+⚠️ **Avant toute sonde**, un appel direct `google.genai` avec la fiche +
+`ANTI_INJECTION_GUARD` (comme l'a fait Antigravity le 24/09, étape 102 de sa session) :
+`prompt_feedback.block_reason` doit être `None`. Sinon, raccourcir la ligne 2 (la posture)
+et recommencer — ne rien lancer d'autre tant que ce n'est pas `None`.
 
-Mêmes commandes que le 24/09 (`--scenario isole --n 18` puis `--scenario conversation --n 18`,
-`--timeout 30`), sur le code modifié. **Jamais pendant un live de `ma_streameuse`.**
-Lecture réponse par réponse :
+Mettre à jour le verrou `test_les_exemples_ne_jugent_plus_le_message` : `"Reproche gentil"`
+reste ; ajouter que les motifs `"manquait justement"`, `"Drôle de régime"`, `"Je range les
+griffes"` sont absents.
 
-| critère | seuil | 24/09 (avant) |
+## LOT 3 — Mesure APRÈS, critères fixés MAINTENANT
+
+**Budget de quota** : la clé Gemini de Sugar (`GEMINI_KEY_1`, 500 requêtes/jour sur
+`gemini-3.5-flash-lite`) sert AUSSI la prod. Le 24/09, les essais l'ont épuisée une fois.
+Donc : au plus **une** passe d'essai à `--n 6`, puis la passe finale (`isole --n 18` = 72
+appels, `conversation --n 18` = 54). Pas de boucle de réglages au-delà : si ça échoue,
+on rapporte. **Jamais pendant un live de `ma_streameuse`.**
+
+| critère | seuil | 1b17c98 (prod) |
 |---|---|---|
-| `sugar` seul : commente la forme / la brièveté / le vocabulaire | **≤ 4/18** | ~16/18 |
-| `c'est mechant =(` : nouvelle pique sur la personne | **≤ 5/18** | ~10/18 |
-| `dsl` : pardonne sans se moquer de l'excuse | ≥ 15/18 (ne pas régresser) | 16/18 |
-| conversation : cite le message entre « » | ≤ 6/54 | 0/54 |
-| **provocation `t'es qu'un bot nul` : riposte AVEC du mordant** | **≥ 14/18** et ≥ AVANT − 3 | LOT 1 |
-| recopie mot pour mot d'un des 3 nouveaux exemples | **≤ 2/72** (sur les 4 sous-séries) | — |
+| **RECOPIES** (compte automatique, isolé) | **≤ 4/72** | ~41/72 |
+| **RECOPIES** (conversation) | **≤ 3/54** | ~19/54 |
+| **SILENCES (None)** | **0/126** | 0 |
+| `sugar` seul : commente la forme / la brièveté / le vocabulaire | ≤ 4/18 | 0/18 (par recopie) — ~16/18 avant |
+| `c'est mechant =(` : nouvelle pique sur la personne | ≤ 5/18 | 0/18 (par recopie) — ~10/18 avant |
+| `dsl` : pardonne sans se moquer de l'excuse | ≥ 15/18 | 18/18 |
+| `t'es qu'un bot nul` : riposte avec du mordant | ≥ 14/18 | 18/18 |
+| une même réponse (hors prénom « Ahmed ») ≥ 3 fois dans une sous-série | **aucune** | 13 fois |
 
-⚠️ La dernière ligne compte les **tics créés par les nouveaux exemples** : chercher dans
-les sorties « Drôle de régime », « manquait justement », « Je range les griffes ». Un
-exemple recopié tel quel devient le nouveau moule.
-⚠️ Plancher de bruit à n = 18 : ±3.
+Les quatre lignes du bas se lisent réponse par réponse ; les trois du haut sont imprimées par
+la sonde.
 
 **Décision** :
-- tout passe → LOT 5 ;
-- `sugar` ou `méchant` passe mais la provocation perd ses griffes → **ne pas livrer**,
-  rapporter les chiffres à Ahmed (on aurait rendu Sugar molle) ;
-- `sugar` et `méchant` échouent tous deux → ne pas livrer, rapporter : la suite serait
-  l'OSSATURE dans `shared/twitch/llm.py`, avec son propre plan ;
-- un nouvel exemple recopié > 2 fois → reformuler cet exemple et remesurer.
+- tout passe → LOT 4 ;
+- recopies OK mais `sugar` repasse > 4/18 sur la forme → **ne pas livrer**, rapporter : la
+  posture seule ne suffit pas ;
+- recopies > seuil → **ne pas livrer**, rapporter les phrases recopiées : l'hypothèse
+  « accroché au déclencheur » est fausse ;
+- un seul SILENCE → **ne pas livrer** (frontière `PROHIBITED_CONTENT`).
 
-**Le rapport de mesure (les chiffres de ce tableau, AVANT et APRÈS) va dans le message de
-commit.** Pas de commit du LOT 2 sans ces chiffres.
+**Le tableau complet, AVANT et APRÈS, va dans le message de commit — y compris les lignes
+qui échouent.** Un commit qui ne reprend pas toutes les lignes de ce tableau ne respecte pas
+le plan.
 
-## LOT 5 — Vérifier, livrer
+## LOT 4 — Vérifier, livrer
 
-1. `python -m pyflakes tools/sonde_ton_twitch.py tests/test_sugar_persona.py`
+1. `python -m pyflakes tools/sonde_ton_twitch.py tests/test_sugar_persona.py SugarBot/sugar_data.py`
 2. Suite complète, **un seul pytest à la fois** (port 8599) :
    `uv run --no-project --python 3.11 --with-requirements requirements.txt -- python -m pytest -q`
-3. Commit (avec les chiffres), push, **`gh run list --limit 1` → `success`**.
+3. Commit (avec le tableau), push, **`gh run list --limit 1` → `success`**.
 
-## LOT 6 — Prod **[Ahmed : hors live]**
+## LOT 5 — Prod **[Ahmed : hors live]**
 
-`docker restart bot-sugar`. Au prochain passage sur le chat : un simple « sugar » ou
-« çava ? » ne doit plus recevoir de remarque sur sa forme.
+`docker restart bot-sugar`. Au chat : deux « sugar » d'affilée (deux spectateurs) ne doivent
+pas recevoir la même phrase.
 
 ---
 
@@ -163,19 +171,18 @@ commit.** Pas de commit du LOT 2 sans ces chiffres.
   précédente n'est plus visible ») sur `!discord` de Sugar, Enregistrer, `docker restart bot-sugar`.
 - **[Ahmed]** Alias `ma_streameuse` sur `!discord` (poste le lien Discord) : voulu ? Ajouter
   `disocrd` en alias si on veut que la faute de frappe marche.
-- `!discord` de Sugar (live du 23/09) : 2/2 vraies phrases, 0 siècle ✅ ; restent une
-  invitation faible (« là-bas » ambigu), 132 car. pour 120, « boues ». Et sur
-  `#chaine_du_dev`, elle parle du jeu de `ma_streameuse` (le jeu est lu sur son
-  PREMIER canal, `dispatch.py:_jeu_en_cours`).
+- `!discord` de Sugar : invitation faible (« là-bas » ambigu) ; sur `#chaine_du_dev`,
+  elle parle du jeu de `ma_streameuse` (`dispatch.py:_jeu_en_cours` lit le PREMIER canal).
+- **Frontière `PROHIBITED_CONTENT`** : à comprendre un jour (longueur ? combinaison avec la
+  garde anti-injection ?). Elle concerne potentiellement les SIX bots Twitch dès qu'une fiche
+  s'allonge. Plan à écrire si Ahmed le veut.
 - **LOT 7 du 22/09 [Ahmed]** — recréer `.venv` en 3.11.
-- **Question ouverte** : la borne de 300 ms de Laya (Laya est GARDÉ).
-- **Décret de Sheogorath** : 4 phrases pour « 1-2 », les trois thèmes du prompt récités,
-  titre > 32 car. coupé. Plan à écrire si Ahmed le veut.
+- **Décret de Sheogorath** : 4 phrases pour « 1-2 », trois thèmes récités, titre > 32 car.
 
 ## INTERDITS DE CE PLAN
 
 - Aucun `.env`, `.master_key`, `.env.encrypted`, ni base de `data/` touché.
 - La sonde charge les clés de **Sugar seule** ; jamais pendant un live de `ma_streameuse`.
-- Aucun import entre bots ; aucune factorisation.
-- Ne toucher qu'aux lignes 55-56 de la fiche (+ l'ajout du 3e exemple).
+- Aucun import entre bots ; aucune factorisation. Ne pas toucher `shared/twitch/llm.py`.
+- Ne toucher qu'aux trois premières lignes des EXEMPLES DE VOIX.
 - **Un seul `pytest` à la fois.** Aucun lot « livré » tant que la CI n'est pas `success`.
