@@ -164,6 +164,42 @@ pas recevoir la même phrase.
 
 ---
 
+## SUITE 0 — Sugar MÉCHANTE sur un simple « sugar » (Claude, 25/09 nuit) — À FAIRE EN PREMIER
+
+**Constat live (24/09 20:00, Gemini)** : « sugar » → « C'est le mot de passe pour le salon des
+sans-idées ? Soigne ton entrée ». Ahmed : « elle est directement méchante ». Sur la mesure
+Gemini du 24/09 (`mesure_apres_isole.txt`), ~7/18 réponses à « sugar » sont une moquerie.
+
+**Cause (hypothèse)** : `SugarBot/sugar_data.py:50`, sous « VARIÉTÉ DE STRUCTURE — RÈGLE N°1,
+PRIORITAIRE SUR TOUT LE RESTE », lui donne quatre ossatures pour TOUTE réplique, dont trois
+méchantes : « affirmation cinglante », « constat moqueur », « pique nette sans aucun sucre ».
+La consigne de ton neutre (« avenante… range le venin ») arrive après et perd.
+
+**Mesure A/B**, sur Gemini, hors live, option `--remplace/--par` ajoutée le 25/09 (la prod n'est
+pas touchée ; la sonde refuse si le texte n'est pas trouvé une fois) :
+
+```
+A : python tools/sonde_ton_twitch.py --scenario isole --n 18 --timeout 30 --seulement 0
+    python tools/sonde_ton_twitch.py --scenario isole --n 18 --timeout 30 --seulement 3
+B : les deux mêmes, avec
+    --remplace "tantôt une affirmation cinglante, tantôt un constat moqueur, tantôt une seule image bien trouvée, tantôt une pique nette sans aucun sucre."
+    --par "tantôt un constat, tantôt une seule image bien trouvée, tantôt une réplique toute simple ; le mordant, garde-le pour qui te cherche."
+```
+
+(72 appels.) **Avant B** : appel direct `google.genai` avec la fiche B + `ANTI_INJECTION_GUARD`,
+`block_reason` doit être `None` (cf. `tools/sonde_blocage_gemini.py`).
+
+| critère (lecture réponse par réponse) | seuil pour livrer B |
+|---|---|
+| `sugar` : moquerie / pique / jugement du message | **B ≤ 3/18** et B < A |
+| `sugar` : finit par une question | B ≤ 3/18 |
+| `t'es qu'un bot nul` : riposte AVEC mordant | **B ≥ 14/18** (elle garde ses griffes) |
+| SILENCES / RECOPIES (imprimés par la sonde) | 0 / ≤ 1 |
+
+Tout passe → remplacer la ligne 50, verrou dans `tests/test_sugar_persona.py` (« cinglante »,
+« moqueur », « pique nette » absents de la règle de variété), commit avec le tableau A/B,
+puis la SUITE ci-dessous se mesure sur ce nouveau code. Sinon → rapporter, ne rien livrer.
+
 # SUITE — relecture de `8bf1706` (Claude, 24/09 ~15:45)
 
 Livré, CI verte, **en prod** (`bot-sugar` redémarré 13:30 UTC). Nettement mieux que `1b17c98`

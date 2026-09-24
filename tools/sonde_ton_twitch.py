@@ -154,6 +154,10 @@ async def main():
                     help="isole = un message sur bot neuf ; conversation = enchaînement des 3 messages")
     ap.add_argument("--seulement", type=int, default=None,
                     help="index du message dans MESSAGES_TEST à exécuter seul (défaut : tous)")
+    ap.add_argument("--remplace", default=None,
+                    help="texte EXACT de la fiche a remplacer, pour essayer une variante sans "
+                         "toucher la prod (avec --par)")
+    ap.add_argument("--par", default=None, help="texte de remplacement (avec --remplace)")
     ap.add_argument("--n", type=int, default=18, help="nombre de répétitions (défaut 18)")
     ap.add_argument("--pause", type=float, default=4.5, help="pause en secondes entre appels (défaut 4.5s pour respecter 15 RPM)")
     ap.add_argument("--tete", choices=("gemini", "mistral"), default="gemini",
@@ -178,6 +182,15 @@ async def main():
         lc._QUARANTAINE_ECHELON_SEUIL = 999
 
     fiche, cles, td_fn = charger_sugar()
+    if args.remplace is not None:
+        # ⚠️ Une variante qui ne s'applique pas mesurerait la prod en croyant mesurer la
+        # variante : on refuse plutot que de mesurer a vide.
+        if args.par is None or fiche.count(args.remplace) != 1:
+            print(f"[!] --remplace doit apparaitre UNE fois dans la fiche "
+                  f"({fiche.count(args.remplace)} trouve(s)), avec --par.")
+            return 1
+        fiche = fiche.replace(args.remplace, args.par)
+        print(f"[VARIANTE] {len(args.remplace)} -> {len(args.par)} car. remplaces")
     if args.tete == "gemini" and not cles:
         print("[!] Aucune GEMINI_KEY_n trouvée pour Sugar.")
         return 1
