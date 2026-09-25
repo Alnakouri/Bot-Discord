@@ -246,6 +246,13 @@ python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "Kingdom Come: Del
 python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "Kingdom Come: Deliverance II" --fiche "Résumé : 15th century RPG set in Bohemia | Thèmes : Action, Historical" --clause-jeu "<VARIANTE>"
 ```
 
+**Aussi sur Mistral (ajout du 25/09)** : le 24/09 à 20:15, quota Gemini épuisé, c'est
+`ministral` qui a écrit l'invitation : « Viens qu'on t'échange des vanne-sucrées **en privé** »
+— Discord non nommé, et « en privé » est faux. Rejouer les deux commandes ci-dessus avec
+`--tete mistral` (n'utilise AUCUNE clé Gemini, donc pas le quota de Sugar) = 72 phrases en
+tout. B n'est livré que s'il passe le tableau sur Gemini **et** sur Mistral : destination
+nommée B ≥ 12/18, « là-bas » ou « en privé » B ≤ 2/18. Rapporter les quatre séries.
+
 `<VARIANTE>` = la clause actuelle, recopiée **à l'identique**, avec un seul changement :
 « les invite à venir le raconter là-bas » → « les invite à venir le raconter sur le serveur
 Discord ». (Pas d'autre mot touché : on mesure ce changement-là.)
@@ -290,8 +297,10 @@ touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malen
 
 # SUITE 3 — compter les JETONS de chaque appel (Claude, 25/09 17:30)
 
-**[Antigravity — APRÈS la SUITE 2, jamais avant.]** Aucun appel de modèle nécessaire : ce
-lot ne consomme pas de quota, il peut suivre la SUITE 2 le même jour.
+**[Antigravity — lançable DÈS le 25/09, sans attendre la SUITE 2.]** Aucun appel de modèle
+nécessaire : ce lot ne consomme pas de quota et ne touche pas `dispatch.py`. Livré ce soir,
+il étiquette déjà `sonde` les appels de la SUITE 2 de demain. Un seul lot à la fois, un seul
+`pytest` à la fois.
 
 **Constat** : `api_usage.db` a une colonne `tokens_used`, **vide pour les six bots** (jamais
 écrite : l'`INSERT` de `shared/api_tracking.py:125` ne la liste pas). On ne sait donc pas ce
@@ -348,3 +357,27 @@ raccourcir l'historique. Aucune de ces trois retouches avant le tableau.
 
 **Interdits** : aucune écriture dans `data/api_usage.db` en dehors du code du bot (pas de
 `ALTER` à la main) ; aucun `.env` touché ; aucun changement de prompt, de cascade ou de borne.
+
+---
+
+# SUITE 4 — la fausse alerte « Token invalide (401) » au démarrage (Claude, 25/09)
+
+**[Antigravity — lançable dès le 25/09, après la SUITE 3. Aucun quota.]**
+
+**Constat** : à chaque redémarrage de Sheo, Johnny et Sugar, le journal écrit
+`WARNING ⚠️ [TWITCH_CHAT:<bot>] Token invalide (code 401)`, puis une seconde plus tard
+`🔄 Token rafraîchi avec succès`. C'est le cas NOMINAL : le jeton Twitch dure ~4 h, un
+conteneur redémarré plus tard le trouve expiré et le rafraîchit. Un avertissement qui crie
+pour du nominal apprend à ignorer les avertissements.
+
+**Correctif** : `shared/twitch/auth.py`, `validate_token()` (l.95-97) : si `resp.status == 401`
+→ `logger.info("🔄 [TWITCH_CHAT:<bot>] Jeton expiré (401), rafraîchissement…")`. Tout AUTRE
+code reste en `warning`. Ne rien changer à `refresh()` : son échec est déjà en `error`, et c'est
+lui qui dit si le problème est réel. Aucun changement de logique, seulement le niveau du journal.
+
+**Verrou** (`tests/`, aiohttp simulé, aucun appel réseau) : un 401 → aucun `WARNING` émis ;
+un 500 → un `WARNING` ; un refresh en échec → un `ERROR`.
+
+Pyflakes → `pytest` → commit → push → CI `success`. **[Ahmed]** redémarrage hors live, groupé
+avec celui de la SUITE 3. **[Claude]** vérifie au démarrage suivant : 0 `WARNING` 401,
+`Token rafraîchi` présent.
