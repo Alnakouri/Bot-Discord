@@ -248,3 +248,17 @@ def test_sonde_detection_recopie():
     assert len(reps) == len(lignes_avec_fleche_et_guillemet)
     assert all(r for r in reps)
 
+
+def test_regle_variete_ne_prescrit_plus_la_mechancete_par_defaut():
+    """⚠️ 25/09 : la règle de variété prescrivait trois ossatures méchantes sur quatre
+    pour TOUTE réplique, rendant Sugar agressive même sur un simple « sugar ».
+    Le mordant est désormais réservé à qui la cherche."""
+    import sugar_data
+    prompt = sugar_data.PERSONALITY_PROMPT
+    debut = prompt.index("VARIÉTÉ DE STRUCTURE")
+    fin = prompt.index("EXEMPLES DE VOIX", debut)
+    bloc_variete = prompt[debut:fin]
+    for motif in ("cinglante", "moqueur", "pique nette"):
+        assert motif not in bloc_variete, f"{motif!r} encore présent dans la règle de variété"
+    assert "le mordant, garde-le pour qui te cherche" in bloc_variete
+
