@@ -164,7 +164,14 @@ pas recevoir la même phrase.
 
 ---
 
-## SUITE 0 — Sugar MÉCHANTE sur un simple « sugar » (Claude, 25/09 nuit) — À FAIRE EN PREMIER
+## ✅ SUITE 0 et SUITE — CLOSES (Claude, 25/09 16:50)
+
+B livré (`7f9287b`) : « sugar » méchante ~10/18 → ~5/18 (seuil ≤ 3 non tenu, mais dans le
+plancher de bruit ±3 sur 18 tirages ; gain accepté, jugement final au live). Ligne 2
+« sans question » (`04e7bdc`) essayée puis **revertée** (`5a4561c`) : ~7/18, questions 4 → 5/18.
+En prod depuis le 25/09 14:50 UTC. **Ne pas relancer ces mesures** : passer à la SUITE 2.
+
+## SUITE 0 — Sugar MÉCHANTE sur un simple « sugar » (Claude, 25/09 nuit) — CLOSE, historique
 
 **Constat live (24/09 20:00, Gemini)** : « sugar » → « C'est le mot de passe pour le salon des
 sans-idées ? Soigne ton entrée ». Ahmed : « elle est directement méchante ». Sur la mesure
@@ -231,7 +238,7 @@ réelles dans les journaux : **mesurer avant de toucher la prod.**
 ⚠️ La longueur (132 car. pour « 120 ») n'est PAS un bug : `_borner` coupe à 200 exprès
 (21/09 : une coupe à 120 tranchait l'invitation). Ne pas y toucher.
 
-**[Antigravity, 25/09 après 9 h, hors live, APRÈS la mesure de la SUITE — même quota]**
+**[Antigravity, 26/09 après 9 h Paris (quota Gemini de Sugar remis à zéro), hors live — PROCHAINE ÉTAPE]**
 Sonde existante, option `--clause-jeu` ajoutée le 24/09 (n'altère pas la prod) :
 
 ```
