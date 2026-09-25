@@ -229,6 +229,8 @@ chiffres, même s'ils passent.
 
 ## SUITE 2 — « là-bas » dans l'invitation `!discord` de Sugar (Claude, 24/09 soir)
 
+> ⏸️ **MESURÉE le 25/09 23:56–00:13 (Antigravity), EN ATTENTE DE LA DÉCISION D'AHMED — ne rien livrer d'ici là.** Gemini A→B : « là-bas » 9→1, destination nommée 2→12 (mais « ici » 1→4, même défaut). Mistral A→B : nommée 3→4, « là-bas » 0→3, replis 7→2 → **B échoue sur Mistral**. Le seuil « ≥ 12 » du texte contredit le « ≥ 14 » du tableau (erreur de Claude). « >95 % Gemini » est FAUX : ~89 % les jours ordinaires, 70 % le 24/09. Cause du résidu Mistral : le texte COMMUN dit encore « là-bas » (l.1100, l.1124). Si Ahmed dit oui : commit « livré par décision d'Ahmed contre la règle du plan », tableau corrigé, verrou, CI. Ensuite, dans tous les cas : SUITE 2-bis (texte commun, mesuré sur les six bots) à écrire par Claude.
+
 **Constat** : la clause jeu de Sugar (`shared/twitch/dispatch.py`, `CLAUSES_JEU_PAR_BOT["sugar"]`)
 dit « les invite à venir le raconter **là-bas** » — le mot est dans le prompt, il sort dans la
 phrase, et il ne désigne plus rien : live du 23/09, « combien de fois vos armures ont-elles fini
