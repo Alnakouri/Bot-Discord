@@ -92,6 +92,9 @@ class TwitchAuth:
                         self._save()
                         self.logger.info(f"✅ [TWITCH_CHAT:{self.bot_id}] Token validé (expire dans {expires_in}s)")
                         return True
+                    elif resp.status == 401:
+                        self.logger.info(f"🔄 [TWITCH_CHAT:{self.bot_id}] Jeton expiré (401), rafraîchissement…")
+                        return False
                     else:
                         self.logger.warning(f"⚠️ [TWITCH_CHAT:{self.bot_id}] Token invalide (code {resp.status})")
                         return False
