@@ -297,6 +297,8 @@ touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malen
 
 # SUITE 3 — compter les JETONS de chaque appel (Claude, 25/09 17:30)
 
+> ✅ **EXÉCUTÉE `86d3574`, vérifiée par Claude le 25/09 23:40** : diff conforme (4 inline branchés, sondes `sonde`, runner `harnais`), 0 dérive de vendoring, CI `success`. Six conteneurs redémarrés 23:37. **Reste [Claude]** : au 1er appel réel, vérifier que `api_usage.db` change de date et porte les 3 colonnes — le fichier n'avait plus été écrit depuis 10:18 UTC avec un `-journal` chaud, et aucun appel n'a eu lieu depuis le redémarrage pour le prouver. Puis le tableau à 24 h.
+
 **[Antigravity — lançable DÈS le 25/09, sans attendre la SUITE 2.]** Aucun appel de modèle
 nécessaire : ce lot ne consomme pas de quota et ne touche pas `dispatch.py`. Livré ce soir,
 il étiquette déjà `sonde` les appels de la SUITE 2 de demain. Un seul lot à la fois, un seul
@@ -361,6 +363,8 @@ raccourcir l'historique. Aucune de ces trois retouches avant le tableau.
 ---
 
 # SUITE 4 — la fausse alerte « Token invalide (401) » au démarrage (Claude, 25/09)
+
+> ✅ **EXÉCUTÉE `8d25bd8`, CI `success`.** Contrôle au démarrage du 25/09 23:37 **non concluant** : les jetons dataient de 20:14–20:44, encore valides, donc aucun 401. À refaire au prochain redémarrage à plus de 4 h d'un rafraîchissement.
 
 **[Antigravity — lançable dès le 25/09, après la SUITE 3. Aucun quota.]**
 
