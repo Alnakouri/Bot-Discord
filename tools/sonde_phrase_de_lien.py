@@ -46,6 +46,7 @@ l'instruction.
 import argparse
 import asyncio
 import os
+os.environ.setdefault("SUIVI_ORIGINE", "sonde")
 import sys
 import time
 import types

@@ -9,7 +9,6 @@ jusqu'à obtenir une réponse. Extrait de bot_johnny.py (référence) pour dédu
 """
 import time
 import asyncio
-import base64
 import logging
 import re
 from collections import Counter
@@ -430,6 +429,8 @@ async def generate_response(
         _code_erreur = None
         _raison = None
         api_key = None
+        _jetons_entree = None
+        _jetons_sortie = None
         try:
             # ⚠️ Un echelon qui vient d'expirer est SAUTE, sans l'appeler : sinon il coute
             # sa borne (15 s de silence) a chaque message tant qu'il est parti. Trace sous
@@ -473,6 +474,7 @@ async def generate_response(
                         model=model_name, contents=gemini_messages,
                         config=cfg,
                     )
+                    _jetons_entree, _jetons_sortie = _extraire_jetons("gemini", resp)
                     response_text = resp.text
                     if _est_vide(response_text):
                         logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
@@ -522,6 +524,7 @@ async def generate_response(
                         temperature=temperature,
                         max_tokens=max_tokens,
                     )
+                    _jetons_entree, _jetons_sortie = _extraire_jetons("mistral", chat)
                     response_text = chat.choices[0].message.content
                     if _est_vide(response_text):
                         logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
@@ -553,6 +556,7 @@ async def generate_response(
                         max_tokens=max_tokens,
                         **groq_kwargs(model_name),
                     )
+                    _jetons_entree, _jetons_sortie = _extraire_jetons("groq", chat)
                     response_text = chat.choices[0].message.content
                     if _est_vide(response_text):
                         logger.warning(f"⚠️ [GROQ {model_name}] réponse vide → échelon suivant")
@@ -586,6 +590,7 @@ async def generate_response(
                         # divise aussi la latence par six.
                         **nvidia_kwargs(model_name),
                     )
+                    _jetons_entree, _jetons_sortie = _extraire_jetons("nvidia", chat)
                     # Filet : `reasoning_effort="none"` n'est pas etanche. Mesure du 2026-09-05,
                     # 12 appels sans lui -> 12 fuites ; avec lui, ~1 sur 20 passe encore.
                     if _fuite_de_raisonnement(chat.choices[0].message):
@@ -671,7 +676,9 @@ async def generate_response(
                 succes=_succes,
                 code_erreur=_code_erreur,
                 latence_ms=_latence,
-                raison=_raison
+                raison=_raison,
+                jetons_entree=_jetons_entree,
+                jetons_sortie=_jetons_sortie,
             )
 
     return response_text
@@ -687,6 +694,34 @@ def _index_de_cle(key_manager, api_name, api_key):
         return None
     # ⚠️ Un faux gestionnaire (MagicMock) rend un objet que SQLite refuserait de binder.
     return index if isinstance(index, int) else None
+
+
+def _extraire_jetons(fournisseur, reponse):
+    """Extrait sans jamais lever les jetons réels renvoyés par le SDK."""
+    if reponse is None:
+        return None, None
+    try:
+        if fournisseur == "gemini":
+            meta = getattr(reponse, "usage_metadata", None)
+            if meta is not None:
+                entree = getattr(meta, "prompt_token_count", None)
+                sortie = getattr(meta, "candidates_token_count", None)
+                return (
+                    entree if isinstance(entree, int) else None,
+                    sortie if isinstance(sortie, int) else None,
+                )
+        else:
+            usage = getattr(reponse, "usage", None)
+            if usage is not None:
+                entree = getattr(usage, "prompt_tokens", None)
+                sortie = getattr(usage, "completion_tokens", None)
+                return (
+                    entree if isinstance(entree, int) else None,
+                    sortie if isinstance(sortie, int) else None,
+                )
+    except Exception:
+        pass  # la lecture d'usage ne doit jamais faire lever un appel
+    return None, None
 
 
 def _texte_de(fournisseur, reponse):
@@ -757,6 +792,8 @@ async def appel_hors_cascade(
     texte = None
     _raison = None
     _code_erreur = 0
+    _jetons_entree = None
+    _jetons_sortie = None
     try:
         if _saut:
             _raison = _saut
@@ -776,6 +813,7 @@ async def appel_hors_cascade(
             _raison = "non_tentee"
             return None
         reponse = await asyncio.wait_for(asyncio.to_thread(appel, **kwargs), timeout=timeout)
+        _jetons_entree, _jetons_sortie = _extraire_jetons(fournisseur, reponse)
         texte = _texte_de(fournisseur, reponse)
         if _est_vide(texte):
             logger.warning(f"⚠️ [{fournisseur.upper()} {modele}] réponse vide — {bot_label}")
@@ -809,4 +847,6 @@ async def appel_hors_cascade(
             code_erreur=_code_erreur,
             latence_ms=int((time.perf_counter() - _depart) * 1000),
             raison=_raison,
+            jetons_entree=_jetons_entree,
+            jetons_sortie=_jetons_sortie,
         )

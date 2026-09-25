@@ -1826,6 +1826,8 @@ async def on_message(message):
             _code_erreur = None
             _raison = None
             api_key = None
+            _jetons_entree = None
+            _jetons_sortie = None
             try:
                 # 1. GEMINI
                 if client_type == "gemini":
@@ -1887,6 +1889,8 @@ async def on_message(message):
                             timeout=45 if media_data else 15
                         )
 
+                    _jetons_entree = getattr(getattr(resp, "usage_metadata", None), "prompt_token_count", None)
+                    _jetons_sortie = getattr(getattr(resp, "usage_metadata", None), "candidates_token_count", None)
                     response_text = resp.text
                     logger.info(f"✅ [GEMINI {model_name}] Alfred via {routing['reason']}.")
                     break
@@ -1923,6 +1927,8 @@ async def on_message(message):
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
+                    _jetons_entree = getattr(getattr(chat, "usage", None), "prompt_tokens", None)
+                    _jetons_sortie = getattr(getattr(chat, "usage", None), "completion_tokens", None)
                     response_text = chat.choices[0].message.content
                     logger.info(f"🎩 [MISTRAL {model_name}] Alfred a servi une réponse.")
                     break
@@ -1947,6 +1953,8 @@ async def on_message(message):
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
+                    _jetons_entree = getattr(getattr(chat, "usage", None), "prompt_tokens", None)
+                    _jetons_sortie = getattr(getattr(chat, "usage", None), "completion_tokens", None)
                     response_text = chat.choices[0].message.content
                     logger.info(f"⚡ [GROQ {model_name}] Alfred a répondu.")
                     break
@@ -1978,6 +1986,8 @@ async def on_message(message):
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
+                    _jetons_entree = getattr(getattr(chat, "usage", None), "prompt_tokens", None)
+                    _jetons_sortie = getattr(getattr(chat, "usage", None), "completion_tokens", None)
                     # Filet : `reasoning_effort="none"` n'est pas etanche. Mesure du 2026-09-05,
                     # 12 appels sans lui -> 12 fuites ; avec lui, ~1 sur 20 passe encore.
                     if _fuite_de_raisonnement(chat.choices[0].message):
@@ -2029,6 +2039,7 @@ async def on_message(message):
                         bot="alfred", api=client_type, modele=model_name,
                         index_cle=_index_cle, succes=_succes, code_erreur=_code_erreur,
                         latence_ms=_latence, raison=_raison,
+                        jetons_entree=_jetons_entree, jetons_sortie=_jetons_sortie,
                     )
                 except Exception:
                     pass  # le tracage ne doit JAMAIS casser une reponse

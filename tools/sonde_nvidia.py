@@ -48,6 +48,8 @@ Elle n'est pas dans la suite de tests a dessein : elle exige Docker allume, six
 conteneurs debout et un vrai appel reseau. La CI ne peut rien en faire.
 """
 import argparse
+import os
+os.environ.setdefault("SUIVI_ORIGINE", "sonde")
 import subprocess
 import sys
 
@@ -139,6 +141,8 @@ for _essai in range(ESSAIS):
 # touche que par la branche gemini, absente ici.
 _CASCADE = '''
 import asyncio
+import os
+os.environ.setdefault("SUIVI_ORIGINE", "sonde")
 from openai import OpenAI
 from core.llm_cascade import generate_response
 from core.smart_router import RequestType

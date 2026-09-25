@@ -99,6 +99,12 @@ def _get_connection():
         conn.execute("ALTER TABLE api_calls ADD COLUMN raison TEXT;")
     except sqlite3.OperationalError:
         pass  # la colonne existe deja (migration deja passee)
+
+    for col_def in ("jetons_entree INTEGER", "jetons_sortie INTEGER", "origine TEXT"):
+        try:
+            conn.execute(f"ALTER TABLE api_calls ADD COLUMN {col_def};")
+        except sqlite3.OperationalError:
+            pass  # la colonne existe deja (migration deja passee)
         
     conn.commit()
     return conn
@@ -128,11 +134,12 @@ def _writer_loop():
                     if type_tache == "appel":
                         conn.execute("""
                             INSERT INTO api_calls 
-                            (timestamp, bot_name, api_name, model, key_index, success, error_code, latency_ms, raison)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (timestamp, bot_name, api_name, model, key_index, success, error_code, latency_ms, raison, jetons_entree, jetons_sortie, origine)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             task["timestamp"], task["bot_name"], task["api_name"], task["model"],
-                            task["key_index"], task["success"], task["error_code"], task["latency_ms"], task["raison"]
+                            task["key_index"], task["success"], task["error_code"], task["latency_ms"],
+                            task["raison"], task["jetons_entree"], task["jetons_sortie"], task["origine"]
                         ))
                     elif type_tache == "reponse":
                         conn.execute("""
@@ -186,10 +193,13 @@ def _empiler(tache):
             logger.warning("La file de tracking API est pleine, pertes d'évènements à prévoir.")
             _JOURNAL_FILE_PLEINE = True
 
-def tracer_appel(bot, api, modele, index_cle, succes, code_erreur=None, latence_ms=None, raison=None):
+def tracer_appel(bot, api, modele, index_cle, succes, code_erreur=None, latence_ms=None, raison=None, jetons_entree=None, jetons_sortie=None):
     if _ECRIVAIN_HS:
         return
     _ensure_thread()
+    origine = os.getenv("SUIVI_ORIGINE", "prod")
+    jetons_entree = jetons_entree if isinstance(jetons_entree, int) else None
+    jetons_sortie = jetons_sortie if isinstance(jetons_sortie, int) else None
     tache = {
         "type": "appel",
         "timestamp": _maintenant_utc(),
@@ -200,7 +210,10 @@ def tracer_appel(bot, api, modele, index_cle, succes, code_erreur=None, latence_
         "success": 1 if succes else 0,
         "error_code": code_erreur,
         "latency_ms": latence_ms,
-        "raison": raison
+        "raison": raison,
+        "jetons_entree": jetons_entree,
+        "jetons_sortie": jetons_sortie,
+        "origine": origine,
     }
     _empiler(tache)
 

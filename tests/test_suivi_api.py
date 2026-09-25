@@ -3,9 +3,9 @@ import asyncio
 import threading
 import sqlite3
 import os
+import ast
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import queue
 import time
 from shared import api_tracking
 from shared.llm_cascade import generate_response
@@ -262,3 +262,121 @@ def test_13_la_suite_n_ecrit_pas_dans_la_base_des_bots():
     assert os.path.abspath(_DATA_DIR_DE_CONFTEST) != reel, (
         "DATA_DIR pointe sur le data/ du dépôt : la suite va polluer la base des bots"
     )
+
+
+def test_14_jetons_entree_et_sortie_enregistres(tmp_path):
+    """Un appel tracé avec jetons_entree=1200, jetons_sortie=80 relu à l'identique."""
+    api_tracking.tracer_appel(
+        "sugar", "gemini", "gemini-3.5-flash-lite", 0, True,
+        latence_ms=120, jetons_entree=1200, jetons_sortie=80
+    )
+    _attendre_file_vide()
+    conn = sqlite3.connect(tmp_path / "api_usage.db")
+    row = conn.execute(
+        "SELECT jetons_entree, jetons_sortie FROM api_calls"
+    ).fetchone()
+    assert row == (1200, 80)
+
+
+def test_15_jetons_absents_enregistrent_null_pas_zero(tmp_path):
+    """Un appel tracé sans jetons enregistre NULL en base, pas 0."""
+    api_tracking.tracer_appel(
+        "sugar", "gemini", "gemini-3.5-flash-lite", 0, True,
+        latence_ms=120
+    )
+    _attendre_file_vide()
+    conn = sqlite3.connect(tmp_path / "api_usage.db")
+    row = conn.execute(
+        "SELECT jetons_entree, jetons_sortie FROM api_calls"
+    ).fetchone()
+    assert row == (None, None)
+
+
+def test_16_suivi_origine_par_defaut_et_personnalise(tmp_path, monkeypatch):
+    """SUIVI_ORIGINE absent -> 'prod' ; posé à 'sonde' -> 'sonde'."""
+    monkeypatch.delenv("SUIVI_ORIGINE", raising=False)
+    api_tracking.tracer_appel("sugar", "gemini", "gemini-3.5-flash-lite", 0, True)
+    monkeypatch.setenv("SUIVI_ORIGINE", "sonde")
+    api_tracking.tracer_appel("sugar", "gemini", "gemini-3.5-flash-lite", 0, True)
+    _attendre_file_vide()
+    conn = sqlite3.connect(tmp_path / "api_usage.db")
+    rows = conn.execute("SELECT origine FROM api_calls ORDER BY id ASC").fetchall()
+    assert rows == [("prod",), ("sonde",)]
+
+
+def test_17_migration_idempotente_ancienne_base(tmp_path):
+    """Ouvrir deux fois une base ancienne (sans les colonnes de migration) ne lève pas."""
+    db_path = tmp_path / "api_usage.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE api_calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            bot_name TEXT NOT NULL,
+            api_name TEXT NOT NULL,
+            key_index INTEGER,
+            success INTEGER NOT NULL,
+            error_code INTEGER,
+            error_message TEXT,
+            latency_ms REAL,
+            model TEXT,
+            tokens_used INTEGER
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+    # Deux ouvertures successives
+    conn1 = api_tracking._get_connection()
+    conn1.close()
+    conn2 = api_tracking._get_connection()
+    conn2.close()
+
+    conn_verif = sqlite3.connect(db_path)
+    cur = conn_verif.execute("PRAGMA table_info(api_calls)")
+    cols = {r[1] for r in cur.fetchall()}
+    assert {"jetons_entree", "jetons_sortie", "origine", "raison"}.issubset(cols)
+
+
+def test_18_ast_llm_cascade_passe_jetons_entree():
+    """Chaque appel tracer_appel dans shared/llm_cascade.py passe jetons_entree= en mot-clé."""
+    chemin = Path(__file__).resolve().parent.parent / "shared" / "llm_cascade.py"
+    source = chemin.read_text(encoding="utf-8")
+    arbre = ast.parse(source)
+    appels_trouves = 0
+    for noeud in ast.walk(arbre):
+        if isinstance(noeud, ast.Call):
+            nom = None
+            if isinstance(noeud.func, ast.Name):
+                nom = noeud.func.id
+            elif isinstance(noeud.func, ast.Attribute):
+                nom = noeud.func.attr
+            if nom == "tracer_appel":
+                appels_trouves += 1
+                mots_cles = {k.arg for k in noeud.keywords if k.arg is not None}
+                assert "jetons_entree" in mots_cles, (
+                    f"Un appel à tracer_appel à la ligne {noeud.lineno} ne passe pas le mot-clé jetons_entree="
+                )
+    assert appels_trouves >= 2, f"Attendu au moins 2 appels à tracer_appel, trouvé {appels_trouves}"
+
+
+def test_19_cascade_extrait_jetons_mistral(tmp_path):
+    """generate_response extrait les jetons d'usage de la réponse et les passe à tracer_appel."""
+    mistral = MagicMock()
+    reponse_mock = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="ok"))],
+        usage=MagicMock(prompt_tokens=350, completion_tokens=42),
+    )
+    mistral.chat.complete.return_value = reponse_mock
+    asyncio.run(generate_response(
+        routing={"type": RequestType.TEXT, "has_image": False, "reason": "test"},
+        system_prompt="sys", transcript="", user_message="salut",
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=MagicMock(), mistral_client=mistral,
+        bot_label="Alfred", cascade=[("mistral", "mistral-large")],
+    ))
+    _attendre_file_vide()
+    conn = sqlite3.connect(tmp_path / "api_usage.db")
+    row = conn.execute("SELECT jetons_entree, jetons_sortie FROM api_calls").fetchone()
+    assert row == (350, 42)
+

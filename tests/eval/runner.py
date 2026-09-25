@@ -1,6 +1,6 @@
 import os
+os.environ.setdefault("SUIVI_ORIGINE", "harnais")
 import sys
-import asyncio
 from contextlib import contextmanager
 from pathlib import Path
 from groq import Groq

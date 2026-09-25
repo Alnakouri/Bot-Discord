@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import collections
 import os
+os.environ.setdefault("SUIVI_ORIGINE", "sonde")
 import re
 import sys
 import time

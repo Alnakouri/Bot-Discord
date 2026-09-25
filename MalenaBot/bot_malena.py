@@ -238,6 +238,8 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
         # jamais sa clé au gestionnaire, et n'avait aucun moyen de la mettre en
         # quarantaine. La clé ne sert ici qu'à nommer le coupable et à sauter l'échelon.
         api_key = None
+        _jetons_entree = None
+        _jetons_sortie = None
         try:
             try:
                 # 1. GEMINI
@@ -266,6 +268,8 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
                         ),
                         timeout=45 if media_data else 15
                     )
+                    _jetons_entree = getattr(getattr(response, "usage_metadata", None), "prompt_token_count", None)
+                    _jetons_sortie = getattr(getattr(response, "usage_metadata", None), "candidates_token_count", None)
                     if _est_vide(response.text):
                         logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
                         _raison = "vide"
@@ -311,6 +315,8 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
+                    _jetons_entree = getattr(getattr(response, "usage", None), "prompt_tokens", None)
+                    _jetons_sortie = getattr(getattr(response, "usage", None), "completion_tokens", None)
                     texte = response.choices[0].message.content
                     if _est_vide(texte):
                         logger.warning(f"⚠️ [MISTRAL {model_name}] réponse vide → échelon suivant")
@@ -342,6 +348,8 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
+                    _jetons_entree = getattr(getattr(chat, "usage", None), "prompt_tokens", None)
+                    _jetons_sortie = getattr(getattr(chat, "usage", None), "completion_tokens", None)
                     if _fuite_de_raisonnement(chat.choices[0].message):
                         logger.warning(f"⚠️ [{client_type.upper()} {model_name}] raisonnement recopié dans la réponse → échelon suivant")
                         _raison = "fuite_raisonnement"
@@ -383,6 +391,8 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
                         ),
                         timeout=15  # borne TEXTE : ce client ne transporte pas le media
                     )
+                    _jetons_entree = getattr(getattr(chat, "usage", None), "prompt_tokens", None)
+                    _jetons_sortie = getattr(getattr(chat, "usage", None), "completion_tokens", None)
                     # Filet : `reasoning_effort="none"` n'est pas etanche. Mesure du 2026-09-05,
                     # 12 appels sans lui -> 12 fuites ; avec lui, ~1 sur 20 passe encore.
                     if _fuite_de_raisonnement(chat.choices[0].message):
@@ -435,7 +445,9 @@ async def _generate_response_hybrid_brut(prompt, mood="NEUTRE", routing=None, me
                 succes=_succes,
                 code_erreur=_code_erreur,
                 latence_ms=_latence,
-                raison=_raison
+                raison=_raison,
+                jetons_entree=_jetons_entree,
+                jetons_sortie=_jetons_sortie,
             )
 
     return "Ay caramba ! J'ai mal au crâne, plus personne ne marche là-dedans ! (Erreur API Totale)"
