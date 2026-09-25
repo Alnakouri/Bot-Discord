@@ -285,3 +285,66 @@ touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malen
 - Aucun import entre bots ; aucune factorisation. Ne pas toucher `shared/twitch/llm.py`.
 - Ne toucher qu'aux trois premières lignes des EXEMPLES DE VOIX.
 - **Un seul `pytest` à la fois.** Aucun lot « livré » tant que la CI n'est pas `success`.
+
+---
+
+# SUITE 3 — compter les JETONS de chaque appel (Claude, 25/09 17:30)
+
+**[Antigravity — APRÈS la SUITE 2, jamais avant.]** Aucun appel de modèle nécessaire : ce
+lot ne consomme pas de quota, il peut suivre la SUITE 2 le même jour.
+
+**Constat** : `api_usage.db` a une colonne `tokens_used`, **vide pour les six bots** (jamais
+écrite : l'`INSERT` de `shared/api_tracking.py:125` ne la liste pas). On ne sait donc pas ce
+que coûte un message. Tailles mesurées le 25/09 (caractères, pas des jetons) : fiche Sheo
+12,5–13,8 k, Sugar 9,2 k, Johnny 8,9 k, Alfred 8,7 k, Malena 6,1 k, M'aiq 6,0 k ; en plus,
+historique (≤ 30 messages) + transcript (10 derniers messages, qui recoupe l'historique).
+Et les sondes A/B tournent par la même cascade : leurs appels sont comptés **au nom du bot**
+(Sugar 641 et 1 463 appels les 23 et 24/09, contre 11 à 117 un jour ordinaire).
+
+**Ce qu'on veut** : pour chaque appel, jetons d'ENTRÉE et de SORTIE réels (ceux que renvoie
+le fournisseur, pas une estimation), et savoir si l'appel vient de la prod ou d'une sonde.
+**On ne change RIEN au prompt dans ce lot** : on mesure d'abord.
+
+1. `shared/api_tracking.py`
+   - migration sur le modèle de `raison` (l.93-96) : colonnes `jetons_entree INTEGER`,
+     `jetons_sortie INTEGER`, `origine TEXT` ;
+   - `tracer_appel(..., jetons_entree=None, jetons_sortie=None)` : paramètres optionnels,
+     défaut `None` (les appelants existants ne cassent pas) ; `origine` = `os.getenv("SUIVI_ORIGINE", "prod")` ;
+   - l'`INSERT` écrit les trois colonnes. Ne PAS réutiliser `tokens_used` (sens ambigu).
+2. `shared/llm_cascade.py` — lire l'usage renvoyé, **sans jamais lever** s'il manque
+   (`getattr(..., None)`, tout dans un `try`) :
+   - Gemini : `resp.usage_metadata.prompt_token_count` / `candidates_token_count` — y
+     compris quand la réponse est VIDE (contenu bloqué) : ce sont justement les jetons perdus ;
+   - Mistral, Groq, NVIDIA : `chat.usage.prompt_tokens` / `completion_tokens` ;
+   - délai dépassé, 429, échelon sauté : `None` (pas 0 — 0 mentirait).
+   Les passer aux deux `tracer_appel` (l.661 et l.798).
+3. Les quatre appels **inline** (`Alfred/bot_alfred.py:2028`, `MalenaBot/bot_malena.py:430`,
+   `MaiqBot/bot_maiq.py:1692`, `Sheogorath/bot_sheogorath.py:2663`) : même lecture si l'objet
+   réponse est à portée ; sinon laisser `None` et le **noter dans le commit** (pas de
+   refonte de ces cascades dans ce lot).
+4. Les sondes : chaque `tools/sonde_*.py` qui passe par la cascade pose
+   `os.environ.setdefault("SUIVI_ORIGINE", "sonde")` **avant** d'importer la cascade.
+   Vérifier aussi `tests/eval/runner.py` (même réglage, valeur `"harnais"`).
+5. `python tools/vendor_core.py` (les 6 copies `*/core/`), puis `python tools/sonde_core_drift.py`
+   doit dire 0 écart.
+
+**Verrous** (`tests/test_suivi_api.py`, base temporaire, jamais `data/`) :
+- un appel tracé avec `jetons_entree=1200, jetons_sortie=80` relu à l'identique ;
+- un appel tracé sans jetons → `NULL`, pas 0 ;
+- `SUIVI_ORIGINE` absent → `"prod"` ; posé à `"sonde"` → `"sonde"` ;
+- migration idempotente : ouvrir deux fois une base ancienne (sans les colonnes) ne lève pas ;
+- AST sur `shared/llm_cascade.py` : chaque `tracer_appel(` passe `jetons_entree=` (viser le
+  NOM du mot-clé, pas sa simple présence dans le fichier).
+
+**Ordre** : pyflakes → `pytest` (un seul à la fois) → commit → push → `gh run list` jusqu'à
+`success`. **[Ahmed]** redémarrer les six conteneurs hors live.
+
+**Contrôle après 24 h de prod [Claude]** : pour chaque bot, médiane et p90 de `jetons_entree`
+des appels `origine='prod'` réussis, jetons perdus sur les réponses vides, et part des
+appels `sonde`. C'est CE tableau qui dira s'il faut alléger une fiche (Sheo d'abord),
+supprimer le transcript en double de l'échelon Mistral (`llm_cascade.py`, message
+utilisateur `TRANSCRIPT:` alors que le transcript est déjà dans `system_prompt`), ou
+raccourcir l'historique. Aucune de ces trois retouches avant le tableau.
+
+**Interdits** : aucune écriture dans `data/api_usage.db` en dehors du code du bot (pas de
+`ALTER` à la main) ; aucun `.env` touché ; aucun changement de prompt, de cascade ou de borne.
