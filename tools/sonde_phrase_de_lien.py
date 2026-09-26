@@ -49,6 +49,15 @@ QUOI elle existe, pas seulement qu'elle evite ses defauts connus.
 depend pas de sa latence ; laisser la borne de prod a 8 s pendant la panne du 22/09 ne
 mesurait plus que des `TimeoutError`. Seule la borne de l'APPEL bouge, jamais
 l'instruction.
+
+`--brut` — afficher le texte brut exact rendu par le modèle à chaque essai, avant
+nettoyage ou troncature par `_borner` (SUITE 6-bis).
+
+`--max-tokens` — écraser la borne de jetons passée à `generate_response` pour
+vérifier si une fin de phrase coupée vient du budget LLM (SUITE 6-bis).
+
+`--borne` — remplacer la borne de 200 caractères de `dispatch._borner` pour
+vérifier si l'invitation a été tranchée par le nettoyeur (SUITE 6-bis).
 """
 import argparse
 import asyncio
@@ -180,6 +189,24 @@ def appliquer_variante(f, remplaces, pars):
     return f
 
 
+def enregistrer_bruts(f):
+    """Enveloppe f._ecrire_phrase_de_lien pour capturer le texte brut de chaque essai.
+
+    f._bruts est initialisé et vidé à chaque tour comme f._journal.
+    """
+    bruts = []
+    f._bruts = bruts
+    original_ecrire = f._ecrire_phrase_de_lien
+
+    async def ecrire_en_notant(instruction, system_prompt, cmd):
+        rendu = await original_ecrire(instruction, system_prompt, cmd)
+        bruts.append(rendu)
+        return rendu
+
+    f._ecrire_phrase_de_lien = ecrire_en_notant
+    return f
+
+
 def resumer(phrases, replis, n):
     """Les seuls chiffres qui se comptent sans lire. Le reste se LIT."""
     print("=" * 78)
@@ -239,6 +266,12 @@ async def main():
                     help="texte a remplacer dans l'instruction transmise au modele (repetable)")
     ap.add_argument("--par", action="append", default=[],
                     help="texte de substitution associe a --remplace (repetable, meme ordre)")
+    ap.add_argument("--brut", action="store_true",
+                    help="affiche sous chaque ligne le texte exact rendu par le modèle pour chaque essai")
+    ap.add_argument("--max-tokens", type=int, default=None,
+                    help="écrase max_tokens dans l'appel au modèle (défaut: inchangé)")
+    ap.add_argument("--borne", type=int, default=None,
+                    help="remplace la borne de troncature maxi dans dispatch._borner")
     args = ap.parse_args()
 
     if len(args.remplace) != len(args.par):
@@ -250,16 +283,28 @@ async def main():
     except Exception:
         pass  # flux deja en UTF-8, ou redirige : la sonde mesure quand meme
 
-    if args.timeout != 8.0:
+    if args.timeout != 8.0 or args.max_tokens is not None:
         # On ne retape pas la construction de l'instruction : le VRAI
-        # `_generate_link_line` la batit, et on ne desserre QUE la borne de l'appel.
+        # `_generate_link_line` la batit, et on ne desserre que la borne de l'appel
+        # et/ou on écrase max_tokens.
         import shared.llm_cascade as lc
         original = lc.generate_response
 
         async def borne_desserree(**kw):
-            kw["call_timeout"] = args.timeout
+            if args.timeout != 8.0:
+                kw["call_timeout"] = args.timeout
+            if args.max_tokens is not None:
+                kw["max_tokens"] = args.max_tokens
             return await original(**kw)
         lc.generate_response = borne_desserree
+
+    if args.borne is not None:
+        import shared.twitch.dispatch as dispatch_mod
+        original_borner = dispatch_mod._borner
+
+        def borner_rehausse(phrase, maxi=200):
+            return original_borner(phrase, args.borne)
+        dispatch_mod._borner = borner_rehausse
 
     from shared.twitch.dispatch import DispatchMixin
     if args.force_accroche:
@@ -287,19 +332,26 @@ async def main():
         f._fiche_du_jeu = fiche_imposee
     if args.remplace:
         appliquer_variante(f, args.remplace, args.par)
+    if args.brut:
+        enregistrer_bruts(f)
     print(f"{args.bot} | tete={args.tete} | fiche {len(fiche)} car. | jeu={jeu!r} | "
           f"n={args.n} | borne {args.timeout:g}s"
           + ("  | CLAUSE INJECTEE" if args.clause else "")
           + ("  | CLAUSE JEU INJECTEE" if args.clause_jeu else "")
           + ("  | ACCROCHE FORCEE" if args.force_accroche else "")
           + ("  | FICHE DU JEU" if args.fiche_jeu is not None else "")
-          + (f"  | VARIANTE x{len(args.remplace)}" if args.remplace else ""))
+          + (f"  | VARIANTE x{len(args.remplace)}" if args.remplace else "")
+          + (f"  | MAX-TOKENS {args.max_tokens}" if args.max_tokens is not None else "")
+          + (f"  | BORNE {args.borne}" if args.borne is not None else "")
+          + ("  | BRUT" if args.brut else ""))
     print("=" * 78)
 
     phrases, replis = [], 0
     for i in range(args.n):
         f._link_lines_cache = {}      # sinon la 2e generation rend la 1re
         del f._journal[:]
+        if hasattr(f, "_bruts"):
+            del f._bruts[:]
         debut = time.perf_counter()
         try:
             rendu = await f._generate_link_line("discord", "discord", "https://X")
@@ -316,6 +368,9 @@ async def main():
             phrase = "<<repli sur le gabarit fixe>>"
             replis += 1
         print(f"{i + 1:3}. [{duree:5.2f}s] {phrase}")
+        if args.brut and hasattr(f, "_bruts"):
+            for b in f._bruts:
+                print(f"      ↳ brut : «{b}»")
         for ligne in f._journal:
             if "rejetee" in ligne or ligne.startswith(("ERR", "WARN")):
                 print(f"      ↳ {ligne[:150]}")

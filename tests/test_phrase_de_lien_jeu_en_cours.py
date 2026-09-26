@@ -385,6 +385,38 @@ def test_appliquer_variante_remplace_exactement_une_fois():
     assert capture["instruction"].count(remplacement) == 1
 
 
+def test_sonde_options_par_defaut_preservent_objets_origine():
+    """SUITE 6-bis : sans options, _borner et lc.generate_response restent les objets d'origine."""
+    import shared.llm_cascade as lc
+    import shared.twitch.dispatch as dispatch_mod
+
+    assert dispatch_mod._borner.__name__ == "_borner"
+    assert lc.generate_response.__name__ == "generate_response"
+
+
+def test_sonde_enregistrer_bruts_capture_chaque_essai():
+    """SUITE 6-bis : enregistrer_bruts capture chaque essai sans altérer le retour."""
+    from tools.sonde_phrase_de_lien import enregistrer_bruts
+
+    f = _faux_bot("johnny")
+    appels = []
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        appels.append(instruction)
+        return f"Essai {len(appels)}"
+
+    f._ecrire_phrase_de_lien = faux_ecrire
+    enregistrer_bruts(f)
+
+    res1 = asyncio.run(f._ecrire_phrase_de_lien("inst1", "prompt", "cmd"))
+    assert res1 == "Essai 1"
+    assert f._bruts == ["Essai 1"]
+
+    res2 = asyncio.run(f._ecrire_phrase_de_lien("inst2", "prompt", "cmd"))
+    assert res2 == "Essai 2"
+    assert f._bruts == ["Essai 1", "Essai 2"]
+
+
 def test_la_bas_absent_de_la_clause_jeu_de_sugar():
     """SUITE 2 / SUITE 5 : la clause jeu de Sugar ne doit plus contenir 'là-bas',
     nomme Discord et prescrit deux phrases courtes."""
