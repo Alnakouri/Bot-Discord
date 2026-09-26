@@ -1082,6 +1082,10 @@ class DispatchMixin:
         # leurs phrases depassent allegrement les 120 caracteres demandes.
         #
         # ⚠️ Au passage, un defaut voisin, deja present SANS aucune rustine : Alfred sort
+        # « Cette demeure », « Ces murs » et meme « La bibliotheque du serveur » — alors
+        # que sa fiche lui interdit « le Manoir » et que cette instruction-ci lui interdit
+        # d'inventer un salon. Non corrige, faute de mesure suffisante (2 cas sur 4).
+        #
         # ⚠️ MESURES SUITE 2 & SUITE 2-bis (2026-09-26) : « là-bas » éliminé de l'instruction.
         # Remplacement dans CLAUSES_JEU_PAR_BOT["sugar"] ET dans le texte commun ci-dessous
         # (l.1100 « du serveur Discord », l.1124 « sur le serveur »).

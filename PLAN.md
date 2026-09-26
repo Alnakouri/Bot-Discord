@@ -363,6 +363,80 @@ tableau A/B des six, commit, `gh run list` jusqu'à `success`. **Un seul bot éc
 rien livrer, rapporter les douze séries ; Claude décidera (clause par bot plutôt que texte
 commun). Redémarrage des conteneurs = **[Ahmed, hors live]**.
 
+## SUITE 5 — la phrase `!discord` de Sugar SOUDE question et invitation (Claude, 26/09)
+
+**Constat en live (Ahmed, 26/09, « formulation nulle »)**, deux phrases sur KCD2 :
+
+- « À part te remettre à ta place de faim virtuellement, Kingdom Come II vous a donné envie
+  d'en débattre sur notre serveur ? ✨ » : c'est une pique (interdite par la clause), elle
+  mélange tu et vous, et le sens est confus.
+- « Entre deux boues médiévales, combien de fois Henri a-t-il ruiné vos bottes avant de venir
+  nous raconter ça sur le serveur ? ✨ » : un décor avant la question (interdit), puis une
+  soudure lourde.
+
+**Cause** : la clause jeu de Sugar exige trois choses dans UNE phrase de moins de 120 car. :
+une question sur le jeu, une invitation et la voix du personnage. Le modèle les soude avec
+« avant de venir… » ou « À part…, … envie d'en débattre sur… ». La SUITE 2 a aggravé la chose
+sans que ça se voie : en lui écrivant « sur le serveur Discord », elle lui a donné une
+destination à recopier, et la mesure ne comptait que les « là-bas » et la destination nommée,
+jamais si la phrase **se lit bien**.
+
+**Idée** : la question EST l'invitation. Le lien est ajouté juste après la phrase, c'est lui
+qui dit où répondre. Sugar ne pose donc que la question. Pas un mot sur le serveur, ni sur le
+fait de venir ou de raconter.
+
+⚠️ Pas d'exemple de phrase dans la clause ([[gotcha-le-prompt-enseigne-le-tic-interdit]],
+[[gotcha-une-formule-nommee-devient-un-tic]]) : on ne donne que des consignes de forme.
+
+**Live** : Ahmed autorise cette mesure **même pendant un live** (26/09). Elle fait 36 appels
+avec les clés de Sugar. Avant de la lancer, lire `data/api_usage.db` (`?immutable=1`) : si la
+tête de Sugar a eu des 429 dans les 30 dernières minutes, attendre.
+
+**Étape 1 [Antigravity, aucun changement de code]**. On mesure A (prod) puis B (clause
+injectée), 18 phrases chacun, sur Sugar seule :
+
+```
+J="Kingdom Come: Deliverance II"
+F="Résumé : 15th century RPG set in Bohemia | Thèmes : Action, Historical"
+python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "$J" --fiche "$F" --timeout 30
+python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "$J" --fiche "$F" --timeout 30 --clause-jeu "⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu : ta phrase est UNE question simple sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont joué — jamais sur la partie en cours, jamais une pique sur eux. Ta question EST l'invitation : le lien ajouté juste après leur dit où y répondre, donc ta phrase ne parle ni du serveur, ni de venir, ni de raconter. Vouvoie le chat : ils sont plusieurs. Ta phrase commence par la question et se termine sur son point d'interrogation (un emoji peut suivre) : pas de décor avant, rien après, sous les 120 caractères. "
+```
+
+Lire **chaque phrase à voix haute**, la ligne entière (phrase + lien) comme elle apparaîtra en
+salon, et rapporter les 36 phrases brutes avec ce tableau :
+
+| critère (plancher de bruit ±3 sur 18) | seuil pour livrer B |
+|---|---|
+| **soudure** (serveur, venir, raconter ou débattre, collé à la question) | B ≤ 2/18 |
+| **se lit mal** (lu à voix haute : phrase bancale ou sens flou) | B ≤ A − 3 |
+| pique sur le chat | B = 0 |
+| décor avant la question | B ≤ 2/18 |
+| tu et vous mélangés | B ≤ 1/18 |
+| vraie question sur le jeu vécu | B ≥ A − 2 |
+| partie en cours ou contenu du Discord inventé | B ≤ A + 1 |
+| ouverture la plus fréquente | B ≤ A + 3 |
+| longueur médiane | B ≤ 120 et B ≤ A + 15 car. |
+| replis sur le gabarit fixe | B ≤ A + 1 |
+
+⚠️ La « destination nommée » de la SUITE 2 **va tomber avec B, et c'est voulu** : ne pas la
+compter comme un échec. Le critère qui la remplace, c'est la ligne entière (question + lien)
+qui doit se lire comme une invitation.
+
+**Étape 2 [Antigravity, seulement si tout passe]** : remplacer `CLAUSES_JEU_PAR_BOT["sugar"]`
+dans `shared/twitch/dispatch.py` par le texte de B, **mot pour mot**. Mettre le tableau A/B
+en commentaire au-dessus de la clause. Adapter `test_la_bas_absent_de_la_clause_jeu_de_sugar`
+(la clause ne nomme plus le serveur : verrouiller plutôt l'absence de « là-bas », « serveur »
+et « raconter »). Ensuite pyflakes, un seul pytest, commit, et `gh run list` jusqu'à `success`.
+**Un critère échoue** → ne rien livrer, rapporter les 36 phrases ; Claude décidera.
+Redémarrer `bot-sugar` = **[Ahmed]**.
+
+⚠️ Ne pas toucher au texte commun de `_generate_link_line` : la SUITE 2-bis l'a mesuré sur les
+six bots. On ne change que la clause de Sugar.
+
+**Note à corriger avec cette suite** : `c467ebb` avait coupé en deux un commentaire sur
+Alfred dans `dispatch.py` (« Alfred sort » sans suite). Claude l'a restauré le 26/09, dans le
+même commit que ce plan. Quand on édite un commentaire, on AJOUTE des lignes, on n'en remplace pas.
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
@@ -379,7 +453,8 @@ commun). Redémarrage des conteneurs = **[Ahmed, hors live]**.
 ## INTERDITS DE CE PLAN
 
 - Aucun `.env`, `.master_key`, `.env.encrypted`, ni base de `data/` touché.
-- La sonde charge les clés de **Sugar seule** ; jamais pendant un live de `ma_streameuse`.
+- La sonde charge les clés de **Sugar seule** ; jamais pendant un live de `ma_streameuse`
+  (**sauf la SUITE 5**, qu'Ahmed a autorisée pendant le live le 26/09).
 - Aucun import entre bots ; aucune factorisation. Ne pas toucher `shared/twitch/llm.py`.
 - Ne toucher qu'aux trois premières lignes des EXEMPLES DE VOIX.
 - **Un seul `pytest` à la fois.** Aucun lot « livré » tant que la CI n'est pas `success`.
