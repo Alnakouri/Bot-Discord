@@ -274,6 +274,80 @@ commit avec le tableau A/B complet. Sinon → rapporter les chiffres, ne rien li
 ⚠️ Ne pas toucher au texte COMMUN (l.1100 « Ta phrase ne parle que de là-bas ») : le changer
 touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malena.
 
+## SUITE 2-bis — « là-bas » dans le texte COMMUN de la phrase de lien (Claude, 26/09)
+
+**Pourquoi** : la SUITE 2 a montré que, sur Mistral, Sugar dit encore « là-bas » même quand sa
+clause ne le dit plus — le mot vient du texte commun de `_generate_link_line`
+(`shared/twitch/dispatch.py`) : l.1100 « Ta phrase ne parle que de là-bas » (toujours) et
+l.1124 « ne promets pas qu'on en parlera là-bas » (seulement avec un jeu). Ce texte sert aux
+SIX bots : on ne le touche que si la mesure passe **sur les six**.
+
+⚠️ **On ne sait pas encore si c'est un défaut ailleurs que chez Sugar.** Sans jeu, « là-bas »
+suivi du lien n'est pas ambigu ; le défaut du 23/09 est « là-bas » **à côté d'un monde de
+jeu** (la Bohême). D'où l'étape 2 : mesurer A seul d'abord, et ne lancer B que si A montre
+le défaut quelque part. ⚠️ **M'aiq** : sa fiche PRESCRIT de ne pas nommer Discord
+(`maiq_data.py:52`, « 'Discord' n'existe pas ») — chez lui, un « Discord » nommé est une
+RÉGRESSION, pas un gain ([[gotcha-un-defaut-peut-etre-une-fonctionnalite]]).
+
+**Étape 1 [Antigravity, aucun quota]** — `tools/sonde_phrase_de_lien.py` : options
+`--remplace TEXTE --par TEXTE`, répétables (`action="append"`), sur le modèle de
+`tools/sonde_ton_twitch.py:186`. Elles enveloppent `f._ecrire_phrase_de_lien` du faux bot
+(jamais la classe, jamais le code de prod) : avant l'appel, chaque `--remplace` doit
+apparaître **exactement une fois** dans l'instruction, sinon la sonde lève et s'arrête
+(pas de mesure silencieuse d'un texte non remplacé). L'en-tête imprime `| VARIANTE xN`.
+Test dans `tests/` : une instruction sans le texte → erreur ; avec → remplacé une fois.
+Mettre à jour la docstring (section « ce que les options ont servi à trancher »). pyflakes,
+pytest (un seul à la fois), CI verte.
+
+**Étape 2 [Antigravity, hors live, après lecture de `data/api_usage.db` en `?immutable=1`]**
+— A seul, 18 phrases par bot, sur la tête de chaque bot (clés de CE bot seulement) :
+
+```
+J="Kingdom Come: Deliverance II"
+F="Résumé : 15th century RPG set in Bohemia | Thèmes : Action, Historical"
+python tools/sonde_phrase_de_lien.py --bot sugar  --n 18 --jeu "$J" --fiche "$F" --timeout 30
+python tools/sonde_phrase_de_lien.py --bot alfred --n 18 --jeu "$J" --fiche "$F" --timeout 30
+python tools/sonde_phrase_de_lien.py --bot malena --n 18 --jeu "$J" --fiche "$F" --timeout 30
+python tools/sonde_phrase_de_lien.py --bot maiq   --n 18 --jeu "$J" --fiche "$F" --timeout 30
+python tools/sonde_phrase_de_lien.py --bot johnny --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral
+python tools/sonde_phrase_de_lien.py --bot sheogorath --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral
+```
+
+(M'aiq et Sheogorath ne sont pas dans `ACCROCHE_AU_JEU` : le jeu est ignoré, ils mesurent la
+l.1100 seule. C'est voulu.) Lire phrase par phrase et rapporter, par bot : « là-bas » (et
+« en privé »), destination nommée, « là-bas » **ambigu** (peut désigner le monde du jeu),
+invitation présente, objet inventé, ouverture la plus fréquente, médiane, replis.
+**Arrêt** : si aucun bot n'a « là-bas » ambigu > 2/18, s'arrêter là et rapporter — pas de B.
+
+**Étape 3 [Antigravity, seulement si l'étape 2 montre le défaut]** — les six mêmes commandes, avec :
+
+```
+--remplace "Ta phrase ne parle que de là-bas." --par "Ta phrase ne parle que du serveur Discord."
+--remplace "ne promets pas qu'on en parlera là-bas." --par "ne promets pas qu'on en parlera sur le serveur."
+```
+
+(le 2e seulement pour les quatre bots de `ACCROCHE_AU_JEU` : chez M'aiq et Sheogorath il
+n'apparaît pas et la sonde refuserait.) Aucune clause par bot n'est touchée — les « là-bas »
+des clauses d'Alfred, Johnny, Sheogorath (et de Sugar si Ahmed a refusé la SUITE 2) restent :
+on mesure CE changement-là.
+
+| critère, par bot (plancher de bruit ±3 sur 18) | seuil pour livrer B |
+|---|---|
+| « là-bas » ambigu | B ≤ 2/18 là où A > 2 ; ailleurs B ≤ A + 1 |
+| destination nommée | B ≥ A — **sauf M'aiq : « Discord » nommé B ≤ A** |
+| invitation présente | B ≥ A − 2 |
+| objet / contenu inventé | B ≤ A + 2 |
+| ouverture la plus fréquente | B ≤ A + 3 (21/09 : les retouches communes ont écrasé celles de M'aiq et Malena) |
+| longueur médiane | B ≤ A + 15 car. |
+| replis sur le gabarit fixe | B ≤ A + 1 |
+
+**Tout passe sur les six** → remplacer les deux phrases dans `dispatch.py`, verrou dans
+`tests/test_phrase_de_lien_jeu_en_cours.py` (« là-bas » absent du texte commun — lire la
+source par AST, pas retaper l'instruction), commentaire au-dessus de l'instruction avec le
+tableau A/B des six, commit, `gh run list` jusqu'à `success`. **Un seul bot échoue** → ne
+rien livrer, rapporter les douze séries ; Claude décidera (clause par bot plutôt que texte
+commun). Redémarrage des conteneurs = **[Ahmed, hors live]**.
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
