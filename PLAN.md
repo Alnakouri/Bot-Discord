@@ -554,6 +554,97 @@ pas la phrase entière. La partie sur Alfred (« 3 sur 4 ») reste ouverte, n'y 
 commit, et `gh run list` jusqu'à `success`. **Un critère échoue dans les deux bras** → ne rien
 livrer, rapporter les 54 lignes ; Claude décidera. `docker restart bot-johnny` = **[Ahmed]**.
 
+### Résultat de la SUITE 6 (Antigravity, 27/09) : rien livré, et à juste titre
+
+Les 54 lignes relues par Claude. **La forme en deux phrases tient sur ministral** : se lit
+mal 5 → 1, pique 0-1, boisson 0, voix 15/15, « mon Discord » 0. **Un seul vrai blocage :
+l'invitation manque** (6/18 en B1, 5/18 en B2). Les autres échecs du tableau d'Antigravity
+ne tiennent pas :
+
+- **Comparaison** : Antigravity compte ~5/15, mais il y inclut les images de Night City
+  (« c'est comme les netrunners », « plus de chrome que »). C'est la voix de Johnny, qui
+  décrit le jeu avec ses mots à lui ([[gotcha-un-defaut-peut-etre-une-fonctionnalite]]).
+  Le défaut visé est le jeu **rabaissé face à lui ou à « nous »** : « moi j'ai fait sauter
+  des tours » (B1 l.5, l.14), « nos dettes à nous » (B1 l.18), « les vrais guerriers, nous »
+  (B2 l.8). Ça fait **3/18 en B1 et 1/18 en B2 : sous le seuil**. Le critère est redéfini
+  ainsi pour la suite.
+- **Replis** 3/18 contre 1/18 pour A : c'est dans le plancher de bruit (±3).
+- La colonne A du tableau reprend en partie les chiffres de la SUITE 2-bis (13/17), et non
+  la série du jour. Elle ne sert pas de référence.
+
+**Pourquoi l'invitation manque : trois causes possibles, que la sortie ne permet pas de
+départager.** La sonde affiche la phrase **après** `_nettoyer_phrase_de_lien`, pas le texte
+brut du modèle.
+1. **`_borner(phrase, 200)`** (`shared/twitch/dispatch.py:304`) coupe à la dernière fin de
+   phrase sous 200 caractères. Une réplique de ~150 caractères suivie d'une invitation de ~55
+   dépasse 200, et **c'est justement l'invitation qui saute**, sans trace. Plausible pour
+   B1 l.1, 5, 14, 15 et B2 l.1, 16, 18 (réplique de 140 à 170 caractères).
+2. **`max_tokens=60`** (`dispatch.py:1226`) tranche l'invitation en cours d'écriture. Vu à
+   B1 l.12 et B2 l.8.
+3. **Le modèle s'arrête** après une seule phrase. Plausible pour B1 l.2, 4, 17 (réplique
+   de 100 à 110 caractères : `_borner` ne les aurait pas touchées).
+
+Si les causes 1 et 2 dominent, la consigne n'y est pour rien : c'est le budget qui mange
+l'invitation, parce qu'elle vient **en dernier**. Or ministral n'écoute pas les consignes de
+volume ([[gotcha-la-longueur-est-un-defaut-de-MODELE]]). S'acharner sur « moins de 80
+caractères » ne servirait donc à rien.
+
+## SUITE 6-bis — où part l'invitation de Johnny (Claude, 27/09)
+
+**Étape 1 [Antigravity, `tools/` seulement, rien en prod]** : trois options dans
+`tools/sonde_phrase_de_lien.py`.
+
+- `--brut` : sous chaque ligne, afficher `↳ brut : «…»`, c'est-à-dire le texte **exact**
+  rendu par le modèle, pour chaque essai. Envelopper `f._ecrire_phrase_de_lien` comme le
+  fait `appliquer_variante` (l.152-180), **par-dessus** une éventuelle variante `--remplace`,
+  et noter chaque retour dans une liste vidée à chaque tour, comme `f._journal`.
+- `--max-tokens N` : écraser `kw["max_tokens"]` dans l'enveloppe de `lc.generate_response`,
+  sur le modèle de `borne_desserree` (l.254-263). ⚠️ Aujourd'hui cette enveloppe n'est posée
+  que si `--timeout != 8.0` : la poser dès que l'une des deux options est donnée.
+- `--borne N` : remplacer `shared.twitch.dispatch._borner` par une enveloppe qui appelle
+  l'original avec `maxi=N`. Ça marche parce que `_nettoyer_phrase_de_lien` le résout au
+  moment de l'appel, en variable globale du module.
+
+Les trois options sont désactivées par défaut. Sans elles, la sortie ne change pas d'un
+octet. Ajouter un test dans `tests/test_phrase_de_lien_jeu_en_cours.py` (ou dans un test
+de la sonde s'il en existe un) : sans les options, `_borner` et `lc.generate_response` sont
+bien les objets d'origine. Puis pyflakes, un seul pytest, commit et `gh run list`.
+
+**Étape 2 [Antigravity, 36 appels, clés de Johnny seulement]** : lire d'abord
+`data/api_usage.db` (`?immutable=1`), comme à la SUITE 6. On garde **B1** (sans formule
+citée, cf. [[gotcha-une-formule-nommee-devient-un-tic]]), avec les mêmes `$J`, `$F`,
+`$ACTUELLE` et `$FORME` qu'à la SUITE 6 :
+
+```
+C="$ACTUELLE$FORME Un emoji peut la finir. "
+python tools/sonde_phrase_de_lien.py --bot johnny --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral --clause "$C" --brut
+python tools/sonde_phrase_de_lien.py --bot johnny --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral --clause "$C" --brut --max-tokens 100 --borne 280
+```
+
+Rapporter les 36 lignes, **chacune suivie de son brut**, puis ce tableau :
+
+| par bras | B1 | B1-large |
+|---|---|---|
+| invitation présente dans le **brut** | | |
+| invitation présente dans la **phrase rendue** | | |
+| invitation écrite puis retirée par `_borner` | | |
+| brut tranché (sans ponctuation finale) | | |
+| une seule phrase écrite par le modèle | | |
+| longueur médiane rendue, sans le lien | | |
+| longueur maximale rendue | | |
+| compare le jeu à lui ou à « nous » (définition ci-dessus) | | |
+| replis | | |
+
+**Rien n'est livré à cette étape.** La décision revient à Ahmed, parce qu'elle porte sur
+la longueur :
+- **Si B1-large atteint ≥ 15/18 invitations** : le budget était la cause. La correction
+  serait de passer `max_tokens` et la borne à ces valeurs, **pour Johnny seulement**. Prix :
+  des lignes d'environ 200 caractères plus le lien, là où Sugar a été refusée à 176.
+- **Si le brut montre surtout la cause 3** (le modèle s'arrête après une phrase) : la
+  consigne est en cause, et Claude écrira un autre bras. Piste : le bloc jeu se termine
+  par « Et ta phrase doit CLAQUER : une seule idée » (`dispatch.py`, fin du bloc `if jeu`),
+  ce qui contredit « DEUX phrases » écrit plus haut.
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
