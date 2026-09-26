@@ -363,7 +363,7 @@ tableau A/B des six, commit, `gh run list` jusqu'à `success`. **Un seul bot éc
 rien livrer, rapporter les douze séries ; Claude décidera (clause par bot plutôt que texte
 commun). Redémarrage des conteneurs = **[Ahmed, hors live]**.
 
-## SUITE 5 — la phrase `!discord` de Sugar SOUDE question et invitation (Claude, 26/09)
+## SUITE 5 — la phrase `!discord` de Sugar SOUDE question et invitation (Claude, 26/09, revue avec Ahmed)
 
 **Constat en live (Ahmed, 26/09, « formulation nulle »)**, deux phrases sur KCD2 :
 
@@ -381,54 +381,69 @@ sans que ça se voie : en lui écrivant « sur le serveur Discord », elle lui a
 destination à recopier, et la mesure ne comptait que les « là-bas » et la destination nommée,
 jamais si la phrase **se lit bien**.
 
-**Idée** : la question EST l'invitation. Le lien est ajouté juste après la phrase, c'est lui
-qui dit où répondre. Sugar ne pose donc que la question. Pas un mot sur le serveur, ni sur le
-fait de venir ou de raconter.
+**Idée (corrigée par Ahmed, 26/09)** : on garde deux temps, mais on ne les soude plus. D'abord
+une question courte sur le jeu, puis une invitation courte et franche qui nomme Discord, dans
+l'esprit « Venez nous en parler sur Discord ! » ou « Rejoignez notre Discord ! ». Ce sont
+**deux phrases** et non plus une. La première version (23/09, « question PUIS invitation »)
+avait donné 176 car. de médiane parce que rien ne bornait chaque morceau. Ici, chaque phrase a
+sa propre borne.
 
-⚠️ Pas d'exemple de phrase dans la clause ([[gotcha-le-prompt-enseigne-le-tic-interdit]],
-[[gotcha-une-formule-nommee-devient-un-tic]]) : on ne donne que des consignes de forme.
+⚠️ **Le risque, c'est le tic** ([[gotcha-une-formule-nommee-devient-un-tic]]) : une formule
+écrite dans le prompt revient mot pour mot 16 fois sur 17. D'où deux bras B :
 
-**Live** : Ahmed autorise cette mesure **même pendant un live** (26/09). Elle fait 36 appels
+- **B1** ne donne aucun exemple, seulement la forme ;
+- **B2** donne les exemples d'Ahmed, en demandant de varier.
+
+On garde celui qui passe. Si les deux passent, on prend celui qui varie le plus.
+
+**Live** : Ahmed autorise cette mesure **même pendant un live** (26/09). Elle fait 54 appels
 avec les clés de Sugar. Avant de la lancer, lire `data/api_usage.db` (`?immutable=1`) : si la
 tête de Sugar a eu des 429 dans les 30 dernières minutes, attendre.
 
-**Étape 1 [Antigravity, aucun changement de code]**. On mesure A (prod) puis B (clause
-injectée), 18 phrases chacun, sur Sugar seule :
+**Étape 1 [Antigravity, aucun changement de code]**. Trois séries de 18 phrases, sur Sugar
+seule : A (prod), B1 et B2 (clause injectée).
 
 ```
 J="Kingdom Come: Deliverance II"
 F="Résumé : 15th century RPG set in Bohemia | Thèmes : Action, Historical"
+COMMUN="⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu. Vouvoie le chat : ils sont plusieurs. Ici, tu écris DEUX phrases courtes, et elles seules. La première est une question simple sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont joué : jamais sur la partie en cours, jamais une pique sur eux, pas de décor avant, moins de 80 caractères, et elle se termine sur son point d'interrogation. La seconde, moins de 45 caractères, les invite franchement à venir en parler sur Discord et nomme Discord."
 python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "$J" --fiche "$F" --timeout 30
-python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "$J" --fiche "$F" --timeout 30 --clause-jeu "⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu : ta phrase est UNE question simple sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont joué — jamais sur la partie en cours, jamais une pique sur eux. Ta question EST l'invitation : le lien ajouté juste après leur dit où y répondre, donc ta phrase ne parle ni du serveur, ni de venir, ni de raconter. Vouvoie le chat : ils sont plusieurs. Ta phrase commence par la question et se termine sur son point d'interrogation (un emoji peut suivre) : pas de décor avant, rien après, sous les 120 caractères. "
+python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "$J" --fiche "$F" --timeout 30 --clause-jeu "$COMMUN Un emoji peut la finir. "
+python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --jeu "$J" --fiche "$F" --timeout 30 --clause-jeu "$COMMUN Dans l'esprit de « Venez nous en parler sur Discord ! », « Rejoignez notre Discord ! » ou « Venez en discuter sur Discord ! », mais avec tes mots à toi, et jamais deux fois la même. Un emoji peut la finir. "
 ```
 
-Lire **chaque phrase à voix haute**, la ligne entière (phrase + lien) comme elle apparaîtra en
-salon, et rapporter les 36 phrases brutes avec ce tableau :
+⚠️ Le texte commun de l'instruction dit encore « UNE seule phrase (max 120 caractères) ». La
+clause le contredit exprès. Si B1 et B2 donnent quand même une seule phrase soudée plus de 6
+fois sur 18, c'est que le texte commun l'emporte : rapporter, ne rien livrer. Claude écrira
+alors un `--remplace` réservé à Sugar.
 
-| critère (plancher de bruit ±3 sur 18) | seuil pour livrer B |
+Lire **chaque ligne à voix haute**, entière (phrases + lien) comme elle apparaîtra en salon,
+et rapporter les 54 lignes brutes avec ce tableau :
+
+| critère (plancher de bruit ±3 sur 18) | seuil pour livrer B1 ou B2 |
 |---|---|
-| **soudure** (serveur, venir, raconter ou débattre, collé à la question) | B ≤ 2/18 |
-| **se lit mal** (lu à voix haute : phrase bancale ou sens flou) | B ≤ A − 3 |
-| pique sur le chat | B = 0 |
-| décor avant la question | B ≤ 2/18 |
-| tu et vous mélangés | B ≤ 1/18 |
-| vraie question sur le jeu vécu | B ≥ A − 2 |
-| partie en cours ou contenu du Discord inventé | B ≤ A + 1 |
-| ouverture la plus fréquente | B ≤ A + 3 |
-| longueur médiane | B ≤ 120 et B ≤ A + 15 car. |
-| replis sur le gabarit fixe | B ≤ A + 1 |
+| **invitation finale qui nomme Discord** | ≥ 16/18 |
+| **soudure** (invitation collée dans la question, « avant de venir… ») | ≤ 2/18 |
+| **se lit mal** (lu à voix haute : bancal ou sens flou) | ≤ A − 3 |
+| **même invitation mot pour mot** (la plus fréquente) | ≤ 6/18 |
+| pique sur le chat | 0 |
+| décor avant la question | ≤ 2/18 |
+| tu et vous mélangés | ≤ 1/18 |
+| vraie question sur le jeu vécu | ≥ A − 2 |
+| partie en cours ou contenu du Discord inventé | ≤ A + 1 |
+| « là-bas » ambigu | ≤ 2/18 |
+| longueur médiane (sans le lien) | ≤ 130 car. |
+| replis sur le gabarit fixe | ≤ A + 1 |
 
-⚠️ La « destination nommée » de la SUITE 2 **va tomber avec B, et c'est voulu** : ne pas la
-compter comme un échec. Le critère qui la remplace, c'est la ligne entière (question + lien)
-qui doit se lire comme une invitation.
-
-**Étape 2 [Antigravity, seulement si tout passe]** : remplacer `CLAUSES_JEU_PAR_BOT["sugar"]`
-dans `shared/twitch/dispatch.py` par le texte de B, **mot pour mot**. Mettre le tableau A/B
-en commentaire au-dessus de la clause. Adapter `test_la_bas_absent_de_la_clause_jeu_de_sugar`
-(la clause ne nomme plus le serveur : verrouiller plutôt l'absence de « là-bas », « serveur »
-et « raconter »). Ensuite pyflakes, un seul pytest, commit, et `gh run list` jusqu'à `success`.
-**Un critère échoue** → ne rien livrer, rapporter les 36 phrases ; Claude décidera.
-Redémarrer `bot-sugar` = **[Ahmed]**.
+**Étape 2 [Antigravity, seulement si B1 ou B2 passe tout]** : remplacer
+`CLAUSES_JEU_PAR_BOT["sugar"]` dans `shared/twitch/dispatch.py` par la clause gagnante,
+**mot pour mot** (le texte de `$COMMUN` suivi de la fin propre au bras). Mettre le tableau
+A/B1/B2 en commentaire au-dessus de la clause, en AJOUTANT des lignes : ne jamais en
+remplacer. Garder `test_la_bas_absent_de_la_clause_jeu_de_sugar` et y ajouter « Discord »
+présent et « DEUX phrases » présent. Ensuite pyflakes, un seul pytest, commit, et
+`gh run list` jusqu'à `success`.
+**Un critère échoue dans les deux bras** → ne rien livrer, rapporter les 54 lignes ; Claude
+décidera. Redémarrer `bot-sugar` = **[Ahmed]**.
 
 ⚠️ Ne pas toucher au texte commun de `_generate_link_line` : la SUITE 2-bis l'a mesuré sur les
 six bots. On ne change que la clause de Sugar.
