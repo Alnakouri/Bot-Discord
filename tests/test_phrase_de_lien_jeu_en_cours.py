@@ -386,10 +386,12 @@ def test_appliquer_variante_remplace_exactement_une_fois():
 
 
 def test_la_bas_absent_de_la_clause_jeu_de_sugar():
-    """SUITE 2 : la clause jeu de Sugar ne doit plus contenir 'là-bas'."""
+    """SUITE 2 / SUITE 5 : la clause jeu de Sugar ne doit plus contenir 'là-bas',
+    nomme Discord et prescrit deux phrases courtes."""
     clause = DispatchMixin.CLAUSES_JEU_PAR_BOT["sugar"]
     assert "là-bas" not in clause.lower(), "« là-bas » est encore dans la clause jeu de Sugar"
-    assert "serveur Discord" in clause, "la clause jeu de Sugar doit nommer le serveur Discord"
+    assert "Discord" in clause, "la clause jeu de Sugar doit nommer Discord"
+    assert "DEUX phrases" in clause, "la clause jeu de Sugar doit prescrire deux phrases"
 
 
 def test_la_bas_absent_du_texte_commun_de_la_phrase_de_lien():

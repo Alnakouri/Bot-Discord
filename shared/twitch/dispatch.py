@@ -829,14 +829,36 @@ class DispatchMixin:
     #     au-dela de 120 car. .................  17/18
     # Elle demandait « une question PUIS une invitation » : le modele collait deux
     # phrases. Cette version-ci exige que les deux tiennent dans UNE phrase courte.
+    #
+    # ⚠️ SUITE 5 (2026-09-26) : rupture de la soudure question + invitation.
+    # Version en deux phrases distinctes (question < 80 car., invitation franche Discord < 45 car.).
+    # Bras B2 retenu (exemples d'Ahmed avec consigne de variation).
+    # Tableau mesuré sur Sugar (18 tirages par cellule, jeu Kingdom Come II, tête Gemini) :
+    #   critère                               seuil       A (prod)    B1 (forme)  B2 (gagnant)
+    #   invitation finale qui nomme Discord   >= 16/18    0/18        18/18       17/18
+    #   soudure (« avant de venir… »)         <= 2/18     14/18       0/18        0/18
+    #   se lit mal                            <= A - 3    8/18        0/18        2/18
+    #   même invitation mot pour mot          <= 6/18     N/A         4/18        4/18
+    #   pique sur le chat                     0           2/18        0/18        0/18
+    #   décor avant la question               <= 2/18     5/18        0/18        0/18
+    #   tu et vous mélangés                   <= 1/18     0/18 (3 tu) 3/18        0/18
+    #   vraie question sur le jeu vécu        >= A - 2    11/18       18/18       17/18
+    #   partie en cours ou Discord inventé    <= A + 1    0/18        0/18        0/18
+    #   « là-bas » ambigu                     <= 2/18     0/18        0/18        0/18
+    #   longueur médiane (sans le lien)       <= 130 car. 110 car.    99 car.     109 car.
+    #   replis sur le gabarit fixe            <= A + 1    0/18        0/18        1/18 (503 Gemini)
     CLAUSES_JEU_PAR_BOT = {
         "sugar": (
-            "⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu : ta phrase est "
-            "UNE question sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont "
-            "joué — jamais sur la partie en cours, jamais une pique sur eux — et cette "
-            "même question les invite à venir le raconter sur le serveur Discord. Question et invitation "
-            "tiennent dans la MÊME phrase, sous les 120 caractères : pas de mise en scène "
-            "avant, pas de seconde phrase après. "
+            "⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu. "
+            "Vouvoie le chat : ils sont plusieurs. "
+            "Ici, tu écris DEUX phrases courtes, et elles seules. "
+            "La première est une question simple sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont joué : "
+            "jamais sur la partie en cours, jamais une pique sur eux, pas de décor avant, moins de 80 caractères, "
+            "et elle se termine sur son point d'interrogation. "
+            "La seconde, moins de 45 caractères, les invite franchement à venir en parler sur Discord et nomme Discord. "
+            "Dans l'esprit de « Venez nous en parler sur Discord ! », « Rejoignez notre Discord ! » "
+            "ou « Venez en discuter sur Discord ! », mais avec tes mots à toi, et jamais deux fois la même. "
+            "Un emoji peut la finir. "
         ),
     }
 

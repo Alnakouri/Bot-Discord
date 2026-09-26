@@ -365,6 +365,15 @@ commun). Redémarrage des conteneurs = **[Ahmed, hors live]**.
 
 ## SUITE 5 — la phrase `!discord` de Sugar SOUDE question et invitation (Claude, 26/09, revue avec Ahmed)
 
+> ✅ **LIVRÉE (26/09) : Bras B2 gagnant, les 12 critères passent** :
+>
+> - **Étape 1 (mesures A, B1, B2)** :
+>   - **A (prod)** : 14/18 soudures (« avant de venir… »), 0/18 Discord nommé, 8/18 se lisent mal, 5/18 décors avant la question, 2/18 piques.
+>   - **B1 (forme seule)** : 18/18 Discord nommé ✅, 0/18 soudure ✅, 0/18 se lit mal ✅, mais **3/18 tu et vous mélangés** (seuil strict <= 1/18) et 7/18 tutoiements (« Viens… »).
+>   - **B2 (exemples d'Ahmed avec consigne de variation)** : 17/18 Discord nommé ✅ (1 repli suite à 503 temporaire), 0/18 soudure ✅, 2/18 se lit mal ✅, 0/18 pique ✅, 0/18 décor avant ✅, 0/18 tu/vous mélangé ✅ (100% vous), 4/18 même invitation ✅ (variété préservée), 109 car. médiane ✅. **Tous les 12 critères passent.**
+> - **Étape 2 livrée** : clause B2 insérée dans `shared/twitch/dispatch.py`, commentaire avec tableau A/B1/B2, verrous dans `tests/test_phrase_de_lien_jeu_en_cours.py` mis à jour (« Discord » et « DEUX phrases »).
+> - Reste **[Ahmed, hors live]** : redémarrer le conteneur `bot-sugar`.
+
 **Constat en live (Ahmed, 26/09, « formulation nulle »)**, deux phrases sur KCD2 :
 
 - « À part te remettre à ta place de faim virtuellement, Kingdom Come II vous a donné envie
