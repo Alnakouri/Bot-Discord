@@ -347,3 +347,40 @@ def test_une_commande_transmet_SON_canal_au_callback(monkeypatch):
     asyncio.run(entrelacees())
     assert sorted(vus) == [("a", "chaine_du_dev"), ("b", "ma_streameuse")]
     assert dispatch._CANAL_COURANT.get() is None, "le canal fuit hors de la commande"
+
+
+def test_appliquer_variante_sans_texte_leve():
+    """Une instruction qui ne contient pas le texte demande fait lever ErreurVariante."""
+    from tools.sonde_phrase_de_lien import appliquer_variante, ErreurVariante
+
+    f = _faux_bot("sugar")
+    appliquer_variante(f, ["texte_qui_n_existe_pas_dans_l_instruction"], ["remplacement"])
+    with pytest.raises(ErreurVariante) as exc_info:
+        asyncio.run(f._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert "doit apparaître EXACTEMENT UNE fois" in str(exc_info.value)
+    assert "0 trouvé(s)" in str(exc_info.value)
+
+
+def test_appliquer_variante_remplace_exactement_une_fois():
+    """Une instruction avec le texte demande le remplace exactement une fois."""
+    from tools.sonde_phrase_de_lien import appliquer_variante
+
+    f = _faux_bot("sugar")
+    capture = {}
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Venez nous voir !"
+
+    f._ecrire_phrase_de_lien = faux_ecrire
+
+    cible = "Ta phrase ne parle que de là-bas."
+    remplacement = "Ta phrase ne parle que du serveur Discord."
+    appliquer_variante(f, [cible], [remplacement])
+
+    res = asyncio.run(f._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    assert cible not in capture["instruction"]
+    assert remplacement in capture["instruction"]
+    assert capture["instruction"].count(remplacement) == 1
+

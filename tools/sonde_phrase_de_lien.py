@@ -21,9 +21,16 @@ celle qu'on ecrit apres coup penche du cote de ce qu'on espere trouver.
     python tools/sonde_phrase_de_lien.py --bot alfred --n 18
     python tools/sonde_phrase_de_lien.py --bot sheogorath --n 18 --tete mistral --sans-jeu
     python tools/sonde_phrase_de_lien.py --bot maiq --n 18 --clause "<une clause a essayer>"
+    python tools/sonde_phrase_de_lien.py --bot sugar --n 18 --remplace "texte A" --par "texte B"
 
 CE QUE LES OPTIONS ONT SERVI A TRANCHER
 ---------------------------------------
+`--remplace` et `--par` — mesurer une modification du TEXTE COMMUN de l'instruction
+sans toucher a `dispatch.py`. Repetables (`action="append"`). Chaque motif doit
+apparaitre exactement une fois dans l'instruction transmise au modele, sinon la
+sonde s'arrete aussitot pour eviter toute mesure silencieuse du texte non modifie
+(SUITE 2-bis).
+
 `--tete mistral` — mesurer un bot que sa tete refuse de servir. Sheogorath n'avait
 JAMAIS pu etre mesure depuis le 21/09 (Groq le rate-limite a 3-4 appels) ; ministral,
 son 2e echelon, l'a rendu mesurable le 22/09 en 18 generations. Meme sortie pendant la
@@ -136,6 +143,43 @@ def faux_bot(bot_id, fiche, cles, jeu, tete):
     return f
 
 
+class ErreurVariante(RuntimeError):
+    """Levée quand une substitution demandée via --remplace ne peut pas s'appliquer."""
+    pass
+
+
+def appliquer_variante(f, remplaces, pars):
+    """Enveloppe f._ecrire_phrase_de_lien pour substituer des motifs dans l'instruction.
+
+    ⚠️ Avant l'appel au modèle, chaque --remplace doit apparaître EXACTEMENT UNE fois
+    dans l'instruction, sinon ErreurVariante est levée (pas de mesure silencieuse d'un
+    texte non remplacé).
+    """
+    if len(remplaces) != len(pars):
+        raise ErreurVariante(
+            f"Nombre discordant de --remplace ({len(remplaces)}) et --par ({len(pars)})."
+        )
+    if not remplaces:
+        return f
+
+    original_ecrire = f._ecrire_phrase_de_lien
+
+    async def ecrire_avec_remplacement(instruction, system_prompt, cmd):
+        texte = instruction
+        for r, p in zip(remplaces, pars):
+            occ = texte.count(r)
+            if occ != 1:
+                raise ErreurVariante(
+                    f"--remplace doit apparaître EXACTEMENT UNE fois dans l'instruction "
+                    f"({occ} trouvé(s)) : {r!r}"
+                )
+            texte = texte.replace(r, p)
+        return await original_ecrire(texte, system_prompt, cmd)
+
+    f._ecrire_phrase_de_lien = ecrire_avec_remplacement
+    return f
+
+
 def resumer(phrases, replis, n):
     """Les seuls chiffres qui se comptent sans lire. Le reste se LIT."""
     print("=" * 78)
@@ -191,7 +235,15 @@ async def main():
                     help="fiche IGDB du jeu a donner au modele (LOT 1bis.5). Le faux Helix "
                          "ne connait aucun igdb_id : sans cette option, la mesure se fait "
                          "SANS fiche, comme quand IGDB est muet.")
+    ap.add_argument("--remplace", action="append", default=[],
+                    help="texte a remplacer dans l'instruction transmise au modele (repetable)")
+    ap.add_argument("--par", action="append", default=[],
+                    help="texte de substitution associe a --remplace (repetable, meme ordre)")
     args = ap.parse_args()
+
+    if len(args.remplace) != len(args.par):
+        print(f"[!] Autant de --par que de --remplace requis ({len(args.remplace)} vs {len(args.par)}).")
+        return 1
 
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -233,12 +285,15 @@ async def main():
         async def fiche_imposee():
             return args.fiche_jeu
         f._fiche_du_jeu = fiche_imposee
+    if args.remplace:
+        appliquer_variante(f, args.remplace, args.par)
     print(f"{args.bot} | tete={args.tete} | fiche {len(fiche)} car. | jeu={jeu!r} | "
           f"n={args.n} | borne {args.timeout:g}s"
           + ("  | CLAUSE INJECTEE" if args.clause else "")
           + ("  | CLAUSE JEU INJECTEE" if args.clause_jeu else "")
           + ("  | ACCROCHE FORCEE" if args.force_accroche else "")
-          + ("  | FICHE DU JEU" if args.fiche_jeu is not None else ""))
+          + ("  | FICHE DU JEU" if args.fiche_jeu is not None else "")
+          + (f"  | VARIANTE x{len(args.remplace)}" if args.remplace else ""))
     print("=" * 78)
 
     phrases, replis = [], 0
@@ -248,6 +303,8 @@ async def main():
         debut = time.perf_counter()
         try:
             rendu = await f._generate_link_line("discord", "discord", "https://X")
+        except ErreurVariante:
+            raise
         except Exception as e:
             rendu = f"<<EXCEPTION {type(e).__name__}: {e}>>"
         duree = time.perf_counter() - debut
