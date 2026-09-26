@@ -35,6 +35,9 @@ def _faux_bot(bot_id="sugar", channels=("un_canal",), avec_cles=True):
     f.personality_prompt = "tu es un bot"
     f.system_prompt_provider = None
     f.key_manager = object()
+    f.mistral_client = None
+    f.groq_client = None
+    f.bot_label = None
     f.logger = types.SimpleNamespace(debug=lambda *a, **k: None, info=lambda *a, **k: None,
                                      warning=lambda *a, **k: None, error=lambda *a, **k: None)
     return f
@@ -446,5 +449,110 @@ def test_la_bas_absent_du_texte_commun_de_la_phrase_de_lien():
         assert "là-bas" not in fragment.lower(), (
             f"« là-bas » trouvé dans le texte commun de l'instruction : {fragment!r}"
         )
+
+
+def test_johnny_forme_avec_jeu_et_clause_actuelle():
+    """SUITE 6-ter : Johnny avec jeu reçoit CLAUSES_PAR_BOT + CLAUSES_FORME_JEU_PAR_BOT d'un seul tenant."""
+    f = _faux_bot("johnny")
+    f._helix_client = _helix(("Kingdom Come: Deliverance II", "42"))
+    capture = {}
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Une replique. Viens sur Discord !"
+
+    f._ecrire_phrase_de_lien = faux_ecrire
+    res = asyncio.run(f._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+
+    actuelle = DispatchMixin.CLAUSES_PAR_BOT["johnny"]
+    forme = DispatchMixin.CLAUSES_FORME_JEU_PAR_BOT["johnny"]
+
+    assert "ni tournée, ni verre" in actuelle
+    assert "DEUX phrases" in forme
+    assert "Discord" in forme
+
+    bloc_attendu = actuelle + forme
+    assert bloc_attendu in capture["instruction"], (
+        "L'instruction doit contenir CLAUSES_PAR_BOT['johnny'] + CLAUSES_FORME_JEU_PAR_BOT['johnny'] d'un seul tenant"
+    )
+
+
+def test_johnny_sans_jeu_n_a_pas_deux_phrases():
+    """SUITE 6-ter : Johnny sans jeu ne reçoit pas la consigne 'DEUX phrases'."""
+    f = _faux_bot("johnny")
+    f._helix_client = _helix(None)
+    capture = {}
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Viens sur le serveur !"
+
+    f._ecrire_phrase_de_lien = faux_ecrire
+    res = asyncio.run(f._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    assert "DEUX phrases" not in capture["instruction"]
+
+
+@pytest.mark.parametrize("bot_id", ["sugar", "alfred", "malena"])
+def test_autres_bots_avec_jeu_n_ont_pas_forme_de_johnny(bot_id):
+    """SUITE 6-ter : Sugar, Alfred et Malena avec jeu ne reçoivent pas la forme exacte de Johnny."""
+    f = _faux_bot(bot_id)
+    f._helix_client = _helix(("Kingdom Come: Deliverance II", "42"))
+    capture = {}
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Une replique."
+
+    f._ecrire_phrase_de_lien = faux_ecrire
+    res = asyncio.run(f._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    forme_johnny = DispatchMixin.CLAUSES_FORME_JEU_PAR_BOT["johnny"]
+    assert forme_johnny not in capture["instruction"]
+
+
+def test_budget_max_tokens_par_bot(monkeypatch):
+    """SUITE 6-ter : Johnny a 100 max_tokens, Sugar en a 60."""
+    import shared.llm_cascade
+
+    appels = []
+
+    async def faux_generate(*args, **kwargs):
+        appels.append(kwargs)
+        return "Texte genere"
+
+    monkeypatch.setattr(shared.llm_cascade, "generate_response", faux_generate)
+
+    f_johnny = _faux_bot("johnny")
+    f_sugar = _faux_bot("sugar")
+
+    res_j = asyncio.run(f_johnny._ecrire_phrase_de_lien("inst", "prompt", "discord"))
+    assert res_j == "Texte genere"
+    assert appels[-1]["max_tokens"] == 100
+
+    res_s = asyncio.run(f_sugar._ecrire_phrase_de_lien("inst", "prompt", "discord"))
+    assert res_s == "Texte genere"
+    assert appels[-1]["max_tokens"] == 60
+
+
+def test_borne_par_bot():
+    """SUITE 6-ter : une phrase de 250 car. en deux phrases (la 2e nomme Discord) sort
+    entière avec bot_id='johnny' (borne 280) et coupée à la 1re avec bot_id=None (borne 200)."""
+    from shared.twitch.dispatch import _nettoyer_phrase_de_lien
+
+    s1 = "Ce jeu te fait trimballer une lourde armure de fer comme un chevalier de pacotille, et pas du tout un netrunner en 2077 — bienvenue dans la realite, choom."
+    s2 = "Viens en parler sur Discord, on a des blagues qui petent plus fort que les armures qui craquent !"
+    full = f"{s1} {s2}"
+    assert 240 <= len(full) <= 260
+
+    rendu_johnny = _nettoyer_phrase_de_lien(full, bot_id="johnny")
+    assert rendu_johnny == full
+    assert "Discord" in rendu_johnny
+
+    rendu_defaut = _nettoyer_phrase_de_lien(full, bot_id=None)
+    assert rendu_defaut == s1
+    assert "Discord" not in rendu_defaut
+
 
 

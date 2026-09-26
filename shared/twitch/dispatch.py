@@ -225,6 +225,9 @@ _NOMME_LA_SOURCE = re.compile(
     r"|\bqu['’ ]?ici\b|autrement plus|\bmieux qu|\bmeilleur qu"
     r")", re.IGNORECASE)
 
+BORNE_LIEN_PAR_BOT = {"johnny": 280}
+MAX_TOKENS_LIEN_PAR_BOT = {"johnny": 100}
+
 
 def _nettoyer_phrase_de_lien(texte: str | None, bot_id: str | None = None) -> str | None:
     """Rend la phrase prête à recevoir l'URL, ou None si rien d'exploitable.
@@ -301,7 +304,7 @@ def _nettoyer_phrase_de_lien(texte: str | None, bot_id: str | None = None) -> st
     phrase = phrase.rstrip(" :;,-—–")
     if len(phrase) < 3:
         return None
-    return _borner(phrase, 200)
+    return _borner(phrase, BORNE_LIEN_PAR_BOT.get(bot_id or "", 200))
 
 
 def _borner(phrase: str, maxi: int) -> str:
@@ -862,6 +865,31 @@ class DispatchMixin:
         ),
     }
 
+    # ⚠️ SUITE 6-ter (2026-09-27) : forme à deux phrases courtes pour Johnny avec un jeu.
+    # La clause anti-tic (« pas de moi j'ai fait sauter ») élimine le tic (0/18 vs 4/15)
+    # mais fait chuter les invitations rendues à 11/18 (5 replis époques, 2 coupées par _borner).
+    # Seuil >= 14 non atteint -> application de la règle d'Ahmed : « l'invitation d'abord,
+    # le tic ensuite ». Bras B1-large sans anti-tic retenu.
+    # Longueur acceptée par Ahmed le 27/09 (~230 car.).
+    # Tableau mesuré sur Johnny (18 tirages par cellule, jeu Kingdom Come II, tête Mistral) :
+    #   critère                               seuil       A (prod)    B1 (60t/200b)  B1-large (retenu)  B1-l+anti-tic
+    #   invitation présente dans le brut      >= 15/18    3/17        18/18          18/18              18/18
+    #   invitation rendue qui nomme Discord   >= 14/18    3/17        5/18           15/18              11/18
+    #   « moi j'ai fait sauter » ou variante  <= 1/18     N/A         N/A            4/15               0/13
+    #   jeu rabaissé face à lui ou « nous »   <= 2/18     13/17       N/A            4/15               0/13
+    #   longueur médiane rendue               <= 250 car. 167 car.    118 car.       231 car.           217 car.
+    #   replis sur le gabarit fixe            <= 5/18     0/17        0/18           3/18               5/18
+    CLAUSES_FORME_JEU_PAR_BOT = {
+        "johnny": (
+            "⚠️ Ici, tu écris DEUX phrases courtes, et elles seules. "
+            "La première, moins de 80 caractères, c'est ta réplique : elle parle de ce que le jeu fait subir à ceux qui y jouent, "
+            "jamais d'eux, et elle ne compare jamais le jeu à toi, à ta vie ou à « ici ». "
+            "La seconde, moins de 45 caractères, les invite franchement à venir en parler sur Discord et nomme Discord. "
+            "Tutoie ou vouvoie, mais la même personne dans les deux phrases. "
+            "Un emoji peut la finir. "
+        ),
+    }
+
     def _canal_du_jeu(self) -> str | None:
         """Le canal d'ou vient la commande en cours ; a defaut, le premier configure."""
         courant = _CANAL_COURANT.get()
@@ -1098,8 +1126,8 @@ class DispatchMixin:
         # La clause n'est donc PAS etendue : elle abime Malena et M'aiq, dont les ouvertures
         # s'effondrent sur une formule unique, et n'apporte rien de mesurable a Johnny.
         # Chez Alfred le gain est dans le bruit a n=4.
-        # ⚠️ Ce que la mesure a montre au passage, et qui reste OUVERT : Johnny invente une
-        # boisson dans 4 generations sur 4 (« les premieres bieres sont a mon nom »), Alfred
+        # ⚠️ Ce que la mesure a montre au passage, et qui reste OUVERT : réglé chez Johnny,
+        # 0/17 au 26/09 (« les premieres bieres sont a mon nom »), Alfred
         # dans 3 sur 4 — le defaut signale sur Sugar existe chez eux aussi, en pire. Et
         # leurs phrases depassent allegrement les 120 caracteres demandes.
         #
@@ -1141,6 +1169,7 @@ class DispatchMixin:
         # de la table ne voit aucune difference.
         instruction += " " + self.CLAUSES_PAR_BOT.get(self.bot_id, "")
         if jeu:
+            instruction += self.CLAUSES_FORME_JEU_PAR_BOT.get(self.bot_id, "")
             # ⚠️ Le jeu est la SEULE chose vraie qu'on puisse lui donner sur le moment
             # present — et c'est justement ce qui manquait a cette phrase depuis le 19/09
             # (cf. le bloc plus haut : prive de tout fait, le modele en invente un).
@@ -1223,7 +1252,7 @@ class DispatchMixin:
                 nvidia_client=getattr(self, "nvidia_client", None),
                 bot_label=self.bot_label or self.bot_id,
                 temperature=1.0,
-                max_tokens=60,
+                max_tokens=MAX_TOKENS_LIEN_PAR_BOT.get(self.bot_id, 60),
                 # Quelqu'un attend devant son chat : on préfère le gabarit fixe à
                 # quinze secondes de silence.
                 call_timeout=8.0,
