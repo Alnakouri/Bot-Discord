@@ -461,6 +461,97 @@ six bots. On ne change que la clause de Sugar.
 Alfred dans `dispatch.py` (« Alfred sort » sans suite). Claude l'a restauré le 26/09, dans le
 même commit que ce plan. Quand on édite un commentaire, on AJOUTE des lignes, on n'en remplace pas.
 
+## SUITE 6 — la phrase `!discord` de JOHNNY (Claude, 27/09)
+
+**Pourquoi Johnny seul** : d'après les journaux du 27/09, seuls Sugar et Johnny ont une
+commande de lien armée (« Commandes de lien armees : !discord »). Alfred, Sheogorath, Malena et
+M'aiq n'en ont pas : leur phrase ne sort jamais en prod, donc on ne dépense pas de quota pour
+elle. Si Ahmed arme `!discord` sur un autre bot, ce bot aura sa propre suite.
+
+**État actuel, relu sur les 18 phrases de la SUITE 2-bis** (bras B, c'est-à-dire la prod
+depuis `c467ebb` ; sortie brute : `~/.gemini/antigravity-cli/brain/bd4af75c-…/scratch/sonde_B_johnny.txt`,
+ministral, KCD2) :
+
+- **Il compare le jeu à lui-même**, 13 fois sur 17 : « Jouez à vos chevaliers en armure
+  rouillée pendant qu'on se bat pour de vrai ici », « ici on a des cicatrices vraies ». Le
+  texte commun l'interdit (« tu ne compares jamais les deux »). Mais le bloc jeu lui propose
+  « une comparaison » et « une pique sur ce que le JEU fait subir », et Mistral fait le
+  mélange.
+- **Des piques sur ceux qui jouent**, 3 fois : « Tu t'es pris une épée en bois dans la gueule
+  à force de jouer à ce jeu moyenâgeux ? ».
+- **Pas de destination claire** : Discord est nommé 3 fois sur 17. Ailleurs on a « viens où au
+  moins… », « en privé » (1 fois) ou « dans mon Discord » (1 fois, il se l'approprie).
+- **Trop long** : 167 car. de médiane, 17/17 au-dessus de 120, et 3 phrases **tranchées par
+  `max_tokens=60`** (fin en « … »). La longueur est un défaut du MODÈLE sur ministral
+  ([[gotcha-la-longueur-est-un-defaut-de-MODELE]]) : une règle de volume seule n'y fait rien.
+- **Déjà réglé**, et à ne pas rouvrir : la boisson offerte. On en compte 0 sur 17 (la clause
+  `CLAUSES_PAR_BOT["johnny"]` tient). Le 🥃 n'est qu'un emoji.
+- Mélange tu/vous dans une même phrase : 2 fois.
+
+**Idée** : la forme qui a marché chez Sugar (SUITE 5), c'est-à-dire deux phrases qui ont
+chacune leur borne. La première est une réplique de Johnny sur le jeu, sans comparaison avec
+« ici ». La seconde est une invitation courte qui nomme Discord. Elle va dans
+`CLAUSES_PAR_BOT["johnny"]`, **à la suite** de la clause actuelle (ne pas la remplacer : elle
+tient la boisson à 0), pour que la forme vale aussi hors live. Johnny tutoie, c'est sa voix :
+on ne lui impose pas le vous, seulement de ne pas mélanger les deux.
+
+⚠️ La forme gagnante chez un bot peut casser chez un autre
+([[gotcha-un-filet-ne-se-transpose-pas-d-un-bot-a-l-autre]]). Et Sugar tourne sur Gemini,
+Johnny sur ministral : c'est pour ça qu'on mesure.
+
+**Étape 1 [Antigravity, aucun changement de code]** — lire `data/api_usage.db`
+(`?immutable=1`) : si la clé Mistral de Johnny a pris des 429 dans les 30 dernières minutes,
+attendre. Ensuite, trois séries de 18 sur la tête Mistral de Johnny (54 appels, ses clés
+seulement) :
+
+```
+J="Kingdom Come: Deliverance II"
+F="Résumé : 15th century RPG set in Bohemia | Thèmes : Action, Historical"
+ACTUELLE="⚠️ Tu ne promets rien qui les attendrait là-bas : ni tournée, ni verre, ni place gardée — tu n'as rien à offrir et tu n'as jamais rien offert à personne. Ce qui les attend, c'est toi : ta gueule, tes histoires, ce que tu vas leur balancer. Tes clopes et ton whisky restent les TIENS, tu ne les partages pas dans la phrase. "
+FORME="⚠️ Ici, tu écris DEUX phrases courtes, et elles seules. La première, moins de 80 caractères, c'est ta réplique : elle parle de ce que le jeu fait subir à ceux qui y jouent, jamais d'eux, et elle ne compare jamais le jeu à toi, à ta vie ou à « ici ». La seconde, moins de 45 caractères, les invite franchement à venir en parler sur Discord et nomme Discord. Tutoie ou vouvoie, mais la même personne dans les deux phrases."
+python tools/sonde_phrase_de_lien.py --bot johnny --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral
+python tools/sonde_phrase_de_lien.py --bot johnny --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral --clause "$ACTUELLE$FORME Un emoji peut la finir. "
+python tools/sonde_phrase_de_lien.py --bot johnny --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral --clause "$ACTUELLE$FORME Dans l'esprit de « Viens nous en parler sur Discord ! » ou « Rejoins-nous sur Discord ! », mais avec tes mots à toi, et jamais deux fois la même. Un emoji peut la finir. "
+```
+
+(`$ACTUELLE` doit être **identique** à `CLAUSES_PAR_BOT["johnny"]` : le vérifier en Python avant
+de lancer, `--clause` REMPLACE la clause au lieu de s'y ajouter.)
+
+Lire chaque ligne à voix haute, entière (phrases + lien), et rapporter les 54 lignes brutes
+avec ce tableau :
+
+| critère (plancher de bruit ±3 sur 18) | seuil pour livrer B1 ou B2 |
+|---|---|
+| **invitation finale qui nomme Discord** | ≥ 15/18 |
+| **compare le jeu à lui, à sa vie ou à « ici »** | ≤ 3/18 |
+| **pique sur ceux qui jouent ou qui regardent** | ≤ 1/18 |
+| **tranchée** (finit en « … » ou au milieu d'une idée) | ≤ 1/18 |
+| **se lit mal** (lu à voix haute : bancal ou sens flou) | ≤ A − 3 |
+| « en privé », « mon Discord », salon inventé | ≤ 1/18 |
+| boisson ou objet offert | ≤ A + 1 |
+| même invitation mot pour mot | ≤ 6/18 |
+| tu et vous mélangés | ≤ 1/18 |
+| la voix de Johnny (lu : on reconnaît Johnny, pas un bot neutre) | ≥ 15/18 |
+| longueur médiane (sans le lien) | ≤ 140 car. |
+| replis sur le gabarit fixe | ≤ A + 1 |
+
+⚠️ « La voix de Johnny » compte autant que le reste : une phrase propre mais neutre, c'est un
+échec. S'il ne dit plus que « Venez en parler sur Discord » sans rien avant, B échoue.
+
+⚠️ Si B1 et B2 restent au-dessus de 140 car. mais passent tout le reste, rapporter sans rien
+livrer. La longueur est alors un défaut de modèle, et c'est Claude qui tranchera (par exemple
+monter `max_tokens` pour ne plus trancher, plutôt que de s'acharner sur la consigne).
+
+**Étape 2 [Antigravity, seulement si B1 ou B2 passe tout]** : `CLAUSES_PAR_BOT["johnny"]` =
+`$ACTUELLE` + la fin du bras gagnant, **mot pour mot**. Tableau A/B1/B2 en commentaire
+au-dessus, en AJOUTANT des lignes : ne rien remplacer ni tronquer. Verrou dans
+`tests/test_phrase_de_lien_jeu_en_cours.py` : la clause contient toujours « ni tournée, ni
+verre », ainsi que « DEUX phrases » et « Discord ». Supprimer du commentaire de
+`_generate_link_line` la phrase « Johnny invente une boisson dans 4 generations sur 4 », qui
+est périmée : écrire à la place « réglé, 0/17 au 26/09 ». Ensuite pyflakes, un seul pytest,
+commit, et `gh run list` jusqu'à `success`. **Un critère échoue dans les deux bras** → ne rien
+livrer, rapporter les 54 lignes ; Claude décidera. `docker restart bot-johnny` = **[Ahmed]**.
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
