@@ -645,6 +645,109 @@ la longueur :
   par « Et ta phrase doit CLAQUER : une seule idée » (`dispatch.py`, fin du bloc `if jeu`),
   ce qui contredit « DEUX phrases » écrit plus haut.
 
+### Résultat de la SUITE 6-bis (Antigravity `c0fef0e`, 27/09)
+
+Le modèle écrit **toujours** les deux phrases : invitation présente dans le brut 36/36.
+Avec le budget de prod, c'est nous qui la retirons : 6 fois par `_borner`, 7 fois par
+`max_tokens=60`. B1-large (100 tokens, borne 280) donne une invitation rendue 15/15, pour
+une médiane de 231 caractères (maximum 263). **Ahmed accepte cette longueur pour Johnny
+(27/09).**
+
+Deux choses relues par Claude dans les lignes :
+- **Un tic apparaît quand la place s'élargit** : « moi j'ai fait sauter des tours »
+  (B1-large l.2, 7, 11, 12, et deux fois dans les replis). C'est la comparaison
+  « jeu < moi » : **4/15, au-dessus du seuil**.
+- Les replis (3-4/18) viennent surtout des **dates inventées** (« en 1400 », « en 1405 »,
+  « en 1450 »), rattrapées par `_affirme_une_epoque`. Le filet fait son travail : on n'y
+  touche pas ici.
+
+⚠️ **Correction de la SUITE 6** : elle voulait mettre la forme dans `CLAUSES_PAR_BOT`
+« pour qu'elle vale hors live ». Mais le texte de `$FORME` parle **du jeu**. Hors live, la
+consigne n'aurait plus de sens. La forme ne s'applique donc **qu'avec un jeu**, à la même
+place que celle qui a été mesurée.
+
+## SUITE 6-ter — livrer la forme à deux phrases pour Johnny (Claude, 27/09)
+
+**Étape 1 [Antigravity, 18 appels, clés de Johnny seulement]** : lire d'abord
+`data/api_usage.db` (`?immutable=1`), comme avant. Un seul bras, **B1-large + anti-tic**,
+avec les mêmes `$J`, `$F`, `$ACTUELLE` et `$FORME` qu'à la SUITE 6 :
+
+```
+ANTI="Ta première phrase ne parle que du jeu et de celui qui y joue : pas de toi, pas de ce que tu as fait, pas de « moi, j'ai fait sauter… ». "
+python tools/sonde_phrase_de_lien.py --bot johnny --n 18 --jeu "$J" --fiche "$F" --timeout 30 --tete mistral --clause "$ACTUELLE$FORME $ANTI""Un emoji peut la finir. " --brut --max-tokens 100 --borne 280
+```
+
+(La formule est citée **dans la clause**, et c'est voulu. Chez Alfred, nommer l'objet dans
+la clause a fait passer le thé de 12/17 à 1/17, alors que le même nom dans la fiche devenait
+un tic. Voir le commentaire au-dessus de `CLAUSES_PAR_BOT["alfred"]`.)
+
+On compare au bras B1-large de la SUITE 6-bis :
+
+| critère (sur 18) | B1-large (6-bis) | seuil pour livrer l'anti-tic |
+|---|---|---|
+| invitation rendue qui nomme Discord | 15 | ≥ 14 |
+| jeu rabaissé face à lui ou à « nous » (Night City seul = voix, ne compte pas) | 4 | ≤ 2 |
+| « moi j'ai fait sauter » ou une variante | 4 | ≤ 1 |
+| se lit mal (lu à voix haute) | — | ≤ 2 |
+| voix de Johnny (sur les lignes exploitables) | — | toutes sauf 1 au plus |
+| replis | 3 | ≤ 5 |
+| longueur médiane rendue | 231 | ≤ 250 |
+
+**Si l'anti-tic passe tout**, on livre `$FORME $ANTI Un emoji peut la finir. ` Sinon, on
+livre **B1-large sans anti-tic** : `$FORME Un emoji peut la finir. ` (décision d'Ahmed :
+l'invitation d'abord, le tic ensuite). Dans les deux cas, rapporter les 18 lignes avec leur
+brut.
+
+**Étape 2 [Antigravity, `shared/twitch/dispatch.py`]** : trois changements, **pour Johnny
+seulement**. Les autres bots ne doivent pas bouger d'un octet.
+
+1. **La forme, seulement avec un jeu, juste après la clause par bot** (c'est l'ordre qui a
+   été mesuré, puisque `--clause` remplace `CLAUSES_PAR_BOT`). Ajouter un attribut de classe
+   `CLAUSES_FORME_JEU_PAR_BOT = {"johnny": "<le texte gagnant, mot pour mot>"}` à côté de
+   `CLAUSES_JEU_PAR_BOT` (l.850). À la l.1142, juste après
+   `instruction += " " + self.CLAUSES_PAR_BOT.get(self.bot_id, "")`, ajouter :
+   `if jeu: instruction += self.CLAUSES_FORME_JEU_PAR_BOT.get(self.bot_id, "")`.
+   ⚠️ `CLAUSES_PAR_BOT["johnny"]` se termine par une espace : ne pas en ajouter une autre.
+   L'instruction doit contenir exactement `$ACTUELLE$FORME…`, comme dans la mesure.
+   **Ne pas toucher `CLAUSES_PAR_BOT["johnny"]`.**
+2. **Le budget de l'appel** : un dict de module
+   `MAX_TOKENS_LIEN_PAR_BOT = {"johnny": 100}`. À la l.1226, écrire
+   `max_tokens=MAX_TOKENS_LIEN_PAR_BOT.get(self.bot_id, 60)`. ⚠️ **Ne pas changer la
+   signature de `_ecrire_phrase_de_lien`** : six faux dans
+   `tests/test_phrase_de_lien_jeu_en_cours.py`, ainsi que les enveloppes de la sonde
+   (l.176, l.201), la remplacent par `(instruction, system_prompt, cmd)`.
+3. **La borne** : un dict de module `BORNE_LIEN_PAR_BOT = {"johnny": 280}`. À la l.304,
+   écrire `return _borner(phrase, BORNE_LIEN_PAR_BOT.get(bot_id or "", 200))`. L'enveloppe
+   `--borne` de la sonde écrase `maxi` : elle continue de marcher.
+
+Les points 2 et 3 s'appliquent aussi hors live (le code ne sait pas s'il y a un jeu à cet
+endroit). C'est accepté : hors live, Johnny n'est plus tranché, au prix de lignes un peu
+plus longues.
+
+**Commentaires** : au-dessus de `CLAUSES_FORME_JEU_PAR_BOT`, le tableau A / B1 / B1-large
+(/ anti-tic), avec les invitations brut et rendues, la médiane, et « longueur acceptée par
+Ahmed le 27/09 ». Dans le commentaire de l.1101-1102, remplacer « Johnny invente une
+boisson dans 4 generations sur 4 » par « réglé chez Johnny, 0/17 au 26/09 ». La phrase est
+coupée sur deux lignes, et la partie sur Alfred reste telle quelle.
+
+**Verrous** (dans `tests/test_phrase_de_lien_jeu_en_cours.py`) :
+- Johnny **avec** jeu : l'instruction contient `CLAUSES_PAR_BOT["johnny"] +
+  CLAUSES_FORME_JEU_PAR_BOT["johnny"]` d'un seul tenant. La clause forme contient
+  « DEUX phrases » et « Discord ». `CLAUSES_PAR_BOT["johnny"]` contient toujours « ni
+  tournée, ni verre ».
+- Johnny **sans** jeu : « DEUX phrases » est absent de l'instruction.
+- Sugar, Alfred, Malena, avec jeu : « DEUX phrases » **de Johnny** est absent. (Sugar a sa
+  propre forme dans `CLAUSES_JEU_PAR_BOT`, donc tester le texte exact de Johnny et non les
+  mots « DEUX phrases ».)
+- Budget : remplacer `shared.llm_cascade.generate_response` par un faux qui note ses
+  `kw`. Johnny → `max_tokens == 100`, Sugar → `60`.
+- Borne : une phrase de 250 caractères en deux phrases (la seconde nomme Discord) sort
+  **entière** avec `bot_id="johnny"`, et coupée à la première phrase avec `bot_id=None`.
+
+Ensuite pyflakes, **un seul** pytest, commit, et `gh run list` jusqu'à `success`.
+`docker restart bot-johnny` = **[Ahmed]**. En live, surveiller : les dates (replis), « moi
+j'ai fait sauter », et une ligne tranchée (il ne devrait plus y en avoir).
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
