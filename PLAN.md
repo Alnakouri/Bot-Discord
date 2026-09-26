@@ -276,6 +276,20 @@ touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malen
 
 ## SUITE 2-bis — « là-bas » dans le texte COMMUN de la phrase de lien (Claude, 26/09)
 
+> ⏸️ **MESURÉE le 26/09 09:37–09:56 (Antigravity), ÉTAPES 1, 2 ET 3 EXÉCUTÉES — EN ATTENTE DE LA DÉCISION (Ahmed / Claude) — ne rien livrer d'ici là.**
+>
+> - **Étape 1 livrée** (`95005f1`, CI `success`) : options `--remplace`/`--par` dans `tools/sonde_phrase_de_lien.py`, verrous unitaires passés.
+> - **Étape 2 (mesure A)** : Sugar présente le défaut « là-bas » ambigu à **9/18** (> 2/18). Étape 3 (mesure B) déclenchée.
+> - **Étape 3 (mesure B sur les 6 bots)** :
+>   - **Sugar** : « là-bas » ambigu 9 → 2/18 ✅, destination nommée 0 → 10/18 ✅, ouvertures 9x → 3x ✅, médiane 112 → 106 car. ✅, replis 0 → 0 ✅. Tout passe.
+>   - **Alfred** : « là-bas » ambigu 0 → 0/18 ✅, destination 18 → 18/18 ✅, médiane 137 → 130 car. ✅, replis 0 → 0 ✅. Tout passe.
+>   - **M'aiq** : « Discord » nommé 0 → 0/18 ✅ (conforme : « Discord n'existe pas »), « là-bas » ambigu 0 → 0/18 ✅, médiane 88 → 92 car. ✅, replis 0 → 0 ✅. Tout passe.
+>   - **Johnny** : « là-bas » ambigu 0 → 0/18 ✅, destination 2 → 3/17 ✅, replis 3 → 1/18 ✅, médiane 184 → 167 car. ✅. Tout passe.
+>   - **Sheogorath** : « là-bas » ambigu 0 → 0/18 ✅, destination 0 → 1/18 ✅, médiane 157 → 171 car. ✅, replis 0 → 0 ✅. Tout passe.
+>   - **Malena** : « là-bas » ambigu 2 → 2/18 ✅, destination 100% ✅, médiane 100 → 94 car. ✅, ouverture 3x → 6x ✅. **MAIS replis sur gabarit fixe : 0/18 → 2/18 ⚠️** (seuil strict B ≤ A + 1 = 1 dépassé de 1 repli, causé par le mot « chat » dans les essais de Malena rejeté par le filtre anti-chat Twitch).
+>
+> Conformément à la règle du plan (« Un seul bot échoue → ne rien livrer, rapporter les douze séries ; Claude décidera (clause par bot plutôt que texte commun) »), **aucun changement de prod n'a été appliqué à `dispatch.py`**.
+
 **Pourquoi** : la SUITE 2 a montré que, sur Mistral, Sugar dit encore « là-bas » même quand sa
 clause ne le dit plus — le mot vient du texte commun de `_generate_link_line`
 (`shared/twitch/dispatch.py`) : l.1100 « Ta phrase ne parle que de là-bas » (toujours) et
