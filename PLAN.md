@@ -748,6 +748,46 @@ Ensuite pyflakes, **un seul** pytest, commit, et `gh run list` jusqu'à `success
 `docker restart bot-johnny` = **[Ahmed]**. En live, surveiller : les dates (replis), « moi
 j'ai fait sauter », et une ligne tranchée (il ne devrait plus y en avoir).
 
+### Résultat de la SUITE 6-ter : LIVRÉ (`aa5e37a`, CI verte), relu par Claude
+
+Le code est conforme au plan. La clause livrée est **identique à l'octet près** au texte
+mesuré (vérifié en Python), et les autres bots ne changent pas. La décision de ne pas livrer
+l'anti-tic applique bien la règle : 11/18 invitations, pour un seuil de 14. Mais l'écart
+avec B1-large se résume à 2 replis de plus (des dates) et 2 coupes par `_borner`, soit
+autant que le bruit (±3). Si « moi j'ai fait sauter » gêne en live, l'anti-tic est **la
+première piste à rouvrir** (tic mesuré 4/15 → 0/13).
+
+**Reste à faire [Antigravity, commentaires seulement, aucun test à changer]** :
+
+1. Le tableau au-dessus de `CLAUSES_FORME_JEU_PAR_BOT` contient des **chiffres faux** :
+   A « 3/17 dans le brut » n'a jamais été mesuré, B1 « 5/18 » et « 118 car. » sont faux,
+   A « 0/17 replis » aussi. Le remplacer par ce tableau, qui ne reprend que les chiffres
+   des rapports :
+   ```
+   #   critère (sur 18)                      A (prod)   B1 60t/200  B1-large (LIVRE)  + anti-tic
+   #   invitation dans le brut du modele     non mes.   18/18       18/18             18/18
+   #   invitation rendue qui nomme Discord   5/18       7/18        15/18             11/18
+   #   « moi j'ai fait sauter » / variante   non mes.   non mes.    4/15              0/13
+   #   jeu rabaisse face a lui ou « nous »   non mes.   2/14        4/15              0/13
+   #   longueur mediane rendue (sans lien)   173 car.   165 car.    231 car.          217 car.
+   #   replis sur le gabarit fixe            1/18       4/18        3/18              5/18 (dates)
+   # B1 perdait l'invitation par NOTRE budget, pas par le modele : 6 fois `_borner` (200),
+   # 7 fois `max_tokens=60`. Series du 27/09 : A = SUITE 6, B1 et B1-large = SUITE 6-bis,
+   # anti-tic = SUITE 6-ter.
+   ```
+2. Le commentaire modifié à la l.1129 se lit mal (« reste OUVERT : réglé chez Johnny… »).
+   Écrire à la place : « Ce que la mesure a montre au passage : Johnny inventait une boisson
+   dans 4 generations sur 4 (« les premieres bieres sont a mon nom ») — regle chez lui,
+   0/17 au 26/09. Reste OUVERT : Alfred, 3 sur 4 — le defaut signale sur Sugar existe chez
+   lui aussi, en pire. » La phrase qui suit (« Et leurs phrases depassent… ») ne change pas.
+
+Ensuite pyflakes, commit, `gh run list`. Pas de redémarrage nécessaire pour des commentaires.
+
+**Piste notée, non planifiée** : 5 replis sur 18 viennent de dates inventées (« en 1400 »,
+« en 1405 »). Le filet les rattrape, mais chaque fois au prix d'une phrase perdue. Si les
+replis gênent en live, le levier serait une clause qui interdit les dates dans
+`CLAUSES_FORME_JEU_PAR_BOT["johnny"]`, à mesurer avant.
+
 ## RESTE DES PLANS PRÉCÉDENTS
 
 - **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
