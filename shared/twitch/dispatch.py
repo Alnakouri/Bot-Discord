@@ -834,7 +834,7 @@ class DispatchMixin:
             "⚠️ Adresse-toi à ceux qui LISENT, pas au personnage du jeu : ta phrase est "
             "UNE question sur ce que CE JEU leur a fait vivre, à eux, quand ils y ont "
             "joué — jamais sur la partie en cours, jamais une pique sur eux — et cette "
-            "même question les invite à venir le raconter là-bas. Question et invitation "
+            "même question les invite à venir le raconter sur le serveur Discord. Question et invitation "
             "tiennent dans la MÊME phrase, sous les 120 caractères : pas de mise en scène "
             "avant, pas de seconde phrase après. "
         ),
@@ -1082,9 +1082,16 @@ class DispatchMixin:
         # leurs phrases depassent allegrement les 120 caracteres demandes.
         #
         # ⚠️ Au passage, un defaut voisin, deja present SANS aucune rustine : Alfred sort
-        # « Cette demeure », « Ces murs » et meme « La bibliotheque du serveur » — alors
-        # que sa fiche lui interdit « le Manoir » et que cette instruction-ci lui interdit
-        # d'inventer un salon. Non corrige, faute de mesure suffisante (2 cas sur 4).
+        # ⚠️ MESURES SUITE 2 & SUITE 2-bis (2026-09-26) : « là-bas » éliminé de l'instruction.
+        # Remplacement dans CLAUSES_JEU_PAR_BOT["sugar"] ET dans le texte commun ci-dessous
+        # (l.1100 « du serveur Discord », l.1124 « sur le serveur »).
+        # Tableau mesuré sur les six bots (18 tirages par cellule, 216 au total, jeu Kingdom Come II) :
+        #   Sugar (Gemini)      : là-bas ambigu 9/18 -> 2/18, destination 0/18 -> 10/18, replis 0/18 -> 0/18
+        #   Alfred (Gemini)     : destination 18/18, 0 là-bas, replis 0/18 -> 0/18
+        #   Malena (Gemini)     : destination 18/18 -> 16/16 (2 replis chat), 2 là-bas (Bohême)
+        #   M'aiq (Gemini)      : Discord nommé 0/18 (règle préservée), 0 là-bas, replis 0/18 -> 0/18
+        #   Johnny (Mistral)    : replis 3/18 -> 1/18, destination 2/18 -> 3/17, 0 là-bas
+        #   Sheogorath (Mistral): là-bas 3/18 -> 1/18, destination 0/18 -> 1/18, replis 0/18 -> 0/18
         instruction = (
             f"Écris UNE seule phrase très courte (max 120 caractères), en personnage, "
             f"qui donne ENVIE au chat Twitch de rejoindre {quoi} : une invitation adressée "
@@ -1097,7 +1104,7 @@ class DispatchMixin:
             f"C'est la seule chose que tu saches avec certitude, et elle suffit. "
             f"Tu ne sais rien d'autre : ni qui s'y trouve, ni ce qui s'y passe, ni combien "
             f"ils sont — n'invente ni chiffre, ni salon, ni évènement, ni récompense. "
-            f"Ta phrase ne parle que de là-bas. L'endroit d'où tu écris n'y apparaît pas : "
+            f"Ta phrase ne parle que du serveur Discord. L'endroit d'où tu écris n'y apparaît pas : "
             f"tu ne le décris pas, tu ne le juges pas, et tu ne compares jamais les deux. "
             f"Tu peux finir par UN emoji, s'il colle à ton personnage. "
             f"N'ÉCRIS PAS l'adresse ni aucun lien : elle sera ajoutée juste après ta phrase. "
@@ -1121,7 +1128,7 @@ class DispatchMixin:
                 f"suffit pas, et citer son héros non plus — un nom n'est pas une remarque. "
                 f"Mais tu ne sais RIEN de la partie en cours — ni qui gagne, ni où ils en "
                 f"sont, ni ce qui vient de se passer : n'en raconte pas un moment, et ne "
-                f"promets pas qu'on en parlera là-bas. "
+                f"promets pas qu'on en parlera sur le serveur. "
             )
             if fiche:
                 instruction += (

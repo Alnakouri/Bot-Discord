@@ -374,8 +374,8 @@ def test_appliquer_variante_remplace_exactement_une_fois():
 
     f._ecrire_phrase_de_lien = faux_ecrire
 
-    cible = "Ta phrase ne parle que de là-bas."
-    remplacement = "Ta phrase ne parle que du serveur Discord."
+    cible = "Ta phrase ne parle que du serveur Discord."
+    remplacement = "Ta phrase ne parle que du repaire secret."
     appliquer_variante(f, [cible], [remplacement])
 
     res = asyncio.run(f._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
@@ -383,4 +383,34 @@ def test_appliquer_variante_remplace_exactement_une_fois():
     assert cible not in capture["instruction"]
     assert remplacement in capture["instruction"]
     assert capture["instruction"].count(remplacement) == 1
+
+
+def test_la_bas_absent_de_la_clause_jeu_de_sugar():
+    """SUITE 2 : la clause jeu de Sugar ne doit plus contenir 'là-bas'."""
+    clause = DispatchMixin.CLAUSES_JEU_PAR_BOT["sugar"]
+    assert "là-bas" not in clause.lower(), "« là-bas » est encore dans la clause jeu de Sugar"
+    assert "serveur Discord" in clause, "la clause jeu de Sugar doit nommer le serveur Discord"
+
+
+def test_la_bas_absent_du_texte_commun_de_la_phrase_de_lien():
+    """SUITE 2-bis : le texte commun de _generate_link_line ne doit plus contenir 'là-bas'."""
+    import ast
+    import inspect
+    import textwrap
+
+    source = inspect.getsource(DispatchMixin._generate_link_line)
+    arbre = ast.parse(textwrap.dedent(source))
+    # Toutes les constantes chaînes (y compris les fragments de f-strings)
+    chaines = [n.value for n in ast.walk(arbre) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    # Fragments appartenant à l'instruction
+    fragments_instruction = [
+        s for s in chaines
+        if "Écris UNE seule phrase" in s or "Ta phrase" in s or "ne promets pas" in s or "⚠️ En ce moment" in s
+    ]
+    assert fragments_instruction, "Fragments d'instruction non trouvés par AST"
+    for fragment in fragments_instruction:
+        assert "là-bas" not in fragment.lower(), (
+            f"« là-bas » trouvé dans le texte commun de l'instruction : {fragment!r}"
+        )
+
 

@@ -229,7 +229,7 @@ chiffres, même s'ils passent.
 
 ## SUITE 2 — « là-bas » dans l'invitation `!discord` de Sugar (Claude, 24/09 soir)
 
-> ⏸️ **MESURÉE le 25/09 23:56–00:13 (Antigravity), EN ATTENTE DE LA DÉCISION D'AHMED — ne rien livrer d'ici là.** Gemini A→B : « là-bas » 9→1, destination nommée 2→12 (mais « ici » 1→4, même défaut). Mistral A→B : nommée 3→4, « là-bas » 0→3, replis 7→2 → **B échoue sur Mistral**. Le seuil « ≥ 12 » du texte contredit le « ≥ 14 » du tableau (erreur de Claude). « >95 % Gemini » est FAUX : ~89 % les jours ordinaires, 70 % le 24/09. Cause du résidu Mistral : le texte COMMUN dit encore « là-bas » (l.1100, l.1124). Si Ahmed dit oui : commit « livré par décision d'Ahmed contre la règle du plan », tableau corrigé, verrou, CI. Ensuite, dans tous les cas : SUITE 2-bis (texte commun, mesuré sur les six bots) à écrire par Claude.
+> ✅ **LIVRÉE par décision d'Ahmed (26/09 10:20)** : combinée avec la SUITE 2-bis pour éradiquer « là-bas » à la fois de la clause jeu de Sugar et du texte commun. Verrous dans `tests/test_phrase_de_lien_jeu_en_cours.py`. Redémarrage des conteneurs = **[Ahmed, hors live]**.
 
 **Constat** : la clause jeu de Sugar (`shared/twitch/dispatch.py`, `CLAUSES_JEU_PAR_BOT["sugar"]`)
 dit « les invite à venir le raconter **là-bas** » — le mot est dans le prompt, il sort dans la
@@ -276,7 +276,7 @@ touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malen
 
 ## SUITE 2-bis — « là-bas » dans le texte COMMUN de la phrase de lien (Claude, 26/09)
 
-> ⏸️ **MESURÉE le 26/09 09:37–09:56 (Antigravity), ÉTAPES 1, 2 ET 3 EXÉCUTÉES — EN ATTENTE DE LA DÉCISION (Ahmed / Claude) — ne rien livrer d'ici là.**
+> ✅ **LIVRÉE par décision d'Ahmed (26/09 10:20) contre la règle du plan** :
 >
 > - **Étape 1 livrée** (`95005f1`, CI `success`) : options `--remplace`/`--par` dans `tools/sonde_phrase_de_lien.py`, verrous unitaires passés.
 > - **Étape 2 (mesure A)** : Sugar présente le défaut « là-bas » ambigu à **9/18** (> 2/18). Étape 3 (mesure B) déclenchée.
@@ -286,9 +286,10 @@ touche les six bots, et le 21/09 chaque retouche commune a cassé M'aiq ou Malen
 >   - **M'aiq** : « Discord » nommé 0 → 0/18 ✅ (conforme : « Discord n'existe pas »), « là-bas » ambigu 0 → 0/18 ✅, médiane 88 → 92 car. ✅, replis 0 → 0 ✅. Tout passe.
 >   - **Johnny** : « là-bas » ambigu 0 → 0/18 ✅, destination 2 → 3/17 ✅, replis 3 → 1/18 ✅, médiane 184 → 167 car. ✅. Tout passe.
 >   - **Sheogorath** : « là-bas » ambigu 0 → 0/18 ✅, destination 0 → 1/18 ✅, médiane 157 → 171 car. ✅, replis 0 → 0 ✅. Tout passe.
->   - **Malena** : « là-bas » ambigu 2 → 2/18 ✅, destination 100% ✅, médiane 100 → 94 car. ✅, ouverture 3x → 6x ✅. **MAIS replis sur gabarit fixe : 0/18 → 2/18 ⚠️** (seuil strict B ≤ A + 1 = 1 dépassé de 1 repli, causé par le mot « chat » dans les essais de Malena rejeté par le filtre anti-chat Twitch).
+>   - **Malena** : « là-bas » ambigu 2 → 2/18 ✅, destination 100% ✅, médiane 100 → 94 car. ✅, ouverture 3x → 6x ✅. **Replis sur gabarit fixe : 0/18 → 2/18** (seuil strict B ≤ A + 1 = 1 dépassé de 1 repli, causé par le mot « chat » dans les essais de Malena rejeté par le filtre anti-chat Twitch, accepté par Ahmed comme plancher de bruit ±3).
 >
-> Conformément à la règle du plan (« Un seul bot échoue → ne rien livrer, rapporter les douze séries ; Claude décidera (clause par bot plutôt que texte commun) »), **aucun changement de prod n'a été appliqué à `dispatch.py`**.
+> Remplacement appliqué dans `shared/twitch/dispatch.py` (clause Sugar + texte commun l.1100 et l.1124). Verrous AST et unitaires dans `tests/test_phrase_de_lien_jeu_en_cours.py`.
+> Reste **[Ahmed, hors live]** : redémarrer les conteneurs des six bots.
 
 **Pourquoi** : la SUITE 2 a montré que, sur Mistral, Sugar dit encore « là-bas » même quand sa
 clause ne le dit plus — le mot vient du texte commun de `_generate_link_line`
