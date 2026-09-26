@@ -548,7 +548,9 @@ au-dessus, en AJOUTANT des lignes : ne rien remplacer ni tronquer. Verrou dans
 `tests/test_phrase_de_lien_jeu_en_cours.py` : la clause contient toujours « ni tournée, ni
 verre », ainsi que « DEUX phrases » et « Discord ». Supprimer du commentaire de
 `_generate_link_line` la phrase « Johnny invente une boisson dans 4 generations sur 4 », qui
-est périmée : écrire à la place « réglé, 0/17 au 26/09 ». Ensuite pyflakes, un seul pytest,
+est périmée : écrire à la place « réglé, 0/17 au 26/09 ». (⚠️ Cette phrase est **coupée sur
+deux lignes**, `shared/twitch/dispatch.py:1101-1102` au 27/09 : chercher « Johnny invente une »,
+pas la phrase entière. La partie sur Alfred (« 3 sur 4 ») reste ouverte, n'y touche pas.) Ensuite pyflakes, un seul pytest,
 commit, et `gh run list` jusqu'à `success`. **Un critère échoue dans les deux bras** → ne rien
 livrer, rapporter les 54 lignes ; Claude décidera. `docker restart bot-johnny` = **[Ahmed]**.
 
