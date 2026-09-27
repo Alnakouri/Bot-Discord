@@ -790,16 +790,83 @@ replis gênent en live, le levier serait une clause qui interdit les dates dans
 
 ## RESTE DES PLANS PRÉCÉDENTS
 
-- **[Ahmed]** Annonces automatiques (`fb1bb4c`, en prod mais non réglées) : redémarrer le
-  **dashboard** (hors Docker), régler « Auto (min) » et « Msgs min » (20 ≈ « l'annonce
-  précédente n'est plus visible ») sur `!discord` de Sugar, Enregistrer, `docker restart bot-sugar`.
-- **[Ahmed]** Alias `ma_streameuse` sur `!discord` (poste le lien Discord) : voulu ? Ajouter
-  `disocrd` en alias si on veut que la faute de frappe marche.
-- **Frontière `PROHIBITED_CONTENT`** : à comprendre un jour (longueur ? combinaison avec la
-  garde anti-injection ?). Elle concerne potentiellement les SIX bots Twitch dès qu'une fiche
-  s'allonge. Plan à écrire si Ahmed le veut.
-- **LOT 7 du 22/09 [Ahmed]** — recréer `.venv` en 3.11.
-- **Décret de Sheogorath** : 4 phrases pour « 1-2 », trois thèmes récités, titre > 32 car.
+- ✅ Annonces automatiques de `!discord` (Sugar) : réglées par Ahmed le 27/09.
+- ✅ `disocrd` : pas d'alias, c'était une faute de frappe (Ahmed, 27/09).
+- **[Ahmed]** Alias `ma_streameuse` sur `!discord` (poste le lien Discord) : voulu ? Toujours ouvert.
+- ✅ **LOT 7** : fait par Claude le 27/09, avec l'accord d'Ahmed. `.venv` = CPython 3.11.15
+  (celle des conteneurs), pyflakes 3.4 installé, toute la suite passe en local (code 0).
+  L'ancien `.venv` 3.13 est gardé **hors du dépôt**, dans `I:\IA\.venv-BotDiscord-3.13-old`
+  (à supprimer quand Ahmed veut).
+- ✅ **Décret de Sheogorath** : déjà corrigé le 24/09 (`57367c2`). Titre coupé à un mot
+  entier, deux phrases au plus, plus de liste de thèmes dans le prompt, verrouillé par
+  `tests/test_sheo_decret_forme.py`. La note de ce plan était périmée.
+- **Frontière `PROHIBITED_CONTENT`** → **SUITE 7** ci-dessous.
+
+## SUITE 7 — rendre VISIBLE un prompt refusé par Gemini (Claude, 27/09)
+
+**Constat (relu dans `data/api_usage.db` le 27/09)** : Sugar a eu **95 réponses Gemini
+vides**, toutes antérieures au 24/09 à 10:34, c'est-à-dire avant le retrait de « Question
+banale ». Depuis, il n'y en a **plus aucune**, chez aucun bot. La frontière ne mord donc plus
+aujourd'hui. Mais le jour où elle mordra, on ne le verra pas : la cascade note ce refus
+`raison = "vide"`, comme n'importe quelle réponse vide. Or la frontière reste
+fragile : **une ligne ajoutée à une fiche peut rendre un bot muet sur Gemini, sans rien de
+lisible**. On ne cherche **pas** à comprendre la frontière (ça coûterait du quota à tâtons).
+On la rend **visible**, pour la voir le jour où elle revient.
+
+**Étape 1 [Antigravity, `shared/llm_cascade.py`, aucun appel de modèle]**
+
+1. Écrire un helper `_raison_du_vide(fournisseur, reponse) -> str` à côté de
+   `_extraire_jetons` (l.694). Comme lui, il ne lève **jamais** : tout dans un `try`, et
+   `getattr(..., None)` à chaque niveau.
+   - Gemini, si `reponse.prompt_feedback.block_reason` est non nul → `"bloque:<nom>"`, par
+     exemple `"bloque:PROHIBITED_CONTENT"`. Prendre `.name` si l'objet en a un, sinon
+     `str()`.
+   - Gemini, sinon, si `reponse.candidates[0].finish_reason` existe et n'est **ni** `STOP`
+     **ni** `None` → `"fin:<nom>"` (par exemple `fin:SAFETY`, ou `fin:MAX_TOKENS`, le cas
+     du thinking qui mange le budget : [[gotcha-gemini-3-thinking-tokens]]).
+   - Tout autre cas, y compris les autres fournisseurs → `"vide"`, sans changement.
+2. L'appeler dans les **deux** branches Gemini où la réponse est vide :
+   - la cascade, l.474-477 : `_raison = _raison_du_vide("gemini", resp)`. Ajouter la raison
+     au `logger.warning` existant : `réponse vide ({_raison}) → échelon suivant` ;
+   - hors cascade, l.813-816 : `_raison = _raison_du_vide(fournisseur, reponse)`, avec la
+     même chose dans le journal.
+   **Ne pas toucher** les branches Mistral, Groq et NVIDIA (l.524, 556, 597) : elles restent
+   `"vide"`.
+3. **Vendoring** : `llm_cascade.py` fait partie de `tools/vendor_core.py` (`MODULES`). Lancer
+   `python tools/vendor_core.py` après la modification, puis vérifier qu'il n'y a **aucune
+   dérive** (`tools/sonde_core_drift.py`). Les 6 copies `*/core/llm_cascade.py` doivent
+   être identiques à `shared/`.
+4. **Le dashboard ne change pas** : `dashboard/backend/api_tracker.py:54,121,124` compte
+   comme échec toute raison autre que `non_tentee` ou `quarantaine`. `bloque:…` compte donc
+   déjà comme un échec, exactement comme `vide`.
+
+**Verrous** (dans `tests/test_cascade_reponse_vide.py`, qui existe déjà : le lire avant et
+réutiliser ses faux) :
+- une fausse réponse Gemini avec `text=""` et
+  `prompt_feedback.block_reason.name == "PROHIBITED_CONTENT"` → la trace porte
+  `raison == "bloque:PROHIBITED_CONTENT"`, et la cascade passe à l'échelon suivant ;
+- `text=""` avec `candidates[0].finish_reason.name == "MAX_TOKENS"` → `"fin:MAX_TOKENS"` ;
+- `text=""` sans `prompt_feedback` ni `candidates` → `"vide"` (ce qui existait avant) ;
+- `_raison_du_vide` avec un objet qui lève dans ses propriétés → `"vide"`, sans exception ;
+- hors cascade (`tests/test_appels_hors_cascade.py:200` vérifie déjà `"vide"`) : le même cas
+  « bloqué » donne `"bloque:PROHIBITED_CONTENT"`.
+
+Ensuite pyflakes, **un seul** pytest, commit, et `gh run list` jusqu'à `success`. Le
+redémarrage des six conteneurs est pour **[Ahmed]** (la cascade vendorée tourne dans
+chacun).
+
+**Étape 2 [Antigravity, 2 appels, clé de Sugar SEULE, jamais pendant un live de
+`ma_streameuse`]** : le cas qui n'a jamais été sondé le 24/09 (le quota était épuisé), c'est
+Sugar avec la garde Twitch :
+
+```
+python tools/sonde_blocage_gemini.py --bot sugar
+```
+
+Rapporter les deux lignes (`fiche` et `+garde Twitch`), avec la longueur et le
+`block_reason`. **Si l'une des deux est bloquée** : ne rien changer, rapporter. Claude
+écrira la suite (la prod n'a plus de réponse vide depuis le 24/09, un blocage ici serait
+donc une contradiction à comprendre d'abord).
 
 ## INTERDITS DE CE PLAN
 
@@ -815,6 +882,8 @@ replis gênent en live, le levier serait une clause qui interdit les dates dans
 # SUITE 3 — compter les JETONS de chaque appel (Claude, 25/09 17:30)
 
 > ✅ **EXÉCUTÉE `86d3574`, vérifiée par Claude le 25/09 23:40** : diff conforme (4 inline branchés, sondes `sonde`, runner `harnais`), 0 dérive de vendoring, CI `success`. Six conteneurs redémarrés 23:37. **Reste [Claude]** : au 1er appel réel, vérifier que `api_usage.db` change de date et porte les 3 colonnes — le fichier n'avait plus été écrit depuis 10:18 UTC avec un `-journal` chaud, et aucun appel n'a eu lieu depuis le redémarrage pour le prouver. Puis le tableau à 24 h.
+>
+> ✅ **CLOS le 27/09 (Claude)** : les colonnes `jetons_entree`, `jetons_sortie` et `origine` sont bien écrites. Relevé du 26/09 : **prod = 34 appels, 92 521 jetons d'entrée** (2 000 à 4 600 par appel, 30 à 150 en sortie). **Sondes = 629 appels, 1 606 462 jetons**, soit 17 fois la prod. Sugar fait 17 des 34 appels de prod, pour 54 000 jetons. Presque tout le coût d'un appel vient de la fiche, pas de la réponse.
 
 **[Antigravity — lançable DÈS le 25/09, sans attendre la SUITE 2.]** Aucun appel de modèle
 nécessaire : ce lot ne consomme pas de quota et ne touche pas `dispatch.py`. Livré ce soir,
