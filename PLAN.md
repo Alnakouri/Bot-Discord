@@ -127,6 +127,8 @@ existants : `from tools.sonde_phrase_de_lien import compter` (voir
 ⚠️ **Aucune lecture des fichiers du scratch** : ils ne sont pas dans le dépôt et la CI ne
 les a pas ([[feedback-le-local-ment-sans-cles]]). Les phrases sont **recopiées dans le
 test**, mot pour mot, depuis les sorties du 27/09 :
+(les « » ci-dessous DÉLIMITENT la phrase dans ce plan : ils ne font pas partie de la
+chaîne Python)
 
 - `« Combien d'épées rouillées ton forgeron a-t-il déjà pliées en deux en Bohême ? Venez nous raconter vos pires ratés sur Discord ! ✨ »` → tutoiement **et** mélange.
 - `« Bohemia vous a fait suer sang et eau ou juste baver sur votre écran ? Viens en débattre sur Discord. ✨ »` → tutoiement **et** mélange.
