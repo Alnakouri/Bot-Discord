@@ -792,7 +792,7 @@ replis gênent en live, le levier serait une clause qui interdit les dates dans
 
 - ✅ Annonces automatiques de `!discord` (Sugar) : réglées par Ahmed le 27/09.
 - ✅ `disocrd` : pas d'alias, c'était une faute de frappe (Ahmed, 27/09).
-- **[Ahmed]** Alias `ma_streameuse` sur `!discord` (poste le lien Discord) : voulu ? Toujours ouvert.
+- ✅ Alias `ma_streameuse` sur `!discord` : VOULU, gardé (Ahmed, 27/09). Ne plus le signaler.
 - ✅ **LOT 7** : fait par Claude le 27/09, avec l'accord d'Ahmed. `.venv` = CPython 3.11.15
   (celle des conteneurs), pyflakes 3.4 installé, toute la suite passe en local (code 0).
   L'ancien `.venv` 3.13 est gardé **hors du dépôt**, dans `I:\IA\.venv-BotDiscord-3.13-old`
