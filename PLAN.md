@@ -6,6 +6,11 @@ Rédaction : Claude, le **2026-09-28**. Exécution : **Antigravity**, sauf les �
 ⚠️ **AUCUN REDÉMARRAGE des bots** dans ce plan. On AJOUTE un service ; on ne relance que
 lui. Consigne d'Ahmed du 27/09 au soir.
 
+**Destination : `D:\Sauvegardes\BotDiscord`** (décision d'Ahmed du 28/09). Le projet vit sur
+`I:` (Crucial BX500, disque 1) ; `D:` est un **autre disque physique** (Seagate 2 To, disque 0,
+887 Go libres). Une panne du disque du projet n'emporte donc plus ses sauvegardes. Vérifié
+le 28/09 : Docker Desktop monte `D:/` dans un conteneur de l'image des bots.
+
 ---
 
 ## LE CONSTAT (vérifié par Claude le 28/09)
@@ -74,7 +79,8 @@ des dossiers dont le nom correspond exactement à `^\d{4}-\d{2}-\d{2}_\d{4}(\.pa
 ([[gotcha-suppression-par-motif-textuel]]).
 
 **Options** : `--donnees` (défaut : `$DATA_DIR`, sinon `data/` à la racine du dépôt),
-`--sortie` (défaut : `sauvegardes/` à la racine du dépôt), `--si-plus-vieux-que`,
+`--sortie` (**obligatoire**, pas de défaut : une sauvegarde qui tomberait par défaut sur le
+disque du projet serait exactement ce qu'on veut éviter), `--si-plus-vieux-que`,
 `--boucle` (voir LOT 2). Docstring dans le style des autres outils : pourquoi il existe (le
 constat ci-dessus), ce qu'il copie, comment le restaurer (copier le fichier du dossier daté
 à la place de celui de `data/`, **bots arrêtés**).
@@ -93,7 +99,7 @@ exception pendant un passage est journalisée et n'arrête pas la boucle.
     container_name: bots-sauvegarde
     volumes:
       - ./data:/app/data
-      - ./sauvegardes:/app/sauvegardes
+      - D:/Sauvegardes/BotDiscord/bases:/app/sauvegardes
       - ./tools/sauvegarde_bases.py:/app/sauvegarde_bases.py:ro
     working_dir: /app
     command: python sauvegarde_bases.py --boucle --donnees /app/data --sortie /app/sauvegardes
@@ -109,10 +115,16 @@ exception pendant un passage est journalisée et n'arrête pas la boucle.
 - Il n'appartient à aucun bot : chaque bot reste déployable seul, et **aucun bot n'importe
   l'outil**.
 
-**`.gitignore`** : ajouter `/sauvegardes/` (**ancré** par le `/` de tête,
+- ⚠️ Le chemin `D:/…` n'existe que sur **cette** machine. Le commenter dans le compose :
+  « chemin propre à la machine de dev ; sur un autre hôte (Oracle), le remplacer par un
+  disque qui n'est PAS celui du projet ».
+- Créer le dossier avant de démarrer le service : `D:\Sauvegardes\BotDiscord\bases` et
+  `D:\Sauvegardes\BotDiscord\cles`.
+
+**`.gitignore`** : ajouter quand même `/sauvegardes/` (**ancré** par le `/` de tête,
 [[gotcha-gitignore-non-ancre]]) dans la section « État de jeu runtime et sauvegardes »
-(l.40). ⚠️ Les JSON sauvegardés contiennent des **jetons Twitch** : ce dossier ne doit
-**jamais** être commité. Vérifier avec `git check-ignore sauvegardes/x.json`.
+(l.40) : si quelqu'un passe un jour `--sortie sauvegardes`, les **jetons Twitch** des JSON
+ne doivent pas pouvoir être commités. Vérifier avec `git check-ignore sauvegardes/x.json`.
 
 # LOT 3 — Retirer la fausse sauvegarde de Sheogorath
 
@@ -128,6 +140,46 @@ rassure à tort.
   s'arrêter si un autre fichier l'utilise.
 - ⚠️ **Ne pas redémarrer Sheogorath** pour ça : le code mort ne tourne pas, la
   suppression prendra effet au prochain redémarrage normal.
+
+# LOT 3-bis — Les clés : une copie hebdomadaire sur `D:`, faite par l'HÔTE
+
+Aujourd'hui les clés API et tokens Discord des six bots n'existent **que sur `I:`** :
+`*/.env.encrypted` + `*/.master_key`. GitHub ne les a pas, et c'est voulu. Perdre `I:`
+obligerait à régénérer toutes les clés chez chaque fournisseur, pour les six bots.
+
+**Outil neuf** : `tools/sauvegarde_cles.py`, bibliothèque standard seulement.
+
+- Fichiers copiés, liste **en dur** (pas de glob : un glob `*.env*` emporterait les
+  `.env.example` et les `.bak_*`) : pour chacun de `Alfred`, `Sheogorath`, `MaiqBot`,
+  `JohnnyBot`, `SugarBot`, `MalenaBot` → `<Bot>/.env.encrypted` et `<Bot>/.master_key` ;
+  plus `dashboard/.env`. Un fichier absent est **signalé** (ligne `WARN`), jamais ignoré en
+  silence.
+- ⚠️ **Lecture seule sur la source** : `shutil.copy2` uniquement. `AGENTS.md` interdit de
+  supprimer, écraser ou modifier un `.env` ou un `.master_key` : l'outil ne fait **que**
+  lire, et il **refuse** (erreur, code ≠ 0) si `--sortie` se trouve à l'intérieur du dépôt.
+- Destination : `<sortie>/AAAA-MM-JJ/<Bot>/…`, même structure que le dépôt. Rotation :
+  garder les **8** plus récents, même règle de nom stricte que pour les bases
+  (`^\d{4}-\d{2}-\d{2}$`).
+- Vérification après copie : chaque fichier copié a la même taille et le même SHA-256 que
+  la source. L'outil n'affiche **jamais** le contenu ni l'empreinte complète (8 premiers
+  caractères au plus, comme `tools/sonde_cles_partagees.py`).
+- Options : `--sortie` (obligatoire), `--si-plus-vieux-que JOURS` (défaut **6**).
+- **Pourquoi pas dans le conteneur `bots-sauvegarde`** : il faudrait y monter les douze
+  fichiers de clés, un service de plus qui les voit. Sur l'hôte, ils sont déjà là.
+
+**Test** dans `tests/test_sauvegarde_bases.py` (ou un fichier voisin), dans `tmp_path` :
+une fausse arborescence avec les 13 fichiers, une copie, les empreintes identiques, les
+sources **inchangées** (même mtime, même contenu) ; `--sortie` à l'intérieur de la fausse
+racine → refus ; un fichier manquant → `WARN` et code 0.
+
+**[Ahmed] La tâche planifiée Windows** (configuration persistante : c'est à Ahmed de la
+créer, pas à l'agent). Commande à lui donner, une ligne, dans un PowerShell :
+
+```
+schtasks /Create /TN "BotDiscord - sauvegarde des cles" /SC WEEKLY /D SUN /ST 12:00 /TR "\"I:\IA\Bot Discord\.venv\Scripts\python.exe\" \"I:\IA\Bot Discord\tools\sauvegarde_cles.py\" --sortie D:\Sauvegardes\BotDiscord\cles"
+```
+
+Vérifier le chemin exact de `python.exe` du `.venv` avant de la lui donner.
 
 # LOT 4 — Les tests
 
@@ -153,8 +205,8 @@ rassure à tort.
 1. `python -m pyflakes tools/sauvegarde_bases.py Sheogorath/bot_sheogorath.py tests/test_sauvegarde_bases.py`
 2. pytest ciblé, puis complet (**jamais deux pytest en parallèle**, port 8599).
 3. Une sauvegarde **à la main**, sur l'hôte, avant le service :
-   `python tools/sauvegarde_bases.py --si-plus-vieux-que 0`. Vérifier le dossier daté, les
-   4 bases (`integrity_check` = `ok`) et les JSON.
+   `python tools/sauvegarde_bases.py --si-plus-vieux-que 0 --sortie D:/Sauvegardes/BotDiscord/bases`.
+   Vérifier le dossier daté, les 4 bases (`integrity_check` = `ok`) et les JSON.
 4. Commit `feat(sauvegarde): sauvegarde verifiee des bases hors de data/ (SUITE 12)`.
    Push, **`gh run list` jusqu'au vert**.
 5. **Démarrer uniquement le nouveau service** : `docker compose up -d --no-deps sauvegarde`.
@@ -162,23 +214,30 @@ rassure à tort.
    nom recréerait les six bots. Vérifier ensuite avec `docker ps` que les bots ont gardé
    leur heure de démarrage (`docker inspect -f "{{.State.StartedAt}}"`), et que
    `docker logs bots-sauvegarde` dit « sauvegarde récente, rien à faire » (celle de
-   l'étape 3 a moins de 20 h).
+   l'étape 3 a moins de 20 h). ⚠️ Vérifier aussi que le conteneur, **non-root**, peut ÉCRIRE
+   sur `D:` : `docker exec bots-sauvegarde sh -c "touch /app/sauvegardes/.test && rm /app/sauvegardes/.test"`.
+6. La copie des clés (LOT 3-bis) une première fois à la main, puis l'étape [Ahmed].
 
 # LOT 6 — [Ahmed] Le lendemain
 
-`dir sauvegardes` : un **deuxième** dossier daté est apparu tout seul, environ 20 h après le
+`dir D:\Sauvegardes\BotDiscord\bases` : un **deuxième** dossier daté est apparu tout seul, environ 20 h après le
 premier. `docker logs bots-sauvegarde --since 24h` : une ligne de sauvegarde réussie, zéro
 erreur.
 
 **Critère de clôture** : tests et CI verts, service démarré sans avoir touché aux bots,
-deux sauvegardes complètes à ~20 h d'écart.
+deux sauvegardes complètes à ~20 h d'écart sur `D:`, une copie des clés sur `D:` et la tâche
+planifiée des clés visible dans le Planificateur de tâches.
 
 ---
 
 ## Hors périmètre (noté, NON planifié)
 
-- **Une copie hors de la machine** (disque externe, cloud) : ces sauvegardes protègent
-  d'une base corrompue ou d'une fausse manipulation, **pas** d'une panne du disque `I:`.
-  Décision d'Ahmed.
+- **Une copie hors de la machine** : `D:` protège d'une panne du disque `I:`, **pas** d'un
+  vol, d'un incendie ou d'un rançongiciel qui toucherait tout le PC. Piste gratuite quand
+  Ahmed le voudra : une archive **chiffrée** (7z + mot de passe) sur son Google Drive
+  (15 Go gratuits). Jamais sur GitHub, même privé. Décision d'Ahmed.
 - Les trois copies manuelles de `data/` (`bots_database_backup_*.db`) peuvent être
-  déplacées dans `sauvegardes/` une fois le service en place. Décision d'Ahmed.
+  déplacées dans `D:\Sauvegardes\BotDiscord\bases\` une fois le service en place. Décision
+  d'Ahmed.
+- Les `*/.env.encrypted.bak_*` (une dizaine par bot) : autant de copies des clés, à trier un
+  jour. Pas ici : `AGENTS.md` interdit de toucher aux fichiers de clés sans décision d'Ahmed.
