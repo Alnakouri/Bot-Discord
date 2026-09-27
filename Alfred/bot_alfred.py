@@ -88,7 +88,8 @@ from core.safe_client import get_client as get_safe_genai_client
 
 try:
     from shared.shared_database import (
-        is_maintenance_mode, is_ignored_channel, get_reputation, get_reputation_level, get_daily_quests
+        is_maintenance_mode, is_ignored_channel, get_reputation, get_reputation_level, get_daily_quests,
+        get_or_create_user, log_interaction
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
@@ -1696,6 +1697,16 @@ async def on_message(message):
 
     # SAVE INTERACTION
     alfred_brain.update_user(message.author.id, message.author.name, topic=message.content[:20]+"...")
+
+    # ⚠️ Le graphe « Activite globale » du dashboard ne lit que `interactions`, et
+    # Alfred n'y ecrivait jamais (constate le 2026-09-27) : il etait invisible.
+    if DATABASE_AVAILABLE and message.guild:
+        try:
+            get_or_create_user(message.author.id, message.author.name, message.author.display_name)
+            log_interaction(message.author.id, "Alfred",
+                            "mention" if (is_mentioned or is_reply or is_name_mentioned) else "message")
+        except Exception as e:
+            logger.warning(f"⚠️ [DB] log_interaction a echoue : {e}")
 
     # PREPARATION
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()

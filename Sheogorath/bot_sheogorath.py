@@ -131,7 +131,7 @@ try:
     from shared.shared_database import (
         get_or_create_user, is_maintenance_mode, is_ignored_channel,
         get_active_riddle, delete_active_riddle, get_reputation, get_reputation_level,
-        add_reputation, get_daily_quests
+        add_reputation, get_daily_quests, log_interaction
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
@@ -2177,6 +2177,16 @@ async def on_message(message):
     # Mémorise l'interlocuteur courant → permet de poursuivre le fil au prochain message
     # sans exiger une nouvelle mention (continuité conversationnelle).
     last_exchange[message.channel.id] = (message.author.id, time.time())
+
+    # ⚠️ Le graphe « Activite globale » du dashboard ne lit que `interactions`, et
+    # Sheogorath n'y ecrivait jamais (constate le 2026-09-27) : il etait invisible.
+    if DATABASE_AVAILABLE and message.guild:
+        try:
+            get_or_create_user(message.author.id, message.author.name, message.author.display_name)
+            log_interaction(message.author.id, "Sheogorath",
+                            "mention" if (is_mentioned or is_reply or has_name) else "message")
+        except Exception as e:
+            logger.warning(f"⚠️ [DB] log_interaction a echoue : {e}")
 
     # HYBRID EXECUTION
     if response_mode == "HYBRID" and not is_proactive and not has_image: # Always LLM for images
