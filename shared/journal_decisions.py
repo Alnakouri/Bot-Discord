@@ -69,8 +69,12 @@ PERTINENCE = "pertinence"   # les six : _other_bot_in_focus / intervention spont
 JEU_QUESTION = "jeu_question"   # les six sur Twitch : game_info.detect_game_question
 # ⚠️ Ajoutee le 2026-09-23. `detect_defeat_signal` reconnait une DECLARATION de victoire
 # (« je t'ai eu »), pas une victoire ; sa docstring dit que reconnaitre une vraie
-# defaite demanderait « un appel LLM par message ». Laya ne coute rien par message :
-# c'est un candidat — mais on mesure d'abord ce que la liste rate.
+# defaite demanderait « un appel LLM par message ».
+# ⚠️ LAYA A ETE MESURE ET ECARTE le 2026-09-27 (`tools/sonde_laya_defaite.py`) : sur
+# 1 268 vrais messages du chat, il crie « defaite » 626 fois sans replique et 958 fois
+# face a une replique absurde de Sheogorath (seuil fixe : 7), et signale 6 desaccords
+# sur 8 ; p95 433 ms. La regex, elle : 0 sur 1 268. Il juge une phrase seule, pas une
+# phrase FACE a une autre. Ne pas le reproposer ici sans un autre modele.
 DEFAITE = "defaite"             # les six : repartee_lessons.detect_defeat_signal
 DECISIONS = (INTENTION, TON, PERTINENCE, JEU_QUESTION, DEFAITE)
 
