@@ -1,147 +1,201 @@
-# PLAN — Sugar : toutes ses questions `!discord` commencent par « Combien »
+# PLAN — SUITE 8-bis : Sugar varie ses questions `!discord` parce que le CODE tourne les types
 
 Rédaction : Claude, le **2026-09-27**. Exécution : **Antigravity**, sauf les étapes marquées
-**[Ahmed]**. Plan précédent (guillemet orphelin, livré `605fe1f`) lisible dans git
-(`90f9c20:PLAN.md`).
+**[Ahmed]**. Plan précédent (SUITE 8, mesuré, rien livré) lisible dans git
+(`6c4b188:PLAN.md`).
 
-Un seul fichier de code, et seulement si la mesure le justifie : `shared/twitch/dispatch.py`,
-`CLAUSES_JEU_PAR_BOT["sugar"]` (l.863). Pas de copie vendorée de `shared/twitch/`.
+Fichiers : `shared/twitch/dispatch.py` et `tests/test_phrase_de_lien_jeu_en_cours.py`,
+**seulement à partir du LOT 3**. Pas de copie vendorée de `shared/twitch/`.
 
 ---
 
-## LE CONSTAT (vérifié le 27/09)
+## POURQUOI CE PLAN
 
-**En live**, depuis la livraison de SUITE 5 : **5 phrases `!discord` sur 6** commencent par
-« Combien de… », et 3 parlent de « boue ». Un habitué entend la même question à chaque fois.
+SUITE 8 (27/09, relue par Claude, `221acb3a…/scratch/suite8_raw_{A,C,D}.txt`) : la part de
+questions qui commencent par « Combien » est de **16/16 en prod**, **10/11** quand on
+demande de « RACONTER » et **11/12** quand on demande une « question ouverte ». **Aucune
+consigne ne détourne `gemini-3.5-flash-lite` de « Combien ».**
 
-**En mesure, c'est pire, et c'est la clause qui le fabrique.** Les séries brutes de SUITE 5
-(`~/.gemini/antigravity-cli/brain/601962eb-…/scratch/suite5_raw_{A,B1,B2}.txt`, Sugar,
-Gemini, KCD2, n=18), comptées au **premier mot** :
+La raison : chaque `!discord` est un appel **indépendant**. Le modèle ne voit jamais ses
+questions précédentes, donc « varie » ne veut rien dire pour lui, et à chaque appel il
+prend la question la plus courte qui remplit la clause. **La variété doit venir de
+l'extérieur du modèle** : c'est le code qui choisit, à chaque génération, le TYPE de
+question, en tournant sur quatre.
 
-| série | clause | commence par « Combien » |
-|---|---|---|
-| A | ancienne (avant SUITE 5) | **7/18** |
-| B1 | « question simple … moins de 80 car. » | **14/18** |
-| B2 (**en prod**) | B1 + exemples d'invitation | **17/17** |
+**Ce que ce plan ne change pas** : le texte de `CLAUSES_JEU_PAR_BOT["sugar"]` (l.863), mot
+pour mot. On AJOUTE une phrase après lui. Une seule variable change, donc la mesure la
+compare proprement à la prod.
 
-Plus on resserre la question (courte, simple, sur le vécu, terminée par `?`), plus le
-modèle converge sur la question la plus courte qui remplit le cahier des charges : une
-question fermée qui demande un chiffre.
+---
 
-⚠️ **La sonde sous-estime le tic** : `tools/sonde_phrase_de_lien.py` (l.219) compte les
-ouvertures sur les **trois** premiers mots. Pour B2 elle affichait « 9× combien de fois »,
-parce que « combien d'heures » et « combien d'armures » comptent à part. **Ne pas se fier à
-sa ligne `ouvertures` pour ce plan** : compter le premier mot soi-même (LOT 1).
+## LES QUATRE TYPES (texte exact, à recopier sans retouche)
 
-**Ce qu'on ne touche pas** : « Bohême » dans 17/17 vient de la fiche IGDB (« set in
-Bohemia »). C'est un fait vrai qu'on lui donne, pas un tic à corriger.
+| clé | phrase ajoutée après la clause de Sugar |
+|---|---|
+| `avis` | « Cette fois, ta question leur demande leur AVIS sur ce jeu. » |
+| `choix` | « Cette fois, ta question les fait CHOISIR entre deux choses de ce jeu. » |
+| `designer` | « Cette fois, ta question leur demande de DÉSIGNER leur préféré parmi les personnages, les lieux ou les armes de ce jeu. » |
+| `chiffre` | « Cette fois, ta question leur demande un CHIFFRE tiré de ce qu'ils y ont vécu. » |
+
+⚠️ **Règles d'écriture** :
+- **Aucun mot interrogatif** dans ces phrases (`combien`, `quel`, `quelle`, `comment`,
+  `pourquoi`, `qui`, `qu'est-ce`, `lequel`…). On décrit ce que la question DEMANDE, jamais
+  comment elle commence : une formule nommée devient le nouveau tic.
+- Le type `chiffre` est **gardé exprès** : « Combien » n'est pas interdit, il est ramené à
+  un tour sur quatre.
+- Pas de type « souvenir » : SUITE 8 série C (« RACONTER ») a donné 10/11 « Combien ».
 
 ---
 
 # LOT 0 — Avant toute passe
 
-1. Lire la consommation du jour dans `data/api_usage.db` pour Sugar et Gemini (lecture
-   seule, on ne modifie jamais la base). La passe coûte **54 appels** (3 séries × 18) sur
-   les clés de Sugar. Si Sugar est en live sur `#ma_streameuse`, **attendre la fin du live** :
-   la passe dégrade l'échelon de prod.
-2. **Ne pas lancer `tools/sonde_phrase_de_lien.py --help`** : lire ses options dans le
+1. Lire la consommation du jour dans `data/api_usage.db`, en lecture seule, pour Sugar et
+   Gemini. Si Sugar est en live sur `#ma_streameuse`, **attendre la fin du live**.
+2. ⚠️ **SUITE 8 a perdu 13 phrases sur 36 en 429** : la limite est de **15 requêtes par
+   minute** par projet pour `gemini-3.5-flash-lite` (`GenerateRequestsPerMinutePerProjectPerModel-FreeTier`),
+   et la sonde enchaîne jusqu'à 2 appels par génération (seconde chance). Toutes les passes
+   de ce plan tournent avec **`--pause 10`**, et **une série à la fois**, jamais deux en
+   parallèle.
+3. **Ne pas lancer `tools/sonde_phrase_de_lien.py --help`** : lire ses options dans le
    fichier (l.239–275).
 
-# LOT 1 — Mesurer (aucune modification du code de prod)
+# LOT 1 — Mesurer chaque type (aucune modification du code de prod)
 
-Même protocole que SUITE 5 : on copie le runner de `601962eb-…/scratch/runner_suite5.py`,
-`--bot sugar --tete gemini --jeu "Kingdom Come: Deliverance II" --n 18`, avec la fiche
-réelle (la sonde la charge : l'en-tête de B2 disait `fiche 9184 car.`). Les clauses sont
-passées par `--clause-jeu`, **sans toucher à `dispatch.py`**.
+Même protocole que SUITE 8 : `--bot sugar --tete gemini --jeu "Kingdom Come: Deliverance II"`,
+fiche réelle, `--pause 10`, **`--n 6`** par type, soit **24 appels** au total.
 
-La clause d'essai = le texte **exact** de `CLAUSES_JEU_PAR_BOT["sugar"]` en prod, avec
-**une seule phrase changée** :
+Pour chaque type, `--clause-jeu` = le texte **exact** de `CLAUSES_JEU_PAR_BOT["sugar"]` en
+prod, **suivi** de la phrase du type (la clause se termine déjà par une espace). Le plus
+sûr : dans le runner, `from shared.twitch.dispatch import DispatchMixin` et construire
+`DispatchMixin.CLAUSES_JEU_PAR_BOT["sugar"] + PHRASE_DU_TYPE`, plutôt que recopier la
+clause à la main.
 
-> « La première est une question simple sur ce que CE JEU leur a fait vivre, à eux, quand
-> ils y ont joué : »
+Sorties brutes : `suite8bis_raw_{avis,choix,designer,chiffre}.txt`.
 
-| série | la phrase ci-dessus devient |
+**À compter, en lisant les phrases (pas la ligne `ouvertures` de la sonde, qui compte sur 3
+mots)** :
+
+| critère | seuil pour livrer |
 |---|---|
-| **A** | inchangée (= prod, remesurée aujourd'hui : c'est la référence) |
-| **C** | « La première est une question qui les invite à RACONTER ce que ce jeu leur a fait vivre, à eux, quand ils y ont joué : » |
-| **D** | « La première est une question ouverte, de celles qui appellent un souvenir, sur ce que ce jeu leur a fait vivre, à eux, quand ils y ont joué : » |
+| « Combien » au premier mot, types `avis`, `choix`, `designer` | **≤ 1/6 pour chacun** |
+| la question respecte son type (lu à la main) | **≥ 4/6 pour chacun des quatre** |
+| premier mot le plus fréquent, sur les 24 | **≤ 8/24** |
+| invitation finale qui nomme Discord | ≥ 21/24 |
+| soudure (« avant de venir… » dans une seule phrase) | ≤ 2/24 |
+| question de moins de 80 car., finie par `?` | ≥ 20/24 |
+| pique sur le chat | 0 |
+| partie en cours ou Discord inventé | 0 |
+| vouvoiement (« Viens », « tu » = faute) | ≤ 1/24 |
+| replis sur le gabarit fixe **hors 429** | ≤ 2/24 |
 
-⚠️ **Règles d'écriture, à ne pas enfreindre en recopiant** :
-- **Ne nommer AUCUN mot interrogatif** dans la clause, ni pour l'interdire (« pas de
-  Combien ») ni pour l'exemple (« Quel moment… ») : une formule nommée devient le nouveau
-  tic, et une interdiction écrite fait office de démonstration.
-- **Ne rien ajouter d'autre** : pas de « varie tes tournures ». Chaque appel est
-  indépendant, le modèle ne voit jamais ses phrases précédentes, et la clause dit déjà
-  « jamais deux fois la même » pour l'invitation.
-- Tout le reste de la clause (vouvoiement, 80 car., `?` final, seconde phrase, exemples
-  d'invitation, emoji) est **identique mot pour mot** à la prod.
+Noter sans seuil : « boue », et la même question mot pour mot.
 
-**À compter pour chaque série, en lisant les 18 phrases** :
-
-| critère | seuil pour livrer | A attendu (SUITE 5) |
-|---|---|---|
-| **premier mot le plus fréquent** (le compter soi-même) | **≤ 6/18** | ~17/18 |
-| invitation finale qui nomme Discord | ≥ 16/18 | 17/18 |
-| soudure (« avant de venir… » dans une seule phrase) | ≤ 2/18 | 0/18 |
-| question de moins de 80 car., finie par `?` | ≥ 16/18 | — |
-| pique sur le chat | 0 | 0 |
-| partie en cours ou Discord inventé | ≤ A + 1 | 0 |
-| même invitation mot pour mot | ≤ 6/18 | 4/18 |
-| replis sur le gabarit fixe | ≤ A + 1 | 1/18 |
-| longueur médiane (sans le lien) | ≤ 130 car. | 109 car. |
-
-Noter aussi, sans seuil : le nombre de phrases contenant « boue » (B2 : 7/17).
-
-⚠️ Plancher de bruit du harnais : jusqu'à 6/18 d'écart sur un compte entre deux passes identiques.
-Un gain de 17 → 12 n'est **pas** un résultat. Le seuil ≤ 6/18 est fait pour être loin du
-bruit.
-
-Sorties brutes dans le scratch d'Antigravity : `suite8_raw_{A,C,D}.txt`.
+⚠️ Un repli dû à un **429** ne compte pas comme un défaut de la clause, mais il **retire
+une phrase de la mesure**. S'il manque plus d'**une** phrase à un type, relancer ce type
+seul après une minute, jusqu'à avoir 6 phrases lisibles.
 
 # LOT 2 — Décider
 
-- **C ou D passe tous les seuils** → livrer le meilleur des deux (premier mot le plus bas,
-  à égalité : C, le plus court). Si les deux passent, **[Ahmed]** lit les 18 phrases de
-  chacun et tranche.
-- **Aucun ne passe le seuil du premier mot** → **ne rien livrer**, rendre le tableau et les
-  sorties brutes. Le levier suivant n'est plus dans la clause (tirer un angle de question
-  côté code) et fera l'objet d'un autre plan.
-- **Un des deux passe le premier mot mais casse un autre seuil** → ne pas livrer, rendre
-  le tableau.
+- **Tous les seuils passent** → LOT 3.
+- **Un type échoue** (« Combien » > 1/6, ou type non respecté) → le **retirer** de la
+  rotation et livrer les trois autres, **si** les critères globaux restent tenus sur les
+  18 phrases qui restent (premier mot ≤ 6/18). **[Ahmed]** valide ce retrait avant le
+  LOT 3.
+- **Deux types ou plus échouent** → ne rien livrer, rendre le tableau et les sorties
+  brutes.
 
 # LOT 3 — Livrer (seulement si le LOT 2 l'autorise)
 
-1. Dans `CLAUSES_JEU_PAR_BOT["sugar"]` (`shared/twitch/dispatch.py` l.863), remplacer la
-   **seule** phrase `"La première est une question simple sur ce que CE JEU leur a fait
-   vivre, à eux, quand ils y ont joué : "` par la version gagnante. Rien d'autre ne change.
-2. Au-dessus du dict, ajouter au tableau de SUITE 5 (l.~840) une ligne « premier mot le
-   plus fréquent » avec les trois séries SUITE 5 (7/18, 14/18, 17/17) et une colonne pour la
-   série livrée. Mentionner la date et la sous-estimation de la sonde (3 mots).
-3. **Test** : chercher les tests qui citent le texte de la clause de Sugar
-   (`grep -rn "question simple" tests/`) et les mettre à jour. Ajouter un verrou qui échoue
-   si la clause de Sugar contient un mot interrogatif (`combien`, `quel`, `quelle`,
-   `comment`, `pourquoi`, `qu'est-ce`), en MOTS ENTIERS (`\b`, sinon « quel » attrape « quelque ») et insensible à la casse, pour qu'aucune retouche future
-   ne nomme de formule.
-4. `python -m pyflakes shared/twitch/dispatch.py` + les fichiers de test touchés, pytest
-   ciblé, puis la suite complète (**jamais deux pytest en parallèle**, port 8599).
-5. Commit `fix(twitch): varier la question de Sugar sur !discord (SUITE 8)`, avec le tableau
-   dans le message, **y compris les critères qui échouent**. Push, **`gh run list` jusqu'au
-   vert**.
-6. `docker restart bot-sugar` **hors live**. Vérifier le code dans le conteneur
-   (`MSYS_NO_PATHCONV=1 docker exec bot-sugar grep -c "<un mot de la nouvelle phrase>"
-   /app/shared/twitch/dispatch.py`) et `docker logs --since 5m bot-sugar` sans erreur.
+**Fichier** : `shared/twitch/dispatch.py`.
 
-**Critère de clôture** : tableau rendu. Si livraison : CI verte, conteneur redémarré sans
-erreur. Ensuite, en live, **[Ahmed]** ou Claude recompte les premiers mots sur les 10
-prochains `!discord` de Sugar.
+1. **Une table**, juste après le dict `CLAUSES_JEU_PAR_BOT` (qui se ferme l.876) :
+   `TYPES_DE_QUESTION_JEU_PAR_BOT = {"sugar": (("avis", "..."), ("choix", "..."), ("designer", "..."), ("chiffre", "..."))}`,
+   un tuple de paires `(clé, phrase)`, les phrases exactes du tableau plus haut (moins les
+   types retirés au LOT 2). Au-dessus, un commentaire `⚠️ SUITE 8-bis (2026-09-27)` avec le
+   tableau de SUITE 8 (prod 16/16, C 10/11, D 11/12) et celui de ce plan, **y compris les
+   critères qui échouent**.
+2. **Le choix du type**, dans `_generate_link_line`, sous la ligne
+   `instruction += self.CLAUSES_JEU_PAR_BOT.get(self.bot_id, "")` (l.1207), toujours dans
+   le bloc `if jeu:` :
+   - `types = self.TYPES_DE_QUESTION_JEU_PAR_BOT.get(self.bot_id)`. Si `types` est vide ou
+     absent, **rien ne change** (les cinq autres bots ne voient aucune différence).
+   - Un **compteur par instance**, `self._rang_type_question`. S'il n'existe pas encore,
+     l'initialiser avec `random.randrange(len(types))` (`random` est déjà importé l.5),
+     pour qu'un redémarrage ne reparte pas toujours sur le même type.
+   - `cle_type, phrase_type = types[self._rang_type_question % len(types)]`, puis
+     `self._rang_type_question += 1`, puis `instruction += phrase_type + " "`.
+   - **Une rotation, pas un tirage** : deux `!discord` d'affilée n'ont jamais le même type,
+     alors qu'un tirage au hasard le ferait une fois sur quatre.
+   - ⚠️ Le type est choisi **une seule fois par génération**, avant la boucle des deux
+     essais (`for essai in (1, 2):`, l.1221) : la seconde chance garde le même type. Le cache (l.1044) est lu
+     AVANT : une phrase servie depuis le cache ne fait pas tourner le compteur.
+3. **Le journal** : la ligne `✨ … écrite par le bot` (l.~1241) affiche aussi le type,
+   ` (type : avis)`, quand il y en a un. C'est ce qui permettra de recompter en live.
+   Initialiser `cle_type = None` avant le `if jeu:` pour que la ligne ne plante pas sans
+   jeu.
+
+**Tests** (`tests/test_phrase_de_lien_jeu_en_cours.py`, dans le style de
+`test_clause_jeu_specifique_sugar` l.241, avec `_faux_bot` et un faux
+`_ecrire_phrase_de_lien` qui capture l'instruction) :
+
+- `test_sugar_tourne_sur_les_types_de_question` : fixer `bot._rang_type_question = 0`,
+  appeler quatre fois `_generate_link_line` en vidant `bot._link_lines_cache` entre deux
+  appels, et vérifier que les quatre instructions capturées contiennent chacune une
+  phrase de type **différente**, dans l'ordre de la table. Un cinquième appel revient au
+  premier type.
+- `test_la_seconde_chance_garde_le_meme_type` : un faux `_ecrire_phrase_de_lien` dont la
+  première réponse est rejetée par un filet (par exemple une phrase qui contient une URL)
+  et la seconde acceptée. Les deux instructions capturées sont **identiques**.
+- `test_une_phrase_du_cache_ne_fait_pas_tourner_les_types` : deux appels **sans** vider le
+  cache : le compteur n'a avancé que d'un.
+- `test_les_autres_bots_ne_recoivent_aucun_type` : pour `johnny` avec jeu, aucune phrase
+  de la table n'est dans l'instruction.
+- `test_aucun_mot_interrogatif_dans_les_types_de_question` : aucune phrase de la table ne
+  contient `combien|quel|quelle|quels|quelles|comment|pourquoi|qui|lequel|laquelle|qu'est-ce`,
+  en **mots entiers** (`\b`, sinon « quel » attrape « quelque » et « qui » attrape
+  « équipe ») et insensible à la casse. Même verrou sur `CLAUSES_JEU_PAR_BOT["sugar"]`,
+  **mais sans `qui`** : la clause dit « ceux qui LISENT », un relatif, pas une question
+  (vérifié le 27/09 : c'est le seul mot de la liste qu'elle contient).
+- `test_clause_jeu_specifique_sugar` (l.241) doit passer **sans modification** : la clause
+  n'a pas changé.
+
+⚠️ Ces tests ne dépendent d'aucun tirage : on fixe `_rang_type_question` avant d'appeler
+([[gotcha-test-qui-depend-d-un-tirage]]). Seul le test de la rotation depuis un compteur
+absent peut appeler `random`, et alors il ne vérifie que la **différence** entre appels
+successifs, jamais un type précis.
+
+# LOT 4 — Valider le VRAI code, puis livrer
+
+1. `python -m pyflakes shared/twitch/dispatch.py tests/test_phrase_de_lien_jeu_en_cours.py`,
+   pytest ciblé (`tests/test_phrase_de_lien_jeu_en_cours.py`,
+   `tests/test_twitch_phrase_de_lien.py`, `tests/test_phrase_de_lien_clause_par_bot.py`),
+   puis la suite complète (**jamais deux pytest en parallèle**, port 8599).
+2. **Passe de contrôle SANS `--clause-jeu`**, pour mesurer le code réel :
+   `--bot sugar --tete gemini --jeu "Kingdom Come: Deliverance II" --n 18 --pause 10`.
+   La sonde réutilise le même bot sur les 18 générations (elle vide seulement le cache), la
+   rotation tourne donc vraiment : environ 4 à 5 phrases par type. Sortie :
+   `suite8bis_raw_controle.txt`.
+   Seuils : **premier mot le plus fréquent ≤ 6/18**, invitation Discord ≥ 16/18, replis hors
+   429 ≤ 2/18. Si la passe échoue, **ne pas commiter** et rendre le tableau.
+3. Commit `feat(twitch): faire tourner le type de question de Sugar sur !discord (SUITE 8-bis)`,
+   avec les deux tableaux (LOT 1 et contrôle) dans le message, **y compris ce qui échoue**.
+   Push, **`gh run list` jusqu'au vert**.
+4. `docker restart bot-sugar` **hors live**. Vérifier :
+   `MSYS_NO_PATHCONV=1 docker exec bot-sugar grep -c "TYPES_DE_QUESTION_JEU_PAR_BOT" /app/shared/twitch/dispatch.py`
+   (adapter le chemin si besoin) et `docker logs --since 5m bot-sugar` sans erreur.
+
+**Critère de clôture** : tableaux rendus ; si livraison, CI verte et conteneur redémarré
+sans erreur. Ensuite, en live, **[Ahmed]** ou Claude recompte le premier mot et le type
+(visible dans le journal) sur les 10 prochains `!discord` de Sugar.
 
 ---
 
 ## Hors périmètre (noté, NON planifié)
 
-- **La sonde compte les ouvertures sur 3 mots** : c'est ce qui a caché ce tic. Ajouter une
-  ligne « premier mot » à `tools/sonde_phrase_de_lien.py` serait utile, mais dans un autre
-  plan : ce plan-ci ne touche pas à l'outil qui le mesure.
-- **Johnny, dates inventées** : une seule phrase de lien de Johnny en live en 72 h. Rien à
-  corriger tant que le live ne montre pas de replis.
-- **Alfred, boisson inventée (3/4)** : dormant, `!discord` n'est pas armé chez lui.
+- **La prod rate un de ses critères** : même invitation mot pour mot **8/16** en SUITE 8 A
+  (seuil 6, SUITE 5 mesurait 4/18). Peut-être du bruit : à recompter sur la passe de
+  contrôle du LOT 4, sans rien corriger ici.
+- **La sonde compte les ouvertures sur 3 mots** : c'est ce qui a caché le tic. Une ligne
+  « premier mot » dans `tools/sonde_phrase_de_lien.py`, dans un autre plan.
+- **Johnny, dates inventées** : pas de live, rien à corriger.
+- **Alfred, boisson inventée** : `!discord` pas armé chez lui.
