@@ -137,8 +137,10 @@ rassure à tort.
 - une base de test avec une table et 3 lignes, **en mode TRUNCATE**, plus un JSON : après
   une sauvegarde, le dossier daté existe, la base copiée a 3 lignes, `integrity_check` =
   `ok`, `journal_mode` ≠ `wal`, et le JSON est identique ;
-- la base source a **toujours** son mode d'origine après la sauvegarde (l'outil ne touche
-  pas au journal de la source) ;
+- après la sauvegarde, la source n'est **pas** en WAL (`journal_mode` ≠ `wal` à la
+  réouverture) et **aucun** fichier `-wal` ni `-shm` n'existe à côté d'elle. ⚠️ Ne pas tester
+  « la source est toujours en TRUNCATE » : TRUNCATE est un réglage de CONNEXION, une
+  nouvelle connexion lit `delete` quoi qu'il arrive ;
 - `--si-plus-vieux-que 20` juste après une sauvegarde : **aucun** nouveau dossier ;
 - rotation : avec 16 dossiers datés factices, il en reste 14, les plus récents ; un
   dossier `autre_chose/` dans la sortie n'est **pas** touché ;
