@@ -555,4 +555,129 @@ def test_borne_par_bot():
     assert "Discord" not in rendu_defaut
 
 
+def test_sugar_tourne_sur_les_types_de_question():
+    """SUITE 8-bis : Sugar tourne sur les types de questions (choix, designer, chiffre).
+    Un 4e appel revient au premier type."""
+    from shared.twitch.dispatch import DispatchMixin
+    types = DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]
+    assert len(types) == 3
+
+    bot = _faux_bot("sugar")
+    bot._rang_type_question = 0
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    captures = []
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        captures.append(instruction)
+        return "Venez nous voir sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    for i in range(4):
+        bot._link_lines_cache = {}
+        res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+        assert res is not None
+
+    assert len(captures) == 4
+    for i in range(3):
+        cle, phrase = types[i]
+        assert phrase in captures[i], f"Type {cle} attendu dans l'appel {i}"
+    cle0, phrase0 = types[0]
+    assert phrase0 in captures[3], f"Type {cle0} attendu dans l'appel 3 (retour au début)"
+
+
+def test_la_seconde_chance_garde_le_meme_type():
+    """SUITE 8-bis : si le 1er essai est rejeté par un filet (URL inventée), le 2e essai
+    conserve exactement la même instruction (donc le même type de question)."""
+    bot = _faux_bot("sugar")
+    bot._rang_type_question = 0
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    captures = []
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        captures.append(instruction)
+        if len(captures) == 1:
+            return "Venez sur https://fake.url !"  # rejeté par _RESSEMBLE_A_UN_LIEN
+        return "Venez nous voir sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    assert len(captures) == 2
+    assert captures[0] == captures[1]
+
+
+def test_une_phrase_du_cache_ne_fait_pas_tourner_les_types():
+    """SUITE 8-bis : deux appels successifs sans vider le cache ne font avancer le rang que d'un."""
+    bot = _faux_bot("sugar")
+    bot._rang_type_question = 0
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        return "Venez nous voir sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    # 1er appel -> calculé
+    res1 = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res1 is not None
+    assert bot._rang_type_question == 1
+
+    # 2e appel -> servi depuis le cache
+    res2 = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res2 is not None
+    assert bot._rang_type_question == 1
+
+
+def test_les_autres_bots_ne_recoivent_aucun_type():
+    """SUITE 8-bis : pour un autre bot (johnny) avec jeu, aucune phrase de TYPES_DE_QUESTION_JEU_PAR_BOT n'est injectée."""
+    from shared.twitch.dispatch import DispatchMixin
+    phrases_sugar = [p for _, p in DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]]
+
+    bot = _faux_bot("johnny")
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    capture = {}
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        capture["instruction"] = instruction
+        return "Venez nous voir sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    for p in phrases_sugar:
+        assert p not in capture["instruction"]
+
+
+def test_aucun_mot_interrogatif_dans_les_types_de_question():
+    """SUITE 8-bis : verrou anti-tic. Aucune phrase de TYPES_DE_QUESTION_JEU_PAR_BOT ne nomme
+    de mot interrogatif (mots entiers, insensible à la casse). Même verrou sur CLAUSES_JEU_PAR_BOT["sugar"],
+    mais sans 'qui' ('ceux qui LISENT' est un relatif)."""
+    import re
+    from shared.twitch.dispatch import DispatchMixin
+
+    mots_interdits = [
+        "combien", "quel", "quelle", "quels", "quelles",
+        "comment", "pourquoi", "qui", "lequel", "laquelle", "qu'est-ce"
+    ]
+    pattern_complet = re.compile(r"\b(?:" + "|".join(re.escape(m) for m in mots_interdits) + r")\b", re.IGNORECASE)
+
+    for cle, phrase in DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT.get("sugar", ()):
+        m = pattern_complet.search(phrase)
+        assert m is None, f"Mot interrogatif interdit '{m.group(0)}' trouvé dans le type '{cle}': {phrase}"
+
+    mots_sans_qui = [m for m in mots_interdits if m != "qui"]
+    pattern_sans_qui = re.compile(r"\b(?:" + "|".join(re.escape(m) for m in mots_sans_qui) + r")\b", re.IGNORECASE)
+    clause_sugar = DispatchMixin.CLAUSES_JEU_PAR_BOT.get("sugar", "")
+    m_clause = pattern_sans_qui.search(clause_sugar)
+    assert m_clause is None, f"Mot interrogatif interdit '{m_clause.group(0)}' trouvé dans CLAUSES_JEU_PAR_BOT['sugar']"
+
+
+
 

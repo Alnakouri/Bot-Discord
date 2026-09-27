@@ -875,6 +875,23 @@ class DispatchMixin:
         ),
     }
 
+    # ⚠️ SUITE 8-bis (2026-09-27) : rotation du type de question pour Sugar avec un jeu.
+    # SUITE 8 avait mesuré 16/16 « Combien » en prod, 10/11 en demandant de RACONTER (C)
+    # et 11/12 sur une question ouverte (D). La variété vient du code : tourner sur 3 types.
+    # Mesure SUITE 8-bis (24 tirages, n=6 par type, Kingdom Come II, tête Gemini) :
+    #   critère (sur 6)                    avis (RETIRÉ)  choix       designer    chiffre
+    #   « Combien » au premier mot (≤1/6)  4/6 (ÉCHEC)    0/6         0/6         6/6
+    #   question respecte le type (≥4/6)   6/6            6/6         6/6         6/6
+    #   premier mot sur 18 retenus         —              ≤ 6/18 tenu (« Combien » 6/18)
+    # Le type 'avis' ramenait encore « Combien » 4 fois sur 6 -> retiré au LOT 2 (validé Ahmed).
+    TYPES_DE_QUESTION_JEU_PAR_BOT = {
+        "sugar": (
+            ("choix", "Cette fois, ta question les fait CHOISIR entre deux choses de ce jeu."),
+            ("designer", "Cette fois, ta question leur demande de DÉSIGNER leur préféré parmi les personnages, les lieux ou les armes de ce jeu."),
+            ("chiffre", "Cette fois, ta question leur demande un CHIFFRE tiré de ce qu'ils y ont vécu."),
+        ),
+    }
+
     # ⚠️ SUITE 6-ter (2026-09-27) : forme à deux phrases courtes pour Johnny avec un jeu.
     # La clause anti-tic (« pas de moi j'ai fait sauter ») élimine le tic (0/18 vs 4/15)
     # mais fait chuter les invitations rendues à 11/18 (5 replis époques, 2 coupées par _borner).
@@ -1182,6 +1199,7 @@ class DispatchMixin:
         # mais l'ordre ne change rien a la mesure : elle est ajoutee ici, et un bot absent
         # de la table ne voit aucune difference.
         instruction += " " + self.CLAUSES_PAR_BOT.get(self.bot_id, "")
+        cle_type = None
         if jeu:
             instruction += self.CLAUSES_FORME_JEU_PAR_BOT.get(self.bot_id, "")
             # ⚠️ Le jeu est la SEULE chose vraie qu'on puisse lui donner sur le moment
@@ -1205,6 +1223,13 @@ class DispatchMixin:
                     f"C'est TOUT ce que tu sais de vrai sur lui : inspire-t'en, mais n'affirme rien qui n'y figure pas. "
                 )
             instruction += self.CLAUSES_JEU_PAR_BOT.get(self.bot_id, "")
+            types = self.TYPES_DE_QUESTION_JEU_PAR_BOT.get(self.bot_id)
+            if types:
+                if not hasattr(self, "_rang_type_question"):
+                    self._rang_type_question = random.randrange(len(types))
+                cle_type, phrase_type = types[self._rang_type_question % len(types)]
+                self._rang_type_question += 1
+                instruction += phrase_type + " "
             instruction += (
                 "⚠️ Et ta phrase doit CLAQUER : une seule idée, la chute à la fin, rien "
                 "avant qui la retarde. Si elle ne fait pas sourire à la lecture, recommence."
@@ -1238,6 +1263,7 @@ class DispatchMixin:
         self.logger.info(
             f"✨ [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd}"
             + (f" (jeu : {jeu})" if jeu else "")
+            + (f" (type : {cle_type})" if cle_type else "")
             + f" écrite par le bot : {phrase}"
         )
         return f"{phrase} {url}"
