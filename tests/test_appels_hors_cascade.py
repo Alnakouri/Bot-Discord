@@ -200,6 +200,22 @@ def test_une_reponse_vide_ne_passe_pas_pour_une_reponse(traces):
     assert traces[-1]["raison"] == "vide"
 
 
+def test_appel_hors_cascade_gemini_bloque_porte_raison_bloque(traces):
+    """SUITE 7 : un appel hors cascade refusé par Gemini porte raison='bloque:<nom>'."""
+    import types
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("gemini", ["fake_key"])
+    rep = types.SimpleNamespace(
+        text="",
+        prompt_feedback=types.SimpleNamespace(
+            block_reason=types.SimpleNamespace(name="PROHIBITED_CONTENT")
+        ),
+    )
+    assert _appeler(fournisseur="gemini", fonction=lambda **_kw: rep,
+                    key_manager=mgr, bot_label="Sugar", modele="gemini-3.5-flash-lite") is None
+    assert traces[-1]["raison"] == "bloque:PROHIBITED_CONTENT"
+
+
 def test_un_client_absent_n_est_pas_un_echec_d_api(traces):
     """Sans client, la base ne doit pas se remplir d'erreurs sans cause."""
     mgr = MultiAPIKeyManager()

@@ -477,9 +477,9 @@ async def generate_response(
                     _jetons_entree, _jetons_sortie = _extraire_jetons("gemini", resp)
                     response_text = resp.text
                     if _est_vide(response_text):
-                        logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide → échelon suivant")
+                        _raison = _raison_du_vide("gemini", resp)
+                        logger.warning(f"⚠️ [GEMINI {model_name}] réponse vide ({_raison}) → échelon suivant")
                         response_text = None
-                        _raison = "vide"
                         continue
                     if _est_degenere(response_text):
                         logger.warning(f"⚠️ [GEMINI {model_name}] réponse dégénérée (boucle) → échelon suivant")
@@ -724,6 +724,30 @@ def _extraire_jetons(fournisseur, reponse):
     return None, None
 
 
+def _raison_du_vide(fournisseur, reponse) -> str:
+    """Qualifie sans jamais lever la cause d'une réponse vide."""
+    if reponse is None:
+        return "vide"
+    try:
+        if fournisseur == "gemini":
+            pf = getattr(reponse, "prompt_feedback", None)
+            br = getattr(pf, "block_reason", None)
+            if br:
+                nom = getattr(br, "name", None) or str(br)
+                return f"bloque:{nom}"
+            candidates = getattr(reponse, "candidates", None)
+            if candidates:
+                premier = candidates[0]
+                fr = getattr(premier, "finish_reason", None)
+                if fr is not None:
+                    nom = getattr(fr, "name", None) or str(fr)
+                    if nom and nom not in ("STOP", "FinishReason.STOP"):
+                        return f"fin:{nom}"
+    except Exception:
+        pass  # la qualification du vide ne doit jamais faire lever un appel
+    return "vide"
+
+
 def _texte_de(fournisseur, reponse):
     """Le texte d'une réponse brute. Gemini le porte à plat, les autres l'emboîtent."""
     if fournisseur == "gemini":
@@ -816,9 +840,9 @@ async def appel_hors_cascade(
         _jetons_entree, _jetons_sortie = _extraire_jetons(fournisseur, reponse)
         texte = _texte_de(fournisseur, reponse)
         if _est_vide(texte):
-            logger.warning(f"⚠️ [{fournisseur.upper()} {modele}] réponse vide — {bot_label}")
+            _raison = _raison_du_vide(fournisseur, reponse)
+            logger.warning(f"⚠️ [{fournisseur.upper()} {modele}] réponse vide ({_raison}) — {bot_label}")
             texte = None
-            _raison = "vide"
             return None
         logger.info(f"✅ [{fournisseur.upper()} {modele}] {bot_label} (hors cascade)")
         return texte

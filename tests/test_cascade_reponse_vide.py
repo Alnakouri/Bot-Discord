@@ -344,3 +344,132 @@ def test_un_media_a_droit_a_plus_de_temps_qu_un_tour_de_chat():
     assert cascade._BORNE_TEXTE > 0, "une borne nulle désarmerait le garde-fou"
     assert cascade._BORNE_MEDIA > cascade._BORNE_TEXTE
     assert cascade._BORNE_TEXTE < 36,         "un 429 Groq coûte 36 s : au-delà, la borne ne sert à rien"
+
+
+class _FauxGeminiReponse:
+    def __init__(self, text="", block_reason=None, finish_reason=None):
+        import types
+        self.text = text
+        if block_reason:
+            fb = types.SimpleNamespace()
+            fb.block_reason = types.SimpleNamespace(name=block_reason)
+            self.prompt_feedback = fb
+        else:
+            self.prompt_feedback = None
+        if finish_reason:
+            self.candidates = [types.SimpleNamespace(finish_reason=types.SimpleNamespace(name=finish_reason))]
+        else:
+            self.candidates = None
+
+
+def test_gemini_reponse_bloquee_porte_raison_bloque(monkeypatch):
+    """SUITE 7 : prompt refusé par Gemini (PROHIBITED_CONTENT) tracé en 'bloque:PROHIBITED_CONTENT'."""
+    import types
+    import shared.llm_cascade as cascade
+    from shared.api_manager import MultiAPIKeyManager
+
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("gemini", ["fake_key"])
+
+    traces = []
+    monkeypatch.setattr(cascade, "tracer_appel", lambda **kw: traces.append(kw))
+
+    resp_bloquee = _FauxGeminiReponse(text="", block_reason="PROHIBITED_CONTENT")
+    client_faux = types.SimpleNamespace(models=types.SimpleNamespace(generate_content=lambda **kw: resp_bloquee))
+    monkeypatch.setattr(cascade, "get_safe_genai_client", lambda **kw: client_faux)
+
+    nvidia = _FauxNvidia()
+    monkeypatch.setattr(cascade, "get_model_cascade",
+                        lambda _t, _b=None: [("gemini", "gemini-3.5-flash-lite"), ("nvidia", "secours")])
+
+    texte = asyncio.run(cascade.generate_response(
+        routing={"type": RequestType.TEXT, "reason": "test"},
+        system_prompt="sys", transcript="", user_message="coucou",
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=mgr, nvidia_client=nvidia, bot_label="Sugar",
+    ))
+
+    assert nvidia.appels == 1, "la cascade devait basculer sur nvidia"
+    assert texte == "Wesh ma vie !"
+    assert any(t.get("api") == "gemini" and t.get("raison") == "bloque:PROHIBITED_CONTENT" for t in traces)
+
+
+def test_gemini_reponse_vide_par_max_tokens_porte_raison_fin(monkeypatch):
+    """SUITE 7 : réponse vide avec finish_reason MAX_TOKENS tracée en 'fin:MAX_TOKENS'."""
+    import types
+    import shared.llm_cascade as cascade
+    from shared.api_manager import MultiAPIKeyManager
+
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("gemini", ["fake_key"])
+
+    traces = []
+    monkeypatch.setattr(cascade, "tracer_appel", lambda **kw: traces.append(kw))
+
+    resp_max = _FauxGeminiReponse(text="", finish_reason="MAX_TOKENS")
+    client_faux = types.SimpleNamespace(models=types.SimpleNamespace(generate_content=lambda **kw: resp_max))
+    monkeypatch.setattr(cascade, "get_safe_genai_client", lambda **kw: client_faux)
+
+    nvidia = _FauxNvidia()
+    monkeypatch.setattr(cascade, "get_model_cascade",
+                        lambda _t, _b=None: [("gemini", "gemini-3.5-flash-lite"), ("nvidia", "secours")])
+
+    texte = asyncio.run(cascade.generate_response(
+        routing={"type": RequestType.TEXT, "reason": "test"},
+        system_prompt="sys", transcript="", user_message="coucou",
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=mgr, nvidia_client=nvidia, bot_label="Sugar",
+    ))
+
+    assert nvidia.appels == 1
+    assert texte == "Wesh ma vie !"
+    assert any(t.get("api") == "gemini" and t.get("raison") == "fin:MAX_TOKENS" for t in traces)
+
+
+def test_gemini_reponse_vide_simple_porte_raison_vide(monkeypatch):
+    """SUITE 7 : réponse vide sans prompt_feedback ni candidates tracée en 'vide'."""
+    import types
+    import shared.llm_cascade as cascade
+    from shared.api_manager import MultiAPIKeyManager
+
+    mgr = MultiAPIKeyManager()
+    mgr.register_api("gemini", ["fake_key"])
+
+    traces = []
+    monkeypatch.setattr(cascade, "tracer_appel", lambda **kw: traces.append(kw))
+
+    resp_vide = _FauxGeminiReponse(text="")
+    client_faux = types.SimpleNamespace(models=types.SimpleNamespace(generate_content=lambda **kw: resp_vide))
+    monkeypatch.setattr(cascade, "get_safe_genai_client", lambda **kw: client_faux)
+
+    nvidia = _FauxNvidia()
+    monkeypatch.setattr(cascade, "get_model_cascade",
+                        lambda _t, _b=None: [("gemini", "gemini-3.5-flash-lite"), ("nvidia", "secours")])
+
+    texte = asyncio.run(cascade.generate_response(
+        routing={"type": RequestType.TEXT, "reason": "test"},
+        system_prompt="sys", transcript="", user_message="coucou",
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=mgr, nvidia_client=nvidia, bot_label="Sugar",
+    ))
+
+    assert nvidia.appels == 1
+    assert texte == "Wesh ma vie !"
+    assert any(t.get("api") == "gemini" and t.get("raison") == "vide" for t in traces)
+
+
+def test_raison_du_vide_avec_objet_qui_leve_ne_plante_pas():
+    """SUITE 7 : _raison_du_vide ne lève jamais, même si l'objet réponse lève."""
+    from shared.llm_cascade import _raison_du_vide
+
+    class _ReponsePiegee:
+        @property
+        def prompt_feedback(self):
+            raise RuntimeError("propriete explosee")
+
+        @property
+        def candidates(self):
+            raise ValueError("candidates explosees")
+
+    assert _raison_du_vide("gemini", _ReponsePiegee()) == "vide"
+
