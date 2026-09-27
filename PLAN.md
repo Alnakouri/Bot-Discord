@@ -92,7 +92,7 @@ La clause d'essai = le texte **exact** de `CLAUSES_JEU_PAR_BOT["sugar"]` en prod
 
 Noter aussi, sans seuil : le nombre de phrases contenant « boue » (B2 : 7/17).
 
-⚠️ Plancher de bruit du harnais : ±0,4 sur les notes, jusqu'à 6/18 d'écart sur un compte.
+⚠️ Plancher de bruit du harnais : jusqu'à 6/18 d'écart sur un compte entre deux passes identiques.
 Un gain de 17 → 12 n'est **pas** un résultat. Le seuil ≤ 6/18 est fait pour être loin du
 bruit.
 
@@ -120,7 +120,7 @@ Sorties brutes dans le scratch d'Antigravity : `suite8_raw_{A,C,D}.txt`.
 3. **Test** : chercher les tests qui citent le texte de la clause de Sugar
    (`grep -rn "question simple" tests/`) et les mettre à jour. Ajouter un verrou qui échoue
    si la clause de Sugar contient un mot interrogatif (`combien`, `quel`, `quelle`,
-   `comment`, `pourquoi`, `qu'est-ce`), insensible à la casse, pour qu'aucune retouche future
+   `comment`, `pourquoi`, `qu'est-ce`), en MOTS ENTIERS (`\b`, sinon « quel » attrape « quelque ») et insensible à la casse, pour qu'aucune retouche future
    ne nomme de formule.
 4. `python -m pyflakes shared/twitch/dispatch.py` + les fichiers de test touchés, pytest
    ciblé, puis la suite complète (**jamais deux pytest en parallèle**, port 8599).
