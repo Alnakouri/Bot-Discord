@@ -846,8 +846,6 @@ async def on_ready():
             twitch_chat.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]
             twitch_chat_task = asyncio.create_task(twitch_chat.run())
 
-    if not daily_backup_check.is_running():
-        daily_backup_check.start()  # Backup automatique
     if not check_missed_mentions_sheo.is_running():
         check_missed_mentions_sheo.start()  # Détection mentions manquées
     if not decree_cleanup_loop.is_running():
@@ -1242,18 +1240,6 @@ async def birthday_check_sheo():
     """Vérifie les anniversaires tous les 12h."""
     if DATABASE_AVAILABLE:
         await check_and_send_birthdays(bot, "Sheogorath")
-
-@tasks.loop(hours=24)
-async def daily_backup_check():
-    """Backup quotidien à 3h du matin."""
-    from datetime import datetime
-    if datetime.now().hour == 3:
-        try:
-            from backup_manager import create_backup
-            create_backup()
-            logger.info("✅ [BACKUP] Sauvegarde quotidienne effectuée")
-        except Exception as e:
-            logger.error(f"❌ [BACKUP] Erreur: {e}")
 
 @tasks.loop(hours=1)
 async def daily_bio_loop_sheo():

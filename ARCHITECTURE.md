@@ -63,7 +63,6 @@ Bot Discord/
 │   ├── sheo_faveur.py       # Système de Faveur du Prince
 │   ├── sheo_imposter.py     # Usurpation d'identité (Webhook)
 │   ├── sheo_decrees.py      # Génération de décrets
-│   ├── backup_manager.py    # Backup automatique de la base
 │   └── minigames.py         # Mini-jeux (fromage...)
 │
 ├── chatterbox-server/       # 🔊 Serveur TTS (Voice Cloning) — PARQUÉ

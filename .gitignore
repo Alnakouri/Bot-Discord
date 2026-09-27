@@ -38,6 +38,7 @@ SugarBot/sugar_data.json
 SugarBot/sugar_facts.json
 SugarBot/sugar_memory.json
 # État de jeu runtime et sauvegardes
+/sauvegardes/
 data/*.json
 data/*.bak
 *.bak

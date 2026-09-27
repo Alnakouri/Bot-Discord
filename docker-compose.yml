@@ -109,6 +109,20 @@ services:
     working_dir: /app/bot
     command: python bot_malena.py
 
+  sauvegarde:
+    <<: *bot-common
+    container_name: bots-sauvegarde
+    volumes:
+      - ./data:/app/data
+      # Chemin propre a la machine de dev (autre disque physique D:) ;
+      # sur un autre hote (ex: Oracle), le remplacer par un disque qui n'est PAS celui du projet.
+      - D:/Sauvegardes/BotDiscord/bases:/app/sauvegardes
+      - ./tools/sauvegarde_bases.py:/app/sauvegarde_bases.py:ro
+    working_dir: /app
+    command: python sauvegarde_bases.py --boucle --donnees /app/data --sortie /app/sauvegardes
+    environment:
+      - DATA_DIR=/app/data
+
   # ═══════════════════════════════════════════════════════════════
   # LAYA — trieur « System One » PARTAGÉ par les six bots. CPU uniquement.
   # ───────────────────────────────────────────────────────────────

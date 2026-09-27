@@ -56,4 +56,3 @@ Le Prince Daedra de la Folie (univers The Elder Scrolls) transposé sur Discord 
 - [sheo_imposter.py](sheo_imposter.py) : Logique d'usurpation d'identité via les Webhooks Discord.
 - [sheo_decrees.py](sheo_decrees.py) : Module de génération d'images de parchemins de décrets.
 - [minigames.py](minigames.py) : Implémentation du mini-jeu `!fromage`.
-- [backup_manager.py](backup_manager.py) : Gère la sauvegarde automatisée de la base de données.
