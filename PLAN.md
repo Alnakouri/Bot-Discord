@@ -804,6 +804,8 @@ replis gênent en live, le levier serait une clause qui interdit les dates dans
 
 ## SUITE 7 — rendre VISIBLE un prompt refusé par Gemini (Claude, 27/09)
 
+> ✅ **LIVRÉE `46f50e4`, relue par Claude le 27/09** : diff conforme (seules les deux branches Gemini ont changé), 0 dérive de vendoring, CI `success`. Sonde : Sugar servie par Gemini avec sa fiche seule (9 184 car.) et avec la garde (9 953 car.), **aucun blocage**. **Reste [Ahmed]** : redémarrer les six conteneurs. **À lire ensuite** : une raison `bloque:` ou `fin:` dans `api_usage.db` signale le retour de la frontière, et c'est là qu'on rouvrira.
+
 **Constat (relu dans `data/api_usage.db` le 27/09)** : Sugar a eu **95 réponses Gemini
 vides**, toutes antérieures au 24/09 à 10:34, c'est-à-dire avant le retrait de « Question
 banale ». Depuis, il n'y en a **plus aucune**, chez aucun bot. La frontière ne mord donc plus
