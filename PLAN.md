@@ -29,6 +29,7 @@ un guillemet orphelin** (Sugar). Les onze autres sont propres.
 | `… avec des bonbons. » 🍬` | `… avec des bonbons. » 🍬` ❌ |
 | `Venez en parler sur Discord ! " 🍬` | `Venez en parler sur Discord ! " 🍬` ❌ |
 | `*Venez en parler sur Discord !` | `*Venez en parler sur Discord !` ❌ |
+| `Venez en parler sur Discord ! ”` | `Venez en parler sur Discord ! ”` ❌ |
 | `« Venez nous en parler sur Discord ! 🍬` | `Venez nous en parler sur Discord ! 🍬` ✅ (déjà géré) |
 
 **Cause** : le déballage (`dispatch.py` l.254–270, boucle l.255) et `_strip_wrapping_quotes`
@@ -122,8 +123,8 @@ mesure LLM nécessaire : le correctif est déterministe et ne change pas le prom
 
 ## Hors périmètre (noté, NON planifié)
 
-- **Johnny, dates inventées** (5 replis sur 18 en mesure, SUITE 6-ter) : **aucun `!discord`
-  de Johnny en live** depuis le redémarrage du 27/09 (1 phrase en 72 h, propre). Rien à
+- **Johnny, dates inventées** (5 replis sur 18 en mesure, SUITE 6-ter) : **une seule phrase de
+  lien de Johnny en live en 72 h** (propre), aucune depuis la livraison de SUITE 6-ter. Rien à
   corriger tant que le live ne montre pas de replis. Le levier reste une clause dans
   `CLAUSES_FORME_JEU_PAR_BOT["johnny"]`, formulée **positivement** et **sans date
   d'exemple** ([[gotcha-le-prompt-enseigne-le-tic-interdit]]).
