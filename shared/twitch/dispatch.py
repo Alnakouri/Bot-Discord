@@ -884,11 +884,23 @@ class DispatchMixin:
     #   question respecte le type (≥4/6)   6/6            6/6         6/6         6/6
     #   premier mot sur 18 retenus         —              ≤ 6/18 tenu (« Combien » 6/18)
     # Le type 'avis' ramenait encore « Combien » 4 fois sur 6 -> retiré au LOT 2 (validé Ahmed).
+    #
+    # ⚠️ SUITE 8-ter (2026-09-27) : Sugar tutoyait le chat à 8/18 en prod (dont 2 mélanges tu/vous).
+    # L'insertion de « toujours au VOUVOIEMENT » dans chaque type de question (E) éradique le tutoiement.
+    # Mesure SUITE 8-ter (18 tirages par cellule, Kingdom Come II, tête Gemini) :
+    #   critère                            A (prod)       E (LIVRÉ)   F
+    #   tutoiement (≤ 1/18)                3/17           0/18        0/17
+    #   tu et vous mélangés (0)            3/17           0/18        0/17
+    #   « Combien » au 1er mot (≤ 7/18)    6/17           6/18        8/17
+    #   premier mot le plus fréquent       Combien (6)    Entre (9)   Combien (8)
+    #   invitation nomme Discord (≥ 16/18) 17/17          18/18       17/17
+    #   longueur médiane                   108 car.       124 car.    130 car.
+    #   replis hors 429                    1/18 (timeout) 0/18        1/18 (timeout)
     TYPES_DE_QUESTION_JEU_PAR_BOT = {
         "sugar": (
-            ("choix", "Cette fois, ta question les fait CHOISIR entre deux choses de ce jeu."),
-            ("designer", "Cette fois, ta question leur demande de DÉSIGNER leur préféré parmi les personnages, les lieux ou les armes de ce jeu."),
-            ("chiffre", "Cette fois, ta question leur demande un CHIFFRE tiré de ce qu'ils y ont vécu."),
+            ("choix", "Cette fois, ta question, toujours au VOUVOIEMENT, les fait CHOISIR entre deux choses de ce jeu."),
+            ("designer", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande de DÉSIGNER leur préféré parmi les personnages, les lieux ou les armes de ce jeu."),
+            ("chiffre", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande un CHIFFRE tiré de ce qu'ils y ont vécu."),
         ),
     }
 

@@ -679,5 +679,44 @@ def test_aucun_mot_interrogatif_dans_les_types_de_question():
     assert m_clause is None, f"Mot interrogatif interdit '{m_clause.group(0)}' trouvé dans CLAUSES_JEU_PAR_BOT['sugar']"
 
 
+def test_sugar_rappelle_le_vouvoiement_avec_chaque_type():
+    """SUITE 8-ter : pour chaque type de question de Sugar, l'instruction contient
+    le rappel explicite au VOUVOIEMENT. Johnny avec jeu ne le reçoit pas."""
+    from shared.twitch.dispatch import DispatchMixin
+    types = DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]
+
+    bot_sugar = _faux_bot("sugar")
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot_sugar._jeu_en_cours = faux_jeu
+
+    captures = []
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        captures.append(instruction)
+        return "Venez nous voir sur Discord !"
+    bot_sugar._ecrire_phrase_de_lien = faux_ecrire
+
+    for i in range(len(types)):
+        bot_sugar._rang_type_question = i
+        bot_sugar._link_lines_cache = {}
+        res = asyncio.run(bot_sugar._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+        assert res is not None
+        assert "VOUVOIEMENT" in captures[-1], f"Rappel au VOUVOIEMENT absent pour le type {types[i][0]}"
+
+    # Johnny avec jeu ne reçoit aucun rappel
+    bot_johnny = _faux_bot("johnny")
+    bot_johnny._jeu_en_cours = faux_jeu
+    captures_j = []
+    async def faux_ecrire_j(instruction, system_prompt, cmd):
+        captures_j.append(instruction)
+        return "Venez nous voir sur Discord !"
+    bot_johnny._ecrire_phrase_de_lien = faux_ecrire_j
+
+    res_j = asyncio.run(bot_johnny._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res_j is not None
+    assert "VOUVOIEMENT" not in captures_j[0]
+
+
+
 
 
