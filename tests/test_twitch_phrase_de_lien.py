@@ -45,6 +45,20 @@ class _BotFactice(DispatchMixin):
         self.logger = _Journal()
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restaurer_cascade():
+    """Restaure `cascade.generate_response` pour ne pas polluer les autres suites de tests."""
+    import shared.llm_cascade as cascade
+    orig = cascade.generate_response
+    try:
+        yield
+    finally:
+        cascade.generate_response = orig
+
+
 def _avec_reponse(texte, compteur=None):
     """Remplace la cascade par une réponse fixe. Rend le bot prêt à être interrogé."""
     import shared.llm_cascade as cascade
@@ -117,6 +131,38 @@ def test_le_nettoyeur_retire_didascalies_guillemets_et_ponctuation_d_annonce():
     assert _nettoyer_phrase_de_lien("*sourire en coin* Ramène-toi") == "Ramène-toi"
     assert _nettoyer_phrase_de_lien('"Le sucre t\'attend"') == "Le sucre t'attend"
     assert _nettoyer_phrase_de_lien("Tout se passe ici :") == "Tout se passe ici"
+
+
+def test_un_guillemet_ORPHELIN_ne_sort_pas_dans_le_chat():
+    # le cas du live, mot pour mot
+    assert _nettoyer_phrase_de_lien(
+        "Alors, ce Henry qui vous a fait hurler des jurons en vieux tchèque sans comprendre "
+        "un mot ? Racontez-nous ça sur le serveur, j’écoute avec des bonbons. » 🍬"
+    ) == ("Alors, ce Henry qui vous a fait hurler des jurons en vieux tchèque sans comprendre "
+          "un mot ? Racontez-nous ça sur le serveur, j’écoute avec des bonbons. 🍬")
+    assert _nettoyer_phrase_de_lien('Venez en parler sur Discord ! " 🍬') == "Venez en parler sur Discord ! 🍬"
+    assert _nettoyer_phrase_de_lien("*Venez en parler sur Discord !") == "Venez en parler sur Discord !"
+    assert _nettoyer_phrase_de_lien("Venez en parler sur Discord ! ”") == "Venez en parler sur Discord !"
+    # ce qui doit RESTER intact
+    assert _nettoyer_phrase_de_lien("Venez, j’écoute !") == "Venez, j’écoute !"           # apostrophe
+    assert _nettoyer_phrase_de_lien('Parlez-nous de "Elden Ring" sur Discord !') == 'Parlez-nous de "Elden Ring" sur Discord !'
+    assert _nettoyer_phrase_de_lien("Parlez-nous de « Elden Ring » sur Discord !") == "Parlez-nous de « Elden Ring » sur Discord !"
+
+    # Idempotence : pour chaque entrée ci-dessus, f(f(x)) == f(x)
+    cas = [
+        "Alors, ce Henry qui vous a fait hurler des jurons en vieux tchèque sans comprendre "
+        "un mot ? Racontez-nous ça sur le serveur, j’écoute avec des bonbons. » 🍬",
+        'Venez en parler sur Discord ! " 🍬',
+        "*Venez en parler sur Discord !",
+        "Venez en parler sur Discord ! ”",
+        "Venez, j’écoute !",
+        'Parlez-nous de "Elden Ring" sur Discord !',
+        "Parlez-nous de « Elden Ring » sur Discord !",
+    ]
+    for x in cas:
+        res = _nettoyer_phrase_de_lien(x)
+        assert res is not None
+        assert _nettoyer_phrase_de_lien(res) == res
 
 
 def test_le_message_rempli_reste_un_gabarit_fixe():

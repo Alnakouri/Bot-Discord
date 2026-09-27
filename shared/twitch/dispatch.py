@@ -270,6 +270,16 @@ def _nettoyer_phrase_de_lien(texte: str | None, bot_id: str | None = None) -> st
         if phrase == avant:
             break
     phrase = strip_stage_directions(phrase)
+    # ⚠️ Retirer les délimiteurs orphelins (live du 2026-09-27, Sugar : 1 phrase sur 12
+    # portait un guillemet orphelin, « … j’écoute avec des bonbons. » 🍬 »). On répare
+    # plutôt que de rejeter : la phrase est intacte, seul le délimiteur est de trop.
+    for ouvre, ferme in (("«", "»"), ("“", "”")):
+        if phrase.count(ouvre) != phrase.count(ferme):
+            phrase = phrase.replace(ouvre, "").replace(ferme, "")
+    for c in ('"', "*"):
+        if phrase.count(c) % 2 != 0:
+            phrase = phrase.replace(c, "")
+    phrase = " ".join(phrase.split())
     # ⚠️ UNE PHRASE QUI COMMENCE AU MILIEU EST CASSEE — on la REJETTE, on ne la repare pas.
     # Mesure du 2026-09-22, ministral : il met le nom du jeu en valeur, `*Elden Ring* vous
     # fait courir apres des ombres...`, et `strip_stage_directions` prend cette tete pour
