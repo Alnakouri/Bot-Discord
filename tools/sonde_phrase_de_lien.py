@@ -58,11 +58,18 @@ vérifier si une fin de phrase coupée vient du budget LLM (SUITE 6-bis).
 
 `--borne` — remplacer la borne de 200 caractères de `dispatch._borner` pour
 vérifier si l'invitation a été tranchée par le nettoyeur (SUITE 6-bis).
+
+`--relire FICHIER` — relire une sortie existante de la sonde et recompter
+mécaniquement (premier mot, tutoiement, questions, redites) sans appeler `charger`
+(aucun `.env` lu) ni aucun modèle. A servi à recompter SUITE 5 à 8-ter sans rappeler
+le modèle (SUITE 9).
 """
 import argparse
 import asyncio
+import collections
 import os
 os.environ.setdefault("SUIVI_ORIGINE", "sonde")
+import re
 import sys
 import time
 import types
@@ -207,7 +214,58 @@ def enregistrer_bruts(f):
     return f
 
 
-def resumer(phrases, replis, n):
+_TU = re.compile(r"\b(?:tu|te|toi|ton|ta|tes|viens)\b|\bt['’]", re.I)
+_EXPRESSIONS_FIGEES = re.compile(r"en veux-tu en voil[àa]", re.I)
+_VOUS = re.compile(r"\b(?:vous|votre|vos|venez|rejoignez|passez)\b", re.I)
+
+
+def compter(phrases: list[str]) -> dict:
+    res = {}
+    res["n"] = len(phrases)
+    pm_counter = collections.Counter()
+    for p in phrases:
+        m = re.match(r"\W*(\w+)", p)
+        if m:
+            pm_counter[m.group(1).lower()] += 1
+    res["premiers_mots"] = pm_counter
+
+    tuto_count = 0
+    melange_count = 0
+    for p in phrases:
+        p_sans = _EXPRESSIONS_FIGEES.sub("", p)
+        if _TU.search(p_sans):
+            tuto_count += 1
+            if _VOUS.search(p_sans):
+                melange_count += 1
+    res["tutoiement"] = tuto_count
+    res["melange"] = melange_count
+
+    qc = 0
+    questions_count = collections.Counter()
+    invit_count = collections.Counter()
+
+    for p in phrases:
+        if "?" in p:
+            avant = p.split("?", 1)[0].strip()
+            if len(avant) < 80:
+                qc += 1
+            questions_count[avant] += 1
+            invit_brut = p.split("?", 1)[1]
+        else:
+            invit_brut = p
+
+        cleaned = re.sub(r"[^\w\s'’\-]", " ", invit_brut, flags=re.UNICODE)
+        invit_norm = " ".join(cleaned.lower().split())
+        invit_count[invit_norm] += 1
+
+    res["questions_courtes"] = qc
+    res["meme_question"] = max(questions_count.values()) if questions_count else 0
+    res["meme_invitation"] = invit_count.most_common(1)[0] if invit_count else ("", 0)
+    res["discord"] = sum(1 for p in phrases if "discord" in p.lower())
+    return res
+
+
+def resumer(phrases, replis, n, types_phrases=None):
     """Les seuls chiffres qui se comptent sans lire. Le reste se LIT."""
     print("=" * 78)
     if not phrases:
@@ -227,6 +285,38 @@ def resumer(phrases, replis, n):
           f"/{len(phrases)}")
     print(f"  ouvertures        : {len(ouvertures)} distinctes ; la plus frequente "
           f"{tete[1]}x « {tete[0]} »")
+
+    c = compter(phrases)
+    total = c["n"]
+    top3 = c["premiers_mots"].most_common(3)
+    top_str = ", ".join(f"{cnt}x « {mot} »" for mot, cnt in top3) if top3 else "aucun"
+    print(f"  premier mot       : {top_str}      (les 3 plus frequents)")
+    melange_txt = f"   (dont {c['melange']} melange{'s' if c['melange'] > 1 else ''} tu/vous dans la meme phrase)"
+    print(f"  tutoiement        : {c['tutoiement']}/{total}{melange_txt}")
+    print(f"  questions < 80 car: {c['questions_courtes']}/{total}  (texte avant le premier « ? »)")
+    print(f"  meme question     : {c['meme_question']}x au plus")
+    invit_txt, invit_cnt = c["meme_invitation"]
+    print(f"  meme invitation   : {invit_cnt}x « {invit_txt} »")
+    print(f"  nomme Discord     : {c['discord']}/{total}")
+
+    if types_phrases and any(t for t in types_phrases):
+        vus = []
+        for t in types_phrases:
+            if t and t not in vus:
+                vus.append(t)
+        for t in vus:
+            phrases_t = [p for p, tp in zip(phrases, types_phrases) if tp == t]
+            count_t = len(phrases_t)
+            mots_t = collections.Counter()
+            for p in phrases_t:
+                m = re.match(r"\W*(\w+)", p)
+                if m:
+                    mots_t[m.group(1).lower()] += 1
+            top_m = mots_t.most_common(1)
+            pm, cnt = top_m[0] if top_m else ("aucun", 0)
+            label = f"type {t}"
+            print(f"  {label:<18}: {count_t} phrase{'s' if count_t > 1 else ''} ; premier mot {cnt}x « {pm} »")
+
     print()
     print("  ⚠️ Les defauts de PERSONA — objet promis, lieu invente, invitation qui "
           "n'invite plus — ne se")
@@ -272,16 +362,36 @@ async def main():
                     help="écrase max_tokens dans l'appel au modèle (défaut: inchangé)")
     ap.add_argument("--borne", type=int, default=None,
                     help="remplace la borne de troncature maxi dans dispatch._borner")
+    ap.add_argument("--relire", default=None, metavar="FICHIER",
+                    help="recompter une sortie existante sans appeler charger ni le modèle")
     args = ap.parse_args()
-
-    if len(args.remplace) != len(args.par):
-        print(f"[!] Autant de --par que de --remplace requis ({len(args.remplace)} vs {len(args.par)}).")
-        return 1
 
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass  # flux deja en UTF-8, ou redirige : la sonde mesure quand meme
+
+    if args.relire:
+        motif = re.compile(r"^\s*\d+\.\s+\[[^\]]*\]\s+(?:\((\w+)\)\s+)?(.*\S)\s*$")
+        phrases_relues, replis_relus, types_relus = [], 0, []
+        with open(args.relire, "r", encoding="utf-8", errors="replace") as fp:
+            for ligne in fp:
+                m = motif.match(ligne)
+                if not m:
+                    continue
+                type_opt = m.group(1)
+                texte = m.group(2)
+                if texte.startswith("<<"):
+                    replis_relus += 1
+                else:
+                    phrases_relues.append(texte)
+                    types_relus.append(type_opt)
+        resumer(phrases_relues, replis_relus, len(phrases_relues) + replis_relus, types_relus)
+        return 0
+
+    if len(args.remplace) != len(args.par):
+        print(f"[!] Autant de --par que de --remplace requis ({len(args.remplace)} vs {len(args.par)}).")
+        return 1
 
     if args.timeout != 8.0 or args.max_tokens is not None:
         # On ne retape pas la construction de l'instruction : le VRAI
@@ -346,7 +456,7 @@ async def main():
           + ("  | BRUT" if args.brut else ""))
     print("=" * 78)
 
-    phrases, replis = [], 0
+    phrases, replis, types_phrases = [], 0, []
     for i in range(args.n):
         f._link_lines_cache = {}      # sinon la 2e generation rend la 1re
         del f._journal[:]
@@ -361,13 +471,22 @@ async def main():
             rendu = f"<<EXCEPTION {type(e).__name__}: {e}>>"
         duree = time.perf_counter() - debut
 
+        type_trouve = None
+        for ligne in f._journal:
+            m = re.search(r"\(type : (\w+)\)", ligne)
+            if m:
+                type_trouve = m.group(1)
+                break
+
         if rendu:
             phrase = rendu.replace(" https://X", "")
             phrases.append(phrase)
+            types_phrases.append(type_trouve)
         else:
             phrase = "<<repli sur le gabarit fixe>>"
             replis += 1
-        print(f"{i + 1:3}. [{duree:5.2f}s] {phrase}")
+        prefixe_type = f"({type_trouve}) " if type_trouve else ""
+        print(f"{i + 1:3}. [{duree:5.2f}s] {prefixe_type}{phrase}")
         if args.brut and hasattr(f, "_bruts"):
             for b in f._bruts:
                 print(f"      ↳ brut : «{b}»")
@@ -377,7 +496,7 @@ async def main():
         if i + 1 < args.n:
             await asyncio.sleep(args.pause)
 
-    resumer(phrases, replis, args.n)
+    resumer(phrases, replis, args.n, types_phrases)
     return 0
 
 
