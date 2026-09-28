@@ -17,6 +17,11 @@ from shared.twitch.llm import ANTI_INJECTION_GUARD
 # s'entrelacer pendant l'appel LLM, et chacune doit garder SON canal.
 _CANAL_COURANT = contextvars.ContextVar("canal_courant", default=None)
 
+# Vrai pendant une annonce AUTO. Elle ne prend jamais la phrase en cache : le cache sert a
+# ne pas payer un appel par `!discord` tape, et une annonce qui resert la phrase que le chat
+# vient de lire est un doublon, pas une economie (Sugar, 27/09 : 20:09 puis 20:23).
+_ANNONCE_AUTO = contextvars.ContextVar("annonce_auto", default=False)
+
 # Tout ce qui ressemble à une adresse dans la phrase écrite par le modèle. Le lien
 # officiel est accolé par le code : celui que le modèle invente est au mieux inutile,
 # au pire faux — et personne ne verifie une URL avant de cliquer.
@@ -583,6 +588,7 @@ class DispatchMixin:
 
                     self.global_msg_timestamps.append(now)
                     await send_chat_safe(ws, chan, res, bot_id=self.bot_id, logger=self.logger)
+                    self._repousser_annonce_auto(chan, cmd_name, now)
             except Exception as e:
                 self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur lors de l'exécution de la commande !{cmd_name}: {e}")
             return True
@@ -635,6 +641,18 @@ class DispatchMixin:
             return True
         return False
 
+    def _repousser_annonce_auto(self, chan: str, cmd: str, now: float) -> None:
+        """Un lien tape par un viewer compte comme une annonce : le minuteur repart de zero.
+
+        Sans ca, l'annonce auto tombait quelques minutes apres un `!discord` tape, et le chat
+        relisait le lien qu'il venait de recevoir (Sugar, 3 fois sur 27 : 6 a 14 min d'ecart).
+        """
+        if not any(t["cmd"] == cmd for t in getattr(self, "link_timers", [])):
+            return
+        if not hasattr(self, "_etat_timers"):
+            self._etat_timers = {}
+        self._etat_timers[(chan.lower(), cmd)] = {"depuis": now, "msgs": 0}
+
     async def _try_link_timer(self, chan: str, ws) -> bool:
         """Poste un lien regle en « auto » dans le dashboard, si son heure est venue.
 
@@ -655,6 +673,7 @@ class DispatchMixin:
             if len(self.global_msg_timestamps) >= 14:
                 return False
             jeton = _CANAL_COURANT.set(chan)
+            jeton_auto = _ANNONCE_AUTO.set(True)
             try:
                 cb = t["callback"]
                 res = await cb("timer", "") if asyncio.iscoroutinefunction(cb) else cb("timer", "")
@@ -662,6 +681,7 @@ class DispatchMixin:
                 self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] annonce auto !{t['cmd']} : {e}")
                 return False
             finally:
+                _ANNONCE_AUTO.reset(jeton_auto)
                 _CANAL_COURANT.reset(jeton)
             etat["depuis"], etat["msgs"] = now, 0
             if not res:
@@ -1070,7 +1090,7 @@ class DispatchMixin:
         # parle du precedent — pire qu'une invitation neutre.
         cle_cache = (cmd, jeu)
         vue = cache.get(cle_cache)
-        if vue and maintenant - vue[0] < 900:
+        if vue and not _ANNONCE_AUTO.get() and maintenant - vue[0] < 900:
             return f"{vue[1]} {url}"
         # APRES le cache, jamais avant : un echec IGDB n'est pas mis en cache, et chaque
         # `!discord` servi depuis le cache aurait paye jusqu'a 3 s d'attente pour rien.
