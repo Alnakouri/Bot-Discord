@@ -1225,9 +1225,13 @@ async def before_daily_bio_sheo():
 
 # DÉTECTION DES MENTIONS MANQUÉES
 
-@tasks.loop(minutes=2)
+# UNE fois par connexion (SUITE 18, 29/09), plus toutes les 2 min. En 6 jours de boucle,
+# 0 mention rattrapee pour des centaines de relectures de chaque salon : on_message
+# repond deja en direct. Le seul cas utile est la mention tombee pendant que le bot
+# etait deconnecte — et `on_ready` relance cette boucle a chaque (re)connexion.
+@tasks.loop(count=1)
 async def check_missed_mentions_sheo():
-    """Vérifie si quelqu'un a mentionné Sheogorath sans obtenir de réponse."""
+    """Au (re)demarrage : repond aux mentions de Sheogorath restees sans reponse (< 10 min)."""
     global checked_messages_sheo
     
     name_triggers = ["sheogorath", "sheo", "prince de la folie", "dieu fou", "madgod"]
@@ -1364,7 +1368,7 @@ async def check_missed_mentions_sheo():
                 if e.status and e.status >= 500:
                     logger.warning(
                         f"⚠️ [MISSED CHECK] Discord indisponible sur {channel.name} "
-                        f"({e.status}) — reessai au prochain cycle"
+                        f"({e.status}) — reessai a la prochaine connexion"
                     )
                 else:
                     logger.error(f"❌ [MISSED CHECK] Erreur canal {channel.name}: {e}")
