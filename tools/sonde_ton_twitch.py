@@ -160,6 +160,8 @@ async def main():
                          "toucher la prod (avec --par)")
     ap.add_argument("--par", default=None, help="texte de remplacement (avec --remplace)")
     ap.add_argument("--n", type=int, default=18, help="nombre de répétitions (défaut 18)")
+    ap.add_argument("--forcer", action="store_true",
+                    help="passer outre le garde (bot en service, 429 recent, budget du jour)")
     ap.add_argument("--pause", type=float, default=4.5, help="pause en secondes entre appels (défaut 4.5s pour respecter 15 RPM)")
     ap.add_argument("--tete", choices=("gemini", "mistral"), default="gemini",
                     help="échelon LLM à interroger")
@@ -181,6 +183,16 @@ async def main():
             return await original(**kw)
         lc.generate_response = borne_desserree
         lc._QUARANTAINE_ECHELON_SEUIL = 999
+
+    # Garde commun (SUITE 18) : pas de passe sur un bot qui sert en ce moment, ni au-dela
+    # du budget de sonde du jour. Place APRES les chemins sans appel API (--relire).
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import garde_sonde
+    # n * len(MESSAGES_TEST) : borne haute des deux scenarios.
+    autorise, avis = garde_sonde.verifier("sugar", args.n * len(MESSAGES_TEST), forcer=args.forcer)
+    print(avis)
+    if not autorise:
+        return 1
 
     fiche, cles, td_fn = charger_sugar()
     if args.remplace is not None:

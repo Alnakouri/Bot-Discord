@@ -362,6 +362,8 @@ async def main():
                     help="écrase max_tokens dans l'appel au modèle (défaut: inchangé)")
     ap.add_argument("--borne", type=int, default=None,
                     help="remplace la borne de troncature maxi dans dispatch._borner")
+    ap.add_argument("--forcer", action="store_true",
+                    help="passer outre le garde (bot en service, 429 recent, budget du jour)")
     ap.add_argument("--relire", default=None, metavar="FICHIER",
                     help="recompter une sortie existante sans appeler charger ni le modèle")
     args = ap.parse_args()
@@ -388,6 +390,16 @@ async def main():
                     types_relus.append(type_opt)
         resumer(phrases_relues, replis_relus, len(phrases_relues) + replis_relus, types_relus)
         return 0
+
+    # Garde commun (SUITE 18) : pas de passe sur un bot qui sert en ce moment, ni au-dela
+    # du budget de sonde du jour. Place APRES les chemins sans appel API (--relire).
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import garde_sonde
+    # 2 * n : la seconde chance de `_generate_link_line` peut doubler chaque phrase.
+    autorise, avis = garde_sonde.verifier(args.bot, 2 * args.n, forcer=args.forcer)
+    print(avis)
+    if not autorise:
+        return 1
 
     if len(args.remplace) != len(args.par):
         print(f"[!] Autant de --par que de --remplace requis ({len(args.remplace)} vs {len(args.par)}).")
