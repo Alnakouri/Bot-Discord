@@ -16,7 +16,7 @@ Il existe trois façons d'interagir avec les bots sur le serveur :
 
 ## ⚡ Commandes Slash Communes
 
-Ces commandes sont partagées et accessibles sur **tous les bots** du serveur :
+Ces commandes sont partagées et accessibles sur **tous les bots** du serveur, **sauf Alfred**, qui ne garde que `/stats`, `/ping` et `/help` (et n'a ni mini-jeux ni vœux d'anniversaire) :
 
 | Commande | Paramètres | Description |
 |---|---|---|
@@ -69,8 +69,6 @@ Alfred Pennyworth est au service de la Wayne Enterprises. Il maintient la paix e
 - **Modération** : Alfred peut utiliser des outils système pour punir les utilisateurs impolis (mute, renommage).
 - **Commandes (préfixe `!`)** :
   - `!servir <action>` : Demande à Alfred de servir quelque chose (ex: thé, café, remontrances).
-  - `!parle <texte>` : Fait parler Alfred dans le salon vocal Wayne.
-  - `!ecoute` : Fait venir Alfred dans votre salon vocal pour écouter et transcrire vos paroles.
   - `!surveille` : Alfred patrouille les salons vocaux actifs pour garder un œil sur les bavardages.
   - `!repos` : Renvoie Alfred à ses obligations (quitte le salon vocal).
   - `!liberation [user]` : Supprime les sanctions infligées par Alfred.

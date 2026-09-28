@@ -13,7 +13,6 @@ Majordome dévoué de la famille Wayne (univers Batman) transposé sur Discord p
    - `MISTRAL_API_KEY` (fournisseur prioritaire pour Alfred)
    - `GROQ_API_KEY`
    - `OPENROUTER_API_KEY`
-   - `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID` (vocal)
 2. Chiffrer la configuration :
    ```bash
    python crypto_utils.py encrypt
@@ -27,11 +26,9 @@ Majordome dévoué de la famille Wayne (univers Batman) transposé sur Discord p
 - **Docker** : Lancer le service `alfred` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer). Alfred n'en garde que `/ping`, `/stats` et `/help`, et n'a pas de mini-jeux.
 - **Commandes spécifiques** (préfixe `!`) :
   - `!servir <action>` : Demande à Alfred de servir quelque chose (ex: café, thé, remontrances).
-  - `!parle <texte>` : Demande à Alfred de prononcer un texte dans le salon vocal.
-  - `!ecoute` : Alfred rejoint le salon vocal de l'auteur et écoute les messages oraux (Speech-to-Text).
   - `!surveille` : Met en place une patrouille vocale (Alfred surveille les salons vocaux actifs).
   - `!repos` : Fait quitter à Alfred le salon vocal actuel.
   - `!liberation [membre]` : Lève toutes les sanctions de modération (rôles/surnoms) d'un utilisateur.

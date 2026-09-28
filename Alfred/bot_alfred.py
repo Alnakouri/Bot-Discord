@@ -40,7 +40,7 @@ from core.response_memory import ResponseMemory
 from core.anti_tic import build_anti_tic_consigne
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from core.smart_router import classify_request, RequestType, download_media, get_model_cascade, resolve_media_attachments
 from core.api_tracking import tracer_appel
 from core.media_handler import process_image_ollama
@@ -57,23 +57,13 @@ except ImportError:
 
 import collections
 meme_recent = collections.defaultdict(lambda: collections.deque(maxlen=8))  # {channel_id: deque[ref]}
-import speech_recognition as sr
 from discord.ext import voice_recv
 import io # For buffer handling
 import wave
-try:
-    from elevenlabs.client import ElevenLabs
-    from elevenlabs import save
-except ImportError:
-    ElevenLabs = None
-    save = None
-
+import audioop  # VocalPatrolSink : PCM stereo -> mono
 # LOGGING STRUCTURÉ
 from core.bot_logger import setup_logger, enregistrer_reaction
 logger = setup_logger("alfred")
-
-if ElevenLabs is None:
-    logger.warning("[INIT] ElevenLabs non disponible. Fonctions vocales désactivées.")
 
 # ZONE DE CONFIGURATION : ALFRED PENNYWORTH
 
@@ -88,18 +78,12 @@ from core.safe_client import get_client as get_safe_genai_client
 
 try:
     from shared.shared_database import (
-        is_maintenance_mode, is_ignored_channel, get_reputation, get_reputation_level, get_daily_quests,
+        is_maintenance_mode, is_ignored_channel,
         get_or_create_user, log_interaction
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
-    from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
+    from shared.server_events import handle_member_join, handle_member_remove
     DATABASE_AVAILABLE = True
-    try:
-        from shared.games import setup_games
-        from games_persona import PERSONA
-        GAMES_AVAILABLE = True
-    except ImportError:
-        GAMES_AVAILABLE = False
 except ImportError as e:
     logger.warning(f"⚠️ [ALFRED] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
@@ -143,16 +127,6 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# ELEVENLABS (VOCAL)
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ALFRED_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "ErXwobaYiN019PkySvjV") # Default: Antoni (Nice British/Calm)
-
-elevenlabs_client = None
-if ELEVENLABS_API_KEY:
-    try:
-        elevenlabs_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-    except Exception as e:
-        logger.warning(f"⚠️ ElevenLabs Error: {e}")
 
 # CONVERSATION HISTORY
 conversation_history = {}
@@ -225,7 +199,7 @@ def protocole_maitre(member) -> str:
 
 
 class AlfredBrainAdapter:
-    def get_user_context(self, user_id, message_content="", member=None, reputation_data=None, quests_data=None):
+    def get_user_context(self, user_id, message_content="", member=None):
         daily_summary = daily_memory.get_context_summary(user_id)
         relevant_facts = fact_memory.get_relevant_facts(user_id, message_content, k=3)
         dr = daily_memory.get_daily_read(user_id)
@@ -237,7 +211,7 @@ class AlfredBrainAdapter:
 
         profile_context = ""
         if member:
-            profile = construire_profil_discord(member, reputation_data=reputation_data, quests_data=quests_data)
+            profile = construire_profil_discord(member)
             if profile:
                 profile_context = f"\n\n{profile}"
             
@@ -296,22 +270,6 @@ def tool_set_maintenance(status: bool):
     except Exception as e:
         return f"ERREUR : {e}"
 
-async def tool_get_user_stats(user_id_str: str):
-    """Récupère les statistiques de réputation d'un invité."""
-    try:
-        numeric_id = re.search(r'\d+', user_id_str)
-        if not numeric_id:
-            return "ERREUR : ID invalide."
-        
-        user_id = int(numeric_id.group())
-        if DATABASE_AVAILABLE:
-            rep = get_reputation(user_id)
-            level = get_reputation_level(rep['points'])
-            return f"RAPPORT : Le sujet {user_id_str} possède {rep['points']} points de réputation. Rang : {level}."
-        return "ERREUR : Archives inaccessibles."
-    except Exception as e:
-        return f"ERREUR : {e}"
-
 ALFRED_TOOLS_DEFINITION = [
     {
         "function_declarations": [
@@ -324,17 +282,6 @@ ALFRED_TOOLS_DEFINITION = [
                         "status": {"type": "BOOLEAN", "description": "True pour activer, False pour désactiver."}
                     },
                     "required": ["status"]
-                }
-            },
-            {
-                "name": "get_user_stats",
-                "description": "Consulte les archives pour connaître la réputation et le rang d'un invité.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "user_id": {"type": "STRING", "description": "La mention ou l'ID de l'utilisateur."}
-                    },
-                    "required": ["user_id"]
                 }
             }
         ]
@@ -469,15 +416,11 @@ async def on_ready():
     logger.info(f'   {"✅" if mistral_client else "❌"} Mistral (prioritaire)')
     logger.info(f'   {"✅" if groq_client else "❌"} Groq')
     logger.info(f'   {"✅" if nvidia_client else "❌"} NVIDIA (nemotron)')
-    if elevenlabs_client:
-        logger.info('   ✅ ElevenLabs (Vocal)')
     logger.info('--------------------------------------------------')
     
     
     if not status_loop_alfred.is_running():
         status_loop_alfred.start()
-    if not birthday_check_alfred.is_running():
-        birthday_check_alfred.start()  # Anniversaires
     if daily_bio and not daily_bio_loop_alfred.is_running():
         daily_bio_loop_alfred.start()
 
@@ -501,7 +444,7 @@ async def on_ready():
     # INITIALISATION DES COMMANDES SLASH
     if run_command_setup and DATABASE_AVAILABLE:
         try:
-            setup_slash_commands(bot, "Alfred")
+            setup_slash_commands(bot, "Alfred", sans={"reputation", "leaderboard", "birthday", "quests"})
             await sync_slash_commands(bot)
             logger.info("[SLASH] Commandes slash initialisées")
         except Exception as e:
@@ -509,13 +452,6 @@ async def on_ready():
             # CommandAlreadyRegistered et avortait tout le reste de on_ready.
             logger.error(f"[SLASH] Erreur: {e}")
         
-    # INITIALISATION DES MINI-JEUX
-    if run_command_setup and DATABASE_AVAILABLE and GAMES_AVAILABLE:
-        try:
-            setup_games(bot, logger, PERSONA)
-            logger.info("☕ [GAMES] Mini-jeux initialisés pour Alfred")
-        except Exception as e:
-            logger.error(f"[GAMES] Erreur d'initialisation des mini-jeux: {e}")
 
 # ACTIVITY LOOP
 current_alfred_activity = "Cirer l'argenterie"
@@ -556,12 +492,6 @@ async def status_loop_alfred():
         activity = discord.CustomActivity(name=txt[:60])
     current_alfred_activity = activity.name  # réutilisé dans les prompts (« ce que tu fais »)
     await bot.change_presence(activity=activity)
-
-@tasks.loop(hours=12)
-async def birthday_check_alfred():
-    """Vérifie les anniversaires tous les 12h."""
-    if DATABASE_AVAILABLE:
-        await check_and_send_birthdays(bot, "Alfred")
 
 @tasks.loop(hours=1)
 async def daily_bio_loop_alfred():
@@ -667,144 +597,6 @@ async def servir(ctx, *, action: str):
     else:
         # Si c'est juste de la conversation, laisse l'IA gérer via process_commands non, via on_message
         await ctx.send("🤵 **Alfred** : Je ne suis pas sûr de comprendre quelle tâche administrative vous m'assignez, Monsieur.")
-
-@bot.command(name="parle")
-async def parle(ctx, *, text: str):
-    """Fait parler Alfred dans le vocal (TTS)"""
-    if not ctx.author.voice:
-        return await ctx.send("🤵 **Alfred** : Rejoignez un salon vocal d'abord, Monsieur.")
-    
-    # Connection
-    channel = ctx.author.voice.channel
-    vc = ctx.voice_client
-    if not vc:
-        vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
-    elif vc.channel != channel:
-        await vc.move_to(channel)
-
-    # Generation
-    if not elevenlabs_client:
-        # Nommer le fournisseur au salon sort du personnage — et n'aide personne :
-        # celui qui peut y remedier lit les journaux, pas le fil de discussion.
-        logger.warning("[VOIX] refuse : client ElevenLabs absent (cle manquante ?)")
-        return await ctx.send("🤵 **Alfred** : Je crains d'avoir égaré ma voix, Monsieur. "
-                              "L'écrit devra suffire.")
-
-    async with ctx.typing():
-        try:
-            # Run in executor to avoid blocking
-            def generate_audio():
-                audio = elevenlabs_client.generate(
-                    text=text,
-                    voice=ALFRED_VOICE_ID,
-                    model="eleven_multilingual_v2"
-                )
-                save(audio, "alfred_speech.mp3")
-                return "alfred_speech.mp3"
-
-            filename = await asyncio.to_thread(generate_audio)
-            
-            # Play
-            vc.stop()
-            vc.play(discord.FFmpegPCMAudio(filename))
-        except Exception as e:
-            await ctx.send(f"🤵 **Alfred** : J'ai une extinction de voix... ({e})")
-
-# SINK AUDIO (STT)
-
-import audioop
-
-class AlfredSink(voice_recv.AudioSink):
-    def __init__(self, ctx):
-        self.ctx = ctx
-        self.recognizer = sr.Recognizer()
-        self.buffer = io.BytesIO()
-        self.last_speech_time = datetime.now()
-        
-    def wants_opus(self):
-        return False # We want PCM
-
-    def write(self, user, data):
-        # Accumulate PCM data (Stereo 16-bit 48kHz)
-        self.buffer.write(data.pcm)
-
-    @voice_recv.AudioSink.listener()
-    def on_voice_packet(self, data):
-        pass # Optional hooks
-
-    def cleanup(self):
-        self.buffer.seek(0)
-        pcm_data = self.buffer.read()
-        
-        # Process Buffer (Raw PCM -> AudioData for SpeechRecognition)
-        try:
-            # Discord sends 48kHz Stereo 16-bit PCM (s16le)
-            # We convert to MONO for better STT compatibility using audioop (No ffmpeg needed!)
-            # tomono(fragment, width, left_factor, right_factor)
-            mono_data = audioop.tomono(pcm_data, 2, 0.5, 0.5)
-            
-            # Create AudioData object directly from raw bytes
-            audio_source = sr.AudioData(mono_data, 48000, 2)
-            
-            try:
-                # Google Speech Recognition interprets the raw audio
-                text = self.recognizer.recognize_google(audio_source, language="fr-FR")
-                logger.info(f"🎤 [STT] Entendu : '{text}'")
-                # Inject into bot logic
-                asyncio.run_coroutine_threadsafe(self.process_text(text), bot.loop)
-            except sr.UnknownValueError:
-                pass # Silence or noise
-            except Exception as e:
-                logger.error(f"STT Error: {e}")
-        except Exception as e:
-            logger.error(f"Audio Processing Error: {e}")
-
-    async def process_text(self, text):
-        # Simuler un message pour activer on_message
-        if "alfred" in text.lower() or "thé" in text.lower():
-            await self.ctx.send(f"🎤 **J'ai entendu** : \"{text}\"")
-            
-            # Reponse Rapide (Echo Intelligent)
-            if elevenlabs_client and self.ctx.voice_client:
-                # Simple logic for demo: Speak generic response or echo
-                # Ideal: Call Gemini here. For now, let's just acknowledge.
-                response_text = "Bien reçu Monsieur. Je m'en occupe."
-                
-                try:
-                    def generate_audio():
-                        audio = elevenlabs_client.generate(text=response_text, voice=ALFRED_VOICE_ID, model="eleven_multilingual_v2")
-                        save(audio, "alfred_response.mp3")
-                        return "alfred_response.mp3"
-                    
-                    filename = await asyncio.to_thread(generate_audio)
-                    self.ctx.voice_client.stop()
-                    self.ctx.voice_client.play(discord.FFmpegPCMAudio(filename))
-                except Exception as e:
-                    logger.warning(f"[VOCAL] synthese ou lecture audio impossible : {e}")
-
-@bot.command()
-async def ecoute(ctx):
-    """Rejoint le vocal et écoute (Expérimental - 10s)"""
-    if not ctx.author.voice:
-        return await ctx.send("🤵 **Alfred** : Vous n'êtes pas en vocal, Monsieur.")
-        
-    channel = ctx.author.voice.channel
-    vc = ctx.voice_client
-    
-    if not vc:
-        vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
-    
-    await ctx.send("🤵 **Alfred** : Je tends l'oreille pendant 10 secondes...")
-    
-    sink = AlfredSink(ctx)
-    vc.listen(sink)
-    
-    await asyncio.sleep(10) # Listen for 10s
-    
-    vc.stop_listening()
-    sink.cleanup()
-    await ctx.send("🤵 **Alfred** : Analyse terminée.")
-    await vc.disconnect()
 
 # VOCAL PATROL - DÉTECTION DE CHANT EN TEMPS RÉEL (Gemini Audio)
 
@@ -1426,11 +1218,8 @@ async def on_message(message):
     is_bot_talking = message.author.bot
     
     # Check Memory
-    rep = get_reputation(message.author.id) if DATABASE_AVAILABLE else None
-    quests = get_daily_quests(message.author.id) if DATABASE_AVAILABLE else None
     user_context = alfred_brain.get_user_context(
-        message.author.id, message.content or "", member=message.author,
-        reputation_data=rep, quests_data=quests
+        message.author.id, message.content or "", member=message.author
     )
 
     # VOCABULAIRE & TRIGGERS
@@ -1878,8 +1667,6 @@ async def on_message(message):
                         tool_result = "Action impossible."
                         if tool_name == "set_maintenance":
                             tool_result = tool_set_maintenance(args["status"])
-                        elif tool_name == "get_user_stats":
-                            tool_result = await tool_get_user_stats(args["user_id"])
                         
                         # Feedback loop
                         gemini_messages.append(resp.candidates[0].content) # Model Call

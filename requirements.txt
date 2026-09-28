@@ -28,9 +28,7 @@ pyflakes>=3.0.0
 fastapi>=0.118.0,<1.0.0
 pydantic>=2.0.0,<3.0.0
 
-SpeechRecognition>=3.10.0
 discord-ext-voice-recv
-elevenlabs>=1.50.0,<2.0.0
 # ⚠️ CVE-2025-69277 : discord.py[voice] impose lui-meme PyNaCl<1.6,>=1.5.0, et l'avis
 # vise crypto_core_ed25519_is_valid_point, que la voix Discord n'utilise pas.
 PyNaCl>=1.5.0,<1.6.0

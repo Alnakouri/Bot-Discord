@@ -15,11 +15,40 @@ from shared.shared_database import (
 )
 
 
-def setup_slash_commands(bot, bot_name):
-    """Initialise les commandes slash pour un bot spécifique."""
+# Ce que /help affiche, dans l'ordre. Une seule liste : une commande retiree par `sans`
+# disparait des DEUX endroits, et /help ne promet jamais une commande absente.
+_AIDE = [
+    ("reputation", "/reputation [user]", "Affiche vos points et votre rang."),
+    ("leaderboard", "/leaderboard [top]", "Classement de réputation du serveur."),
+    ("birthday", "/birthday <jour> <mois>", "Enregistre votre date d'anniversaire."),
+    ("quests", "/quests", "Affiche vos quêtes quotidiennes."),
+    ("stats", "/stats", "Statistiques des duels inter-bots."),
+    ("ping", "/ping", "Vérifie la latence du bot."),
+]
+_RETIRABLES = frozenset(nom for nom, _, _ in _AIDE)
+
+
+def setup_slash_commands(bot, bot_name, sans=frozenset()):
+    """Initialise les commandes slash pour un bot spécifique.
+
+    `sans` : les commandes a NE PAS poser pour ce bot (ni afficher dans /help). Vide par
+    defaut : les bots qui ne le passent pas gardent les sept. /help est toujours posee.
+    Alfred ne garde que /ping, /stats et /help (SUITE 16, decision d'Ahmed du 28/09).
+    """
+    sans = frozenset(sans)
+    inconnues = sans - _RETIRABLES
+    if inconnues:
+        # Une faute de frappe laisserait la commande en place sans rien dire.
+        raise ValueError(f"commandes slash inconnues dans `sans` : {sorted(inconnues)}")
+
+    def _poser(nom, **kw):
+        """`bot.tree.command`, ou un decorateur qui ne pose rien si `nom` est retiree."""
+        if nom in sans:
+            return lambda f: f
+        return bot.tree.command(name=nom, **kw)
 
     # ──────────────── /reputation ────────────────
-    @bot.tree.command(name="reputation", description="Affiche votre réputation et votre rang.")
+    @_poser("reputation", description="Affiche votre réputation et votre rang.")
     @app_commands.describe(user="L'utilisateur dont vous voulez voir la réputation (optionnel)")
     async def reputation(interaction: discord.Interaction, user: discord.Member = None):
         target = user or interaction.user
@@ -45,7 +74,7 @@ def setup_slash_commands(bot, bot_name):
         await interaction.response.send_message(embed=embed)
 
     # ──────────────── /leaderboard ────────────────
-    @bot.tree.command(name="leaderboard", description="Affiche le classement de réputation du serveur.")
+    @_poser("leaderboard", description="Affiche le classement de réputation du serveur.")
     @app_commands.describe(top="Nombre de joueurs à afficher (défaut : 10)")
     async def leaderboard(interaction: discord.Interaction, top: int = 10):
         top = min(max(top, 1), 25)  # Limiter entre 1 et 25
@@ -74,7 +103,7 @@ def setup_slash_commands(bot, bot_name):
         await interaction.response.send_message(embed=embed)
 
     # ──────────────── /birthday ────────────────
-    @bot.tree.command(name="birthday", description="Enregistre votre date d'anniversaire.")
+    @_poser("birthday", description="Enregistre votre date d'anniversaire.")
     @app_commands.describe(jour="Jour de naissance (1-31)", mois="Mois de naissance (1-12)")
     async def birthday(interaction: discord.Interaction, jour: int, mois: int):
         # Validation
@@ -100,7 +129,7 @@ def setup_slash_commands(bot, bot_name):
             await interaction.response.send_message("❌ Erreur lors de l'enregistrement.", ephemeral=True)
 
     # ──────────────── /quests ────────────────
-    @bot.tree.command(name="quests", description="Affiche vos quêtes quotidiennes.")
+    @_poser("quests", description="Affiche vos quêtes quotidiennes.")
     async def quests(interaction: discord.Interaction):
         user_quests = get_daily_quests(interaction.user.id)
         if not user_quests:
@@ -134,7 +163,7 @@ def setup_slash_commands(bot, bot_name):
         await interaction.response.send_message(embed=embed)
 
     # ──────────────── /stats ────────────────
-    @bot.tree.command(name="stats", description="Affiche les statistiques des duels inter-bots.")
+    @_poser("stats", description="Affiche les statistiques des duels inter-bots.")
     async def stats(interaction: discord.Interaction):
         global_stats = get_bot_interaction_stats(days=30)
 
@@ -167,7 +196,7 @@ def setup_slash_commands(bot, bot_name):
         await interaction.response.send_message(embed=embed)
 
     # ──────────────── /ping ────────────────
-    @bot.tree.command(name="ping", description="Vérifie la latence du bot.")
+    @_poser("ping", description="Vérifie la latence du bot.")
     async def ping(interaction: discord.Interaction):
         latency_ms = round(bot.latency * 1000)
         # Indicateur visuel de la qualité de la connexion
@@ -187,12 +216,9 @@ def setup_slash_commands(bot, bot_name):
             description="Voici les commandes disponibles sur tous les bots :",
             color=discord.Color.blue()
         )
-        embed.add_field(name="/reputation [user]", value="Affiche vos points et votre rang.", inline=False)
-        embed.add_field(name="/leaderboard [top]", value="Classement de réputation du serveur.", inline=False)
-        embed.add_field(name="/birthday <jour> <mois>", value="Enregistre votre date d'anniversaire.", inline=False)
-        embed.add_field(name="/quests", value="Affiche vos quêtes quotidiennes.", inline=False)
-        embed.add_field(name="/stats", value="Statistiques des duels inter-bots.", inline=False)
-        embed.add_field(name="/ping", value="Vérifie la latence du bot.", inline=False)
+        for nom, usage, description in _AIDE:
+            if nom not in sans:
+                embed.add_field(name=usage, value=description, inline=False)
         embed.set_footer(text=f"Écosystème Discord Bots v2.5 • {bot_name}")
         await interaction.response.send_message(embed=embed)
 

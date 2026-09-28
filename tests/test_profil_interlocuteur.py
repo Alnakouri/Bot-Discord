@@ -182,9 +182,17 @@ def test_7_les_bots_utilisent_construire_profil_discord():
         ]
         assert appels, f"{nom} importe construire_profil_discord mais ne l'appelle jamais"
 
-        # Lot 3 : la reputation et les quetes doivent reellement etre passees
+        # Lot 3 : la reputation et les quetes doivent reellement etre passees —
+        # SAUF chez Alfred, qui n'a plus ni reputation ni quetes (SUITE 16, decision
+        # d'Ahmed du 28/09). Chez lui le verrou s'inverse : elles ne doivent PAS revenir.
         for appel in appels:
             donnes = {kw.arg for kw in appel.keywords}
+            if nom == "Alfred":
+                assert not {"reputation_data", "quests_data"} & donnes, (
+                    "Alfred repasse la reputation ou les quetes a son profil : retirees "
+                    "par la SUITE 16."
+                )
+                continue
             assert {"reputation_data", "quests_data"} <= donnes, (
                 f"{nom} appelle construire_profil_discord sans "
                 f"{sorted({'reputation_data', 'quests_data'} - donnes)} — le lot 3 "
