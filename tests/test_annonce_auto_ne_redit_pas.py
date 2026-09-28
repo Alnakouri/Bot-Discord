@@ -312,21 +312,24 @@ def test_6_drapeau_ne_fuit_pas(monkeypatch):
 
     ws = object()
 
-    # Annonce auto qui lève
-    sent = asyncio.run(bot._try_link_timer("canal", ws))
-    assert sent is False
-    assert _ANNONCE_AUTO.get() is False, "Le drapeau _ANNONCE_AUTO doit valoir False après l'échec"
+    async def _scenario():
+        # Annonce auto qui lève
+        sent = await bot._try_link_timer("canal", ws)
+        assert sent is False
+        assert _ANNONCE_AUTO.get() is False, "Le drapeau _ANNONCE_AUTO doit valoir False après l'échec"
 
-    # Maintenant le viewer tape !discord avec un vrai callback
-    _armer_lien(bot, every=900, min_msgs=15)
-    t_actuel[0] = 1010.0
-    succes = asyncio.run(bot._handle_command("canal", "viewer1", "!discord", ws))
-    assert succes is True
-    assert len(envoyes) == 1
-    assert envoyes[0][1] == f"Phrase en cache {URL}"
-    # Le cache a été utilisé (pas de nouvel appel au modèle)
-    assert compteur["n"] == 0
-    assert _ANNONCE_AUTO.get() is False
+        # Maintenant le viewer tape !discord avec un vrai callback
+        _armer_lien(bot, every=900, min_msgs=15)
+        t_actuel[0] = 1010.0
+        succes = await bot._handle_command("canal", "viewer1", "!discord", ws)
+        assert succes is True
+        assert len(envoyes) == 1
+        assert envoyes[0][1] == f"Phrase en cache {URL}"
+        # Le cache a été utilisé (pas de nouvel appel au modèle)
+        assert compteur["n"] == 0
+        assert _ANNONCE_AUTO.get() is False
+
+    asyncio.run(_scenario())
 
 
 def test_7_commande_bloquee_ne_repousse_rien(monkeypatch):

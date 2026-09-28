@@ -571,7 +571,7 @@ def test_sugar_tourne_sur_les_types_de_question():
     captures = []
     async def faux_ecrire(instruction, system_prompt, cmd):
         captures.append(instruction)
-        return "Venez nous voir sur Discord !"
+        return f"Venez nous voir sur Discord {len(captures)} !"
     bot._ecrire_phrase_de_lien = faux_ecrire
 
     for i in range(4):
@@ -693,7 +693,7 @@ def test_sugar_rappelle_le_vouvoiement_avec_chaque_type():
     captures = []
     async def faux_ecrire(instruction, system_prompt, cmd):
         captures.append(instruction)
-        return "Venez nous voir sur Discord !"
+        return f"Venez nous voir sur Discord {len(captures)} !"
     bot_sugar._ecrire_phrase_de_lien = faux_ecrire
 
     for i in range(len(types)):

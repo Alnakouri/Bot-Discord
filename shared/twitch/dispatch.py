@@ -322,6 +322,15 @@ def _nettoyer_phrase_de_lien(texte: str | None, bot_id: str | None = None) -> st
     return _borner(phrase, BORNE_LIEN_PAR_BOT.get(bot_id or "", 200))
 
 
+def _empreinte_phrase(phrase: str) -> str:
+    """Ce qui reste d'une phrase quand on ignore casse, ponctuation, emoji et espaces.
+
+    Deux phrases de meme empreinte se lisent pareil dans le chat : « Venez ! 🗡️ » et
+    « venez !! » sont la meme redite pour un viewer.
+    """
+    return "".join(c for c in phrase.casefold() if c.isalnum())
+
+
 def _borner(phrase: str, maxi: int) -> str:
     """Borne la phrase SANS couper un mot en deux.
 
@@ -849,6 +858,10 @@ class DispatchMixin:
     #     sheo     2 generations exploitables sur 6 (429 Groq) : pas mesure     non livre
     ACCROCHE_AU_JEU = {"sugar", "alfred", "malena", "johnny"}
 
+    # Combien de phrases de lien on se souvient, par commande. 20 couvre une soiree de
+    # live a 15 min d'intervalle (~5 h) ; la redite mesuree etait a 10 generations d'ecart.
+    MEMOIRE_PHRASES_DE_LIEN = 20
+
     # Clauses ajoutees POUR UN SEUL BOT, et SEULEMENT quand un jeu est diffuse : elles
     # parlent de « ce jeu », et hors live elles n'auraient pas de sens.
     #
@@ -1092,6 +1105,12 @@ class DispatchMixin:
         vue = cache.get(cle_cache)
         if vue and not _ANNONCE_AUTO.get() and maintenant - vue[0] < 900:
             return f"{vue[1]} {url}"
+
+        deja_ecrites = getattr(self, "_phrases_de_lien_ecrites", None)
+        if deja_ecrites is None:
+            deja_ecrites = self._phrases_de_lien_ecrites = {}
+        empreintes = deja_ecrites.setdefault(
+            cmd, collections.deque(maxlen=self.MEMOIRE_PHRASES_DE_LIEN))
         # APRES le cache, jamais avant : un echec IGDB n'est pas mis en cache, et chaque
         # `!discord` servi depuis le cache aurait paye jusqu'a 3 s d'attente pour rien.
         fiche = await self._fiche_du_jeu() if jeu else None
@@ -1282,6 +1301,12 @@ class DispatchMixin:
             phrase = _nettoyer_phrase_de_lien(texte, self.bot_id)
             if phrase and _affirme_une_epoque(phrase, jeu, fiche):
                 phrase = None
+            if phrase and _empreinte_phrase(phrase) in empreintes:
+                self.logger.info(
+                    f"🔁 [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd} deja ecrite, "
+                    f"essai {essai}/2 : « {phrase[:90]} »"
+                )
+                phrase = None
             if phrase:
                 break
             self.logger.info(
@@ -1291,6 +1316,7 @@ class DispatchMixin:
         else:
             return None
 
+        empreintes.append(_empreinte_phrase(phrase))
         cache[cle_cache] = (maintenant, phrase)
         self.logger.info(
             f"✨ [TWITCH_CHAT:{self.bot_id}] Phrase de lien !{cmd}"
