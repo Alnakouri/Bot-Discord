@@ -1229,7 +1229,10 @@ async def before_daily_bio_sheo():
 # 0 mention rattrapee pour des centaines de relectures de chaque salon : on_message
 # repond deja en direct. Le seul cas utile est la mention tombee pendant que le bot
 # etait deconnecte — et `on_ready` relance cette boucle a chaque (re)connexion.
-@tasks.loop(count=1)
+# ⚠️ `minutes=2` ne sert JAMAIS (count=1 s'arrete apres un passage) : sans intervalle,
+# la « prochaine » iteration tombe dans le passe et `core.boucles` journalisait a chaque
+# demarrage « 0 s de retard (veille de l'hote ?) » — une alerte pour du nominal.
+@tasks.loop(count=1, minutes=2)
 async def check_missed_mentions_sheo():
     """Au (re)demarrage : repond aux mentions de Sheogorath restees sans reponse (< 10 min)."""
     global checked_messages_sheo

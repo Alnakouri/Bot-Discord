@@ -43,11 +43,15 @@ def test_la_boucle_ne_tourne_qu_une_fois(rel, nom):
                if isinstance(d, ast.Call) and getattr(d.func, "attr", None) == "loop"]
     assert len(boucles) == 1, f"{nom} n'est plus une tasks.loop"
     mots = {k.arg: k.value for k in boucles[0].keywords}
-    assert set(mots) == {"count"}, (
-        f"{nom} a retrouve un intervalle {sorted(set(mots) - {'count'})} : "
-        "la relecture de chaque salon toutes les 2 min revient"
-    )
+    # Sans `count=1`, l'intervalle redevient une vraie cadence : la relecture de chaque
+    # salon toutes les 2 min revient.
+    assert "count" in mots, f"{nom} n'a plus `count=` : elle tourne de nouveau en continu"
     assert isinstance(mots["count"], ast.Constant) and mots["count"].value == 1
+    # Et un intervalle NON nul, sinon `core.boucles` crie « 0 s de retard » a chaque
+    # demarrage (constate le 29/09 au premier deploiement).
+    assert set(mots) & {"seconds", "minutes", "hours"}, (
+        f"{nom} : count=1 sans intervalle = fausse alerte de rattrapage au demarrage"
+    )
 
 
 @pytest.mark.parametrize("rel,nom", CAS, ids=[c[1] for c in CAS])
