@@ -346,8 +346,9 @@ def _fabriques_du_fichier(arbre):
     return trouvees
 
 
-@pytest.mark.parametrize("chemin", ["Alfred/bot_alfred.py", "MaiqBot/bot_maiq.py",
-                                    "Sheogorath/bot_sheogorath.py"])
+# M'aiq n'y est plus : ses trois appels Gemini hors cascade etaient la rumeur du jour et
+# les enigmes, retirees par la SUITE 17 (28/09). Il n'a plus aucune `fabrique=`.
+@pytest.mark.parametrize("chemin", ["Alfred/bot_alfred.py", "Sheogorath/bot_sheogorath.py"])
 def test_une_fabrique_rend_le_client_jamais_la_methode(chemin):
     """⚠️ Le verrou de la regression du 2026-09-07.
 

@@ -66,19 +66,6 @@ except ImportError:
 # Répertoire de données (même convention que sheo_faveur : surchargé par l'env en prod)
 DATA_DIR = os.getenv("DATA_DIR", ".")
 
-# IMPORT VOICE MODULE (TTS Piper — Open Source)
-try:
-    from sheo_voice import (
-        send_voice_response, cmd_join_voice, cmd_leave_voice,
-        disconnect_if_idle, is_tts_enabled, generate_tts,
-        ensure_voice_connection, play_audio, VOICE_AUTO_CHANCE
-    )
-    VOICE_AVAILABLE = is_tts_enabled()
-except ImportError:
-    VOICE_AVAILABLE = False
-    send_voice_response = None
-    logger_msg = "⚠️ [VOICE] Module sheo_voice.py non disponible"
-
 # IMPORT SECURE ENV LOADER (Supports encrypted .env files)
 from core.secure_env import load_secure_env
 load_secure_env(Path(__file__).parent)
@@ -130,7 +117,7 @@ logger = setup_logger("sheogorath")
 try:
     from shared.shared_database import (
         get_or_create_user, is_maintenance_mode, is_ignored_channel,
-        get_active_riddle, delete_active_riddle, get_reputation, get_reputation_level,
+        get_reputation, get_reputation_level,
         add_reputation, get_daily_quests, log_interaction
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
@@ -143,13 +130,6 @@ try:
     except ImportError:
         GAMES_AVAILABLE = False
     
-    def get_maiq_riddle(channel_id: int):
-        """Récupère l'énigme active (DB partagée avec M'aiq)."""
-        return get_active_riddle(channel_id)
-    
-    def delete_maiq_riddle(channel_id: int):
-        """Supprime l'énigme active (DB partagée avec M'aiq)."""
-        delete_active_riddle(channel_id)
 except ImportError as e:
     logger.warning(f"⚠️ [SHEO] Modules optionnels non disponibles: {e}")
     DATABASE_AVAILABLE = False
@@ -366,7 +346,6 @@ faveur_system = FaveurSystem()
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-intents.voice_states = True  # Voice channel support (TTS Piper)
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -850,15 +829,6 @@ async def on_ready():
         check_missed_mentions_sheo.start()  # Détection mentions manquées
     if not decree_cleanup_loop.is_running():
         decree_cleanup_loop.start()  # Nettoyage des rôles de décret expirés/orphelins
-    # auto_riddle_loop_sheo.start()  # Transféré à M'aiq
-    
-    # VOICE TTS — Démarrage du check d'inactivité
-    if VOICE_AVAILABLE:
-        if not voice_idle_check.is_running():
-            voice_idle_check.start()
-        logger.info(f"🎤 [VOICE] Système TTS Piper activé (auto-voice: {VOICE_AUTO_CHANCE*100:.0f}%)")
-    else:
-        logger.info("🔇 [VOICE] TTS désactivé (Piper non configuré)")
     
     # Enregistrement des commandes : une seule fois. `on_ready` refire a chaque
     # RESUME, et `@bot.tree.command` leve alors `CommandAlreadyRegistered` — ce qui
@@ -1562,115 +1532,6 @@ async def wabbajack_cmd(ctx, target: discord.Member = None):
 # Punitions importées de sheo_punishments.py
 # (apply_temporary_nickname, PUNISHMENT_NICKS, get_insult_severity, DURATION_MAP)
 
-# ═══════════════════════════════════════════════════════════════
-# COMMANDES VOCALES — TTS PIPER (Open Source)
-# ═══════════════════════════════════════════════════════════════
-
-@bot.command(name="rejoins", aliases=["join", "vocal"])
-async def join_voice_cmd(ctx):
-    """Sheogorath rejoint le canal vocal de l'utilisateur."""
-    if not VOICE_AVAILABLE:
-        # Le « (TTS non configure) » nommait la mecanique au salon. La cause reste
-        # entiere dans le journal ; la replique, elle, reste dans la voix du Prince.
-        logger.info("🔇 [VOIX] refuse : VOICE_AVAILABLE = False (TTS non configure)")
-        await ctx.send("🔇 Ma voix divine s'est enrouée à force de hurler aux papillons, mortel. "
-                       "Tu devras te contenter de l'écrit.")
-        return
-    await cmd_join_voice(ctx)
-
-@bot.command(name="quitte", aliases=["leave", "degage"])
-async def leave_voice_cmd(ctx):
-    """Sheogorath quitte le canal vocal."""
-    if not VOICE_AVAILABLE:
-        await ctx.send("🔇 Je ne suis pas dans un canal vocal, crétin !")
-        return
-    await cmd_leave_voice(ctx)
-
-@bot.command(name="voix", aliases=["speak", "dis"])
-async def speak_cmd(ctx, *, text: str = None):
-    """Sheogorath parle dans le vocal !
-    Usage: !voix [texte]
-    Sans texte, il génère une phrase aléatoire."""
-    if not VOICE_AVAILABLE:
-        await ctx.send("🔇 Ma voix divine est en maintenance, mortel !")
-        return
-    
-    if not ctx.author.voice:
-        await ctx.send("🔇 Rejoins un canal vocal d'abord, imbécile !")
-        return
-    
-    if not text:
-        # Génère une phrase random
-        text = get_smart_string_response_v2("parle", ctx.guild.id)
-    
-    async with ctx.typing():
-        logger.info(f"🎤 [CMD VOIX] Demande de voix par {ctx.author.name}: {text}")
-        success = await send_voice_response(bot, ctx, text, force=True)
-        
-    if not success:
-        await ctx.send("🌀 Ma voix s'est perdue entre les dimensions d'Oblivion... Réessaie, mortel !")
-    else:
-        await ctx.send(f"🎤 *Le Prince de la Folie a parlé !*")
-
-@tasks.loop(seconds=60)
-async def voice_idle_check():
-    """Vérifie périodiquement les connexions vocales inactives."""
-    if VOICE_AVAILABLE:
-        await disconnect_if_idle(bot)
-
-@voice_idle_check.before_loop
-async def before_voice_idle_check():
-    await bot.wait_until_ready()
-
-
-@bot.command(name="solution", aliases=["soluce"])
-async def solution_cmd(ctx):
-    """Ferme l'énigme de M'aiq (Sheogorath tranche)."""
-    if not DATABASE_AVAILABLE:
-        await ctx.send("🧀 Les entrailles du serveur sont indisponibles !")
-        return
-    
-    active_riddle = get_maiq_riddle(ctx.channel.id)
-    if not active_riddle:
-        await ctx.send("Il n'y a pas d'énigme en cours, espèce de fou ! Tu entends des voix ? 🤪")
-        return
-
-    # PLUS DE VÉRIFICATION PARTICIPANT : Sheogorath peut intervenir à tout moment
-    logger.info(f"🧀 [SOLUCE CMD] {ctx.author.name} demande la soluce. Énigme active trouvée.")
-    
-    is_impossible = active_riddle.get("is_impossible", 0) == 1
-    
-    if is_impossible:
-        # TRUTH REVELATION
-        await ctx.send(
-            "🧀 **AH ! JE VOUS L'AVAIS DIT !**\n"
-            "M'aiq vous a menti ! Il n'y a **PAS** de réponse ! C'est un chat, que croyiez-vous ? 🤪\n"
-            "Je ferme cette farce. Circulez !"
-        )
-        logger.info(f"🧀 [SOLUCE CMD] Sheogorath a révélé le MENSONGE (Impossible Riddle).")
-    else:
-        # MOCKERY (Normal Riddle) - Sheogorath se moque mais ferme l'énigme
-        mock_msg = random.choice([
-            "Vous donnez votre langue au chat ? Pathétique ! Je ne vous donnerai pas la réponse, souffrez ! 🤪",
-            "Abandonner si près du but... Mes fromages ont plus de volonté que vous !",
-            "La réponse ? Hahaha ! Vous pensiez que je vous la donnerais ? Cherchez encore... ah non, c'est FINI ! 🧀",
-            "M'aiq a gagné. Vous avez perdu. C'est l'ordre naturel des choses."
-        ])
-        await ctx.send(f"🧀 **ÉCHEC :** {mock_msg}")
-        logger.info(f"🧀 [SOLUCE CMD] Sheogorath a fermé l'énigme (Réponse cachée).")
-
-    # CLEANUP : Désépingler + Supprimer de la DB (on garde les messages pour conserver les réactions M'aiq ✅/❌)
-    riddle_message_id = active_riddle.get("message_id")
-    if riddle_message_id:
-        try:
-            ref_msg = await ctx.channel.fetch_message(riddle_message_id)
-            await ref_msg.unpin()
-        except Exception as e:
-            logger.warning(f"⚠️ Impossible de désépingler l'énigme : {e}")
-
-    delete_maiq_riddle(ctx.channel.id)
-
-
 @bot.command(name="imposteur")
 async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
     """
@@ -1867,38 +1728,9 @@ async def on_message(message):
         return
      
     msg_lower = message.content.lower()
-    is_name_mentioned = any(name in msg_lower for name in ["sheogorath", "sheo", "prince de la folie", "jyggalag"])
     
     # DECISION FINALE DE RÉPONSE
     # (should_respond will be re-evaluated in the decision matrix below)
-    
-    # ---------------------------------------------------------
-    # SOLUCE RIDDLE M'AIQ (Sheogorath Only)
-    # ---------------------------------------------------------
-    if any(keyword in msg_lower for keyword in ["soluce", "réponse", "solution", "donne moi la réponse"]) and (is_mentioned or is_name_mentioned):
-        active_riddle = get_maiq_riddle(message.channel.id)
-        if active_riddle:
-            answer = active_riddle['answer'][0]
-            question = active_riddle['question']
-            mock_msg = random.choice([
-                f"Oh, les mortels sont si bêtes ! La réponse à '{question}' est **{answer}** ! Hahaha !",
-                f"M'aiq vous torture ? Bien. La réponse est **{answer}**. Maintenant, fichez le camp.",
-                f"C'est **{answer}**, bande d'idiots sans imagination ! Je vous l'offre.",
-                f"Vous abandonnez ? Pathétique. La réponse était **{answer}**. Allez pleurer ailleurs."
-            ])
-            await message.channel.send(mock_msg)
-            if active_riddle.get("message_id"):
-                try:
-                    ref_msg = await message.channel.fetch_message(active_riddle["message_id"])
-                    await ref_msg.unpin()
-                except Exception as e:
-                    logger.warning(f"⚠️ Impossible de désépingler l'énigme : {e}")
-            delete_maiq_riddle(message.channel.id)
-            logger.info(f"🧀 [SOLUCE] Sheogorath a donné la réponse : {answer}")
-            return
-        elif "soluce" in msg_lower or "solution" in msg_lower:
-             await message.channel.send("Il n'y a pas d'énigme, espèce de fou ! Tu entends des voix ? 🤪")
-             return
     
     has_image = classify_request(message.content, message.attachments, silent=True)["has_image"]
     if has_image:
@@ -2704,22 +2536,6 @@ async def on_message(message):
         # CONVERSION DES MENTIONS TEXTUELLES (via sheo_mentions.py)
         response_text = await convert_text_mentions_to_discord(response_text, message.channel)
         
-        # ══════════════════════════════════════════════════
-        # AUTO-VOICE — TTS Piper (si l'utilisateur est en vocal)
-        # ══════════════════════════════════════════════════
-        voice_played = False
-        if VOICE_AVAILABLE and send_voice_response and not message.author.bot:
-            try:
-                voice_played = await send_voice_response(bot, message, response_text, mood=current_mood)
-                if voice_played:
-                    logger.info(f"🎤 [AUTO-VOICE] Réponse vocale envoyée à {message.author.name}")
-            except Exception as e:
-                logger.warning(f"⚠️ [AUTO-VOICE] Erreur: {e}")
-        
-        # Préfixer le message texte si vocal joué
-        if voice_played:
-            response_text = f"🎤 {response_text}"
-        # ══════════════════════════════════════════════════
             
         # Split message if too long
         if len(response_text) > 2000:

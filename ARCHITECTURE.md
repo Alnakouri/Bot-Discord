@@ -54,7 +54,6 @@ Bot Discord/
 │
 ├── Sheogorath/              # Bot Sheogorath (Prince de la Folie)
 │   ├── bot_sheogorath.py    # Point d'entrée
-│   ├── sheo_voice.py        # 🎤 Système Vocal (Chatterbox Turbo / Piper)
 │   ├── sheo_data.py         # Personnalité, répliques, données
 │   ├── sheo_memory.py       # Système de mémoire
 │   ├── sheo_punishments.py  # Système de punitions (Wabbajack)
@@ -76,7 +75,6 @@ Bot Discord/
 │   ├── bot_maiq.py          # Point d'entrée
 │   ├── maiq_data.py         # Répliques et rumeurs de M'aiq
 │   ├── maiq_memory.py       # Gestion de mémoire à long terme
-│   └── minigames.py         # Mini-jeux (énigmes...)
 │
 ├── JohnnyBot/               # Bot Johnny Silverbot (Rockerboy Cyberpunk)
 │   ├── bot_johnny.py        # Point d'entrée
@@ -227,4 +225,4 @@ Les requêtes sont classifiées puis routées pour optimiser les coûts :
 
 4. **Silence total entre bots** : chaque `on_message` commence par `if message.author.bot: return`. Les bots ne se répondent JAMAIS entre eux (l'ancien « duel tracker » inter-bots a été retiré).
 
-5. **Sheogorath bénéficie d'une voix haute fidélité** : Performance de Philippe Bozo (VF TESO) clonée via Chatterbox TTS. Le moteur vocal tourne sur GPU (CUDA) via un conteneur dédié (`chatterbox-tts`).
+5. **Aucun bot ne parle en vocal** : la voix de Sheogorath (Piper / Chatterbox) a été retirée du code le 2026-09-28 (SUITE 17), comme `!parle` d'Alfred (SUITE 16). Seule la patrouille vocale d'Alfred (`!surveille`) écoute encore les salons vocaux. `chatterbox-server/` reste dans le dépôt, sans aucun bot pour l'appeler.

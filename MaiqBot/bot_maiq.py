@@ -96,15 +96,12 @@ from core.safe_client import get_client as get_safe_genai_client
 try:
     from shared.shared_database import (
         get_or_create_user, add_reputation, log_interaction,
-        is_maintenance_mode, complete_quest, is_ignored_channel, get_active_riddle,
+        is_maintenance_mode, is_ignored_channel,
         get_reputation, get_reputation_level, get_next_rank_info, get_user_interactions,
-        is_riddle_duplicate, add_to_riddle_history, add_riddle_participant, add_riddle_winner,
-        get_riddle_winners, delete_active_riddle, add_riddle_streak,
-        reset_riddle_streak, get_all_active_riddles, get_daily_quests
+        get_daily_quests
     )
     from shared.slash_commands import setup_slash_commands, sync_slash_commands
     from shared.server_events import handle_member_join, handle_member_remove, check_and_send_birthdays
-    from minigames import check_answer, get_hint, start_tracking_riddle
     DATABASE_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"⚠️ [M'aiq] Modules optionnels non disponibles: {e}")
@@ -126,7 +123,6 @@ except ImportError:
 
 # CREDENTIALS
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-recent_rumor_targets = {}
 
 # API KEYS ROTATION (Google Gemini)
 GEMINI_API_KEYS = [
@@ -363,11 +359,6 @@ async def on_ready():
     
     if not status_loop_maiq.is_running():
         status_loop_maiq.start()
-    if not daily_rumor_check.is_running():
-        daily_rumor_check.start()  # Rumeur quotidienne (jours pairs)
-    # auto_riddle_loop_maiq.start() # Énigmes de M'aiq - DEACTIVATED (ON COMMAND ONLY)
-    if not riddle_passive_hint_loop.is_running():
-        riddle_passive_hint_loop.start()  # Relance des indices
 
     
     # NOUVELLES TÂCHES
@@ -387,12 +378,6 @@ async def on_ready():
             if not twitch_poll_loop.is_running():
                 twitch_poll_loop.start()
 
-    # Rétroactif Riddle Check
-    try:
-        await check_missed_riddle_answers()
-    except Exception as e:
-        logger.error(f"❌ [RIDDLE CHECK] Erreur: {e}")
-
     # Enregistrement des commandes : une seule fois. `on_ready` refire a chaque
     # RESUME, et `@bot.tree.command` leve alors `CommandAlreadyRegistered` — ce qui
     # avorte le `try` AVANT `sync_slash_commands`, donc sans resynchronisation.
@@ -408,7 +393,7 @@ async def on_ready():
             logger.info("[SLASH] Commandes slash initialisées")
         except Exception as e:
             # on_ready rejoue a chaque reconnexion : la 2e pose leve
-            # CommandAlreadyRegistered et avortait le rattrapage des enigmes.
+            # CommandAlreadyRegistered et avortait la suite de on_ready.
             logger.error(f"[SLASH] Erreur: {e}")
 
     # INITIALISATION DES MINI-JEUX
@@ -417,68 +402,6 @@ async def on_ready():
             setup_games(bot, logger, PERSONA)
         except Exception as e:
             logger.error(f"[GAMES] Erreur d'initialisation des mini-jeux: {e}")
-
-async def check_missed_riddle_answers():
-    """
-    Vérifie si des bonnes réponses ont été données pendant que le bot était éteint.
-    """
-    if not DATABASE_AVAILABLE: return
-    
-    logger.info("🕵️ [STARTUP] Vérification des réponses manquées...")
-    
-    active_riddles = get_all_active_riddles()
-    if not active_riddles:
-        logger.info("✅ [STARTUP] Pas d'énigmes actives.")
-        return
-        
-    for r in active_riddles:
-        channel_id = r["channel_id"]
-        channel = bot.get_channel(channel_id)
-        if not channel: continue
-        
-        # On ne check que si l'énigme a un message de départ (pour savoir quand ça a commencé)
-        if not r.get("started_at"): continue
-        
-        try:
-            start_time = datetime.fromisoformat(r["started_at"])
-            # On scanne les mesages APRES le début de l'énigme
-            # (Limitons à 100 messages pour éviter d'être trop lent)
-            messages = []
-            async for m in channel.history(limit=100, after=start_time):
-                messages.append(m)
-            
-            # Check answers
-            for m in messages:
-                if m.author.bot: continue
-                
-                # Check if already winner
-                if m.author.id in r.get("winners", []): continue
-                
-                correct, reward, msg_text = check_answer(channel_id, m.content)
-                if correct:
-                    logger.info(f"⚡ [STARTUP CATCH-UP] Bonne réponse trouvée de {m.author.name} !")
-                    
-                    # Award logic (simplified replication of on_message)
-                    add_riddle_winner(channel_id, m.author.id)
-                    new_streak = add_riddle_streak(m.author.id)
-                    
-                    bonus = 0
-                    if new_streak % 3 == 0: bonus = 30
-                    
-                    total_reward = reward + bonus
-                    add_reputation(m.author.id, total_reward, "Rattrapage Enigme (Offline)")
-                    complete_quest(m.author.id, "participate_game")
-                    
-                    # Notify
-                    try:
-                        await m.reply(f"🎉 **M'aiq s'était endormi...** Mais il a vu ta réponse ! Tu gagnes **+{total_reward}** points ! 💎")
-                        await m.add_reaction("✅")
-                    except Exception as e:
-                        logger.debug(f"[ENIGME] rattrapage hors-ligne : notification impossible : {e}")
-                    
-        except Exception as e:
-            logger.error(f"⚠️ [STARTUP CHECK FAIL] Canal {channel.name}: {e}")
-
 
 # STATUS VARIABLE
 current_maiq_activity = "Chercher des pinces (Calipers)"
@@ -573,191 +496,7 @@ async def on_raw_reaction_add(payload):
         retiree=0
     )
 
-daily_rumor_published = False  # Flag pour éviter les doublons
-
-@tasks.loop(hours=1)
-async def daily_rumor_check():
-    """Vérifie si c'est le moment de publier la rumeur quotidienne (jours pairs uniquement)."""
-    global daily_rumor_published
-    
-    now = datetime.now()
-    day = now.day
-    hour = now.hour
-    
-    # Reset le flag à minuit
-    if hour == 0:
-        daily_rumor_published = False
-        return
-    
-    if day % 2 != 0:
-        return  # Jour impair = Sheogorath publie, pas nous
-    
-    # Fenêtre horaire : 14h-22h
-    if hour < 14 or hour >= 22:
-        return
-    
-    # Déjà publié aujourd'hui ?
-    if daily_rumor_published:
-        return
-    
-    # Probabilité de publication dans cette heure (pour étaler entre 14h-22h)
-    if random.random() > 0.125:
-        return
-    
-    # ON PUBLIE !
-    daily_rumor_published = True
-    await publish_daily_rumor()
-
-async def publish_daily_rumor():
-    """Publie une rumeur sur un utilisateur actif dans #la-taverne-des-bots."""
-    # Chercher le canal
-    target_channel = None
-    for guild in bot.guilds:
-        for channel in guild.text_channels:
-            if "taverne" in channel.name.lower() and "bot" in channel.name.lower():
-                target_channel = channel
-                break
-        if target_channel:
-            break
-    
-    if not target_channel:
-        logger.warning("❌ [RUMEUR] Canal 'la-taverne-des-bots' introuvable.")
-        return
-    
-    # Collecter les utilisateurs récents de ce canal
-    active_users = []
-    try:
-        async for msg in target_channel.history(limit=100):
-            if not msg.author.bot and msg.author not in active_users:
-                active_users.append(msg.author)
-            if len(active_users) >= 10:
-                break
-    except Exception as e:
-        logger.error(f"❌ [RUMEUR] Erreur lecture historique: {e}")
-        return
-    
-    if not active_users:
-        logger.warning("❌ [RUMEUR] Aucun utilisateur actif trouvé.")
-        return
-    
-    # Choisir une cible
-    target_user = random.choice(active_users)
-    
-    # Générer la rumeur via LLM
-    rumor_prompt = (
-        f"SYSTEM: {PERSONALITY_PROMPT}\n"
-        f"INSTRUCTION: Invente une RUMEUR absurde et drôle sur {target_user.display_name}. "
-        "La rumeur doit être courte (1-2 phrases max), dans le style de M'aiq (évasif, mystérieux). "
-        "Commence par 'M'aiq a entendu dire que...' ou 'Certains disent que...'. "
-        "Sois créatif et fais référence au lore Elder Scrolls si possible. "
-        f"IMPORTANT: Mentionne l'utilisateur avec '<@{target_user.id}>' dans la rumeur."
-    )
-    
-    rumor_text = None
-    
-    # Try GROQ first
-    if groq_client:
-        rumor_text = await appel_hors_cascade(
-            "groq", groq_client.chat.completions.create,
-            key_manager=key_manager, bot_label="M'aiq", modele=GROQ_FAST, timeout=30,
-            messages=[{"role": "user", "content": rumor_prompt}],
-            model=GROQ_FAST,
-            **groq_kwargs(GROQ_FAST),
-            temperature=0.9,
-        )
-    
-    # Fallback Gemini
-    if not rumor_text:
-        rumor_text = await appel_hors_cascade(
-            "gemini",
-            key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
-            fabrique=lambda cle: get_safe_genai_client(api_key=cle),
-            methode="models.generate_content",
-            model='gemini-3.5-flash', contents=rumor_prompt,
-        )
-    
-    if not rumor_text:
-        # Fallback statique
-        rumor_text = f"M'aiq a entendu dire que <@{target_user.id}> a été vu vendant du sucre lunaire à Blancherive. Mais M'aiq n'a rien vu. 🤫"
-    
-    # Clean artifacts
-    llm_artifacts = ["[INST]", "[/INST]", "</s>", "<s>", "<<SYS>>", "<</SYS>>"]
-    for artifact in llm_artifacts:
-        rumor_text = rumor_text.replace(artifact, "")
-    rumor_text = rumor_text.strip()
-    
-    # Publier avec le tag spécial pour que Sheogorath détecte
-    await target_channel.send(f"📢 **[RUMEUR DU JOUR]** {rumor_text}")
-    
-    # Enregistrer la cible pour l'interactivité
-    recent_rumor_targets[target_user.id] = datetime.now().timestamp()
-    logger.info(f"🐱 [RUMEUR PUBLIÉE] Cible: {target_user.display_name}")
-
-# ÉNIGMES DE M'AIQ (Transféré de Sheogorath)
-
-@tasks.loop(minutes=5)
-async def riddle_passive_hint_loop():
-    """Surveille les énigmes actives et poste un indice si bloqué > 15min sans spammer."""
-    await bot.wait_until_ready()
-    try:
-        from shared.shared_database import get_all_active_riddles
-        active_riddles = get_all_active_riddles()
-        if not active_riddles: return
-        
-        now = datetime.now()
-        for r in active_riddles:
-            started_at_str = r.get("started_at")
-            if not started_at_str: continue
-            
-            started_at = datetime.fromisoformat(started_at_str)
-            age_mins = (now - started_at).total_seconds() / 60
-            
-            # Seulement dans la fenêtre 15-20 min pour qu'elle pop exactement 1 fois toutes les énigmes
-            if 15.0 <= age_mins < 20.0:
-                channel = bot.get_channel(r["channel_id"])
-                if channel:
-                    hint = r.get("hint", "Aucun indice pour vous.")
-                    await channel.send(f"😼 **M'aiq remarque que vos esprits sont lents aujourd'hui...** Un indice : *{hint}*")
-    except Exception as e:
-        logger.error(f"[HINT LOOP] Erreur: {e}")
-
-# UTILITAIRE : Fermeture propre d'une énigme (Désépingler + Supprimer réponses)
-
-async def close_riddle_cleanup(channel, riddle_message_id: int = None):
-    """
-    Ferme proprement une énigme :
-    - Désépingler le message de l'énigme
-    - Supprimer la DB entry
-    (On ne purge PAS les messages de réponse pour conserver les réactions ✅/❌ de M'aiq)
-    """
-    # 1. Désépingler
-    if riddle_message_id:
-        try:
-            ref_msg = await channel.fetch_message(riddle_message_id)
-            await ref_msg.unpin()
-        except Exception as e:
-            logger.debug(f"[ENIGME] desepinglage impossible : {e}")
-    
-    # 2. Supprimer de la DB
-    try: delete_active_riddle(channel.id)
-    except Exception as e:
-        logger.warning(f"[ENIGME] suppression en base impossible : l'enigme restera active : {e}")
-
-# COMMANDES UTILITAIRES (!enigme, !profil)
-
-@bot.command(name="enigme")
-async def force_enigme(ctx):
-    """Force M'aiq à poser une nouvelle énigme (efface la précédente si besoin)."""
-    if not DATABASE_AVAILABLE: return
-
-    # Effacer l'ancienne énigme si elle existe
-    existing = get_active_riddle(ctx.channel.id)
-    if existing:
-        logger.info(f"🗑️ [ENIGME CMD] Ancienne énigme effacée par {ctx.author.name}")
-        await close_riddle_cleanup(ctx.channel, existing.get("message_id"))
-
-    await ctx.send("🐱 M'aiq réfléchit...")
-    await generate_and_post_riddle(ctx.channel)
+# COMMANDES UTILITAIRES (!profil)
 
 @bot.command(name="profil")
 async def show_profile(ctx):
@@ -800,164 +539,6 @@ async def show_profile(ctx):
     
     await ctx.send(embed=embed)
 
-
-async def generate_and_post_riddle(target_channel):
-    """Génère et poste une énigme sur le canal donné (efface la précédente si besoin)."""
-    import uuid
-    MAX_RETRIES = 3
-
-    # Nettoyage préventif : fermer toute énigme résiduelle proprement avant de poster
-    leftover = get_active_riddle(target_channel.id)
-    if leftover:
-        logger.info(f"🧹 [RIDDLE MAIQ] Résidu nettoyé avant nouvelle énigme.")
-        await close_riddle_cleanup(target_channel, leftover.get("message_id"))
-
-    # Fetch recent context for thematic riddle
-    context_str = ""
-    try:
-        messages_list = []
-        async for hist_msg in target_channel.history(limit=15):
-            if not hist_msg.author.bot and hist_msg.content.strip():
-                messages_list.append(f"{hist_msg.author.name}: {hist_msg.content}")
-        if messages_list:
-            context_str = "\\n[CONTEXTE DE LA TAVERNE (Derniers messages)]\\n" + "\\n".join(reversed(messages_list)) + "\\n"
-    except Exception as e:
-        logger.warning(f"Impossible de fetch le contexte pour énigme: {e}")
-
-    # 10% Chance of IMPOSSIBLE RIDDLE (Troll)
-    is_impossible = random.random() < 0.10
-    
-    for attempt in range(MAX_RETRIES):
-        if is_impossible:
-            prompt = (
-                f"SYSTEM: {PERSONALITY_PROMPT}\\n{context_str}"
-                "INSTRUCTION: En t'inspirant (si possible) de la conversation ci-dessus, invente une devinette ABSURDE, SANS SENS, impossible à résoudre. "
-                "Elle doit avoir l'air profonde mais n'avoir aucune logique. "
-                "Exemple : 'Quelle est la couleur du chiffre 4 quand il a froid ?' "
-                "Format de réponse STRICT (JSON) : "
-                                '{"question": "texte absurde", "answer": ["IGNORE_THIS"], "hint": "Il n\\\'y a pas de réponse...", "reward": 0}'
-                "\\nIMPORTANT : Ne fais AUCUNE référence à l'univers d'Elder Scrolls (Tamriel, Skyrim, Khajiit, etc.) dans l'énigme."
-                "\\nNe mets RIEN d'autre que le JSON."
-            )
-        else:
-            prompt = (
-                f"SYSTEM: {PERSONALITY_PROMPT}\\n{context_str}"
-                "INSTRUCTION: En t'inspirant (si possible) de la thématique de la conversation ci-dessus, invente une devinette LOGIQUE, COHÉRENTE mais DIFFICILE À TROUVER SUR GOOGLE. "
-                "ÉVITE les classiques (l'écho, le silence, le vent). Sois créatif et original comme M'aiq. "
-                "La réponse doit être un vrai mot ou concept (pas de truc abstrait flou). "
-                "Thèmes : Tamriel, Objets du quotidien, Nature, Mensonge, Logique pure. "
-                "Format de réponse STRICT (JSON) : "
-                                '{"question": "texte de la devinette", "answer": ["réponse1", "réponse2"], "hint": "indice évasif", "reward": 30}'
-                "\\nIMPORTANT : Ne fais AUCUNE référence à l'univers d'Elder Scrolls (Tamriel, Skyrim, Oblivion, etc.) dans l'énigme. Les énigmes doivent être universelles (vie quotidienne, nature, objets, logique)."
-                "\\nNe mets RIEN d'autre que le JSON."
-            )
-        
-        riddle_data = None
-        
-        # Essai Groq
-        if groq_client:
-            brut = await appel_hors_cascade(
-                "groq", groq_client.chat.completions.create,
-                key_manager=key_manager, bot_label="M'aiq", modele=GROQ_FAST, timeout=30,
-                messages=[{"role": "user", "content": prompt}],
-                model=GROQ_FAST,
-                **groq_kwargs(GROQ_FAST),
-                temperature=0.9,
-                response_format={"type": "json_object"},
-            )
-            if brut:
-                try:
-                    riddle_data = json.loads(brut)
-                except ValueError as e:
-                    logger.warning(f"⚠️ [RIDDLE MAIQ] Groq JSON fail: {e}")
-                
-        # Fallback Gemini
-        if not riddle_data:
-            brut = await appel_hors_cascade(
-                "gemini",
-                key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
-                fabrique=lambda cle: get_safe_genai_client(
-                    api_key=cle, http_options={'api_version': 'v1beta'}
-                ),
-                methode="models.generate_content",
-                model='gemini-3.5-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
-            )
-            if brut:
-                try:
-                    riddle_data = json.loads(brut)
-                except ValueError as e:
-                    logger.warning(f"⚠️ [RIDDLE MAIQ] Gemini JSON fail: {e}")
-
-        # Validation Anti-Doublon (Uniquement pour les NORMALES)
-        if riddle_data and "question" in riddle_data:
-            if not is_impossible:
-                # Vérification Sémantique (Question + Réponse)
-                if is_riddle_duplicate(riddle_data["question"], riddle_data.get("answer")):
-                    logger.info(f"♻️ [RIDDLE] Doublon rejeté (Question ou Réponse): {riddle_data['question'][:30]}... (Essai {attempt+1}/{MAX_RETRIES})")
-                    riddle_data = None # On rejette et on retente
-                    continue
-                else:
-                    break # C'est bon !
-            else:
-                break # Impossible riddles don't need dup check
-    
-    # Validation et Lancement
-    if riddle_data and "question" in riddle_data and "answer" in riddle_data:
-        
-        if is_impossible:
-            # Trap Riddle: Answer is a UUID (impossible to guess)
-            answers = [str(uuid.uuid4())] 
-            riddle_data["reward"] = 0 # No reward
-            embed_color = 0xFF0000 # Rouge pour danger/troll
-            footer_text = "M'aiq jure que c'est la vérité."
-        else:
-            answers = [str(a).lower().strip() for a in riddle_data["answer"]]
-            embed_color = 0xFFD700
-            footer_text = "M'aiq ne connaît pas la réponse. Demandez à Sheogorath."
-
-        embed = discord.Embed(
-            title="😼 DEVINETTE DE M'AIQ" if not is_impossible else "👹 ÉNIGME DU MENTEUR",
-            description=f"*{riddle_data['question']}*",
-            color=embed_color
-        )
-        
-        if not is_impossible:
-            embed.add_field(name="Gain", value=f"+{riddle_data.get('reward', 30)} réputation", inline=True)
-            
-        # Instructions claires pour la réponse
-        embed.add_field(name="Comment répondre ?", 
-                        value="✍️ **Répondre** à ce message (Reply)\n⚡ `!reponse <votre réponse>`\n🤡 `!soluce` (Sheogorath)", 
-                        inline=False) 
-
-        embed.set_footer(text=footer_text)
-        
-        # 1. Envoyer le message
-        msg = await target_channel.send(content="📌 **M'aiq a une question qui gratte.**", embed=embed)
-        
-        # 2. Épingler le message
-        try:
-            await msg.pin()
-        except Exception:
-            pass # Pas grave si pas les perms
-            
-        # 3. Sauvegarder en DB avec l'ID du message (DB racine partagée → accessible par Sheogorath)
-        start_tracking_riddle(
-            target_channel.id, 
-            riddle_data["question"], 
-            answers, 
-            riddle_data.get("hint", "La réponse est ailleurs."), 
-            riddle_data.get("reward", 30),
-            msg.id,
-            is_impossible=is_impossible
-        )
-        
-        if not is_impossible:
-            # 4. Ajouter à l'historique (avec réponses pour l'anti-répétition sémantique)
-            add_to_riddle_history(riddle_data["question"], answers)
-        
-        logger.info(f"🧩 [RIDDLE MAIQ] Nouvelle devinette épinglée (Impossible={is_impossible}) : {riddle_data['question'][:30]}...")
 
 from discord import app_commands
 
@@ -1018,47 +599,6 @@ async def maiq_stats(ctx):
     state = "En pleine forme" if fatigue < 3 else "Fatigué"
     
     await ctx.send(f"🐱 **Statistiques de M'aiq**\n- 📏 **Pinces volées** : {calipers}\n- 💤 **État** : {state} ({fatigue}/3 actions)")
-
-@bot.command(name="rumeur")
-async def maiq_rumeur(ctx):
-    """Lance une rumeur (Lie) complètement fausse."""
-    # ⚠️ « sur un joueur » sans lui fournir d'identifiant, c'est demander une
-    # invention : le 2026-09-07 le modele a publie `<@123456789>`. La consigne ferme
-    # la porte, le filet de `shared/mentions.py` tient quand elle ne suffit pas.
-    prompt = f"SYSTEM: {PERSONALITY_PROMPT}\nINSTRUCTION: Invente une rumeur absurde et très courte sur un autre Prince Daedra, un habitant de Tamriel, ou un événement impossible. Commence par 'M'aiq a entendu dire que...' ou 'Certains disent que...'. N'ecris JAMAIS de mention Discord de la forme <@...> : tu n'as l'identifiant de personne, et un identifiant invente s'afficherait tel quel."
-    
-    response_text = None
-    
-    # Use Groq (Speed)
-    # ⚠️ C'est CET appel qui a pris un 429 sans quarantaine le 2026-09-07 : il est isolé,
-    # la cascade ne le voit pas. `appel_hors_cascade` lui rend le pool et le traçage.
-    if groq_client:
-        response_text = await appel_hors_cascade(
-            "groq", groq_client.chat.completions.create,
-            key_manager=key_manager, bot_label="M'aiq", modele=GROQ_FAST, timeout=30,
-            messages=[{"role": "user", "content": prompt}],
-            model=GROQ_FAST,
-            **groq_kwargs(GROQ_FAST),
-            temperature=0.9,
-        )
-        
-    # Fallback Gemini
-    if not response_text:
-        response_text = await appel_hors_cascade(
-            "gemini",
-            key_manager=key_manager, bot_label="M'aiq", modele='gemini-3.5-flash', timeout=30,
-            fabrique=lambda cle: get_safe_genai_client(
-                api_key=cle, http_options={'api_version': 'v1beta'}
-            ),
-            methode="models.generate_content",
-            model='gemini-3.5-flash',
-            contents=prompt,
-        )
-            
-    if response_text:
-        await ctx.send(f"📢 **[RUMEUR]** {response_text}")
-    else:
-        await ctx.send("M'aiq a oublié ce qu'il voulait dire.")
 
 @bot.event
 async def on_reaction_add(reaction, user):
@@ -1164,78 +704,6 @@ async def on_message(message):
             if _addressed_early else message.attachments)
     # ══════════════════════════════════════════════════
 
-    # GESTION DES RÉPONSES AUX ÉNIGMES (PASSIVE + REPLY)
-    if DATABASE_AVAILABLE and not message.author.bot:
-        try:
-            active_riddle = get_active_riddle(message.channel.id)
-            if active_riddle:
-                is_explicit_reply = (message.reference and hasattr(message.reference, 'message_id') and active_riddle.get("message_id") == message.reference.message_id)
-                answer = message.content
-                
-                # Check silently
-                correct, reward, msg_text = check_answer(message.channel.id, answer)
-                
-                if correct:
-                    winners = get_riddle_winners(message.channel.id)
-                    if message.author.id in winners:
-                         if is_explicit_reply:
-                             await message.add_reaction("🚫")
-                         return
-
-                    try: add_riddle_participant(message.channel.id, message.author.id)
-                    except Exception as e:
-                        logger.warning(f"[ENIGME] participant non enregistre en base : {e}")
-                    
-                    try: await message.add_reaction("✅")
-                    except Exception as e:
-                        logger.debug(f"[ENIGME] reaction de succes impossible : {e}")
-                    
-                    existing_winners = get_riddle_winners(message.channel.id)
-                    actual_reward = reward
-                    bonus_text = ""
-                    
-                    if not existing_winners:
-                        actual_reward = 50 # SPEED BONUS
-                        bonus_text = "⚡ **BONUS VITESSE (+50)** ! "
-                    else:
-                        actual_reward = 15 # STANDARD REWARD
-                        
-                    add_riddle_winner(message.channel.id, message.author.id)
-
-                    new_streak = add_riddle_streak(message.author.id)
-                    streak_bonus = 0
-                    if new_streak % 3 == 0:
-                        streak_bonus = 30
-                        actual_reward += streak_bonus
-                        bonus_text += f"🔥 **SÉRIE DE {new_streak} VICTOIRES (+{streak_bonus})** ! "
-
-                    add_reputation(message.author.id, actual_reward, "Devinette réussie")
-                    logger.info(f"💎 [WIN] {message.author.name}: +{actual_reward} (Streak: {new_streak})")
-
-                    complete_quest(message.author.id, "participate_game")
-                    
-                    try: 
-                        if active_riddle.get("message_id"):
-                            ref_msg = await message.channel.fetch_message(active_riddle["message_id"])
-                            await ref_msg.unpin()
-                    except Exception as e:
-                        logger.debug(f"[ENIGME] desepinglage impossible : {e}")
-                    
-                    await message.reply(f"🎉 **Exact !** {bonus_text}Tu gagnes **+{actual_reward}** points de réputation ! 💎\n*(L'énigme reste ouverte pour les autres !)*") 
-                    return
-                else:
-                    if is_explicit_reply:
-                        try: await message.add_reaction("❌")
-                        except Exception as e:
-                            logger.debug(f"[ENIGME] reaction d'echec impossible : {e}")
-                        reset_riddle_streak(message.author.id)
-                        return
-                    # Sinon on ignore passivement
-        except Exception as e:
-            logger.error(f"Erreur check reply riddle: {e}")
-        
-
-
     # 2. TRIGGER ANALYSIS
     is_mentioned = bot.user.mentioned_in(message)
     is_reply = (message.reference and message.reference.resolved and message.reference.resolved.author == bot.user)
@@ -1268,19 +736,8 @@ async def on_message(message):
                 is_eavesdropping = True
                 logger.info(f"[OREILLE] Mot-clé détecté dans : {message.content[:50]}")
 
-    # "[RUMEURS INTERACTIVES] Défense ou Réaction"
-    is_rumor_defense = False
-    if message.author.id in recent_rumor_targets:
-        now_ts = datetime.now().timestamp()
-        if now_ts - recent_rumor_targets[message.author.id] < 600: # 10 minutes window
-             if random.random() < 0.90:  # 90% chance of reacting
-                 is_rumor_defense = True
-                 logger.info(f"[RUMEUR DEFENSE] M'aiq va réagir à la défense de {message.author.name}")
-                 # Remove from target to avoid infinite loop limit
-                 del recent_rumor_targets[message.author.id]
-
     # DECISION FINAL
-    should_respond = is_mentioned or is_reply or is_name_mentioned or is_eavesdropping or is_rumor_defense
+    should_respond = is_mentioned or is_reply or is_name_mentioned or is_eavesdropping
 
     if not should_respond:
         return
@@ -1312,10 +769,7 @@ async def on_message(message):
     # PREPARATION DE LA REPONSE
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
     
-    # Injection du Contexte "Rumeur" - SYSTEM-LEVEL ONLY (Never in user_message to avoid leakage!)
     duel_context = ""
-    if is_rumor_defense:
-         duel_context = "\n\n[CONFRONTATION RUMEUR] Le mortel tente de nier ou réagit à ta récente rumeur ! Réponds avec une pique flegmatique qui maintient le doute."
 
     # Gestion de la mémoire (Discord Context)
     channel_id = message.channel.id
@@ -1737,107 +1191,6 @@ async def on_message(message):
         daily_memory.add_interaction(user_id, user_name, user_msg_content, response_text)
         asyncio.create_task(daily_memory.refresh_daily_read(user_id, _daily_llm_call))
 
-
-@bot.command(name="reponse")
-async def reponse_cmd(ctx, *, answer: str):
-    """Répondre à M'aiq (Alternative au Reply)."""
-    
-    if not DATABASE_AVAILABLE: return
-
-    game = get_active_riddle(ctx.channel.id)
-    if not game:
-        await ctx.send("Pas d'énigme en cours.")
-        return
-
-    # Verification Gagnant Existant
-    winners = get_riddle_winners(ctx.channel.id)
-    if ctx.author.id in winners:
-            await ctx.send(f"🚫 {ctx.author.mention} Tu as déjà trouvé la réponse ! Laisse les autres chercher.")
-            return
-
-    # Tracking Participant
-    try: add_riddle_participant(ctx.channel.id, ctx.author.id)
-    except Exception as e:
-        logger.warning(f"[ENIGME] participant non enregistre en base : {e}")
-
-    correct, reward, message_text = check_answer(ctx.channel.id, answer)
-    
-    if correct:
-        # WIN
-        # SPEED BONUS CHECK
-        existing_winners = get_riddle_winners(ctx.channel.id)
-        actual_reward = reward
-        bonus_text = ""
-        
-        if not existing_winners:
-            actual_reward = 50 # SPEED BONUS
-            bonus_text = "⚡ **BONUS VITESSE (+50)** ! "
-        else:
-            actual_reward = 15 # STANDARD REWARD
-            
-        # Add Winner
-        add_riddle_winner(ctx.channel.id, ctx.author.id)
-
-        # STREAK SYSTEM
-        new_streak = add_riddle_streak(ctx.author.id)
-        streak_bonus = 0
-        if new_streak % 3 == 0:
-            streak_bonus = 30
-            actual_reward += streak_bonus
-            bonus_text += f"🔥 **SÉRIE DE {new_streak} VICTOIRES (+{streak_bonus})** ! "
-
-        # Add Reputation
-        add_reputation(ctx.author.id, actual_reward, "Devinette réussie")
-        logger.info(f"💎 [WIN CMD] {ctx.author.name}: +{actual_reward} (Streak: {new_streak})")
-
-        complete_quest(ctx.author.id, "participate_game")
-        
-        # Unpin ONLY
-        if game and game.get("message_id"):
-            try:
-                ref_msg = await ctx.channel.fetch_message(game["message_id"])
-                await ref_msg.unpin()
-            except Exception as e:
-                logger.debug(f"[ENIGME] desepinglage impossible : {e}")
-        
-        # Feedback WIN
-        try: await ctx.message.add_reaction("✅")
-        except Exception as e:
-            logger.debug(f"[ENIGME] reaction de succes impossible : {e}")
-        await ctx.send(f"🎉 **Exact !** {bonus_text}{ctx.author.mention} gagne **+{actual_reward}** points de réputation ! 💎")
-        return
-
-    # ERROR HANDLING
-    if "M'aiq ne pose pas" in message_text:
-        await ctx.send(f"🐱 {ctx.author.mention} {message_text}")
-        return
-
-    # LOSE (Reaction only)
-    try: await ctx.message.add_reaction("❌")
-    except Exception: await ctx.send("❌")
-    
-    # RESET STREAK
-    reset_riddle_streak(ctx.author.id)
-
-@bot.command(name="indice")
-async def indice_cmd(ctx):
-    if not DATABASE_AVAILABLE: return
-    
-    # Check Price
-    user_rep = get_reputation(ctx.author.id).get("points", 0)
-    PRICE = 5
-    
-    if user_rep < PRICE:
-        await ctx.send(f"🚫 M'aiq ne travaille pas gratuitement. Reviens quand tu auras {PRICE} points.")
-        return
-
-    hint = get_hint(ctx.channel.id)
-    if hint:
-        # Payer
-        add_reputation(ctx.author.id, -PRICE, "Achat indice")
-        await ctx.send(f"💡 **M'aiq vous aide** (pour {PRICE} pièces) : {hint}")
-    else:
-        await ctx.send("Pas de devinette. Pas d'indice.")
 
 @bot.command(name="oubliemoi")
 async def oubliemoi(ctx):

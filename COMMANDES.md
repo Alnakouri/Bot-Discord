@@ -23,7 +23,7 @@ Ces commandes sont partagées et accessibles sur **tous les bots** du serveur, *
 | `/reputation` | `[user]` (optionnel) | Affiche votre nombre de points de réputation, votre rang actuel et votre progression. |
 | `/leaderboard` | `[top]` (optionnel) | Affiche le classement général des membres les plus respectés du serveur (limité à 25 max). |
 | `/birthday` | `jour` (1-31), `mois` (1-12) | Enregistre votre date de naissance. Les bots vous souhaiteront un joyeux anniversaire le jour J ! |
-| `/quests` | *(aucun)* | Affiche vos quêtes quotidiennes (ex: parler à Sheogorath, résoudre une énigme) pour gagner de la réputation. |
+| `/quests` | *(aucun)* | Affiche vos quêtes quotidiennes (ex: parler à Sheogorath) pour gagner de la réputation. |
 | `/stats` | *(aucun)* | Affiche les statistiques d'activité et les rivalités de duels inter-bots des 30 derniers jours. |
 | `/ping` | *(aucun)* | Affiche la latence de connexion du bot. |
 | `/help` | *(aucun)* | Affiche le panneau d'aide des commandes slash. |
@@ -41,25 +41,18 @@ Le Seigneur Daedra de la folie est imprévisible. Il adore distribuer des quête
   - `!wabbajack [user]` : Cible un joueur (ou vous-même) avec le bâton de folie. Les effets durent 10 minutes (changement de surnom, réactions).
   - `!decret [user]` : Proclame un édit insensé imprimé sur un parchemin officiel. **Discord uniquement** (pas sur Twitch).
   - `!imposteur <user> [instruction]` : Usurpe l'identité d'un joueur par Webhook pour lui faire dire des bêtises.
-  - `!solution` : Permet de soumettre une réponse aux énigmes du serveur.
-  - `!join` / `!leave` : Ordonne à Sheogorath de rejoindre/quitter votre salon vocal Discord.
-  - `!speak <texte>` : Fait prononcer un texte à Sheogorath dans le salon vocal.
   - `!oubliemoi` : Demande à Sheogorath d'effacer tous vos faits marquants de sa mémoire.
 
 ---
 
 ### 🐱 M'aiq (Le Khajiit Vagabond)
-M'aiq le Menteur voyage beaucoup et en sait long. Il aime poser des énigmes et raconter des rumeurs insensées.
+M'aiq le Menteur voyage beaucoup et en sait long. Il raconte volontiers des mensonges insensés en conversation.
 - **Réactions Secrètes** : M'aiq réagit si vous ajoutez des émojis sur ses messages :
   - Ajouter 📏 : Il vous vole votre pince (augmente son compteur de pinces).
   - Ajouter 🐴 : Il mange votre cheval.
   - Ajouter 🌕 : Il s'enfile du Skooma.
 - **Commandes (préfixe `!`)** :
   - `!maiq` (ou `!profil` / `!stats`) : Affiche l'état de fatigue de M'aiq et son nombre de pinces volées.
-  - `!rumeur` : M'aiq vous confie une rumeur totalement fausse sur Tamriel.
-  - `!enigme` : Force M'aiq à poser une énigme logique si aucune n'est active.
-  - `!reponse <texte>` : Répond à l'énigme active. La première personne à trouver la bonne réponse gagne de la réputation.
-  - `!indice` : M'aiq vous donne un indice cryptique pour vous aider.
   - `!oubliemoi` : Efface la mémoire de M'aiq vous concernant.
 
 ---
@@ -113,7 +106,7 @@ Gitane au caractère bien trempé, Malena lit votre destin dans les cartes de ta
 
 ## 🏆 Rangs de Réputation Généraux
 
-En participant activement, en aidant les bots dans leurs quêtes ou en résolvant les énigmes de M'aiq, vous gagnez de la réputation. Votre niveau détermine votre titre sur le serveur :
+En participant activement ou en aidant les bots dans leurs quêtes, vous gagnez de la réputation. Votre niveau détermine votre titre sur le serveur :
 
 | Points requis | Rang | Émoji |
 |---|---|---|

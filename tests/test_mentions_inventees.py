@@ -219,17 +219,3 @@ def test_l_import_du_filet_reste_optionnel(chemin):
             assert parents, f"{chemin} importe shared.mentions hors d'un try/except"
             return
     pytest.fail(f"{chemin} n'importe jamais shared.mentions")
-
-
-def test_le_prompt_de_rumeur_ne_demande_plus_de_mention():
-    """Le prompt seul ne suffit pas, mais demander une invention est un defaut a part."""
-    source = (RACINE / "MaiqBot" / "bot_maiq.py").read_text(encoding="utf-8")
-    debut = source.index('async def maiq_rumeur')
-    corps = source[debut:debut + 1500]
-    # Le PROMPT seul : un commentaire a le droit de citer l'ancienne formulation.
-    prompt = next(l for l in corps.splitlines() if l.strip().startswith("prompt = "))
-    assert "sur un joueur" not in prompt, (
-        "Le prompt demande encore une rumeur « sur un joueur » sans fournir "
-        "d'identifiant : c'est exactement ce qui a fait inventer <@123456789>."
-    )
-    assert "<@...>" in prompt, "la consigne qui interdit la mention a disparu"

@@ -69,7 +69,9 @@ def test_le_gestionnaire_ne_rend_pas_muettes_les_vraies_erreurs(bot, fichier):
         f"{bot} : un return inconditionnel avale toutes les erreurs"
 
 
-@pytest.mark.parametrize("bot", ["MaiqBot", "Sheogorath"])
+# MaiqBot/minigames.py (les enigmes) a ete supprime par la SUITE 17 : seul reste celui
+# de Sheogorath (le fromage).
+@pytest.mark.parametrize("bot", ["Sheogorath"])
 def test_l_enigme_ne_parle_plus_par_print(bot):
     """`print` echappe au systeme de logs : aucun niveau ne peut le filtrer, et il
     sort a chaque message tant qu'une partie est ouverte — y compris sur les commandes

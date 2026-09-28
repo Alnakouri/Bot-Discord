@@ -32,21 +32,15 @@ Le Prince Daedra de la Folie (univers The Elder Scrolls) transposé sur Discord 
   - `!wabbajack [cible]` : Déclenche manuellement le Wabbajack sur une cible pour modifier son surnom ou lui attribuer un rôle ridicule.
   - `!decret [cible]` : Proclame un décret absurde (génère une image de parchemin signée).
   - `!imposteur <cible> [instruction]` : usurpe l'identité d'un utilisateur Discord par Webhook (Identity Theft).
-  - `!solution` : Permet de donner la solution d'une énigme active.
-  - `!join` : Demande à Sheogorath de rejoindre le salon vocal.
-  - `!leave` : Fait partir Sheogorath du salon vocal.
-  - `!speak [texte]` : Demande à Sheogorath de lire à haute voix un texte dans le salon vocal.
   - `!oubliemoi` : Purge l'historique et la mémoire de l'utilisateur.
 
 ## 🧠 Fonctionnalités
 - **Agent Autonome (Outils)** : Décide seul de lancer le Wabbajack, de modifier la réputation d'un joueur, ou d'activer une usurpation d'identité en réponse aux messages des utilisateurs.
 - **Humeurs Dynamiques** : Altération périodique de son tempérament (Mania / Dementia) influençant son vocabulaire.
-- **Système Vocal (Parqué)** : Support vocal de Philippe Bozo (clonage vocal Chatterbox) désactivé par défaut (mode dégradé textuel).
 - **Persistance des sanctions** : Les métamorphoses et surnoms temporaires durent 10 minutes et survivent au reboot.
 
 ## 🗂️ Fichiers
 - [bot_sheogorath.py](bot_sheogorath.py) : Point d'entrée principal, boucle d'événements et dispatch des outils daedriques.
-- [sheo_voice.py](sheo_voice.py) : Pipeline de synthèse vocale Piper / Chatterbox.
 - [sheo_data.py](sheo_data.py) : Base de données textuelle de la personnalité, invites systèmes, quêtes et répliques.
 - [sheo_memory.py](sheo_memory.py) : Logique de mémoire à long terme (Faits / Conversations).
 - [sheo_punishments.py](sheo_punishments.py) : Gestionnaire des sanctions Wabbajack et restauration au boot.
