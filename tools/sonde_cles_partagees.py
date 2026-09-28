@@ -29,6 +29,12 @@ ne dit rien. La sonde ne le teste donc pas. Elle teste le fichier de data/ (la v
 moment) et, pour le secours, COMPARE le refresh token des deux cotes — c'est lui, et lui
 seul, qui permet de repartir si data/ est perdu.
 
+⚠️ Comparer les tokens Twitch entre bots ne prouve RIEN : ils tournent a chaque
+rafraichissement, donc deux bots connectes au MEME compte Twitch ont des tokens
+differents. Avec --vitalite, la sonde compare donc le COMPTE (`user_id`) et
+l'application (`client_id`) que Twitch renvoie pour chaque token de data/ (SUITE 18).
+Sans --vitalite, ce partage-la reste invisible.
+
 Elle n'est pas dans la suite de tests a dessein : les cles ne sont pas dans le depot,
 donc la CI ne peut pas la jouer. Elle se lance a la main, ou apres avoir touche a un
 .env.
@@ -183,6 +189,30 @@ def _valider_twitch(jeton):
                  {"Authorization": "OAuth " + (jeton or "").replace("oauth:", "")})
 
 
+# Rempli par token_twitch_vivant quand Twitch valide le token : bot -> identite du
+# compte. C'est la seule facon de voir deux bots sur UN compte (cf. docstring du module).
+_COMPTES_TWITCH = {}
+
+
+def comptes_twitch_partages(comptes):
+    """comptes : {bot: {"user_id", "login", "client_id"}} -> [(quoi, [bots]), ...].
+
+    Un meme `user_id` pour deux bots = deux bots sur le meme compte Twitch : meme limite
+    de messages, et une revocation les coupe tous les deux. Un meme `client_id` = la
+    meme application Twitch : meme quota d'API Helix.
+    """
+    partages = []
+    for champ, libelle in (("user_id", "compte Twitch"), ("client_id", "application Twitch")):
+        groupes = defaultdict(list)
+        for bot, ident in sorted(comptes.items()):
+            if ident.get(champ):
+                groupes[ident[champ]].append(bot)
+        for valeur, bots in groupes.items():
+            if len(bots) > 1:
+                partages.append((libelle + " " + empreinte(valeur), bots))
+    return partages
+
+
 def token_twitch_vivant(bot):
     """Le token REELLEMENT utilise vit dans data/, pas dans le .env.
 
@@ -212,6 +242,8 @@ def token_twitch_vivant(bot):
     code, corps, _ = _valider_twitch(donnees.get("access_token"))
     if code == 200:
         d = json.loads(corps)
+        _COMPTES_TWITCH[bot] = {"user_id": d.get("user_id"), "login": d.get("login"),
+                                "client_id": d.get("client_id")}
         return "ok", str(d.get("login")) + ", expire dans " + str(d.get("expires_in")) + " s"
 
     echeance = donnees.get("expires_at") or 0
@@ -363,6 +395,11 @@ def main():
             print(f"  {bot} : {', '.join(noms)}")
 
     morts = vitalite() if args.vitalite else 0
+    if args.vitalite:
+        partages += comptes_twitch_partages(_COMPTES_TWITCH)
+    else:
+        print()
+        print("  (comptes Twitch non compares : relancer avec --vitalite)")
 
     print()
     if morts:

@@ -238,3 +238,51 @@ def test_cles_twitch_sont_surveillees():
     for nom in ("TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_OAUTH_TOKEN", "TWITCH_REFRESH_TOKEN"):
         assert nom in sonde.CLES_SURVEILLEES, f"{nom} absent de CLES_SURVEILLEES"
 
+
+
+# ---------------------------------------------------------------------------
+# SUITE 18 : deux bots sur le MEME compte Twitch. Leurs tokens different (ils tournent a
+# chaque rafraichissement) : seule l'identite rendue par /oauth2/validate le trahit.
+# ---------------------------------------------------------------------------
+
+def test_deux_bots_sur_le_meme_compte_twitch_sont_signales():
+    comptes = {"JohnnyBot": {"user_id": "111", "login": "a", "client_id": "app1"},
+               "SugarBot": {"user_id": "111", "login": "a", "client_id": "app2"},
+               "Sheogorath": {"user_id": "222", "login": "b", "client_id": "app3"}}
+    partages = sonde.comptes_twitch_partages(comptes)
+    assert len(partages) == 1
+    quoi, bots = partages[0]
+    assert quoi.startswith("compte Twitch ") and bots == ["JohnnyBot", "SugarBot"]
+    assert "111" not in quoi, "l'identifiant brut ne doit pas s'afficher, seulement son empreinte"
+
+
+def test_la_meme_application_twitch_est_signalee():
+    comptes = {"JohnnyBot": {"user_id": "1", "client_id": "app"},
+               "SugarBot": {"user_id": "2", "client_id": "app"}}
+    partages = sonde.comptes_twitch_partages(comptes)
+    assert [q.split(" ")[0] + " " + q.split(" ")[1] for q, _ in partages] == ["application Twitch"]
+
+
+def test_des_comptes_distincts_ne_crient_pas():
+    comptes = {"JohnnyBot": {"user_id": "1", "client_id": "a"},
+               "SugarBot": {"user_id": "2", "client_id": "b"},
+               "Sheogorath": {"user_id": None, "client_id": None}}
+    assert sonde.comptes_twitch_partages(comptes) == []
+
+
+def test_un_token_valide_enregistre_l_identite_du_compte(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(sonde, "RACINE", tmp_path)
+    monkeypatch.setattr(sonde, "_COMPTES_TWITCH", {})
+    d = tmp_path / "data"
+    d.mkdir()
+    (d / "twitch_chat_auth_sugar.json").write_text(json.dumps({
+        "access_token": "vivant", "refresh_token": "r", "expires_at": time.time() + 3600}),
+        encoding="utf-8")
+    reponse = json.dumps({"login": "compte_bot_sugar", "user_id": "42", "client_id": "app",
+                          "expires_in": 3000}).encode()
+    monkeypatch.setattr(sonde, "_valider_twitch", lambda jeton: (200, reponse, 1))
+    etat, _ = sonde.token_twitch_vivant("SugarBot")
+    assert etat == "ok"
+    assert sonde._COMPTES_TWITCH["SugarBot"] == {"user_id": "42", "login": "compte_bot_sugar",
+                                                 "client_id": "app"}
