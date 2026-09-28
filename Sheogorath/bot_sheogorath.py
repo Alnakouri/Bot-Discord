@@ -1201,7 +1201,9 @@ async def mood_changer():
     }
     
     if old_mood != current_mood:
-        logger.info(f"🎭 [MOOD CHANGE] {old_mood} → {current_mood} | {mood_messages[current_mood]}")
+        # DEBUG : toutes les 5 min, c'etait un tiers du journal de Sheo (870 lignes en 6 jours).
+        # L'humeur reste lisible sur chaque ligne `[LLM MODE] ... (Mood: ...)` d'une reponse.
+        logger.debug(f"🎭 [MOOD CHANGE] {old_mood} → {current_mood} | {mood_messages[current_mood]}")
 
 # TÂCHES PLANIFIÉES - ANNIVERSAIRES ET BACKUP
 

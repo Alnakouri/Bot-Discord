@@ -1,5 +1,10 @@
 # Feature parkée — Voix clonée (TTS) + Vision locale (GPU)
 
+> ⚠️ **MAJ 2026-09-28 : la VOIX est ABANDONNÉE** (décision d'Ahmed). `chatterbox-server/`,
+> `Sheogorath/sheo_voice.py` et les commandes vocales sont supprimés (SUITES 16 et 17). Les
+> enregistrements de référence sont archivés hors dépôt dans `D:\Archives\BotDiscordoix-sheogorath`.
+> Tout ce qui suit sur la voix est historique ; seule la **vision** reste valable.
+>
 > **Statut : retirée du déploiement le 2026-06-17.** À refaire autrement plus tard.
 > Le **code reste dans le repo** (inerte, dégradation propre). Seuls les services
 > Docker GPU ont été retirés du `docker-compose.yml`.

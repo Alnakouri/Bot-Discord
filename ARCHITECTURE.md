@@ -64,7 +64,6 @@ Bot Discord/
 │   ├── sheo_decrees.py      # Génération de décrets
 │   └── minigames.py         # Mini-jeux (fromage...)
 │
-├── chatterbox-server/       # 🔊 Serveur TTS (Voice Cloning) — PARQUÉ
 │   ├── server.py            # API FastAPI pour TTS
 │   ├── Dockerfile           # Image GPU (CUDA)
 │   └── voices/              # Échantillons de voix (.wav)
@@ -136,8 +135,7 @@ Bot Discord/
 | Vision locale (Parquée) | Ollama Moondream | moondream (conteneur Docker) |
 | Base de données | SQLite | TRUNCATE, accès concurrent — WAL interdit (base partagée hôte/conteneurs) |
 | Dashboard | FastAPI + Vanilla JS | Port 8501 (Orchestration Docker native) |
-| Synthèse Vocale (V2)| Chatterbox (Turbo) | Zero-Shot Voice Cloning (GPU CUDA) |
-| Conteneurisation | Docker Compose | 6 bots + 1 Ollama + 1 Chatterbox |
+| Conteneurisation | Docker Compose | 6 bots + LAYA + sauvegarde |
 
 ---
 
@@ -225,4 +223,4 @@ Les requêtes sont classifiées puis routées pour optimiser les coûts :
 
 4. **Silence total entre bots** : chaque `on_message` commence par `if message.author.bot: return`. Les bots ne se répondent JAMAIS entre eux (l'ancien « duel tracker » inter-bots a été retiré).
 
-5. **Aucun bot ne parle en vocal** : la voix de Sheogorath (Piper / Chatterbox) a été retirée du code le 2026-09-28 (SUITE 17), comme `!parle` d'Alfred (SUITE 16). Seule la patrouille vocale d'Alfred (`!surveille`) écoute encore les salons vocaux. `chatterbox-server/` reste dans le dépôt, sans aucun bot pour l'appeler.
+5. **Aucun bot ne parle en vocal** : la voix de Sheogorath (Piper / Chatterbox) a été retirée du code le 2026-09-28 (SUITE 17), comme `!parle` d'Alfred (SUITE 16). Seule la patrouille vocale d'Alfred (`!surveille`) écoute encore les salons vocaux. `chatterbox-server/` a été supprimé du dépôt le 2026-09-28 ; les enregistrements de référence sont archivés hors dépôt (`D:\Archives\BotDiscordoix-sheogorath`).

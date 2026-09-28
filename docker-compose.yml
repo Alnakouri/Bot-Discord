@@ -172,9 +172,10 @@ services:
 # ───────────────────────────────────────────────────────────────
 # Anciennement ici : bots-ollama-vision (Moondream), ollama-model-init,
 # et chatterbox-tts (voice cloning Philippe Bozo, ~3-4 Go VRAM).
-# Retirés car incompatibles Oracle free tier (aucun GPU). Le code reste
-# dans le repo (chatterbox-server/, sheo_voice.py, process_image_ollama)
-# et dégrade proprement. À refaire autrement plus tard.
+# Retirés car incompatibles Oracle free tier (aucun GPU). La VOIX est
+# abandonnée depuis le 2026-09-28 (chatterbox-server/ et sheo_voice.py
+# supprimés) ; seule la vision locale (process_image_ollama) reste dans le
+# code et dégrade proprement vers Gemini.
 # ═══════════════════════════════════════════════════════════════
 
 networks:
