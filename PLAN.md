@@ -282,3 +282,8 @@ par Claude avant le redémarrage (`docker exec bot-sugar ls /app`).
 
 Sur les ≥ 5 premières phrases `!discord` avec un jeu : question < 80 car. dans au moins 4,
 titre complet du jeu dans aucune, vouvoiement partout, Discord nommé partout.
+
+---
+
+LOT 3–5 livrés : `c8814df`, CI verte
+
