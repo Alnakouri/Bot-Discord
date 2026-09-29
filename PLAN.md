@@ -287,3 +287,5 @@ titre complet du jeu dans aucune, vouvoiement partout, Discord nommé partout.
 
 LOT 3–5 livrés : `c8814df`, CI verte
 
+
+LOT 8 : Docker relancé par Ahmed 17:00:58 UTC (les 8 conteneurs, 0 restart) ; `bot-sugar` contient la consigne (grep = 1) ; 0 erreur hors deux 503 Gemini au démarrage (Alfred, Sheo), servis par le repli. Reste LOT 9 (live).
