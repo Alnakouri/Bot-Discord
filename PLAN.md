@@ -84,6 +84,27 @@ runpy.run_path(r"I:\IA\Bot Discord\tools\sonde_phrase_de_lien.py", run_name="__m
   ~40 % des appels réels → A 4/18 et B 4/18 exploitables (14 replis chacune). Indice sur
   4 phrases seulement, non concluant : questions < 80 car. A 1/4, B 4/4 ; titre complet
   A 4/4, B 0/4 ; « Combien » sur un type `designer` dans A ET dans B.
+- **2e tentative (Claude, 29/09 ~16:30 UTC) : VALIDE.** A 18/18 exploitables, B 17/18
+  (1 repli : deux essais rejetés par l'anti-redite). Sorties brutes : scratchpad de la
+  session `dc6cea00…` (`s19_A2.txt`, `s19_B2.txt`).
+
+  | critère | A (prod) | B | seuil | verdict |
+  |---|---|---|---|---|
+  | question < 80 car. | 7/18 | **15/17** | ≥ 12 et ≥ A+5 | ✅ |
+  | titre complet dans la question | 12/18 (9 exact + 3 sans « : ») | **0/17** | ≤ 1 | ✅ |
+  | tutoiement / mélange | **2/18** / 0 | 0/17 / 0 | ≤ 1 (A et B) | ✅ B, ❌ A (prod) |
+  | invitation Discord | 18/18 | 17/17 | 18/18 | ✅ |
+  | 1er mot le plus fréquent | 11 « combien » | **9 « combien »** | ≤ 6 | ❌ |
+  | même question mot pour mot | 2× | **2×** (« Quel personnage de ce jeu vous a fait lever les yeux au ciel ? ») | 0 | ❌ |
+  | replis | 0 | 1 | ≤ A+1 | ✅ |
+  | `chiffre` médiane (témoin) | 74,5 | 74 | ± 10 | ✅ passe non bruitée |
+
+  Médianes : `designer` 102,5 → 62 ; `choix` 89,5 → 63,5. Lu en plus : « Combien » sur un
+  type non-chiffre dans B 4/12 (choix #7 #10, designer #14 #17) ; « Combien d'heures ce jeu
+  vous a-t-il volées » 5× dans B (l'anti-redite de la SUITE 14 en a rejeté 3).
+  **Verdict LOT 2 : deux critères échouent → selon la règle, on ne livre pas sans l'accord
+  d'Ahmed.** Mais les deux échecs existent déjà en prod, en pire (A : 11 « combien », 2×) :
+  B ne les crée pas, il atteint pleinement la cible (longueur, titre).
 
 ## Critères (B contre A, sur 18 chacun, TOUS rapportés)
 
