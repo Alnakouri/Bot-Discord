@@ -84,6 +84,18 @@ def test_sheogorath_ne_lit_plus_les_enigmes_de_maiq():
         assert nom not in noms, nom
 
 
+def test_les_minigames_de_sheogorath_ne_gardent_que_le_fromage():
+    """2026-09-29 : le code d'enigme mort de `Sheogorath/minigames.py` est retire. Il
+    ecrivait dans la table partagee `riddles` et ne servait qu'aux enigmes de M'aiq."""
+    arbre = _arbre(RACINE / "Sheogorath" / "minigames.py")
+    assert _fonctions(arbre) == {"jeu_fromage"}
+    assert "shared.shared_database" not in set(_modules_importes(arbre))
+    assert "ENIGMES" not in {
+        t.id for n in ast.walk(arbre) if isinstance(n, ast.Assign) for t in n.targets
+        if isinstance(t, ast.Name)
+    }
+
+
 def test_sheogorath_garde_ses_autres_commandes():
     commandes = _commandes_prefixe(_arbre(SHEO))
     for nom in ("decret", "fromage", "wabbajack", "quete", "imposteur", "oubliemoi"):

@@ -69,13 +69,17 @@ def test_le_gestionnaire_ne_rend_pas_muettes_les_vraies_erreurs(bot, fichier):
         f"{bot} : un return inconditionnel avale toutes les erreurs"
 
 
-# MaiqBot/minigames.py (les enigmes) a ete supprime par la SUITE 17 : seul reste celui
-# de Sheogorath (le fromage).
+# MaiqBot/minigames.py (les enigmes) a ete supprime par la SUITE 17, et le code d'enigme
+# mort de Sheogorath/minigames.py le 2026-09-29 : il ne reste que le fromage.
 @pytest.mark.parametrize("bot", ["Sheogorath"])
 def test_l_enigme_ne_parle_plus_par_print(bot):
     """`print` echappe au systeme de logs : aucun niveau ne peut le filtrer, et il
-    sort a chaque message tant qu'une partie est ouverte — y compris sur les commandes
-    des autres bots."""
+    sortait a chaque message tant qu'une partie etait ouverte — y compris sur les
+    commandes des autres bots. Aucun `print` ne doit revenir dans ce module."""
     source = (_RACINE / bot / "minigames.py").read_text(encoding="utf-8")
     assert "DEBUG RIDDLE" not in source
-    assert "logger.debug" in source, "la trace doit rester, mais filtrable"
+    appels = [
+        n for n in ast.walk(ast.parse(source))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "print"
+    ]
+    assert not appels, f"{bot}/minigames.py : print() a la ligne {appels[0].lineno}"
