@@ -905,6 +905,7 @@ class DispatchMixin:
             "Dans l'esprit de « Venez nous en parler sur Discord ! », « Rejoignez notre Discord ! » "
             "ou « Venez en discuter sur Discord ! », mais avec tes mots à toi, et jamais deux fois la même. "
             "Un emoji peut la finir. "
+            "Dis « ce jeu » plutôt que son titre. "
         ),
     }
 
@@ -929,10 +930,24 @@ class DispatchMixin:
     #   invitation nomme Discord (≥ 16/18) 17/17          18/18       17/17
     #   longueur médiane                   108 car.       124 car.    130 car.
     #   replis hors 429                    1/18 (timeout) 0/18        1/18 (timeout)
+    #
+    # ⚠️ SUITE 19 (2026-09-29) : questions trop longues (22 réelles : 7/22 < 80 car.).
+    # Causes : la phrase `designer` ÉNUMÉRAIT « personnages, lieux, armes » (recopiée par le
+    # modèle), et le titre complet du jeu coûte 28 car. Une règle de VOLUME ne passe pas sur
+    # flash-lite : on retire la liste, on borne `choix` en mots, et la clause dit « ce jeu ».
+    # Mesure SUITE 19 (18 tirages par bras, Kingdom Come II, tête Gemini) :
+    #   critère                            A (avant)      B (LIVRÉ)
+    #   question < 80 car.                 7/18           15/17
+    #   titre complet dans la question     12/18          0/17
+    #   tutoiement                         2/18           0/17
+    #   invitation nomme Discord           18/18          17/17
+    #   médiane designer / choix           102 / 89 car.  62 / 63 car.
+    #   médiane chiffre (inchangé, témoin) 74,5 car.      74 car.
+    #   « combien » au 1er mot             11/18          9/17   (NON résolu, SUITE à part)
     TYPES_DE_QUESTION_JEU_PAR_BOT = {
         "sugar": (
-            ("choix", "Cette fois, ta question, toujours au VOUVOIEMENT, les fait CHOISIR entre deux choses de ce jeu."),
-            ("designer", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande de DÉSIGNER leur préféré parmi les personnages, les lieux ou les armes de ce jeu."),
+            ("choix", "Cette fois, ta question, toujours au VOUVOIEMENT, les fait choisir entre deux choses de ce jeu, chacune dite en deux ou trois mots."),
+            ("designer", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande leur personnage préféré de ce jeu."),
             ("chiffre", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande un CHIFFRE tiré de ce qu'ils y ont vécu."),
         ),
     }

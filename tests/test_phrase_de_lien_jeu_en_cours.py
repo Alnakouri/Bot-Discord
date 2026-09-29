@@ -717,6 +717,88 @@ def test_sugar_rappelle_le_vouvoiement_avec_chaque_type():
     assert "VOUVOIEMENT" not in captures_j[0]
 
 
+# ---------------------------------------------------------------------------
+# SUITE 19 (2026-09-29) : questions plus courtes pour Sugar
+# ---------------------------------------------------------------------------
+
+def _types_sugar():
+    return dict(DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"])
+
+
+def test_suite19_designer_ne_liste_plus_de_categories():
+    """La phrase `designer` énumérait « personnages, lieux, armes » : le modèle recopiait
+    la liste et la question dépassait 80 car. Elle ne demande plus qu'UNE catégorie."""
+    phrase = _types_sugar()["designer"]
+    assert "personnage préféré de ce jeu" in phrase
+    for mot in ("les lieux", "les armes", "parmi", "DÉSIGNER"):
+        assert mot not in phrase, f"« {mot} » est revenu dans la phrase designer : {phrase}"
+
+
+def test_suite19_choix_borne_chaque_chose_en_mots():
+    phrase = _types_sugar()["choix"]
+    assert "chacune dite en deux ou trois mots" in phrase
+    assert "VOUVOIEMENT" in phrase
+
+
+def test_suite19_chiffre_est_inchange():
+    """Témoin de la mesure : si on le touche, les chiffres de la SUITE 19 ne valent plus."""
+    assert _types_sugar()["chiffre"] == (
+        "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande un CHIFFRE "
+        "tiré de ce qu'ils y ont vécu."
+    )
+    assert [cle for cle, _ in DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]] == [
+        "choix", "designer", "chiffre"
+    ]
+
+
+def test_suite19_sugar_recoit_ce_jeu_une_seule_fois():
+    """Par le VRAI chemin : l'instruction envoyée au modèle pour Sugar avec un jeu contient
+    la consigne « ce jeu » exactement une fois, juste après « Un emoji peut la finir. »."""
+    bot = _faux_bot("sugar")
+    bot._rang_type_question = 0
+
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    captures = []
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        captures.append(instruction)
+        return "Venez nous en parler sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    consigne = "Dis « ce jeu » plutôt que son titre. "
+    assert captures[0].count(consigne) == 1
+    assert "Un emoji peut la finir. " + consigne in captures[0]
+
+
+def test_suite19_johnny_ne_recoit_pas_ce_jeu():
+    """La consigne est propre à Sugar : Johnny (même méthode, même jeu) ne la reçoit pas,
+    et sa clause de forme n'a pas bougé."""
+    assert "plutôt que son titre" not in DispatchMixin.CLAUSES_FORME_JEU_PAR_BOT["johnny"]
+
+    bot = _faux_bot("johnny")
+
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    captures = []
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        captures.append(instruction)
+        return "Venez nous en parler sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    assert "plutôt que son titre" not in captures[0]
+
+
+
 
 
 
