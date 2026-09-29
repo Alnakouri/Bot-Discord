@@ -1,134 +1,284 @@
-# PLAN — SUITE 19 : les questions `!discord` de Sugar trop longues
+# PLAN — SUITE 19 : raccourcir les questions `!discord` de Sugar (LIVRAISON de la variante B)
 
-Rédaction : Claude, le **2026-09-29**. Exécution : **Antigravity**, sauf **[Claude]** / **[Ahmed]**.
-Plans précédents (SUITES 14 et 15, livrés `905df34` et `a15b930`) : `483068c:PLAN.md`.
-La SUITE 18 (rattrapage des mentions, garde des sondes, sonde Twitch) a été faite hors plan
-par Claude (`10b17c3`, `3687fa4`, `1c31970`).
+Rédaction : Claude, le **2026-09-29** (réécrit le soir, après la mesure).
+Exécution : **Antigravity**, sauf les étapes marquées **[Claude]** ou **[Ahmed]**.
+Plans précédents : SUITES 14 et 15 → `483068c:PLAN.md` ; version mesure de la SUITE 19 → `25adb29:PLAN.md`.
 
-⚠️ **Mesure d'abord, rien n'est livré sans chiffres.** Cette passe consomme les clés de
-Sugar : **jamais pendant un live**. Le garde `tools/garde_sonde.py` le refuse de lui-même ;
-**ne pas utiliser `--forcer`**. Aucun redémarrage avant le LOT 4, avec l'accord d'Ahmed.
+## ⚠️ À LIRE AVANT DE COMMENCER
 
----
-
-## LE CONSTAT (Claude, 29/09, 22 questions `!discord` réelles depuis le 20/09)
-
-La clause dit déjà « moins de 80 caractères » : le modèle l'ignore (une règle de VOLUME
-ne passe pas sur flash-lite, cf. mémoire « la longueur est un défaut de modèle »).
-Longueur de la question (jusqu'au « ? ») par type tiré :
-
-| type | n | < 80 car. | médiane |
-|---|---|---|---|
-| `designer` | 6 | 1 | 96 |
-| `choix` | 8 | 2 | 103 |
-| `chiffre` | 8 | 4 | 84 |
-
-Les longues ont trois formes, toutes fabriquées par la consigne ou le décor :
-1. **Énumération** : « Vos chevaliers préférés, ces lieux qui sentent la bière…, ou ces
-   épées… ? ». La phrase du type `designer` ÉNUMÈRE elle-même « les personnages, les lieux
-   ou les armes » : le modèle recopie la liste (gotcha « une formule NOMMÉE devient un tic »).
-2. **Décor** avant la question : « Entre l'épée, la boue et les gueux de ce RPG historique… ».
-3. **Le titre complet** : « … dans Kingdom Come: Deliverance II ? » = 28 car. à lui seul.
-
-## LA VARIANTE B (une seule, pour isoler l'effet)
-
-Dans `TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]` (`shared/twitch/dispatch.py`), **positif,
-sans nommer de mot interdit, sans chiffre de longueur** :
-
-- `designer` : « Cette fois, ta question, toujours au VOUVOIEMENT, leur demande leur
-  personnage préféré de ce jeu. »  (UNE catégorie, plus de liste)
-- `choix` : « Cette fois, ta question, toujours au VOUVOIEMENT, les fait choisir entre deux
-  choses de ce jeu, chacune dite en deux ou trois mots. »
-- `chiffre` : **inchangé** (témoin interne).
-
-Et **une seule** phrase ajoutée à la fin de `CLAUSES_JEU_PAR_BOT["sugar"]` (juste après
-« Un emoji peut la finir. ») : « Dis « ce jeu » plutôt que son titre. » Rien d'autre ne
-change dans la clause.
+- **La mesure est FAITE** (LOT 1, par Claude). **Ne relance AUCUNE sonde**, aucun appel API.
+- **UN SEUL fichier de code change** : `shared/twitch/dispatch.py`. **UN SEUL fichier de test
+  change** : `tests/test_phrase_de_lien_jeu_en_cours.py`. Rien d'autre (sauf ce PLAN.md en
+  fin de LOT 6). Si tu te retrouves à modifier un 3e fichier, **arrête-toi et dis-le**.
+- `dispatch.py` **n'est pas** dans `tools/vendor_core.py` : **ne lance pas** le vendoring.
+- **Aucun redémarrage de conteneur.** Le LOT 5 appartient à Ahmed.
+- **Ne lance jamais deux `pytest` en même temps** (port 8599 partagé).
+- Ne touche à aucun `.env`, `.master_key`, `*.db`.
+- **PIÈGE** : la ligne `"Un emoji peut la finir. "` existe **DEUX fois** dans `dispatch.py` :
+  - **l.907** : fin de `CLAUSES_JEU_PAR_BOT["sugar"]` ← **c'est CELLE-LÀ**
+  - **l.964** : fin de `CLAUSES_FORME_JEU_PAR_BOT["johnny"]` ← **NE PAS TOUCHER**
 
 ---
 
-# LOT 1 — Mesure A / B (après le live, garde compris)
+## POURQUOI (résumé de la mesure, 29/09 ~16:30 UTC, 18 générations par bras)
 
-```bash
-.venv/Scripts/python tools/sonde_phrase_de_lien.py --bot sugar --jeu "Kingdom Come: Deliverance II" --n 18 --pause 5 > $SCRATCH/s19_A.txt
-.venv/Scripts/python $SCRATCH/lance_s19_B.py --bot sugar --jeu "Kingdom Come: Deliverance II" --n 18 --pause 5 > $SCRATCH/s19_B.txt
+| critère | A (prod) | B (à livrer) |
+|---|---|---|
+| question < 80 car. | 7/18 | **15/17** |
+| titre complet du jeu dans la question | 12/18 | **0/17** |
+| tutoiement | 2/18 | 0/17 |
+| invitation qui nomme Discord | 18/18 | 17/17 |
+| médiane de la question `designer` / `choix` | 102 / 89 car. | **62 / 63 car.** |
+| médiane `chiffre` (inchangé, témoin) | 74,5 | 74 |
+| 1er mot le plus fréquent | 11 « combien » | 9 « combien » |
+| même question mot pour mot | 2× | 2× |
+
+Les deux dernières lignes échouent aux seuils du plan, **mais elles échouent déjà en prod,
+en pire** : B ne les crée pas. « Combien » sera traité dans une SUITE à part.
+Sorties brutes : scratchpad de la session Claude `dc6cea00…` (`s19_A2.txt`, `s19_B2.txt`).
+
+---
+
+# LOT 1 — [Claude] Mesure A/B — ✅ FAIT (`25adb29`)
+
+# LOT 2 — [Claude] Verdict — ✅ FAIT : livrer B, sous réserve de l'accord d'Ahmed
+
+# LOT 3 — Le code : TROIS remplacements dans `shared/twitch/dispatch.py`
+
+Faire **exactement** ces remplacements, caractère pour caractère. Les guillemets `« »` sont
+entourés d'**espaces ordinaires** (U+0020), pas insécables : c'est ce qui a été mesuré.
+
+### 3.1 — type `choix` (vers la l.934)
+
+AVANT :
+```python
+            ("choix", "Cette fois, ta question, toujours au VOUVOIEMENT, les fait CHOISIR entre deux choses de ce jeu."),
+```
+APRÈS :
+```python
+            ("choix", "Cette fois, ta question, toujours au VOUVOIEMENT, les fait choisir entre deux choses de ce jeu, chacune dite en deux ou trois mots."),
 ```
 
-⚠️ **Correction (Claude, 29/09) : `--remplace` NE MARCHE PAS pour les types.** La sonde exige
-que chaque motif figure EXACTEMENT une fois dans l'instruction ; la phrase `designer` n'y
-figure qu'un appel sur trois → refus. La variante B passe donc par un lanceur hors dépôt
-qui modifie les attributs de classe puis exécute la sonde (`runpy`) :
+### 3.2 — type `designer` (vers la l.935)
+
+AVANT :
+```python
+            ("designer", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande de DÉSIGNER leur préféré parmi les personnages, les lieux ou les armes de ce jeu."),
+```
+APRÈS :
+```python
+            ("designer", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande leur personnage préféré de ce jeu."),
+```
+
+### 3.3 — type `chiffre` : **NE PAS TOUCHER** (témoin de la mesure)
+
+L'ordre du tuple reste `choix`, `designer`, `chiffre` (le test de rotation existant en dépend).
+
+### 3.4 — fin de la clause de Sugar (l.907, DANS `CLAUSES_JEU_PAR_BOT["sugar"]`)
+
+AVANT (les deux dernières lignes du bloc `"sugar": (...)`) :
+```python
+            "Un emoji peut la finir. "
+        ),
+    }
+```
+APRÈS :
+```python
+            "Un emoji peut la finir. "
+            "Dis « ce jeu » plutôt que son titre. "
+        ),
+    }
+```
+Vérifier que le bloc modifié est bien celui qui commence par `CLAUSES_JEU_PAR_BOT = {` et
+contient `"Vouvoie le chat : ils sont plusieurs. "`. **Pas** `CLAUSES_FORME_JEU_PAR_BOT`.
+
+### 3.5 — commentaire de mesure
+
+Juste **au-dessus** de la ligne `TYPES_DE_QUESTION_JEU_PAR_BOT = {`, après le bloc
+`# ⚠️ SUITE 8-ter …` existant (on garde tout l'historique), ajouter :
 
 ```python
-import sys, runpy
-sys.path[:0] = [r"I:\IA\Bot Discord", r"I:\IA\Bot Discord\tools"]
-from shared.twitch.dispatch import DispatchMixin as D
-t = dict(D.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"])
-t["designer"] = "<phrase designer B>"
-t["choix"] = "<phrase choix B>"
-D.TYPES_DE_QUESTION_JEU_PAR_BOT = {"sugar": tuple(t.items())}
-c = D.CLAUSES_JEU_PAR_BOT["sugar"]
-assert c.endswith("Un emoji peut la finir. ")
-D.CLAUSES_JEU_PAR_BOT = {"sugar": c + "Dis « ce jeu » plutôt que son titre. "}
-sys.argv = ["sonde_phrase_de_lien.py"] + sys.argv[1:]
-runpy.run_path(r"I:\IA\Bot Discord\tools\sonde_phrase_de_lien.py", run_name="__main__")
+    #
+    # ⚠️ SUITE 19 (2026-09-29) : questions trop longues (22 réelles : 7/22 < 80 car.).
+    # Causes : la phrase `designer` ÉNUMÉRAIT « personnages, lieux, armes » (recopiée par le
+    # modèle), et le titre complet du jeu coûte 28 car. Une règle de VOLUME ne passe pas sur
+    # flash-lite : on retire la liste, on borne `choix` en mots, et la clause dit « ce jeu ».
+    # Mesure SUITE 19 (18 tirages par bras, Kingdom Come II, tête Gemini) :
+    #   critère                            A (avant)      B (LIVRÉ)
+    #   question < 80 car.                 7/18           15/17
+    #   titre complet dans la question     12/18          0/17
+    #   tutoiement                         2/18           0/17
+    #   invitation nomme Discord           18/18          17/17
+    #   médiane designer / choix           102 / 89 car.  62 / 63 car.
+    #   médiane chiffre (inchangé, témoin) 74,5 car.      74 car.
+    #   « combien » au 1er mot             11/18          9/17   (NON résolu, SUITE à part)
 ```
 
-- Si le garde refuse (« en conversation ou en live »), **attendre**, ne pas forcer.
-- `--pause 5` : 15 req/min/projet sur flash-lite (SUITE 8).
-- Relire chaque sortie avec `--relire` (tableau recompté par l'outil, pas à la main).
-- **Passe nulle si > 3/18 replis dans A ou B** : une quarantaine de 300 s après deux
-  dépassements de 8 s fait tomber tout le reste de la passe sur le gabarit. Relancer plus
-  tard, ne pas allonger la borne.
-- **1re tentative (Claude, 29/09 16:08 UTC) : NULLE.** Gemini flash-lite dépassait 8 s sur
-  ~40 % des appels réels → A 4/18 et B 4/18 exploitables (14 replis chacune). Indice sur
-  4 phrases seulement, non concluant : questions < 80 car. A 1/4, B 4/4 ; titre complet
-  A 4/4, B 0/4 ; « Combien » sur un type `designer` dans A ET dans B.
-- **2e tentative (Claude, 29/09 ~16:30 UTC) : VALIDE.** A 18/18 exploitables, B 17/18
-  (1 repli : deux essais rejetés par l'anti-redite). Sorties brutes : scratchpad de la
-  session `dc6cea00…` (`s19_A2.txt`, `s19_B2.txt`).
+### 3.6 — contrôle immédiat
 
-  | critère | A (prod) | B | seuil | verdict |
-  |---|---|---|---|---|
-  | question < 80 car. | 7/18 | **15/17** | ≥ 12 et ≥ A+5 | ✅ |
-  | titre complet dans la question | 12/18 (9 exact + 3 sans « : ») | **0/17** | ≤ 1 | ✅ |
-  | tutoiement / mélange | **2/18** / 0 | 0/17 / 0 | ≤ 1 (A et B) | ✅ B, ❌ A (prod) |
-  | invitation Discord | 18/18 | 17/17 | 18/18 | ✅ |
-  | 1er mot le plus fréquent | 11 « combien » | **9 « combien »** | ≤ 6 | ❌ |
-  | même question mot pour mot | 2× | **2×** (« Quel personnage de ce jeu vous a fait lever les yeux au ciel ? ») | 0 | ❌ |
-  | replis | 0 | 1 | ≤ A+1 | ✅ |
-  | `chiffre` médiane (témoin) | 74,5 | 74 | ± 10 | ✅ passe non bruitée |
+```bash
+git diff --stat
+```
+Attendu : `shared/twitch/dispatch.py` seul, environ +18 / −2. Puis :
+```bash
+git diff shared/twitch/dispatch.py
+```
+Aucune ligne de `CLAUSES_FORME_JEU_PAR_BOT` ne doit apparaître dans le diff.
 
-  Médianes : `designer` 102,5 → 62 ; `choix` 89,5 → 63,5. Lu en plus : « Combien » sur un
-  type non-chiffre dans B 4/12 (choix #7 #10, designer #14 #17) ; « Combien d'heures ce jeu
-  vous a-t-il volées » 5× dans B (l'anti-redite de la SUITE 14 en a rejeté 3).
-  **Verdict LOT 2 : deux critères échouent → selon la règle, on ne livre pas sans l'accord
-  d'Ahmed.** Mais les deux échecs existent déjà en prod, en pire (A : 11 « combien », 2×) :
-  B ne les crée pas, il atteint pleinement la cible (longueur, titre).
+# LOT 4 — Les verrous : 5 tests AJOUTÉS à la fin de `tests/test_phrase_de_lien_jeu_en_cours.py`
 
-## Critères (B contre A, sur 18 chacun, TOUS rapportés)
+**Ne modifier aucun test existant.** Réutiliser le `_faux_bot` du fichier. Les tests 4.4 et
+4.5 passent par la **vraie** `_generate_link_line` (pas de logique recopiée dans le test).
 
-| critère | seuil pour livrer B |
-|---|---|
-| question < 80 car. | **≥ 12/18** et ≥ A + 5 |
-| titre complet du jeu dans la question | ≤ 1/18 |
-| tutoiement ou mélange tu/vous | ≤ 1/18 (A et B) |
-| invitation Discord présente | 18/18 |
-| 1er mot le plus fréquent | ≤ 6/18 |
-| même question mot pour mot | 0 |
-| replis (gabarit fixe) | ≤ A + 1 |
-| `chiffre` (inchangé) : médiane | ± 10 car. de A (sinon la passe est bruitée) |
+```python
+# ---------------------------------------------------------------------------
+# SUITE 19 (2026-09-29) : questions plus courtes pour Sugar
+# ---------------------------------------------------------------------------
 
-**Un critère qui échoue = on ne livre pas**, et le compte rendu le dit en tête. Donner les
-sorties **brutes** (fichiers), pas un résumé.
+def _types_sugar():
+    return dict(DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"])
 
-# LOT 2 — [Claude] relit les sorties brutes et tranche
 
-# LOT 3 — Livraison (seulement si LOT 2 dit oui)
+def test_suite19_designer_ne_liste_plus_de_categories():
+    """La phrase `designer` énumérait « personnages, lieux, armes » : le modèle recopiait
+    la liste et la question dépassait 80 car. Elle ne demande plus qu'UNE catégorie."""
+    phrase = _types_sugar()["designer"]
+    assert "personnage préféré de ce jeu" in phrase
+    for mot in ("les lieux", "les armes", "parmi", "DÉSIGNER"):
+        assert mot not in phrase, f"« {mot} » est revenu dans la phrase designer : {phrase}"
 
-Même changement que la variante B dans `dispatch.py`, verrou dans
-`tests/test_phrase_de_lien_jeu_en_cours.py` : la phrase `designer` ne contient plus
-« les lieux » ni « les armes » ; la clause contient « plutôt que son titre ». Suite entière,
-`gh run list` vert.
 
-# LOT 4 — [Ahmed] accord, puis `docker restart bot-sugar` seul (`State.StartedAt`).
+def test_suite19_choix_borne_chaque_chose_en_mots():
+    phrase = _types_sugar()["choix"]
+    assert "chacune dite en deux ou trois mots" in phrase
+    assert "VOUVOIEMENT" in phrase
+
+
+def test_suite19_chiffre_est_inchange():
+    """Témoin de la mesure : si on le touche, les chiffres de la SUITE 19 ne valent plus."""
+    assert _types_sugar()["chiffre"] == (
+        "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande un CHIFFRE "
+        "tiré de ce qu'ils y ont vécu."
+    )
+    assert [cle for cle, _ in DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]] == [
+        "choix", "designer", "chiffre"
+    ]
+
+
+def test_suite19_sugar_recoit_ce_jeu_une_seule_fois():
+    """Par le VRAI chemin : l'instruction envoyée au modèle pour Sugar avec un jeu contient
+    la consigne « ce jeu » exactement une fois, juste après « Un emoji peut la finir. »."""
+    bot = _faux_bot("sugar")
+    bot._rang_type_question = 0
+
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    captures = []
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        captures.append(instruction)
+        return "Venez nous en parler sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    consigne = "Dis « ce jeu » plutôt que son titre. "
+    assert captures[0].count(consigne) == 1
+    assert "Un emoji peut la finir. " + consigne in captures[0]
+
+
+def test_suite19_johnny_ne_recoit_pas_ce_jeu():
+    """La consigne est propre à Sugar : Johnny (même méthode, même jeu) ne la reçoit pas,
+    et sa clause de forme n'a pas bougé."""
+    assert "plutôt que son titre" not in DispatchMixin.CLAUSES_FORME_JEU_PAR_BOT["johnny"]
+
+    bot = _faux_bot("johnny")
+
+    async def faux_jeu():
+        return "Kingdom Come: Deliverance II"
+    bot._jeu_en_cours = faux_jeu
+
+    captures = []
+
+    async def faux_ecrire(instruction, system_prompt, cmd):
+        captures.append(instruction)
+        return "Venez nous en parler sur Discord !"
+    bot._ecrire_phrase_de_lien = faux_ecrire
+
+    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
+    assert res is not None
+    assert "plutôt que son titre" not in captures[0]
+```
+
+### 4.1 — PREUVE que les verrous mordent (obligatoire, à coller dans le compte rendu)
+
+Les tests doivent **échouer sur l'ancien code**. Mettre de côté SEULEMENT `dispatch.py` :
+
+```bash
+git stash push shared/twitch/dispatch.py
+.venv/Scripts/python -m pytest tests/test_phrase_de_lien_jeu_en_cours.py -k suite19 -q
+git stash pop
+```
+
+Résultat attendu sur l'ancien code, **à l'identique** :
+
+| test | ancien code | nouveau code |
+|---|---|---|
+| `test_suite19_designer_ne_liste_plus_de_categories` | **FAIL** | pass |
+| `test_suite19_choix_borne_chaque_chose_en_mots` | **FAIL** | pass |
+| `test_suite19_chiffre_est_inchange` | pass | pass |
+| `test_suite19_sugar_recoit_ce_jeu_une_seule_fois` | **FAIL** | pass |
+| `test_suite19_johnny_ne_recoit_pas_ce_jeu` | pass | pass |
+
+→ **3 failed, 2 passed** avant ; **5 passed** après. Un autre résultat = **s'arrêter et le dire**.
+Après `git stash pop`, vérifier que `git diff --stat` montre de nouveau les deux fichiers.
+
+# LOT 5 — Suite entière, commit, push, CI
+
+```bash
+.venv/Scripts/python -m pytest -q
+```
+Attendu : **0 failed** (pyflakes joue dans la suite). Coller la dernière ligne du résultat.
+
+```bash
+git add shared/twitch/dispatch.py tests/test_phrase_de_lien_jeu_en_cours.py
+git commit -m "feat(sugar): questions !discord plus courtes — designer sans liste, choix borne, « ce jeu » (SUITE 19)"
+git push
+gh run list --limit 3
+```
+Attendre que le run du commit soit **completed / success** (`gh run watch` si besoin).
+**Rouge = s'arrêter**, donner le lien du run et le log de l'échec, **ne rien corriger à l'aveugle**.
+
+# LOT 6 — Compte rendu (Antigravity → Ahmed et Claude)
+
+Donner, **brut** :
+1. la sortie de `git diff --stat HEAD~1` ;
+2. la sortie des tests `-k suite19` sur l'ANCIEN code (LOT 4.1) et sur le NOUVEAU ;
+3. la dernière ligne de la suite entière ;
+4. le hash du commit et l'état du run CI.
+
+**Ne pas écrire « tout passe »** : recopier les sorties. Puis ajouter en bas de ce PLAN.md
+une ligne `LOT 3–5 livrés : <hash>, CI <verte|rouge>`.
+
+# LOT 7 — [Claude] Relecture
+
+Relire le diff ligne à ligne et rejouer la preuve du LOT 4.1.
+
+# LOT 8 — [Ahmed] Redémarrage de `bot-sugar` SEUL, hors live
+
+```bash
+docker restart bot-sugar
+docker inspect -f "{{.State.StartedAt}}" bot-sugar
+docker exec bot-sugar grep -c "plutôt que son titre" /app/shared/twitch/dispatch.py
+docker logs bot-sugar --since 2m 2>&1 | grep -iE "error|traceback" 
+```
+Attendu : `StartedAt` = maintenant, grep = `1`, aucune erreur. Les autres conteneurs ne sont
+**pas** relancés (leur `StartedAt` ne bouge pas). ⚠️ Le chemin `/app/shared/…` est à vérifier
+par Claude avant le redémarrage (`docker exec bot-sugar ls /app`).
+
+# LOT 9 — [Claude + Ahmed] Contrôle au prochain live de Sugar
+
+Sur les ≥ 5 premières phrases `!discord` avec un jeu : question < 80 car. dans au moins 4,
+titre complet du jeu dans aucune, vouvoiement partout, Discord nommé partout.
