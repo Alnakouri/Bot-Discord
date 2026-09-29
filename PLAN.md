@@ -51,16 +51,39 @@ change dans la clause.
 
 ```bash
 .venv/Scripts/python tools/sonde_phrase_de_lien.py --bot sugar --jeu "Kingdom Come: Deliverance II" --n 18 --pause 5 > $SCRATCH/s19_A.txt
-.venv/Scripts/python tools/sonde_phrase_de_lien.py --bot sugar --jeu "Kingdom Come: Deliverance II" --n 18 --pause 5 \
-    --remplace "<phrase designer actuelle>" --par "<phrase designer B>" \
-    --remplace "<phrase choix actuelle>" --par "<phrase choix B>" \
-    --remplace "<fin de clause actuelle>" --par "<fin de clause + « Dis « ce jeu » plutôt que son titre. »>" > $SCRATCH/s19_B.txt
+.venv/Scripts/python $SCRATCH/lance_s19_B.py --bot sugar --jeu "Kingdom Come: Deliverance II" --n 18 --pause 5 > $SCRATCH/s19_B.txt
+```
+
+⚠️ **Correction (Claude, 29/09) : `--remplace` NE MARCHE PAS pour les types.** La sonde exige
+que chaque motif figure EXACTEMENT une fois dans l'instruction ; la phrase `designer` n'y
+figure qu'un appel sur trois → refus. La variante B passe donc par un lanceur hors dépôt
+qui modifie les attributs de classe puis exécute la sonde (`runpy`) :
+
+```python
+import sys, runpy
+sys.path[:0] = [r"I:\IA\Bot Discord", r"I:\IA\Bot Discord\tools"]
+from shared.twitch.dispatch import DispatchMixin as D
+t = dict(D.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"])
+t["designer"] = "<phrase designer B>"
+t["choix"] = "<phrase choix B>"
+D.TYPES_DE_QUESTION_JEU_PAR_BOT = {"sugar": tuple(t.items())}
+c = D.CLAUSES_JEU_PAR_BOT["sugar"]
+assert c.endswith("Un emoji peut la finir. ")
+D.CLAUSES_JEU_PAR_BOT = {"sugar": c + "Dis « ce jeu » plutôt que son titre. "}
+sys.argv = ["sonde_phrase_de_lien.py"] + sys.argv[1:]
+runpy.run_path(r"I:\IA\Bot Discord\tools\sonde_phrase_de_lien.py", run_name="__main__")
 ```
 
 - Si le garde refuse (« en conversation ou en live »), **attendre**, ne pas forcer.
 - `--pause 5` : 15 req/min/projet sur flash-lite (SUITE 8).
 - Relire chaque sortie avec `--relire` (tableau recompté par l'outil, pas à la main).
-- Vérifier que chaque `--remplace` a bien pris (la sonde refuse sinon).
+- **Passe nulle si > 3/18 replis dans A ou B** : une quarantaine de 300 s après deux
+  dépassements de 8 s fait tomber tout le reste de la passe sur le gabarit. Relancer plus
+  tard, ne pas allonger la borne.
+- **1re tentative (Claude, 29/09 16:08 UTC) : NULLE.** Gemini flash-lite dépassait 8 s sur
+  ~40 % des appels réels → A 4/18 et B 4/18 exploitables (14 replis chacune). Indice sur
+  4 phrases seulement, non concluant : questions < 80 car. A 1/4, B 4/4 ; titre complet
+  A 4/4, B 0/4 ; « Combien » sur un type `designer` dans A ET dans B.
 
 ## Critères (B contre A, sur 18 chacun, TOUS rapportés)
 
