@@ -231,3 +231,32 @@ def test_7_verrou_ast_dispatch():
     assert len(appels_append_hors_boucle) >= 1, (
         "aucun appel à .append(_empreinte_phrase(...)) trouvé hors de la boucle for essai"
     )
+
+
+def test_8_meme_question_autre_invitation_est_une_redite(monkeypatch):
+    """8. Live du 30/09 : même question, invitation différente -> rejetée au 1er essai."""
+    phrase_a = ("Combien de fois ce jeu vous a-t-il jeté dans la boue médiévale ? "
+                "Venez nous en raconter les pires gadoues sur Discord ! 🏰")
+    phrase_a2 = ("Combien de fois ce jeu vous a-t-il jeté dans la boue médiévale ? "
+                 "Venez nous raconter vos gamelles sur Discord. ✨")
+    phrase_b = "Quel est votre personnage préféré dans ce jeu ? Venez le défendre sur Discord ! ✨"
+    assert _empreinte_phrase(phrase_a) == _empreinte_phrase(phrase_a2)
+
+    bot, compteur = _avec_reponses([phrase_a, phrase_a2, phrase_b])
+    t_actuel = [0.0]
+    monkeypatch.setattr("shared.twitch.dispatch.time.time", lambda: t_actuel[0])
+
+    assert phrase_a in asyncio.run(bot._generate_link_line("discord", "discord", URL))
+    t_actuel[0] = 901.0
+    r2 = asyncio.run(bot._generate_link_line("discord", "discord", URL))
+    assert r2 is not None and phrase_b in r2
+    assert compteur["n"] == 3
+    assert any("deja ecrite" in l for l in bot.logger.lignes)
+
+
+def test_9_question_courte_ne_fusionne_pas():
+    """9. « Alors ? » ne suffit pas à dire que deux phrases sont la même."""
+    assert _empreinte_phrase("Alors ? Venez sur Discord !") != _empreinte_phrase(
+        "Alors ? Passez nous voir sur Discord, on vous attend !")
+    assert _empreinte_phrase("Quel est votre personnage préféré ? Venez !") != _empreinte_phrase(
+        "Quelle est votre quête préférée ? Venez !")

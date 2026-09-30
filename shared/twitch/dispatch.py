@@ -327,7 +327,19 @@ def _empreinte_phrase(phrase: str) -> str:
 
     Deux phrases de meme empreinte se lisent pareil dans le chat : « Venez ! 🗡️ » et
     « venez !! » sont la meme redite pour un viewer.
+
+    ⚠️ Une phrase qui POSE UNE QUESTION est identifiee par sa question seule. Live du
+    2026-09-30 : « Combien de fois ce jeu vous a-t-il jete dans la boue medievale ? » est
+    sortie deux fois en 46 min, suivie d'une invitation differente — l'empreinte de la
+    phrase entiere differait, le filet ne l'a pas vue, le chat a lu la meme question.
+    Une question trop courte (« Alors ? ») ne dit rien d'elle-meme : la phrase entiere
+    reste l'empreinte, sinon on rejetterait des phrases qui ne se ressemblent pas.
     """
+    question, sep, _ = phrase.partition("?")
+    if sep:
+        empreinte = "".join(c for c in question.casefold() if c.isalnum())
+        if len(empreinte) >= 15:
+            return empreinte
     return "".join(c for c in phrase.casefold() if c.isalnum())
 
 
