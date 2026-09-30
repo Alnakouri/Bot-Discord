@@ -289,3 +289,5 @@ LOT 3–5 livrés : `c8814df`, CI verte
 
 
 LOT 8 : Docker relancé par Ahmed 17:00:58 UTC (les 8 conteneurs, 0 restart) ; `bot-sugar` contient la consigne (grep = 1) ; 0 erreur hors deux 503 Gemini au démarrage (Alfred, Sheo), servis par le repli. Reste LOT 9 (live).
+
+LOT 9 : VALIDÉ au live du 30/09 (20:35 → 21:51 UTC, 6 annonces auto, jeu Kingdom Come: Deliverance II, recompté avec `--relire`). Question < 80 car. 5/6 (seule au-dessus : 85), titre complet 0/6 (« ce jeu » partout), tutoiement 0/6, Discord 6/6, chaque ⏰ précédée d'un ✨ (SUITE 13 LOT 5 : 0 doublon). Écart connu, hors critères : la même question « Combien de fois ce jeu vous a-t-il jeté dans la boue médiévale ? » est sortie 2× (21:05, 21:51) avec une invitation différente, donc le filtre anti-redite de la SUITE 14 (empreinte de la phrase ENTIÈRE) ne l'a pas vue. **SUITE 19 CLOSE.**
