@@ -27,8 +27,9 @@ AUTRES_BOTS = [
     RACINE / "SugarBot" / "bot_sugar.py",
     RACINE / "MalenaBot" / "bot_malena.py",
 ]
-RETIREES_CHEZ_ALFRED = {"reputation", "leaderboard", "birthday", "quests"}
-TOUTES = {"reputation", "leaderboard", "birthday", "quests", "stats", "ping", "help"}
+RETIREES_CHEZ_ALFRED = {"reputation", "leaderboard", "birthday"}
+# /quests et /stats sont retirees pour TOUS les bots depuis le 2026-10-01.
+TOUTES = {"reputation", "leaderboard", "birthday", "ping", "help"}
 
 
 def _arbre(chemin):
@@ -192,19 +193,19 @@ def _aide(bot, monkeypatch):
     return interaction.response.embed.champs
 
 
-def test_par_defaut_les_sept_commandes_sont_posees(monkeypatch):
+def test_par_defaut_les_cinq_commandes_sont_posees(monkeypatch):
     bot = _FauxBot()
     setup_slash_commands(bot, "Test")
     assert set(bot.tree.poses) == TOUTES
-    assert len(_aide(bot, monkeypatch)) == 6
+    assert len(_aide(bot, monkeypatch)) == 4
 
 
-def test_avec_le_sans_d_alfred_il_reste_ping_stats_help(monkeypatch):
+def test_avec_le_sans_d_alfred_il_reste_ping_help(monkeypatch):
     bot = _FauxBot()
     setup_slash_commands(bot, "Alfred", sans=RETIREES_CHEZ_ALFRED)
-    assert set(bot.tree.poses) == {"ping", "stats", "help"}
+    assert set(bot.tree.poses) == {"ping", "help"}
     lignes = _aide(bot, monkeypatch)
-    assert lignes == ["/stats", "/ping"]
+    assert lignes == ["/ping"]
     for nom in RETIREES_CHEZ_ALFRED:
         assert not any(nom in ligne for ligne in lignes), f"/help promet encore /{nom}"
 

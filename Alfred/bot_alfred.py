@@ -444,7 +444,7 @@ async def on_ready():
     # INITIALISATION DES COMMANDES SLASH
     if run_command_setup and DATABASE_AVAILABLE:
         try:
-            setup_slash_commands(bot, "Alfred", sans={"reputation", "leaderboard", "birthday", "quests"})
+            setup_slash_commands(bot, "Alfred", sans={"reputation", "leaderboard", "birthday"})
             await sync_slash_commands(bot)
             logger.info("[SLASH] Commandes slash initialisées")
         except Exception as e:

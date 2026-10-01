@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Commandes slash centralisées pour l'écosystème des bots Discord.
-Fournit : /reputation, /leaderboard, /birthday, /quests, /stats, /ping, /help
+Fournit : /reputation, /leaderboard, /birthday, /ping, /help
+
+⚠️ /quests et /stats RETIRES le 2026-10-01 (decision d'Ahmed) : creux depuis l'origine.
+/stats lisait `bot_interactions`, que rien n'a jamais rempli (`log_bot_interaction` n'a
+jamais eu d'appelant depuis l'Initial commit) ; /quests montrait des quetes que rien ne
+pouvait valider (`complete_quest` sans appelant) et qui citaient des features retirees.
 """
 import discord
 from discord import app_commands
@@ -9,8 +14,6 @@ from shared.shared_database import (
     get_reputation, get_reputation_level, get_next_rank_info,
     get_reputation_leaderboard,
     set_birthday, get_todays_birthdays,
-    get_daily_quests, create_daily_quests, complete_quest,
-    get_bot_interaction_stats,
     is_maintenance_mode
 )
 
@@ -21,8 +24,6 @@ _AIDE = [
     ("reputation", "/reputation [user]", "Affiche vos points et votre rang."),
     ("leaderboard", "/leaderboard [top]", "Classement de réputation du serveur."),
     ("birthday", "/birthday <jour> <mois>", "Enregistre votre date d'anniversaire."),
-    ("quests", "/quests", "Affiche vos quêtes quotidiennes."),
-    ("stats", "/stats", "Statistiques des duels inter-bots."),
     ("ping", "/ping", "Vérifie la latence du bot."),
 ]
 _RETIRABLES = frozenset(nom for nom, _, _ in _AIDE)
@@ -32,8 +33,8 @@ def setup_slash_commands(bot, bot_name, sans=frozenset()):
     """Initialise les commandes slash pour un bot spécifique.
 
     `sans` : les commandes a NE PAS poser pour ce bot (ni afficher dans /help). Vide par
-    defaut : les bots qui ne le passent pas gardent les sept. /help est toujours posee.
-    Alfred ne garde que /ping, /stats et /help (SUITE 16, decision d'Ahmed du 28/09).
+    defaut : les bots qui ne le passent pas gardent les cinq. /help est toujours posee.
+    Alfred ne garde que /ping et /help (SUITE 16, decision d'Ahmed du 28/09).
     """
     sans = frozenset(sans)
     inconnues = sans - _RETIRABLES
@@ -127,73 +128,6 @@ def setup_slash_commands(bot, bot_name, sans=frozenset()):
             await interaction.response.send_message(embed=embed)
         else:
             await interaction.response.send_message("❌ Erreur lors de l'enregistrement.", ephemeral=True)
-
-    # ──────────────── /quests ────────────────
-    @_poser("quests", description="Affiche vos quêtes quotidiennes.")
-    async def quests(interaction: discord.Interaction):
-        user_quests = get_daily_quests(interaction.user.id)
-        if not user_quests:
-            user_quests = create_daily_quests(interaction.user.id)
-
-        quest_labels = {
-            "chat_sheogorath": "💬 Discuter avec Sheogorath",
-            "chat_maiq": "🐱 Écouter une rumeur de M'aiq",
-            "chat_alfred": "🎩 Demander un service à Alfred",
-            "participate_game": "🎮 Participer à un mini-jeu",
-            "make_bot_laugh": "😂 Faire rire un bot",
-            "help_someone": "🤝 Aider un autre membre",
-        }
-
-        embed = discord.Embed(
-            title="📋 Quêtes Quotidiennes",
-            color=discord.Color.teal()
-        )
-
-        for q in user_quests:
-            label = quest_labels.get(q["quest_type"], q["quest_type"])
-            status = "✅" if q["completed"] else "⬜"
-            reward = q.get("reward", 0)
-            embed.add_field(
-                name=f"{status} {label}",
-                value=f"Récompense : **{reward}** pts",
-                inline=False
-            )
-
-        embed.set_footer(text=f"Les quêtes se réinitialisent chaque jour • {bot_name}")
-        await interaction.response.send_message(embed=embed)
-
-    # ──────────────── /stats ────────────────
-    @_poser("stats", description="Affiche les statistiques des duels inter-bots.")
-    async def stats(interaction: discord.Interaction):
-        global_stats = get_bot_interaction_stats(days=30)
-
-        embed = discord.Embed(
-            title="📊 Statistiques des Duels Inter-Bots",
-            description="Derniers 30 jours",
-            color=discord.Color.dark_purple()
-        )
-
-        # Stats par bot
-        by_bot = global_stats.get("by_bot", [])
-        if by_bot:
-            bot_lines = []
-            for entry in by_bot[:6]:
-                bot_lines.append(f"⚔️ **{entry['bot1']}** — {entry['count']} duels")
-            embed.add_field(name="Activité par Bot", value="\n".join(bot_lines) or "Aucun", inline=False)
-
-        # Top paires
-        top_pairs = global_stats.get("top_pairs", [])
-        if top_pairs:
-            pair_lines = []
-            for entry in top_pairs[:5]:
-                pair_lines.append(f"🤝 {entry['bot1']} vs {entry['bot2']} — {entry['count']}x")
-            embed.add_field(name="Top Rivalités", value="\n".join(pair_lines) or "Aucune", inline=False)
-
-        if not by_bot and not top_pairs:
-            embed.description = "Aucun duel enregistré sur les 30 derniers jours."
-
-        embed.set_footer(text=f"Bot : {bot_name}")
-        await interaction.response.send_message(embed=embed)
 
     # ──────────────── /ping ────────────────
     @_poser("ping", description="Vérifie la latence du bot.")

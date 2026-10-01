@@ -16,17 +16,17 @@ Il existe trois façons d'interagir avec les bots sur le serveur :
 
 ## ⚡ Commandes Slash Communes
 
-Ces commandes sont partagées et accessibles sur **tous les bots** du serveur, **sauf Alfred**, qui ne garde que `/stats`, `/ping` et `/help` (et n'a ni mini-jeux ni vœux d'anniversaire) :
+Ces commandes sont partagées et accessibles sur **tous les bots** du serveur, **sauf Alfred**, qui ne garde que `/ping` et `/help` (et n'a ni mini-jeux ni vœux d'anniversaire) :
 
 | Commande | Paramètres | Description |
 |---|---|---|
 | `/reputation` | `[user]` (optionnel) | Affiche votre nombre de points de réputation, votre rang actuel et votre progression. |
 | `/leaderboard` | `[top]` (optionnel) | Affiche le classement général des membres les plus respectés du serveur (limité à 25 max). |
 | `/birthday` | `jour` (1-31), `mois` (1-12) | Enregistre votre date de naissance. Les bots vous souhaiteront un joyeux anniversaire le jour J ! |
-| `/quests` | *(aucun)* | Affiche vos quêtes quotidiennes (ex: parler à Sheogorath) pour gagner de la réputation. |
-| `/stats` | *(aucun)* | Affiche les statistiques d'activité et les rivalités de duels inter-bots des 30 derniers jours. |
 | `/ping` | *(aucun)* | Affiche la latence de connexion du bot. |
 | `/help` | *(aucun)* | Affiche le panneau d'aide des commandes slash. |
+
+> `/quests` et `/stats` ont été retirées le 01/10/2026 : elles tournaient à vide depuis l'origine (aucune quête ne pouvait se valider, aucun duel n'était jamais enregistré).
 
 ---
 
