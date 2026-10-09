@@ -370,6 +370,52 @@ def test_un_refus_n_efface_PAS_le_message_de_l_utilisateur():
     assert ctx.message.supprime is False
 
 
+def test_l_instruction_interdit_de_VISER_le_live_sans_tuer_la_voix():
+    """Alfred, 2026-10-09 EN LIVE : sa fiche « IMPITOYABLEMENT sarcastique, INTERDIT
+    d'etre serviable sans mepris » a retourne la pique CONTRE le live (stream presente
+    comme penible, invitation tournee en corvee). « TOUJOURS positive » ne suffit pas
+    face a une fiche qui impose le mepris : l'instruction doit NOMMER la cible interdite
+    — jamais le live — ET garder la voix, en consigne positive
+    ([[gotcha-le-prompt-bornait-le-DECOR-pas-la-PERSONNE]]). On verrouille sur
+    l'instruction REELLE que _generate_hype construit, en remplacant la cascade pour
+    capturer le system_prompt — pas sur une copie de la chaine.
+    """
+    import shared.llm_cascade as cascade
+
+    capture = {}
+
+    async def _faux_generate(**kw):
+        capture["system_prompt"] = kw.get("system_prompt", "")
+        return "ok"
+
+    annonceur = _annonceur(stream=STREAM_EN_DIRECT)
+    annonceur.personality_prompt = "SYSTEM: persona de test"
+    annonceur.key_manager = object()  # non-None : sinon _generate_hype se tait
+
+    # _annonceur() remplace _generate_hype par un stub : on appelle la VRAIE methode
+    # via la classe pour exercer le prompt reellement construit.
+    vrai = cascade.generate_response
+    cascade.generate_response = _faux_generate
+    try:
+        asyncio.run(TwitchAnnouncer._generate_hype(annonceur, STREAM_EN_DIRECT))
+    finally:
+        cascade.generate_response = vrai
+
+    assert "system_prompt" in capture, "_generate_hype n'a pas atteint la cascade"
+    prompt = capture["system_prompt"].lower()
+
+    # 1. La pique est retournee AILLEURS, jamais vers le live qu'on invite a rejoindre.
+    assert "jamais vers ce live" in prompt, (
+        "l'instruction ne borne plus la CIBLE de l'humour : un persona acerbe peut "
+        "redescendre le stream qu'il annonce"
+    )
+    # 2. La voix n'est pas tuee pour autant : le ton pince-sans-rire reste permis.
+    assert "pince-sans-rire" in prompt, (
+        "le correctif a efface la voix au lieu de rediriger la pique : un bot banal "
+        "n'est pas le but"
+    )
+
+
 def test_le_bot_qui_n_est_pas_VISE_ne_touche_a_rien():
     bot, journal = _BotFactice(), _Journal()
     annonceur = _annonceur(stream=STREAM_EN_DIRECT)

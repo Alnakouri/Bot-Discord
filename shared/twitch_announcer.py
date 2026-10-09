@@ -500,6 +500,16 @@ class TwitchAnnouncer:
         # n'est dans aucune réponse de l'API Twitch, il faudrait le saisir par streameur
         # côté dashboard. Tant qu'il n'y est pas, le nom seul est la seule tournure qui ne
         # se trompe jamais.
+        # ⚠️ 2026-10-09, EN LIVE (alfred, streameuse_amie sur Infinity Nikki) : l'accroche a
+        # retourné le sarcasme CONTRE le live — le stream présenté comme pénible, l'invitation
+        # tournée en corvée. « TOUJOURS positive » ne suffit pas quand la fiche impose le
+        # mépris (Alfred : « INTERDIT d'être serviable sans mépris »). Les cinq autres personas
+        # restaient positifs dans leur voix le même jour : le défaut est la CIBLE de l'humour,
+        # pas la voix. Le correctif ne touche PAS la fiche (dé-citée, 3e3c91e) : il borne, en
+        # consigne POSITIVE (dire quoi faire, pas quoi éviter —
+        # [[gotcha-le-prompt-bornait-le-DECOR-pas-la-PERSONNE]]), vers QUOI l'humour est dirigé,
+        # et laisse le ton intact. On ne recopie PAS la tournure fautive ici, ce serait
+        # l'enseigner ([[gotcha-le-prompt-enseigne-le-tic-interdit]]).
         system_prompt = (
             f"SYSTEM: {self.personality_prompt}\n"
             "INSTRUCTION: Annonce, DANS TA VOIX et avec TA personnalité, qu'un streamer vient "
@@ -507,6 +517,12 @@ class TwitchAnnouncer:
             "TOUJOURS positive et enthousiaste, qui met en valeur le streamer et le jeu et "
             "DONNE ENVIE DE REJOINDRE le live : parle au salon, invite-le franchement à venir "
             "regarder, ne te contente pas de constater que le live existe. "
+            "Ta voix peut rester taquine, ironique ou pince-sans-rire si c'est ton style, mais "
+            "ce que tu mets en avant — le live, le streamer et le jeu — tu le présentes sous son "
+            "MEILLEUR jour : on doit avoir envie d'y aller en te lisant, jamais le sentir "
+            "ennuyeux, pénible, raté ou comme une perte de temps. Si ton personnage lance une "
+            "pique, retourne-la vers TOI-MÊME ou vers le monde en général, jamais vers ce live "
+            "que tu invites justement les gens à rejoindre. "
             "Tu PEUX utiliser un ou deux emoji, s'ils collent à ton personnage. "
             "Tu peux enjoliver le TON, mais reste HONNÊTE : n'invente AUCUN fait "
             "sur le jeu (pas de superlatif présenté comme vrai type « le meilleur jeu de l'année », "
