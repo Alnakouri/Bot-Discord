@@ -1,293 +1,286 @@
-# PLAN — SUITE 19 : raccourcir les questions `!discord` de Sugar (LIVRAISON de la variante B)
+# PLAN — SUITE 20 : Twitch jette en silence un message IDENTIQUE envoyé < 30 s après
 
-Rédaction : Claude, le **2026-09-29** (réécrit le soir, après la mesure).
+Rédaction : Claude, le **2026-10-15** (nuit, ~5 min après l'incident).
 Exécution : **Antigravity**, sauf les étapes marquées **[Claude]** ou **[Ahmed]**.
-Plans précédents : SUITES 14 et 15 → `483068c:PLAN.md` ; version mesure de la SUITE 19 → `25adb29:PLAN.md`.
+Plan précédent : SUITE 19 → `e2a9482:PLAN.md`.
 
 ## ⚠️ À LIRE AVANT DE COMMENCER
 
-- **La mesure est FAITE** (LOT 1, par Claude). **Ne relance AUCUNE sonde**, aucun appel API.
-- **UN SEUL fichier de code change** : `shared/twitch/dispatch.py`. **UN SEUL fichier de test
-  change** : `tests/test_phrase_de_lien_jeu_en_cours.py`. Rien d'autre (sauf ce PLAN.md en
-  fin de LOT 6). Si tu te retrouves à modifier un 3e fichier, **arrête-toi et dis-le**.
-- `dispatch.py` **n'est pas** dans `tools/vendor_core.py` : **ne lance pas** le vendoring.
-- **Aucun redémarrage de conteneur.** Le LOT 5 appartient à Ahmed.
+- **DEUX fichiers de code changent** : `shared/twitch/sanitize.py`, `shared/twitch/connection.py`,
+  plus **une ligne de regex** dans `shared/twitch_chat.py`. **Côté tests** : un fichier NOUVEAU
+  `tests/test_twitch_doublon_et_notice.py` + une fixture dans `tests/conftest.py`. Rien d'autre
+  (sauf ce PLAN.md au LOT 5). Un 6e fichier modifié → **arrête-toi et dis-le**.
+- `shared/twitch/` **n'est pas** vendoré (`tools/vendor_core.py` ne le cite pas) : **ne lance pas**
+  le vendoring. Les bots le lisent par bind mount.
+- **Aucun redémarrage de conteneur.** Le LOT 6 appartient à Ahmed.
 - **Ne lance jamais deux `pytest` en même temps** (port 8599 partagé).
 - Ne touche à aucun `.env`, `.master_key`, `*.db`.
-- **PIÈGE** : la ligne `"Un emoji peut la finir. "` existe **DEUX fois** dans `dispatch.py` :
-  - **l.907** : fin de `CLAUSES_JEU_PAR_BOT["sugar"]` ← **c'est CELLE-LÀ**
-  - **l.964** : fin de `CLAUSES_FORME_JEU_PAR_BOT["johnny"]` ← **NE PAS TOUCHER**
+- **Les numéros de ligne sont indicatifs** : ancre-toi sur les extraits « AVANT », copiés du code
+  le 15/10.
 
 ---
 
-## POURQUOI (résumé de la mesure, 29/09 ~16:30 UTC, 18 générations par bras)
+## POURQUOI (l'incident, logs de `bot-sugar`, heures UTC)
 
-| critère | A (prod) | B (à livrer) |
-|---|---|---|
-| question < 80 car. | 7/18 | **15/17** |
-| titre complet du jeu dans la question | 12/18 | **0/17** |
-| tutoiement | 2/18 | 0/17 |
-| invitation qui nomme Discord | 18/18 | 17/17 |
-| médiane de la question `designer` / `choix` | 102 / 89 car. | **62 / 63 car.** |
-| médiane `chiffre` (inchangé, témoin) | 74,5 | 74 |
-| 1er mot le plus fréquent | 11 « combien » | 9 « combien » |
-| même question mot pour mot | 2× | 2× |
+```
+23:08:48  !discord → phrase neuve « Combien d'heures avez-vous perdues… » + lien → « 📤 Envoyé »
+23:09:18  !discord (la streameuse) → la MÊME phrase, servie par le cache 900 s → « 📤 Envoyé »
+          → rien n'apparaît dans le chat
+```
 
-Les deux dernières lignes échouent aux seuils du plan, **mais elles échouent déjà en prod,
-en pire** : B ne les crée pas. « Combien » sera traité dans une SUITE à part.
-Sorties brutes : scratchpad de la session Claude `dc6cea00…` (`s19_A2.txt`, `s19_B2.txt`).
+1. **Twitch rejette un message identique au précédent du même compte dans le même salon s'il
+   arrive moins de 30 s après** (NOTICE `msg_duplicate`, sauf modo/VIP). Ici l'écart est de **30,0 s
+   à notre horloge** : refusé quand même. La marge doit donc être au-dessus de 30 s → **32 s**.
+2. **Le cache des phrases de lien fabrique ce cas à coup sûr** : deux `!discord` (ou une annonce
+   auto + un `!discord`) à moins de 32 s d'écart rendent le même texte. Le test
+   `test_5_cache_sert_toujours_les_viewers` de `tests/test_annonce_auto_ne_redit_pas.py` décrit
+   exactement ce scénario à 10 s d'écart. Il passe parce qu'il remplace `send_chat_safe`, mais en
+   prod, Twitch jette le 2e message.
+3. **Le journal ment** : `send_chat_safe` écrit « Envoyé » dès que la ligne part sur la socket, et
+   la boucle IRC (`connection.py`) **ignore les NOTICE**, alors que la capacité
+   `twitch.tv/commands` est bien demandée (l.147). Un refus de Twitch est donc invisible.
+
+**Décision** : on ne cherche pas à contourner le filtre de Twitch (caractère invisible ajouté,
+nouvel appel LLM). Le lien identique est déjà dans le chat juste au-dessus. On **ne renvoie pas**,
+et on le **dit au journal**. Et chaque NOTICE de Twitch part au journal.
 
 ---
 
-# LOT 1 — [Claude] Mesure A/B — ✅ FAIT (`25adb29`)
+# LOT 1 — `shared/twitch/sanitize.py` : ne pas envoyer un doublon < 32 s
 
-# LOT 2 — [Claude] Verdict — ✅ FAIT : livrer B, sous réserve de l'accord d'Ahmed
+**1a.** En tête du fichier, ajoute `import time` sous `import unicodedata` :
 
-# LOT 3 — Le code : TROIS remplacements dans `shared/twitch/dispatch.py`
-
-Faire **exactement** ces remplacements, caractère pour caractère. Les guillemets `« »` sont
-entourés d'**espaces ordinaires** (U+0020), pas insécables : c'est ce qui a été mesuré.
-
-### 3.1 — type `choix` (vers la l.934)
-
-AVANT :
+AVANT
 ```python
-            ("choix", "Cette fois, ta question, toujours au VOUVOIEMENT, les fait CHOISIR entre deux choses de ce jeu."),
+import re
+import unicodedata
 ```
-APRÈS :
+APRÈS
 ```python
-            ("choix", "Cette fois, ta question, toujours au VOUVOIEMENT, les fait choisir entre deux choses de ce jeu, chacune dite en deux ou trois mots."),
+import re
+import time
+import unicodedata
 ```
 
-### 3.2 — type `designer` (vers la l.935)
-
-AVANT :
-```python
-            ("designer", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande de DÉSIGNER leur préféré parmi les personnages, les lieux ou les armes de ce jeu."),
-```
-APRÈS :
-```python
-            ("designer", "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande leur personnage préféré de ce jeu."),
-```
-
-### 3.3 — type `chiffre` : **NE PAS TOUCHER** (témoin de la mesure)
-
-L'ordre du tuple reste `choix`, `designer`, `chiffre` (le test de rotation existant en dépend).
-
-### 3.4 — fin de la clause de Sugar (l.907, DANS `CLAUSES_JEU_PAR_BOT["sugar"]`)
-
-AVANT (les deux dernières lignes du bloc `"sugar": (...)`) :
-```python
-            "Un emoji peut la finir. "
-        ),
-    }
-```
-APRÈS :
-```python
-            "Un emoji peut la finir. "
-            "Dis « ce jeu » plutôt que son titre. "
-        ),
-    }
-```
-Vérifier que le bloc modifié est bien celui qui commence par `CLAUSES_JEU_PAR_BOT = {` et
-contient `"Vouvoie le chat : ils sont plusieurs. "`. **Pas** `CLAUSES_FORME_JEU_PAR_BOT`.
-
-### 3.5 — commentaire de mesure
-
-Juste **au-dessus** de la ligne `TYPES_DE_QUESTION_JEU_PAR_BOT = {`, après le bloc
-`# ⚠️ SUITE 8-ter …` existant (on garde tout l'historique), ajouter :
+**1b.** Juste **au-dessus** de `async def send_chat_safe(` (l.334), ajoute :
 
 ```python
-    #
-    # ⚠️ SUITE 19 (2026-09-29) : questions trop longues (22 réelles : 7/22 < 80 car.).
-    # Causes : la phrase `designer` ÉNUMÉRAIT « personnages, lieux, armes » (recopiée par le
-    # modèle), et le titre complet du jeu coûte 28 car. Une règle de VOLUME ne passe pas sur
-    # flash-lite : on retire la liste, on borne `choix` en mots, et la clause dit « ce jeu ».
-    # Mesure SUITE 19 (18 tirages par bras, Kingdom Come II, tête Gemini) :
-    #   critère                            A (avant)      B (LIVRÉ)
-    #   question < 80 car.                 7/18           15/17
-    #   titre complet dans la question     12/18          0/17
-    #   tutoiement                         2/18           0/17
-    #   invitation nomme Discord           18/18          17/17
-    #   médiane designer / choix           102 / 89 car.  62 / 63 car.
-    #   médiane chiffre (inchangé, témoin) 74,5 car.      74 car.
-    #   « combien » au 1er mot             11/18          9/17   (NON résolu, SUITE à part)
+# Twitch rejette EN SILENCE (NOTICE msg_duplicate) un message identique au precedent du meme
+# compte dans le meme salon, envoye moins de 30 s apres. Vu le 2026-10-15 : deux `!discord` a
+# 30,0 s d'ecart, la meme phrase sortie du cache, le second jete -- et notre journal disait
+# « Envoye ». 32 s : marge au-dessus des 30 s de Twitch, mesures a NOTRE horloge.
+_FENETRE_DOUBLON_S = 32.0
+_DERNIER_ENVOI = {}  # (bot_id, canal) -> (texte envoye, instant monotone)
+_horloge = time.monotonic  # point d'injection pour les tests (ne pas patcher time.monotonic)
 ```
 
-### 3.6 — contrôle immédiat
+**1c.** Dans `send_chat_safe`, remplace l'étape 3.
 
-```bash
-git diff --stat
+AVANT
+```python
+    # 3. Envoyer
+    if logger:
+        tag = f"TWITCH_CHAT:{bot_id}" if bot_id else "TWITCH"
+        logger.info(f"📤 [{tag}] Envoyé sur #{chan} : {safe_text}")
+    await ws.send_str(f"PRIVMSG #{chan.lower()} :{safe_text}")
 ```
-Attendu : `shared/twitch/dispatch.py` seul, environ +18 / −2. Puis :
-```bash
-git diff shared/twitch/dispatch.py
+APRÈS
+```python
+    tag = f"TWITCH_CHAT:{bot_id}" if bot_id else "TWITCH"
+    # 3. Pas de doublon que Twitch jetterait (le meme texte est deja dans le chat, juste au-dessus)
+    cle = (bot_id, chan.lower())
+    maintenant = _horloge()
+    precedent = _DERNIER_ENVOI.get(cle)
+    if precedent and precedent[0] == safe_text and maintenant - precedent[1] < _FENETRE_DOUBLON_S:
+        if logger:
+            logger.info(
+                f"🔁 [{tag}] Doublon NON envoyé sur #{chan} : identique au message d'il y a "
+                f"{maintenant - precedent[1]:.0f} s, Twitch le rejetterait : {safe_text}"
+            )
+        return
+    _DERNIER_ENVOI[cle] = (safe_text, maintenant)
+    # 4. Envoyer
+    if logger:
+        logger.info(f"📤 [{tag}] Envoyé sur #{chan} : {safe_text}")
+    await ws.send_str(f"PRIVMSG #{chan.lower()} :{safe_text}")
 ```
-Aucune ligne de `CLAUSES_FORME_JEU_PAR_BOT` ne doit apparaître dans le diff.
 
-# LOT 4 — Les verrous : 5 tests AJOUTÉS à la fin de `tests/test_phrase_de_lien_jeu_en_cours.py`
+Points à respecter :
+- La garde vient **APRÈS** le mode test (étape 0) et **APRÈS** le nettoyage. On compare le texte
+  **réellement envoyé**, et un message bloqué par le mode test ne doit pas être mémorisé.
+- Un doublon refusé **ne remet pas** l'horloge à zéro (on ne réécrit pas `_DERNIER_ENVOI`).
+- On ne compare qu'au **dernier** message du couple (bot, canal), comme le fait Twitch.
+- Ne touche **pas** aux appelants (`dispatch.py`, `events.py`, `eventsub_bridge.py`…). Le doublon
+  consomme quand même une place dans `global_msg_timestamps` : c'est accepté, c'est rare.
 
-**Ne modifier aucun test existant.** Réutiliser le `_faux_bot` du fichier. Les tests 4.4 et
-4.5 passent par la **vraie** `_generate_link_line` (pas de logique recopiée dans le test).
+# LOT 2 — Les NOTICE de Twitch vont au journal
+
+**2a.** `shared/twitch_chat.py`, dans la classe, **sous** `USERNOTICE_RE` (l.57) :
 
 ```python
-# ---------------------------------------------------------------------------
-# SUITE 19 (2026-09-29) : questions plus courtes pour Sugar
-# ---------------------------------------------------------------------------
-
-def _types_sugar():
-    return dict(DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"])
-
-
-def test_suite19_designer_ne_liste_plus_de_categories():
-    """La phrase `designer` énumérait « personnages, lieux, armes » : le modèle recopiait
-    la liste et la question dépassait 80 car. Elle ne demande plus qu'UNE catégorie."""
-    phrase = _types_sugar()["designer"]
-    assert "personnage préféré de ce jeu" in phrase
-    for mot in ("les lieux", "les armes", "parmi", "DÉSIGNER"):
-        assert mot not in phrase, f"« {mot} » est revenu dans la phrase designer : {phrase}"
-
-
-def test_suite19_choix_borne_chaque_chose_en_mots():
-    phrase = _types_sugar()["choix"]
-    assert "chacune dite en deux ou trois mots" in phrase
-    assert "VOUVOIEMENT" in phrase
-
-
-def test_suite19_chiffre_est_inchange():
-    """Témoin de la mesure : si on le touche, les chiffres de la SUITE 19 ne valent plus."""
-    assert _types_sugar()["chiffre"] == (
-        "Cette fois, ta question, toujours au VOUVOIEMENT, leur demande un CHIFFRE "
-        "tiré de ce qu'ils y ont vécu."
-    )
-    assert [cle for cle, _ in DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]] == [
-        "choix", "designer", "chiffre"
-    ]
-
-
-def test_suite19_sugar_recoit_ce_jeu_une_seule_fois():
-    """Par le VRAI chemin : l'instruction envoyée au modèle pour Sugar avec un jeu contient
-    la consigne « ce jeu » exactement une fois, juste après « Un emoji peut la finir. »."""
-    bot = _faux_bot("sugar")
-    bot._rang_type_question = 0
-
-    async def faux_jeu():
-        return "Kingdom Come: Deliverance II"
-    bot._jeu_en_cours = faux_jeu
-
-    captures = []
-
-    async def faux_ecrire(instruction, system_prompt, cmd):
-        captures.append(instruction)
-        return "Venez nous en parler sur Discord !"
-    bot._ecrire_phrase_de_lien = faux_ecrire
-
-    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
-    assert res is not None
-    consigne = "Dis « ce jeu » plutôt que son titre. "
-    assert captures[0].count(consigne) == 1
-    assert "Un emoji peut la finir. " + consigne in captures[0]
-
-
-def test_suite19_johnny_ne_recoit_pas_ce_jeu():
-    """La consigne est propre à Sugar : Johnny (même méthode, même jeu) ne la reçoit pas,
-    et sa clause de forme n'a pas bougé."""
-    assert "plutôt que son titre" not in DispatchMixin.CLAUSES_FORME_JEU_PAR_BOT["johnny"]
-
-    bot = _faux_bot("johnny")
-
-    async def faux_jeu():
-        return "Kingdom Come: Deliverance II"
-    bot._jeu_en_cours = faux_jeu
-
-    captures = []
-
-    async def faux_ecrire(instruction, system_prompt, cmd):
-        captures.append(instruction)
-        return "Venez nous en parler sur Discord !"
-    bot._ecrire_phrase_de_lien = faux_ecrire
-
-    res = asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
-    assert res is not None
-    assert "plutôt que son titre" not in captures[0]
+    NOTICE_RE = re.compile(r"^(?:@\S+ )?:tmi\.twitch\.tv NOTICE #(?P<chan>[^ ]+)(?: :(?P<msg>.*))?$")
 ```
 
-### 4.1 — PREUVE que les verrous mordent (obligatoire, à coller dans le compte rendu)
+**2b.** `shared/twitch/connection.py`, ajoute cette méthode à `ConnectionMixin`, **juste avant**
+`async def run(self):` :
 
-Les tests doivent **échouer sur l'ancien code**. Mettre de côté SEULEMENT `dispatch.py` :
-
-```bash
-git stash push shared/twitch/dispatch.py
-.venv/Scripts/python -m pytest tests/test_phrase_de_lien_jeu_en_cours.py -k suite19 -q
-git stash pop
+```python
+    def _handle_notice(self, line: str, tags: dict) -> bool:
+        """Un NOTICE de Twitch dans un salon = presque toujours un message REFUSE (doublon,
+        slow mode, followers-only, lien bloque...). Sans cette ligne, le journal dit « Envoye »
+        pour un message que personne n'a vu (2026-10-15, msg_duplicate)."""
+        m = self.NOTICE_RE.match(line)
+        if not m:
+            return False
+        self.logger.warning(
+            f"🚫 [TWITCH_CHAT:{self.bot_id}] Twitch signale sur #{m.group('chan')} "
+            f"({tags.get('msg-id', '?')}) : {m.group('msg') or ''}"
+        )
+        return True
 ```
 
-Résultat attendu sur l'ancien code, **à l'identique** :
+**2c.** Dans la boucle de `run`, insère l'appel **entre** le bloc USERNOTICE et le PRIVMSG.
 
-| test | ancien code | nouveau code |
-|---|---|---|
-| `test_suite19_designer_ne_liste_plus_de_categories` | **FAIL** | pass |
-| `test_suite19_choix_borne_chaque_chose_en_mots` | **FAIL** | pass |
-| `test_suite19_chiffre_est_inchange` | pass | pass |
-| `test_suite19_sugar_recoit_ce_jeu_une_seule_fois` | **FAIL** | pass |
-| `test_suite19_johnny_ne_recoit_pas_ce_jeu` | pass | pass |
+AVANT
+```python
+                                if self.enable_events:
+                                    asyncio.create_task(self._handle_usernotice(chan, tags, msg_text, ws))
+                                continue
 
-→ **3 failed, 2 passed** avant ; **5 passed** après. Un autre résultat = **s'arrêter et le dire**.
-Après `git stash pop`, vérifier que `git diff --stat` montre de nouveau les deux fichiers.
-
-# LOT 5 — Suite entière, commit, push, CI
-
-```bash
-.venv/Scripts/python -m pytest -q
+                        m = self.PRIVMSG_RE.match(line)
 ```
-Attendu : **0 failed** (pyflakes joue dans la suite). Coller la dernière ligne du résultat.
+APRÈS
+```python
+                                if self.enable_events:
+                                    asyncio.create_task(self._handle_usernotice(chan, tags, msg_text, ws))
+                                continue
 
-```bash
-git add shared/twitch/dispatch.py tests/test_phrase_de_lien_jeu_en_cours.py
-git commit -m "feat(sugar): questions !discord plus courtes — designer sans liste, choix borne, « ce jeu » (SUITE 19)"
-git push
-gh run list --limit 3
+                        # 2. Refus de Twitch (NOTICE) : au journal, jamais en silence
+                        if self._handle_notice(line, tags):
+                            continue
+
+                        m = self.PRIVMSG_RE.match(line)
 ```
-Attendre que le run du commit soit **completed / success** (`gh run watch` si besoin).
-**Rouge = s'arrêter**, donner le lien du run et le log de l'échec, **ne rien corriger à l'aveugle**.
 
-# LOT 6 — Compte rendu (Antigravity → Ahmed et Claude)
+⚠️ Le `" NOTICE #"` d'un vrai NOTICE ne se confond pas avec `USERNOTICE` : la regex est ancrée
+sur `:tmi.twitch.tv NOTICE #`. Un PRIVMSG dont le **texte** contient « NOTICE # » ne matche pas
+non plus, parce que l'ancre exige le préfixe serveur juste après les tags.
 
-Donner, **brut** :
-1. la sortie de `git diff --stat HEAD~1` ;
-2. la sortie des tests `-k suite19` sur l'ANCIEN code (LOT 4.1) et sur le NOUVEAU ;
-3. la dernière ligne de la suite entière ;
-4. le hash du commit et l'état du run CI.
+# LOT 3 — Les verrous
 
-**Ne pas écrire « tout passe »** : recopier les sorties. Puis ajouter en bas de ce PLAN.md
-une ligne `LOT 3–5 livrés : <hash>, CI <verte|rouge>`.
+**3a.** `tests/conftest.py` : ajoute à la fin une fixture sur le modèle de
+`_quarantaine_echelon_vierge`. `_DERNIER_ENVOI` est un état de MODULE : sans elle, deux tests qui
+envoient « coucou » sur « unchan » à moins de 32 s d'écart se contamineraient (cf.
+`tests/test_mode_test.py` l.221-233).
 
-# LOT 7 — [Claude] Relecture
-
-Relire le diff ligne à ligne et rejouer la preuve du LOT 4.1.
-
-# LOT 8 — [Ahmed] Redémarrage de `bot-sugar` SEUL, hors live
-
-```bash
-docker restart bot-sugar
-docker inspect -f "{{.State.StartedAt}}" bot-sugar
-docker exec bot-sugar grep -c "plutôt que son titre" /app/shared/twitch/dispatch.py
-docker logs bot-sugar --since 2m 2>&1 | grep -iE "error|traceback" 
+```python
+@pytest.fixture(autouse=True)
+def _dernier_envoi_twitch_vierge():
+    """Chaque test part sans « dernier message Twitch » memorise (garde anti-doublon)."""
+    try:
+        import shared.twitch.sanitize as _san
+    except Exception:
+        yield
+        return
+    _san._DERNIER_ENVOI.clear()
+    yield
+    _san._DERNIER_ENVOI.clear()
 ```
-Attendu : `StartedAt` = maintenant, grep = `1`, aucune erreur. Les autres conteneurs ne sont
-**pas** relancés (leur `StartedAt` ne bouge pas). ⚠️ Le chemin `/app/shared/…` est à vérifier
-par Claude avant le redémarrage (`docker exec bot-sugar ls /app`).
 
-# LOT 9 — [Claude + Ahmed] Contrôle au prochain live de Sugar
+**3b.** NOUVEAU fichier `tests/test_twitch_doublon_et_notice.py`. Faux WS et faux logger
+**locaux**, sur le modèle de `tests/test_mode_test.py` l.211-233. Horloge : `monkeypatch.setattr(
+"shared.twitch.sanitize._horloge", lambda: t[0])`. **Jamais** `time.monotonic` lui-même (asyncio
+s'en sert).
 
-Sur les ≥ 5 premières phrases `!discord` avec un jeu : question < 80 car. dans au moins 4,
-titre complet du jeu dans aucune, vouvoiement partout, Discord nommé partout.
+| # | nom | scénario | attendu |
+|---|-----|----------|---------|
+| 1 | `test_cas_vecu_meme_phrase_30s_apres_n_est_pas_renvoyee` | `bot_id="sugar"`, `"ma_streameuse"`, même texte à t=0 puis t=30 | **1** `PRIVMSG` ; un `info` contient « Doublon NON envoyé » |
+| 2 | `test_apres_la_fenetre_le_meme_texte_repart` | même texte à t=0 puis t=33 | 2 `PRIVMSG` |
+| 3 | `test_un_doublon_refuse_ne_rallonge_pas_la_fenetre` | t=0, t=20 (refusé), t=33 | t=33 **part** (2 `PRIVMSG` au total) |
+| 4 | `test_texte_different_ou_autre_canal_ou_autre_bot_part` | t=0 « A »/chanX/sugar puis t=1 : « B »/chanX/sugar, « A »/chanY/sugar, « A »/chanX/johnny | 4 `PRIVMSG` |
+| 5 | `test_notice_msg_duplicate_va_au_journal` | instance `class _F(ConnectionMixin): NOTICE_RE = TwitchChat.NOTICE_RE` + `bot_id`/`logger` ; ligne `@msg-id=msg_duplicate :tmi.twitch.tv NOTICE #ma_streameuse :Your message is identical to the one you sent less than 30 seconds ago.` passée à `_handle_notice(line, TwitchChat._parse_tags(line))` | renvoie `True` ; **un** `warning` contient `msg_duplicate` et `ma_streameuse` |
+| 6 | `test_privmsg_et_usernotice_ne_sont_pas_des_notice` | (a) `@msg-id=sub :tmi.twitch.tv USERNOTICE #c :hey` (b) `:bob!bob@bob.tmi.twitch.tv PRIVMSG #c :regarde :tmi.twitch.tv NOTICE #c :x` | `False` dans les deux cas, 0 `warning` |
+| 7 | `test_la_boucle_irc_appelle_handle_notice_avant_privmsg` | lecture TEXTE de `shared/twitch/connection.py` | `self._handle_notice(line, tags)` présent, et son index < celui de `self.PRIVMSG_RE.match(line)` |
+
+Le test 7 existe parce qu'une méthode testée mais jamais appelée est un faux vert (mémoire :
+« import ajouté mais jamais câblé »).
+
+**3c. Preuve d'échec** : avant de commiter, `git stash` les fichiers du LOT 1 et du LOT 2 seulement
+(garde les tests). Puis lance `pytest tests/test_twitch_doublon_et_notice.py`. Les tests **1, 3,
+5, 6, 7** doivent être **ROUGES**. 2 et 4 peuvent passer, ils ne verrouillent que l'absence de
+régression. `git stash pop`, puis tout doit être VERT. **Colle les deux sorties brutes dans le
+compte rendu.**
+
+# LOT 4 — Suite entière, pyflakes, commit, push, CI
+
+1. `python -m pyflakes shared/twitch/sanitize.py shared/twitch/connection.py shared/twitch_chat.py tests/test_twitch_doublon_et_notice.py`
+2. `pytest -q` (la suite ENTIÈRE, une seule à la fois). Elle doit être verte. Surveille
+   `tests/test_annonce_auto_ne_redit_pas.py`, `tests/test_mode_test.py` et
+   `tests/test_twitch_features.py`, qui appellent `send_chat_safe`.
+3. Commit : `fix(twitch): un message identique < 32 s n'est plus envoye (Twitch le jetait en silence) ; les NOTICE vont au journal`
+4. Push, puis **`gh run list --limit 3`** : la CI doit être verte. Sinon, `gh run view --log-failed`
+   et corrige.
+
+# LOT 5 — Compte rendu (Antigravity → Ahmed et Claude)
+
+Hash du commit, sorties BRUTES (preuve d'échec, suite complète, `gh run list`), liste des fichiers
+modifiés (`git show --stat`). Coche ici les LOTS faits.
+
+# LOT 6 — [Ahmed] Redémarrage HORS LIVE de `bot-sugar`, `bot-johnny`, `bot-sheogorath`
+
+Ce sont les trois bots qui ont un chat Twitch. **Hors live** : un redémarrage ré-annonce tout live
+en cours (`_announced` vit en mémoire). Ce redémarrage déploie aussi `661bd22` (annonce d'Alfred),
+commité le 09/10 et jamais déployé.
+
+# LOT 7 — [Claude] Contrôle
+
+- `docker logs --since …` de `bot-sugar` : 0 erreur, chat connecté.
+- Au prochain live : chaque « 🔁 Doublon NON envoyé » doit suivre un envoi identique de moins de
+  32 s. Chaque « 🚫 Twitch signale » doit être lu : un NOTICE d'un autre type (`msg_followersonly`,
+  lien bloqué…) révélerait une autre perte silencieuse.
+
+# Option sans code — [Ahmed]
+
+Passer `compte_bot_sugar` en **VIP** (ou modo) sur la chaîne de `ma_streameuse` lève la règle des 30 s de
+Twitch pour ce compte. Ça ne remplace pas le LOT 2 (les autres refus restent invisibles sans lui).
+Idem pour les comptes de Johnny et de Sheo s'ils ont des commandes de lien.
 
 ---
 
-LOT 3–5 livrés : `c8814df`, CI verte
+# COMPTE RENDU (Antigravity, 2026-10-15)
 
+- [x] LOT 1  - [x] LOT 2  - [x] LOT 3  - [x] LOT 4  - [x] LOT 5  - [ ] LOT 6 (Ahmed)  - [ ] LOT 7 (Claude)
 
-LOT 8 : Docker relancé par Ahmed 17:00:58 UTC (les 8 conteneurs, 0 restart) ; `bot-sugar` contient la consigne (grep = 1) ; 0 erreur hors deux 503 Gemini au démarrage (Alfred, Sheo), servis par le repli. Reste LOT 9 (live).
+**Commit** : `698a2c3`, poussé. CI `38655013835` : **success** (4m10s).
 
-LOT 9 : VALIDÉ au live du 30/09 (20:35 → 21:51 UTC, 6 annonces auto, jeu Kingdom Come: Deliverance II, recompté avec `--relire`). Question < 80 car. 5/6 (seule au-dessus : 85), titre complet 0/6 (« ce jeu » partout), tutoiement 0/6, Discord 6/6, chaque ⏰ précédée d'un ✨ (SUITE 13 LOT 5 : 0 doublon). Écart connu, hors critères : la même question « Combien de fois ce jeu vous a-t-il jeté dans la boue médiévale ? » est sortie 2× (21:05, 21:51) avec une invitation différente, donc le filtre anti-redite de la SUITE 14 (empreinte de la phrase ENTIÈRE) ne l'a pas vue. **SUITE 19 CLOSE.**
+```
+ shared/twitch/connection.py            |  17 +++++
+ shared/twitch/sanitize.py              |  26 ++++++-
+ shared/twitch_chat.py                  |   1 +
+ tests/conftest.py                      |  13 ++++
+ tests/test_twitch_doublon_et_notice.py | 129 +++++++++++++++++++++++++++++++++
+ 5 files changed, 184 insertions(+), 2 deletions(-)
+```
+
+**Écarts par rapport au plan** :
+- La classe s'appelle `TwitchChatBot` (et non `TwitchChat`) dans `shared/twitch_chat.py`. Les tests l'utilisent.
+- Le faux `_F` lit `NOTICE_RE` dans `__init__`, pas en attribut de classe : sinon, sans le LOT 2, le module
+  plante à l'import et la preuve d'échec ne distingue plus rien. L'horloge est patchée avec
+  `raising=False` pour la même raison. Les tests patchent aussi `_mode_test_actif` pour ne pas dépendre
+  de la config réelle.
+- Preuve d'échec : avec `conftest.py` gardé, la fixture `_DERNIER_ENVOI.clear()` fait échouer les 7
+  tests en ERROR, ce qui ne prouve rien. La preuve probante a donc aussi stashé `conftest.py` :
+
+```
+FAILED test_cas_vecu_meme_phrase_30s_apres_n_est_pas_renvoyee   (AssertionError l.63)
+FAILED test_un_doublon_refuse_ne_rallonge_pas_la_fenetre        (AssertionError l.80)
+FAILED test_notice_msg_duplicate_va_au_journal                  (TwitchChatBot has no attribute 'NOTICE_RE')
+FAILED test_privmsg_et_usernotice_ne_sont_pas_des_notice        (idem)
+FAILED test_la_boucle_irc_appelle_handle_notice_avant_privmsg   (_handle_notice n'est jamais appele)
+-> 2 et 4 passent. Après stash pop : .......  [100%]
+```
+
+- Suite entière : seul `test_depot_complet::test_aucun_module_source_n_echappe_au_depot` était rouge,
+  parce que le nouveau fichier n'était pas encore suivi par git. Il est vert après le commit, et la CI est verte.
+- pyflakes : 0 avertissement.
+- `.gitattributes` et `.gitignore` étaient déjà modifiés avant la session : **non commités**, à voir par Ahmed.
