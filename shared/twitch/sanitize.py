@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import re
+import time
 import unicodedata
 
 # Méta-narration hors-personnage : le LLM décrit l'utilisateur (ou la scène) à la
@@ -331,6 +332,15 @@ def _mode_test_actif(bot_id):
         return False
 
 
+# Twitch rejette EN SILENCE (NOTICE msg_duplicate) un message identique au precedent du meme
+# compte dans le meme salon, envoye moins de 30 s apres. Vu le 2026-10-15 : deux `!discord` a
+# 30,0 s d'ecart, la meme phrase sortie du cache, le second jete -- et notre journal disait
+# « Envoye ». 32 s : marge au-dessus des 30 s de Twitch, mesures a NOTRE horloge.
+_FENETRE_DOUBLON_S = 32.0
+_DERNIER_ENVOI = {}  # (bot_id, canal) -> (texte envoye, instant monotone)
+_horloge = time.monotonic  # point d'injection pour les tests (ne pas patcher time.monotonic)
+
+
 async def send_chat_safe(ws, chan, text, *, bot_id=None, logger=None):
     """Envoie un message sur Twitch après l'avoir nettoyé (balises, ToS)."""
     # 0. MODE TEST : un chat Twitch est public par nature, il n'y a pas de « serveur
@@ -345,9 +355,21 @@ async def send_chat_safe(ws, chan, text, *, bot_id=None, logger=None):
     cleaned_text = strip_stage_directions(text)
     # 2. Appliquer la sécurité ToS
     safe_text = sanitize_twitch_output(cleaned_text, bot_id=bot_id)
-    # 3. Envoyer
+    tag = f"TWITCH_CHAT:{bot_id}" if bot_id else "TWITCH"
+    # 3. Pas de doublon que Twitch jetterait (le meme texte est deja dans le chat, juste au-dessus)
+    cle = (bot_id, chan.lower())
+    maintenant = _horloge()
+    precedent = _DERNIER_ENVOI.get(cle)
+    if precedent and precedent[0] == safe_text and maintenant - precedent[1] < _FENETRE_DOUBLON_S:
+        if logger:
+            logger.info(
+                f"🔁 [{tag}] Doublon NON envoyé sur #{chan} : identique au message d'il y a "
+                f"{maintenant - precedent[1]:.0f} s, Twitch le rejetterait : {safe_text}"
+            )
+        return
+    _DERNIER_ENVOI[cle] = (safe_text, maintenant)
+    # 4. Envoyer
     if logger:
-        tag = f"TWITCH_CHAT:{bot_id}" if bot_id else "TWITCH"
         logger.info(f"📤 [{tag}] Envoyé sur #{chan} : {safe_text}")
     await ws.send_str(f"PRIVMSG #{chan.lower()} :{safe_text}")
 

@@ -43,3 +43,16 @@ def _quarantaine_echelon_vierge():
     yield
     _cascade._QUARANTAINE_ECHELON.clear()
     _cascade._ECHECS_ECHELON.clear()
+
+
+@pytest.fixture(autouse=True)
+def _dernier_envoi_twitch_vierge():
+    """Chaque test part sans « dernier message Twitch » memorise (garde anti-doublon)."""
+    try:
+        import shared.twitch.sanitize as _san
+    except Exception:
+        yield
+        return
+    _san._DERNIER_ENVOI.clear()
+    yield
+    _san._DERNIER_ENVOI.clear()

@@ -55,6 +55,7 @@ class TwitchChatBot(
     """
     PRIVMSG_RE = re.compile(r"^(?:@\S+ )?:(?P<user>[^!]+)![^ ]+ PRIVMSG #(?P<chan>[^ ]+) :(?P<msg>.*)$")
     USERNOTICE_RE = re.compile(r"^(?:@\S+ )?:tmi\.twitch\.tv USERNOTICE #(?P<chan>[^ ]+)(?: :(?P<msg>.*))?$")
+    NOTICE_RE = re.compile(r"^(?:@\S+ )?:tmi\.twitch\.tv NOTICE #(?P<chan>[^ ]+)(?: :(?P<msg>.*))?$")
 
     @staticmethod
     def _parse_tags(line: str) -> dict[str, str]:

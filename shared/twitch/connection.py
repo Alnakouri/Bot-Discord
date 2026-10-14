@@ -10,6 +10,19 @@ from pathlib import Path
 DATA_DIR = os.getenv("DATA_DIR", str(Path(__file__).parent.parent.parent / "data"))
 
 class ConnectionMixin:
+    def _handle_notice(self, line: str, tags: dict) -> bool:
+        """Un NOTICE de Twitch dans un salon = presque toujours un message REFUSE (doublon,
+        slow mode, followers-only, lien bloque...). Sans cette ligne, le journal dit « Envoye »
+        pour un message que personne n'a vu (2026-10-15, msg_duplicate)."""
+        m = self.NOTICE_RE.match(line)
+        if not m:
+            return False
+        self.logger.warning(
+            f"🚫 [TWITCH_CHAT:{self.bot_id}] Twitch signale sur #{m.group('chan')} "
+            f"({tags.get('msg-id', '?')}) : {m.group('msg') or ''}"
+        )
+        return True
+
     async def run(self):
         self._stopped = False
         backoff = 1
@@ -189,6 +202,10 @@ class ConnectionMixin:
                                 if self.enable_events:
                                     asyncio.create_task(self._handle_usernotice(chan, tags, msg_text, ws))
                                 continue
+
+                        # 2. Refus de Twitch (NOTICE) : au journal, jamais en silence
+                        if self._handle_notice(line, tags):
+                            continue
 
                         m = self.PRIVMSG_RE.match(line)
                         if not m:
