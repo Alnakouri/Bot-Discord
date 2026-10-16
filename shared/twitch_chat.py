@@ -106,6 +106,7 @@ class TwitchChatBot(
         commands: dict[str, Callable] | None = None,
         command_aliases: dict[str, str] | None = None,
         passive_handler: Callable | None = None,
+        message_observer: Callable | None = None,
         enable_viewer_memory: bool = False,
         viewer_memory_max: int = 8,
         enable_eventsub: bool = False,
@@ -168,6 +169,9 @@ class TwitchChatBot(
         self.commands = commands or {}
         self.command_aliases = command_aliases or {}
         self.passive_handler = passive_handler
+        # Observateur en LECTURE SEULE de chaque message hors commande (SUITE 21) :
+        # appele avec (chan, author, text, tags, contexte), sa valeur est ignoree.
+        self.message_observer = message_observer
         self.enable_viewer_memory = enable_viewer_memory
         self.viewer_memory_max = viewer_memory_max
         self.enable_eventsub = enable_eventsub
@@ -293,6 +297,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
                       commands: dict[str, Callable] | None = None,
                       command_aliases: dict[str, str] | None = None,
                       passive_handler: Callable | None = None,
+                      message_observer: Callable | None = None,
                       enable_viewer_memory: bool = False,
                       viewer_memory_max: int = 8,
                       enable_eventsub: bool = False,
@@ -541,6 +546,7 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         commands=final_commands,
         command_aliases=final_aliases,
         passive_handler=passive_handler,
+        message_observer=message_observer,
         enable_viewer_memory=enable_viewer_memory,
         viewer_memory_max=viewer_memory_max,
         enable_eventsub=enable_eventsub,

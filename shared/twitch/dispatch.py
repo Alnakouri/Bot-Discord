@@ -413,6 +413,19 @@ class DispatchMixin:
         if is_cmd:
             return
 
+        # 2 bis. Observateur en LECTURE SEULE (SUITE 21 : Sugar y range les questions
+        # posees a la streameuse). Il voit tout message hors commande — mention comprise,
+        # car « Sugar, tu joues a quoi demain ? » vise souvent la streameuse — et ne
+        # repond jamais : sa valeur de retour est ignoree, une exception ne coupe rien.
+        # Le contexte est pris AVANT que ce message n'y soit ajoute (branches 3 et 4).
+        observateur = getattr(self, "message_observer", None)
+        if observateur:
+            try:
+                contexte = list(getattr(self, "channel_recent", {}).get(chan.lower(), ()))
+                observateur(chan, author, text, tags, contexte)
+            except Exception as e:
+                self.logger.error(f"❌ [TWITCH_CHAT:{self.bot_id}] Erreur message_observer: {e}")
+
         # 3. Check Mention
         is_mention = self.trigger_re.search(text)
         if is_mention:

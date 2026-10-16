@@ -237,9 +237,11 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 try:
     from sugar_memory import FactMemory, DailyMemory
     from sugar_grudge import GrudgeBook, classify_tone, tone_directive
+    from sugar_questions_twitch import QuestionsTwitch, demande_la_liste, peut_demander
 except ImportError:
     from SugarBot.sugar_memory import FactMemory, DailyMemory
     from SugarBot.sugar_grudge import GrudgeBook, classify_tone, tone_directive
+    from SugarBot.sugar_questions_twitch import QuestionsTwitch, demande_la_liste, peut_demander
 sugar_facts_file = os.path.join(DATA_DIR, "sugar_facts.json")
 sugar_memory_file = os.path.join(DATA_DIR, "sugar_memory.json")
 fact_memory = FactMemory(sugar_facts_file)
@@ -248,6 +250,11 @@ daily_memory = DailyMemory(sugar_memory_file)
 ENABLE_GRUDGE_LLM = os.getenv("ENABLE_GRUDGE_LLM", "1") != "0"
 grudge_book = GrudgeBook(os.path.join(DATA_DIR, "sugar_grudge.json"),
                          llm_enabled=ENABLE_GRUDGE_LLM)
+# Questions posees a la streameuse sur Twitch (SUITE 21) : rangees par le chat Twitch,
+# envoyees en MP sur demande. Fichier dans DATA_DIR : `SugarBot/` est en lecture seule
+# dans le conteneur.
+questions_twitch = QuestionsTwitch(os.path.join(DATA_DIR, "sugar_questions_twitch.json"),
+                                   logger=logger)
 
 async def _daily_llm_call(system_prompt, user_message):
     return await generate_response(
@@ -274,6 +281,12 @@ def _ton_twitch(author, message):
     return tone_directive(message)
 
 
+def _observer_question_twitch(chan, author, text, tags, contexte):
+    """Range une question posee a la streameuse. Lecture seule : n'envoie rien."""
+    login = getattr(twitch_chat, "username", "") if twitch_chat else ""
+    questions_twitch.observer(chan, author, text, tags, contexte, bot_login=login)
+
+
 async def _grudge_llm_call(system_prompt, user_message):
     return await generate_response(
         routing={"type": RequestType.TEXT, "reason": "grudge_classify"},
@@ -282,6 +295,16 @@ async def _grudge_llm_call(system_prompt, user_message):
         key_manager=key_manager, mistral_client=mistral_client,
         groq_client=groq_client,  nvidia_client=nvidia_client,
         bot_label="Sugar Bot", temperature=0.0, max_tokens=6)
+
+
+async def _tri_questions_llm_call(system_prompt, user_message):
+    return await generate_response(
+        routing={"type": RequestType.TEXT, "reason": "questions_tri"},
+        system_prompt=system_prompt, transcript="", user_message=user_message,
+        conversation_history=[], media_data=None, mime_type="",
+        key_manager=key_manager, mistral_client=mistral_client,
+        groq_client=groq_client,  nvidia_client=nvidia_client,
+        bot_label="Sugar Bot", temperature=0.0, max_tokens=300)
 
 conversation_history = {}
 MAX_HISTORY = 30
@@ -503,6 +526,7 @@ async def on_ready():
             enable_viewer_memory=True,
             enable_eventsub=False,        # pas de token broadcaster Sugar → évite les 403
             enable_voice_listen=False,
+            message_observer=_observer_question_twitch,
         )
         if twitch_chat:
             twitch_chat.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]
@@ -724,6 +748,27 @@ async def _other_bot_in_focus(message):
     return False
 
 
+async def _envoyer_les_questions(message):
+    """Envoie en MP la liste des questions posees a la streameuse (SUITE 21)."""
+    login = getattr(twitch_chat, "username", "") if twitch_chat else ""
+    pages = await questions_twitch.rapport(_tri_questions_llm_call, bot_login=login)
+    try:
+        for page in pages:
+            await message.author.send(page, allowed_mentions=discord.AllowedMentions.none())
+    except discord.Forbidden:
+        if message.guild:
+            await message.reply(
+                "Je n'arrive pas à t'écrire en privé : ouvre tes messages privés et redemande-moi.",
+                mention_author=False)
+        return
+    if message.guild:
+        try:
+            await message.add_reaction("📬")
+        except discord.HTTPException:
+            pass  # Pas de permission d'ajouter des réactions dans ce salon
+    logger.info(f"📋 [QUESTIONS] Liste envoyée en MP à {message.author}")
+
+
 @bot.event
 async def on_message(message):
     # Ignorer les messages du bot lui-même
@@ -764,6 +809,14 @@ async def on_message(message):
     SUGAR_NAMES = ["sugar", "sugar bot"]
     content_lower = message.content.lower()
     is_name_mentioned = any(name in content_lower for name in SUGAR_NAMES)
+
+    # LISTE DES QUESTIONS TWITCH (SUITE 21) : streameuse et modos seulement, en MP.
+    # Quelqu'un d'autre qui demande « les questions » tombe dans la conversation normale.
+    if ((is_mentioned or is_reply or is_dm or is_name_mentioned)
+            and demande_la_liste(message.content, en_prive=is_dm)
+            and peut_demander(bot.guilds, message.author.id)):
+        await _envoyer_les_questions(message)
+        return
     
     # Les autres bots sont filtrés en amont (silence total entre bots).
     is_bot_talking = False
