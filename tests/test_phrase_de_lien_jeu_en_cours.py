@@ -22,8 +22,13 @@ from shared.twitch.dispatch import DispatchMixin
 # Les bots pour lesquels l'accroche a ete MESUREE.
 BOTS_MESURES = {"sugar", "alfred", "malena", "johnny"}
 
+# SUITE 21 : un jeu SANS fiche n'est plus un jeu. Les tests qui simulent un jeu lui
+# donnent donc une fiche par defaut ; VRAIE_FICHE garde la vraie methode.
+FICHE_DE_TEST = "Résumé : A game about a knight in a kingdom. | Thèmes : Action"
+VRAIE_FICHE = object()
 
-def _faux_bot(bot_id="sugar", channels=("un_canal",), avec_cles=True):
+
+def _faux_bot(bot_id="sugar", channels=("un_canal",), avec_cles=True, fiche=FICHE_DE_TEST):
     class Faux(DispatchMixin):
         pass
 
@@ -40,6 +45,10 @@ def _faux_bot(bot_id="sugar", channels=("un_canal",), avec_cles=True):
     f.bot_label = None
     f.logger = types.SimpleNamespace(debug=lambda *a, **k: None, info=lambda *a, **k: None,
                                      warning=lambda *a, **k: None, error=lambda *a, **k: None)
+    if fiche is not VRAIE_FICHE:
+        async def _fiche():
+            return fiche
+        f._fiche_du_jeu = _fiche
     return f
 
 
@@ -161,7 +170,7 @@ def test_igdb_refuse_id_non_entier():
 
 
 def test_fiche_du_jeu_ne_leve_jamais():
-    f = _faux_bot()
+    f = _faux_bot(fiche=VRAIE_FICHE)
     f._helix_client = _helix(RuntimeError("Twitch en panne"))
     assert asyncio.run(f._fiche_du_jeu()) is None
 
@@ -189,10 +198,16 @@ def test_instruction_inclut_la_fiche_si_disponible():
     assert "15th century" not in capture["instruction"]
 
 
-def test_instruction_sans_fiche_ne_contient_pas_de_fiche():
+def test_un_jeu_SANS_fiche_donne_l_invitation_normale():
+    """Live du 2026-10-16 (ma_streameuse, catégorie JAM) : Twitch annonce un jeu, IGDB
+    rend une fiche vide, Sugar invente trois invitations sur « ce jeu » dont elle ne sait
+    rien. Sans fiche, le jeu s'efface : l'invitation redevient celle sans jeu.
+    """
     bot = _faux_bot("sugar")
+
     async def faux_jeu():
-        return "Kingdom Come: Deliverance II"
+        return "JAM"
+
     async def faux_fiche():
         return None
 
@@ -200,13 +215,20 @@ def test_instruction_sans_fiche_ne_contient_pas_de_fiche():
     bot._fiche_du_jeu = faux_fiche
 
     capture = {}
+
     async def faux_ecrire(instruction, system_prompt, cmd):
         capture["instruction"] = instruction
         return "Venez nous voir !"
 
     bot._ecrire_phrase_de_lien = faux_ecrire
     asyncio.run(bot._generate_link_line("discord", "le serveur", "https://discord.gg/test"))
-    assert "Voici la fiche officielle de ce jeu (en anglais) :" not in capture["instruction"]
+    instr = capture["instruction"]
+    assert "« JAM »" not in instr
+    assert "le chat regarde quelqu'un jouer" not in instr
+    assert DispatchMixin.CLAUSES_JEU_PAR_BOT["sugar"] not in instr
+    for _, phrase in DispatchMixin.TYPES_DE_QUESTION_JEU_PAR_BOT["sugar"]:
+        assert phrase not in instr
+    assert not hasattr(bot, "_rang_type_question")
 
 
 

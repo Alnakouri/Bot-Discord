@@ -1141,6 +1141,15 @@ class DispatchMixin:
         # APRES le cache, jamais avant : un echec IGDB n'est pas mis en cache, et chaque
         # `!discord` servi depuis le cache aurait paye jusqu'a 3 s d'attente pour rien.
         fiche = await self._fiche_du_jeu() if jeu else None
+        # ⚠️ SANS FICHE, PAS DE JEU (SUITE 21, 16/10). La categorie « JAM » est un « jeu »
+        # pour Twitch (fiche IGDB vide), mais le live n'en etait pas un : Sugar a ecrit
+        # trois invitations sur « ce jeu », qu'elle ne connaissait pas. Un nom seul ne
+        # suffit pas a parler d'un jeu ; sans rien de vrai a en dire, l'invitation normale.
+        if jeu and not fiche:
+            self.logger.info(
+                f"🎮 [TWITCH_CHAT:{self.bot_id}] « {jeu} » : aucune fiche, invitation sans le jeu"
+            )
+            jeu = None
 
         system_prompt = self.personality_prompt
         if self.system_prompt_provider:

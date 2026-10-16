@@ -44,6 +44,10 @@ def _bot(sorties):
         return restant.pop(0) if restant else None
 
     f._ecrire_phrase_de_lien = faux_appel
+
+    async def fiche():
+        return "Résumé : A game about a knight in a kingdom. | Thèmes : Action"
+    f._fiche_du_jeu = fiche
     return f
 
 
