@@ -120,7 +120,8 @@ class TwitchChatBot(
         listen_port: int = 8765,
         listen_host: str = "127.0.0.1",
         enable_game_qa: bool = False,
-        cohost_channels: list[str] | None = None
+        cohost_channels: list[str] | None = None,
+        trigger_terms: list[str] | None = None
     ):
         self.bot_id = bot_id
         self.logger = logger
@@ -225,15 +226,19 @@ class TwitchChatBot(
         self.user_cooldowns = {}  # user -> float (timestamp)
         self.global_msg_timestamps = collections.deque()  # deque of floats
 
-        # Build triggers
-        trigger_terms = [username.lower(), bot_id.lower()]
-        if bot_label:
-            trigger_terms.append(bot_label.lower())
-        
-        # Add common short names for bots
-        for short in ["sheo", "maiq", "johnny", "sugar", "malena", "alfred"]:
-            if short in bot_id.lower():
-                trigger_terms.append(short)
+        # Build triggers. `trigger_terms` REMPLACE les noms deduits (bot_id, label, nom
+        # court) ; le pseudo du compte reste toujours un declencheur (le @mention).
+        if trigger_terms:
+            trigger_terms = [username.lower(), *trigger_terms]
+        else:
+            trigger_terms = [username.lower(), bot_id.lower()]
+            if bot_label:
+                trigger_terms.append(bot_label.lower())
+
+            # Add common short names for bots
+            for short in ["sheo", "maiq", "johnny", "sugar", "malena", "alfred"]:
+                if short in bot_id.lower():
+                    trigger_terms.append(short)
 
         trigger_terms = sorted(list(set(t.strip().lower() for t in trigger_terms if t)), key=len, reverse=True)
         trigger_pattern = r"(?:@?(" + "|".join(re.escape(t) for t in trigger_terms) + r"))\b"
@@ -305,7 +310,8 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
                       eventsub_reward_map: dict | None = None,
                       peer_bots: list[str] | None = None,
                       greeting_templates: dict | None = None,
-                      enable_voice_listen: bool = False) -> TwitchChatBot | None:
+                      enable_voice_listen: bool = False,
+                      trigger_terms: list[str] | None = None) -> TwitchChatBot | None:
     """
     Initialise TwitchChatBot si les crédentiels d'environnement requis sont définis.
     """
@@ -559,7 +565,8 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
         voice_min_interval=voice_min_interval,
         listen_host=listen_host,
         enable_game_qa=enable_game_qa,
-        cohost_channels=cohost_channels
+        cohost_channels=cohost_channels,
+        trigger_terms=trigger_terms
     )
     # Les callbacks de lien construits plus haut peuvent maintenant atteindre le bot.
     bot_ref["bot"] = bot

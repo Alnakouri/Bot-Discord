@@ -527,6 +527,7 @@ async def on_ready():
             enable_eventsub=False,        # pas de token broadcaster Sugar → évite les 403
             enable_voice_listen=False,
             message_observer=_observer_question_twitch,
+            trigger_terms=SUGARBOT_TERMS,   # « sugar » seul vise la streameuse
         )
         if twitch_chat:
             twitch_chat.extra_recent_provider = lambda: [r for hist in response_memory.memory.values() for r in hist][-6:]
@@ -721,31 +722,11 @@ async def oubliemoi(ctx):
 
 # LOGIQUE CONVERSATIONNELLE
 
-# Noms des AUTRES bots du serveur : si l'échange leur est visiblement adressé, Sugar Bot
-# ne s'incruste PAS lors d'une intervention ALÉATOIRE (les mentions/noms directs de Sugar Bot
-# restent toujours prioritaires et passent avant cette garde).
-OTHER_BOT_NAMES = [
-    "sheo", "sheogorath", "johnny", "silverhand", "samurai",
-    "alfred", "pennyworth", "m'aiq", "maiq", "malena", "malèna",
-]
-
-
-async def _other_bot_in_focus(message):
-    """True si la conversation est manifestement tournée vers un AUTRE bot (on ne barge pas).
-    N'est consulté QUE pour une intervention aléatoire (rare) → coût historique négligeable."""
-    if any(n in message.content.lower() for n in OTHER_BOT_NAMES):
-        return True
-    try:
-        async for prev in message.channel.history(limit=4, before=message):
-            if prev.author == bot.user:
-                return False  # Sugar Bot était déjà dans la boucle → ok d'enchaîner
-            if prev.author.bot:
-                return True   # un autre bot vient de parler → c'est SON échange
-            if any(n in prev.content.lower() for n in OTHER_BOT_NAMES):
-                return True   # un humain vient de nommer un autre bot
-    except Exception:
-        return False
-    return False
+# Sugar ne répond qu'à son nom COMPLET, sur Discord comme sur Twitch. « Sugar » tout court
+# est le nom que le chat donne à la streameuse (ma_streameuse) : le bot répondait à sa place.
+SUGARBOT_TERMS = ["sugarbot", "sugar bot"]
+SUGARBOT_RE = re.compile(r"\b(?:" + "|".join(re.escape(t) for t in SUGARBOT_TERMS) + r")",
+                         re.IGNORECASE)
 
 
 async def _envoyer_les_questions(message):
@@ -805,10 +786,9 @@ async def on_message(message):
     is_reply = message.reference and message.reference.resolved and message.reference.resolved.author == bot.user
     is_dm = isinstance(message.channel, discord.DMChannel)
     
-    # Noms alternatifs pour Sugar Bot (détection dans le message)
-    SUGAR_NAMES = ["sugar", "sugar bot"]
-    content_lower = message.content.lower()
-    is_name_mentioned = any(name in content_lower for name in SUGAR_NAMES)
+    # Sugar ne répond qu'à son nom COMPLET : « Sugar » tout court désigne la streameuse
+    # (ma_streameuse), pas le bot. Même liste que les déclencheurs Twitch.
+    is_name_mentioned = bool(SUGARBOT_RE.search(message.content))
 
     # LISTE DES QUESTIONS TWITCH (SUITE 21) : streameuse et modos seulement, en MP.
     # Quelqu'un d'autre qui demande « les questions » tombe dans la conversation normale.
@@ -821,9 +801,6 @@ async def on_message(message):
     # Les autres bots sont filtrés en amont (silence total entre bots).
     is_bot_talking = False
 
-    # Détection image très tôt (pour priorité)
-    has_image_early = classify_request(message.content, message.attachments, silent=True)["has_image"]
-    
     should_respond = False
     keyword_boost = ""
     
@@ -916,20 +893,8 @@ async def on_message(message):
         return consigne
 
 
-    # C. Intervention aléatoire (10%) — sauf si l'échange vise un AUTRE bot
-    if not is_bot_talking and not should_respond and not has_image_early:
-        # Journal seul, AVANT le dé — voir la note identique chez Johnny : l'étiquette
-        # est « tirage » parce qu'aucun jugement de pertinence n'existe ici.
-        from core.journal_decisions import journalise, PERTINENCE
-        journalise("sugar", PERTINENCE, message.content, "tirage",
-                   detail=f"canal={getattr(message.channel, 'name', '?')}")
-    if not is_bot_talking and not should_respond and not has_image_early and random.random() < 0.10:
-        if await _other_bot_in_focus(message):
-            logger.info("[ANTI-INCRUSTATION] Échange adressé à un autre bot → Sugar Bot se tait.")
-        else:
-            should_respond = True
-            logger.info(f"[INTERVENTION] Sugar Bot intervient dans {message.channel.name}")
-    
+    # Pas d'intervention spontanée : Sugar ne parle que si on l'appelle (« sugarbot »,
+    # mention, réponse à son message, MP).
     if not should_respond:
         return
     
@@ -937,7 +902,6 @@ async def on_message(message):
     user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
 
     user_msg_content = user_message
-    content_lower = user_message.lower()
     keyword_boost = ""
 
     # HISTORIQUE
