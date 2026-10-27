@@ -38,7 +38,7 @@ BOTS = {
     "SugarBot/bot_sugar.py": "sugar",
 }
 
-HUMAIN = 345253990726107147
+HUMAIN = 551916719308943781        # identifiant fabrique (flocon plausible de 2019)
 SUGAR = 1467929828060561583        # « Onizuka » en base : le meme compte, renomme
 
 

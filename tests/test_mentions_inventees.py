@@ -31,9 +31,10 @@ BOTS = {
     "SugarBot/bot_sugar.py": "sugar",
 }
 
-# Des identifiants Discord reels (longueur et epoque plausibles).
-VRAI = "297045071457681409"
-VRAI_BIS = "123123123123123123"      # le serveur prive du mode test
+# Des identifiants Discord fabriques mais plausibles (longueur et epoque d'un vrai flocon),
+# pour ne publier aucun identifiant reel.
+VRAI = "312378340147343781"            # 18 chiffres, flocon de 2017
+VRAI_BIS = "1359316883865743781"       # 19 chiffres, flocon de 2025
 
 
 # --------------------------------------------------------------------------------------
