@@ -63,6 +63,12 @@ try:
 except ImportError:
     def is_feature_enabled(*a, **k): return True
 
+# ID Discord du proprietaire : hors depot public, dans data/identites_locales.json
+try:
+    from shared.identites import PROPRIETAIRE_DISCORD_ID
+except ImportError:
+    PROPRIETAIRE_DISCORD_ID = 0  # personne : seuls les administrateurs passent
+
 # Répertoire de données (même convention que sheo_faveur : surchargé par l'env en prod)
 DATA_DIR = os.getenv("DATA_DIR", ".")
 
@@ -1548,7 +1554,7 @@ async def imposteur_cmd(ctx, target: discord.Member, *, instruction: str = ""):
     Usage: !imposteur @User [Instruction optionnelle]
     """
     # Permission Check (Admin OU User Spécifique)
-    if not (ctx.author.guild_permissions.administrator or ctx.author.id == 000000000000000000):
+    if not (ctx.author.guild_permissions.administrator or (PROPRIETAIRE_DISCORD_ID and ctx.author.id == PROPRIETAIRE_DISCORD_ID)):
         await ctx.send("⛔ Vous n'avez pas le doit de porter le Masque du Fou !")
         return
 

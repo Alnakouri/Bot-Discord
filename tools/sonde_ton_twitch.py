@@ -30,6 +30,7 @@ dossier_sugar = RACINE / "SugarBot"
 if str(dossier_sugar) not in sys.path:
     sys.path.insert(0, str(dossier_sugar))
 
+from shared.identites import STREAMEUSE
 from shared.twitch.llm import LlmMixin
 from shared.twitch.sanitize import SanitizeMixin
 from core.api_manager import MultiAPIKeyManager
@@ -212,7 +213,7 @@ async def main():
         return 1
 
     f = creer_faux_bot(fiche, cles, td_fn, tete=args.tete)
-    channel = "ma_streameuse"
+    channel = STREAMEUSE
     author = "Ahmed"
 
     print(f"Sonde ton Sugar Twitch | scenario={args.scenario} | n={args.n} | tete={args.tete} | timeout={args.timeout:g}s | pause={args.pause:g}s")

@@ -14,6 +14,7 @@
 5. **NE JAMAIS passer une base de `data/` en WAL** — `shared_database.py` pose TRUNCATE, et c'est voulu : la base est partagée entre l'hôte Windows et six conteneurs Linux, et WAL exige une mémoire partagée (`-shm`) que les deux mondes ne peuvent pas partager. Live du 2026-09-13 : WAL a rendu les six bots MUETS. Verrou : `tests/test_base_partagee.py`.
 6. **NE JAMAIS commiter de fichiers `.env`, `.master_key`, ou `*.db`** dans Git
 7. **NE JAMAIS faire partager une clé API par deux bots** — voir la règle ci-dessous
+8. **NE JAMAIS écrire un vrai pseudo (streameur, viewer, propriétaire) ni un vrai ID Discord dans le dépôt** — il est public. Code, tests, commentaires, docs et messages de commit n'emploient que des noms fictifs (`ma_streameuse`, `streameuse_amie`, `LeDev`, `bob`…). Les vraies valeurs vivent dans `data/identites_locales.json` (non versionné), lues par `shared/identites.py`. Un hook gitleaks local refuse le commit sinon.
 
 ## 🔑🔑 UNE CLÉ PAR BOT. PAS DE PARTAGE. JAMAIS.
 
@@ -95,4 +96,5 @@ MalenaBot/.env
 MalenaBot/.master_key
 data/bots_database.db
 data/api_usage.db
+data/identites_locales.json
 ```

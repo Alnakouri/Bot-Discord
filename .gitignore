@@ -40,6 +40,8 @@ SugarBot/sugar_memory.json
 # État de jeu runtime et sauvegardes
 /sauvegardes/
 data/*.json
+# Vrais pseudos et ID Discord (lus par shared/identites.py) : jamais dans le depot public
+data/identites_locales.json
 data/*.bak
 *.bak
 # Base vectorielle Chroma (persistée hors git)

@@ -10,6 +10,7 @@ if _sugar_dir not in sys.path:
     sys.path.insert(0, _sugar_dir)
 
 import sugar_data
+from shared.identites import STREAMEUSE
 
 def test_sugar_personality_prompt_gender_agreement():
     prompt = sugar_data.PERSONALITY_PROMPT
@@ -24,9 +25,10 @@ def test_sugar_personality_prompt_gender_agreement():
 def test_sugar_personality_prompt_twitch_streamer():
     prompt = sugar_data.PERSONALITY_PROMPT
     
-    # 2. La streameuse : PERSONALITY_PROMPT contient ma_streameuse, twitch.tv/ma_streameuse et la consigne anti-ping
-    assert "ma_streameuse" in prompt
-    assert "twitch.tv/ma_streameuse" in prompt
+    # 2. La streameuse : PERSONALITY_PROMPT contient son pseudo (réel si data/identites_locales.json
+    #    existe, fictif sinon), le lien de sa chaîne et la consigne anti-ping
+    assert STREAMEUSE in prompt
+    assert f"twitch.tv/{STREAMEUSE}" in prompt
     assert "JAMAIS son nom avec un @" in prompt
 
 
