@@ -179,7 +179,7 @@ En local, avant de pousser, la même séquence suffit.
 
 ## 🔒 Sécurité et Chiffrement
 
-Les jetons Discord et clés API sont chiffrés localement dans le dépôt Git.
+Les jetons Discord et clés API sont chiffrés localement. Ni les `.env`, ni les `.env.encrypted`, ni la clé maître ne sont versionnés (`.gitignore`) : le dépôt ne contient aucun secret.
 
 ```bash
 python crypto_utils.py encrypt   # Chiffre les .env → .env.encrypted
@@ -187,3 +187,11 @@ python crypto_utils.py decrypt   # Déchiffre les fichiers pour modification
 ```
 
 Pour plus de détails sur le cycle de vie des clés et la rotation, consultez [API_KEYS_SETUP.md](API_KEYS_SETUP.md).
+
+---
+
+## 📄 Licence
+
+Code sous licence [MIT](LICENSE).
+
+Les personnages (Sheogorath et M'aiq — *The Elder Scrolls*, Alfred — *Batman*, Johnny Silverhand — *Cyberpunk 2077*) appartiennent à leurs ayants droit respectifs : ce projet est une création de fan, non commerciale et non affiliée.
