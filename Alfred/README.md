@@ -26,7 +26,7 @@ Majordome dévoué de la famille Wayne (univers Batman) transposé sur Discord p
 - **Docker** : Lancer le service `alfred` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer). Alfred n'en garde que `/ping` et `/help`, et n'a pas de mini-jeux.
+- **Slash partagées** : Voir [COMMANDES.md](../docs/COMMANDES.md) (ne pas dupliquer). Alfred n'en garde que `/ping` et `/help`, et n'a pas de mini-jeux.
 - **Commandes spécifiques** (préfixe `!`) :
   - `!servir <action>` : Demande à Alfred de servir quelque chose (ex: café, thé, remontrances).
   - `!surveille` : Met en place une patrouille vocale (Alfred surveille les salons vocaux actifs).

@@ -28,7 +28,7 @@ Bot Discord à la personnalité **douce comme du sucre… mais qui pique quand o
 - **Docker** : lancer le service `sugar` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : voir [COMMANDES.md](../docs/COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!exploit` (alias : `histoire`, `legende`) : raconte un exploit de Sugar.
   - `!chanson` (alias : `frime`, `chante`) : sort une punchline de Sugar.

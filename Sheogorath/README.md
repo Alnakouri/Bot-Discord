@@ -25,7 +25,7 @@ Le Prince Daedra de la Folie (univers The Elder Scrolls) transposé sur Discord 
 - **Docker** : Lancer le service `sheogorath` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../docs/COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!quete` : Donne une tâche absurde ou une quête daedrique délirante.
   - `!fromage` : Lance le mini-jeu du fromage mystique (récompenses ou punitions de réputation).

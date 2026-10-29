@@ -1,7 +1,7 @@
 # Instructions pour les agents IA (Cursor, Gemini, Claude, Copilot, etc.)
 
 > **LIRE EN PREMIER avant toute modification de code.**
-> **Lire ARCHITECTURE.md pour le contexte complet du projet.**
+> **Lire docs/ARCHITECTURE.md pour le contexte complet du projet.**
 
 ---
 
@@ -63,7 +63,7 @@ n'est pas dans `pytest` à dessein : les clés ne sont pas dans le dépôt, la C
 la jouer. **À lancer à la main après toute modification d'un `.env`.**
 
 > Mesure du 2026-08-30 : `JohnnyBot` et `MalenaBot` tournaient sur la **même** clé
-> Gemini. La règle était écrite dans `API_KEYS_SETUP.md` depuis toujours ; personne ne
+> Gemini. La règle était écrite dans `docs/API_KEYS_SETUP.md` depuis toujours ; personne ne
 > la vérifiait, donc elle ne tenait pas. **Une règle qu'aucun outil ne contrôle n'est pas
 > une règle, c'est un vœu.**
 

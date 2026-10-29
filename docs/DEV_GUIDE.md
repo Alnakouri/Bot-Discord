@@ -46,7 +46,7 @@ python -c "from shared.shared_database import get_connection; print('DB Connecti
 
 | Script | Fonction | Usage |
 |---|---|---|
-| [crypto_utils.py](crypto_utils.py) | Chiffrer/déchiffrer les `.env` locaux via Fernet. | `python crypto_utils.py encrypt` ou `decrypt` |
+| [crypto_utils.py](../crypto_utils.py) | Chiffrer/déchiffrer les `.env` locaux via Fernet. | `python crypto_utils.py encrypt` ou `decrypt` |
 | `start_all_bots.bat` | Script batch pour lancer simultanément les 6 bots en local dans des fenêtres distinctes. | Double-clic / Lancement shell |
 | `test_bot.bat` | Menu interactif permettant de choisir et démarrer un seul bot en développement local. | Double-clic / Lancement shell |
 
@@ -93,10 +93,10 @@ Pour doter un bot d'une nouvelle capacité (ex: interroger une API météo, donn
 
 ## 💾 Persistance des Données
 
-- **Base de Données Commune** : Une base SQLite unique (`data/bots_database.db`, générée au premier démarrage, hors dépôt) est partagée par tous les processus. Les requêtes s'effectuent via [shared/shared_database.py](shared/shared_database.py). NE JAMAIS passer une base de `data/` en WAL — `shared_database.py` pose TRUNCATE, et c'est voulu : la base est partagée entre l'hôte Windows et six conteneurs Linux, et WAL exige une mémoire partagée (`-shm`) que les deux mondes ne peuvent pas partager. Live du 2026-09-13 : WAL a rendu les six bots MUETS. Verrou : `tests/test_base_partagee.py`.
-- **Base de suivi des appels API** : `data/api_usage.db`, écrite par [shared/api_tracking.py](shared/api_tracking.py). Un unique thread écrivain dépile une file bornée, pour ne jamais bloquer la boucle asyncio d'un bot ni retarder une réponse. Elle est en **TRUNCATE**, pas en WAL : le dashboard la lit en `mode=ro`, et un lecteur read-only sur WAL a besoin du `-shm`.
+- **Base de Données Commune** : Une base SQLite unique (`data/bots_database.db`, générée au premier démarrage, hors dépôt) est partagée par tous les processus. Les requêtes s'effectuent via [shared/shared_database.py](../shared/shared_database.py). NE JAMAIS passer une base de `data/` en WAL — `shared_database.py` pose TRUNCATE, et c'est voulu : la base est partagée entre l'hôte Windows et six conteneurs Linux, et WAL exige une mémoire partagée (`-shm`) que les deux mondes ne peuvent pas partager. Live du 2026-09-13 : WAL a rendu les six bots MUETS. Verrou : `tests/test_base_partagee.py`.
+- **Base de suivi des appels API** : `data/api_usage.db`, écrite par [shared/api_tracking.py](../shared/api_tracking.py). Un unique thread écrivain dépile une file bornée, pour ne jamais bloquer la boucle asyncio d'un bot ni retarder une réponse. Elle est en **TRUNCATE**, pas en WAL : le dashboard la lit en `mode=ro`, et un lecteur read-only sur WAL a besoin du `-shm`.
 - **Sauvegarde de l'état (Punitions)** : Les métamorphoses temporaires infligées par Sheogorath (Wabbajack) sont sauvegardées dans `sheo_punishments.json`. En cas de crash ou de redémarrage du conteneur, le bot reprend le décompte des sanctions sur le serveur au démarrage.
-- **Règles Sensibles** : Ne modifiez ni ne supprimez jamais les fichiers secrets `.master_key` ou les bases de données SQLite existantes (se référer aux consignes de sécurité dans [AGENTS.md](AGENTS.md)).
+- **Règles Sensibles** : Ne modifiez ni ne supprimez jamais les fichiers secrets `.master_key` ou les bases de données SQLite existantes (se référer aux consignes de sécurité dans [AGENTS.md](../AGENTS.md)).
 
 ---
 
@@ -114,7 +114,7 @@ Pour maintenir la cohérence de l'écosystème lors de l'édition des prompts sy
 > [!NOTE]
 > Les identifiants de modèles cités dans les entrées ci-dessous sont ceux **en vigueur à
 > l'époque** de chaque changement. Ils ne décrivent pas l'état actuel : la source unique
-> est [`shared/models.py`](shared/models.py).
+> est [`shared/models.py`](../shared/models.py).
 
 ### Août 2026 — Indépendance, voix par bot, garde-fous
 

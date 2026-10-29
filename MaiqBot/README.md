@@ -24,7 +24,7 @@ Le Khajiit vagabond légendaire (univers The Elder Scrolls) transposé sur Disco
 - **Docker** : Lancer le service `maiq` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../docs/COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!maiq` (aliases: `profil`, `stats`) : Affiche les statistiques de M'aiq (pinces volées, état de fatigue).
   - `!oubliemoi` : Purge l'historique et la mémoire de l'utilisateur.

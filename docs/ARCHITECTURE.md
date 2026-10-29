@@ -129,7 +129,7 @@ Bot Discord/
 |---|---|---|
 | Runtime | Python | 3.11 (Docker et CI) |
 | Framework Discord | discord.py | >=2.7.1 |
-| Modèles IA | — | **Voir [`shared/models.py`](shared/models.py), source unique.** Les recopier ici les rendrait périmés en silence. |
+| Modèles IA | — | **Voir [`shared/models.py`](../shared/models.py), source unique.** Les recopier ici les rendrait périmés en silence. |
 | Fournisseurs IA | Gemini, Mistral, Groq | Chaque cascade en mélange plusieurs (quotas indépendants) |
 | Cascade par persona | `shared/models.py` | Une voix par bot, choisie sur mesures réelles (`tools/sonde_modeles_persona.py`) |
 | Vision locale (Parquée) | Ollama Moondream | moondream (conteneur Docker) |

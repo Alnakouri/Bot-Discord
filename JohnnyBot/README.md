@@ -24,7 +24,7 @@ Le rockerboy anarchiste et légendaire de Night City (univers Cyberpunk 2077) tr
 - **Docker** : Lancer le service `johnny` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../docs/COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!gig` (aliases: `job`, `mission`, `run`, `contrat`) : Johnny raconte un de ses braquages ou concerts mythiques.
   - `!loot` (aliases: `gift`, `chrome`, `eddies`) : Johnny offre un objet de pacotille ou une pièce de cyberware de la rue.

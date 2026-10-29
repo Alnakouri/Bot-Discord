@@ -69,7 +69,7 @@ python tools/sonde_cles_partagees.py --vitalite   # ~25 appels, tous en lecture 
 
 > [!IMPORTANT]
 > Les identifiants de modèles ne se recopient PAS ici. La source unique est
-> [`shared/models.py`](shared/models.py) ; ce document décrit seulement **quels
+> [`shared/models.py`](../shared/models.py) ; ce document décrit seulement **quels
 > fournisseurs** il faut provisionner en clés. Un identifiant dupliqué dans la doc finit
 > périmé sans que personne ne s'en aperçoive — c'était le cas de ce paragraphe.
 
@@ -81,12 +81,13 @@ leurs quotas étant indépendants, si l'un limite, l'échelon suivant répond qu
 | **Google Gemini** | Vision et audio (seul à les traiter), plus du texte | `GEMINI_KEY_1`, `GEMINI_KEY_2`… |
 | **Mistral** | Texte — le français le plus sûr | `MISTRAL_API_KEY` |
 | **Groq** | Texte — le plus rapide | `GROQ_API_KEY` |
-| **OpenRouter** | Dernier recours uniquement | `OPENROUTER_API_KEY` |
+| **NVIDIA** (build.nvidia.com) | Texte — relais quand Mistral sature | `NVIDIA_API_KEY` |
 
 > [!WARNING]
-> Le **free-tier OpenRouter** a été mesuré inutilisable (12 échecs sur 12 : quotas
-> dépassés en rafale, 60 à 120 s de latence, raisonnement recopié dans la réponse).
-> Aucune cascade n'en dépend aujourd'hui ; la clé ne sert que si l'on y revient un jour.
+> **OpenRouter est retiré** depuis le 2026-08-30 : son free-tier a été mesuré
+> inutilisable (12 échecs sur 12 : quotas dépassés en rafale, 60 à 120 s de latence,
+> raisonnement recopié dans la réponse). `OPENROUTER_API_KEY` n'est plus lue ;
+> `tests/test_openrouter_est_retire.py` fige la décision.
 
 ## Variables d'Environnement (Indépendantes par Bot)
 
@@ -102,7 +103,7 @@ GEMINI_KEY_3=AIzaSy...
 GEMINI_KEY_4=AIzaSy...
 GROQ_API_KEY=gsk_...
 MISTRAL_API_KEY=...
-OPENROUTER_API_KEY=sk-or-v1-...
+NVIDIA_API_KEY=nvapi-...
 ```
 
 ### Clés spécifiques
@@ -128,4 +129,4 @@ python crypto_utils.py generate  # Nouvelle clé maître
 Le module `shared/api_manager.py` gère la rotation automatique des clés :
 - Bien que le module de gestion soit partagé ("shared"), **chaque bot exécute sa propre instance du root de gestion** au démarrage.
 - **Isolation Totale** : La rotation, les délais (cooldowns) liés aux erreurs 429/503 et le basculement vers de nouveaux modèles de secours se font indépendamment pour chaque bot sans jamais affecter le pool de clés des autres bots !
-- **Mécanique** : 4 clés Gemini en pool par bot, cooldown dynamique sur échec, et fallback automatique vers Groq → Mistral → OpenRouter.
+- **Mécanique** : 4 clés Gemini en pool par bot, cooldown dynamique sur échec, et fallback automatique vers les autres fournisseurs de la cascade (Groq, Mistral, NVIDIA).

@@ -34,7 +34,7 @@ meta-discours dans `content` environ **une fois sur vingt**, malgre
 `_fuite_de_raisonnement()`, ne peut PAS l'attraper : il compare `content` a `reasoning`,
 et NVIDIA ne remplit jamais `reasoning`. Le commentaire « filet malgre tout » de la
 branche nvidia de `llm_cascade.py` promet donc une protection qui n'existe pas. Decision
-a poser, cf. PLAN.md.
+a poser, cf. docs/plans/PLAN.md.
 
 ⚠️ La sonde n'affiche jamais une cle entiere, seulement ses 6 derniers caracteres —
 assez pour verifier a l'oeil que les six bots ont bien six cles DIFFERENTES

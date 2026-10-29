@@ -37,7 +37,7 @@ services:
       - DATA_DIR=/app/data
     # NOTE : voix clonée (TTS) et vision locale (Moondream) RETIRÉES du déploiement.
     # Services GPU non compatibles Oracle free tier — feature parkée à refaire.
-    # Voir FEATURE_VOIX_VISION_GPU.md. Le code (sheo_voice.py, process_image_ollama)
+    # Voir docs/plans/FEATURE_VOIX_VISION_GPU.md. Le code (sheo_voice.py, process_image_ollama)
     # dégrade proprement : texte sans voix, vision via Gemini cloud.
 
   maiq:
@@ -168,7 +168,7 @@ services:
       start_period: 90s
 
 # ═══════════════════════════════════════════════════════════════
-# SERVICES GPU RETIRÉS (feature parkée — voir FEATURE_VOIX_VISION_GPU.md)
+# SERVICES GPU RETIRÉS (feature parkée — voir docs/plans/FEATURE_VOIX_VISION_GPU.md)
 # ───────────────────────────────────────────────────────────────
 # Anciennement ici : bots-ollama-vision (Moondream), ollama-model-init,
 # et chatterbox-tts (voice cloning Philippe Bozo, ~3-4 Go VRAM).

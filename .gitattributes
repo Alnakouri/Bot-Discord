@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Maquettes de design : hors statistiques de langage GitHub (sinon ~30 % « HTML »)
+dashboard/design_v2/** linguist-documentation

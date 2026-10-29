@@ -25,7 +25,7 @@ La gitane marseillaise au tempérament de feu transposée sur Discord pour distr
 - **Docker** : Lancer le service `malena` du compose global.
 
 ## 🎮 Commandes
-- **Slash partagées** : Voir [COMMANDES.md](../COMMANDES.md) (ne pas dupliquer).
+- **Slash partagées** : Voir [COMMANDES.md](../docs/COMMANDES.md) (ne pas dupliquer).
 - **Commandes spécifiques** (préfixe `!`) :
   - `!oubliemoi` : Purge l'historique de conversation et la mémoire de l'utilisateur.
 - **Mots Déclencheurs (Trigger Words)** : Malena réagit spontanément sans mention si le message contient des mots clés comme : `cuivre`, `caravane`, `manouche`, `gitane`, `rose`, `marseille`, `chanklette`, `bijoux`, `maluma`.

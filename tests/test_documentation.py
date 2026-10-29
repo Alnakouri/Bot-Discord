@@ -32,7 +32,7 @@ _IGNORES = {".git", ".venv", ".venv-stt", "node_modules", "__pycache__",
 
 # Documents décrivant l'ÉTAT ACTUEL. Les changelogs datés en sont exclus : ils citent
 # légitimement les modèles en vigueur à l'époque, et réécrire l'histoire serait pire.
-_ETAT_COURANT = ["README.md", "ARCHITECTURE.md", "API_KEYS_SETUP.md", "MAINTENANCE.md"]
+_ETAT_COURANT = ["README.md", "docs/ARCHITECTURE.md", "docs/API_KEYS_SETUP.md", "docs/MAINTENANCE.md"]
 
 # Liste lue a la source (test_model_ids) plutot que recopiee : une copie de ces motifs
 # dans un autre fichier .py declencherait le scan de test_model_ids sur elle-meme.
@@ -225,7 +225,7 @@ def test_l_outil_qui_verifie_la_regle_existe_et_ne_montre_aucune_cle():
 def test_les_deux_documents_de_cles_disent_la_meme_chose():
     """API_KEYS_SETUP.md est le document de référence ; AGENTS.md le rappel. Les deux
     doivent porter la règle, sinon l'un contredit l'autre en silence."""
-    for fichier in ("AGENTS.md", "API_KEYS_SETUP.md"):
+    for fichier in ("AGENTS.md", "docs/API_KEYS_SETUP.md"):
         contenu = (_racine / fichier).read_text(encoding="utf-8")
         assert "sonde_cles_partagees.py" in contenu, f"{fichier} ne cite pas l'outil"
         assert "PAS DE PARTAGE" in contenu.upper(), f"{fichier} n'énonce pas la règle"
@@ -235,7 +235,7 @@ def test_la_regle_dit_de_prevenir_avant_de_partager_une_cle():
     """Ajoutée le 2026-08-30 sur demande : quand une clé manque, on prévient
     l'utilisateur — on ne recopie pas celle d'un autre bot pour dépanner. C'est
     exactement comme ça qu'une clé finit mutualisée sans que personne ne l'ait décidé."""
-    for fichier in ("AGENTS.md", "API_KEYS_SETUP.md"):
+    for fichier in ("AGENTS.md", "docs/API_KEYS_SETUP.md"):
         contenu = (_racine / fichier).read_text(encoding="utf-8").upper()
         assert "PRÉVENIR L'UTILISATEUR" in contenu or "PRÉVIENT L'UTILISATEUR" in contenu, \
             f"{fichier} : la consigne « prévenir avant de partager » manque"
@@ -248,7 +248,7 @@ def test_aucun_document_ne_demande_de_garder_WAL():
     un agent obeissant aurait rendu les six bots muets. Toute ligne qui parle de WAL doit
     dire qu'il est interdit."""
     fautes = []
-    for nom in ("AGENTS.md", "ARCHITECTURE.md", "DEV_GUIDE.md"):
+    for nom in ("AGENTS.md", "docs/ARCHITECTURE.md", "docs/DEV_GUIDE.md"):
         for n, ligne in enumerate((_racine / nom).read_text(encoding="utf-8").splitlines(), 1):
             if re.search(r"\bWAL\b", ligne) and not re.search(
                     r"jamais|interdit|TRUNCATE|pas en WAL", ligne, re.IGNORECASE):

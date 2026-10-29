@@ -5,7 +5,7 @@ CHAQUE BOT A SA PROPRE CLE. PAS DE PARTAGE. C'est une regle d'architecture, pas 
 preference : deux bots sur la meme cle partagent le meme quota, donc l'un peut rendre
 l'autre muet, et une cle revoquee en abat deux au lieu d'un.
 
-La regle etait ecrite dans API_KEYS_SETUP.md depuis toujours, et elle etait violee sans
+La regle etait ecrite dans docs/API_KEYS_SETUP.md depuis toujours, et elle etait violee sans
 que personne ne le voie : mesure du 2026-08-30, JohnnyBot et MalenaBot tournaient sur la
 MEME cle Gemini. Une regle qu'aucun outil ne verifie n'est pas une regle, c'est un voeu.
 

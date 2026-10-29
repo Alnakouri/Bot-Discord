@@ -1,7 +1,7 @@
 # Cursor Rules — Projet Discord Bots
 
 ## Règles impératives
-- LIRE ARCHITECTURE.md et AGENTS.md AVANT toute modification
+- LIRE docs/ARCHITECTURE.md et AGENTS.md AVANT toute modification
 - NE JAMAIS modifier ou supprimer un fichier .env (clés API de production)
 - NE JAMAIS modifier ou supprimer un fichier .master_key
 - NE JAMAIS créer d'import entre deux dossiers de bots

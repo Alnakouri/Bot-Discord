@@ -42,7 +42,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-# Scopes couvrant chat + profil + EventSub (Phase 4). Voir PLAN.md (P.2).
+# Scopes couvrant chat + profil + EventSub (Phase 4). Voir docs/plans/PLAN.md (P.2).
 SCOPES = [
     "chat:read",                       # lire le chat (IRC)
     "chat:edit",                       # écrire dans le chat (IRC)

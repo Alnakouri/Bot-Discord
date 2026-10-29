@@ -19,12 +19,12 @@
 
 Pour naviguer dans l'écosystème de documentation technique et utilisateur :
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** : Constitution technique globale, arborescence des fichiers et conventions de développement. **Source de vérité.**
-- **[DEV_GUIDE.md](DEV_GUIDE.md)** : Guide d'onboarding pour développeurs (venv, boucle d'outils, persistance, historique des modifications).
-- **[COMMANDES.md](COMMANDES.md)** : Guide utilisateur complet (slash commands communes et déclencheurs spécifiques par bot).
-- **[API_KEYS_SETUP.md](API_KEYS_SETUP.md)** : Gestion et chiffrement des clés d'API (Gemini, Groq, Mistral, OpenRouter).
-- **[MAINTENANCE.md](MAINTENANCE.md)** : Guide opérationnel (sauvegardes, redémarrages, logs, dépannage).
-- **[DEPLOY_ORACLE.md](DEPLOY_ORACLE.md)** : *(Archivé)* Guide historique du déploiement VM cloud (Oracle Always Free).
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** : Constitution technique globale, arborescence des fichiers et conventions de développement. **Source de vérité.**
+- **[DEV_GUIDE.md](docs/DEV_GUIDE.md)** : Guide d'onboarding pour développeurs (venv, boucle d'outils, persistance, historique des modifications).
+- **[COMMANDES.md](docs/COMMANDES.md)** : Guide utilisateur complet (slash commands communes et déclencheurs spécifiques par bot).
+- **[API_KEYS_SETUP.md](docs/API_KEYS_SETUP.md)** : Gestion et chiffrement des clés d'API (Gemini, Groq, Mistral, NVIDIA).
+- **[MAINTENANCE.md](docs/MAINTENANCE.md)** : Guide opérationnel (sauvegardes, redémarrages, logs, dépannage).
+- **[DEPLOY_ORACLE.md](docs/DEPLOY_ORACLE.md)** : *(Archivé)* Guide historique du déploiement VM cloud (Oracle Always Free).
 - **Documentation par bot** :
   - [Alfred/README.md](Alfred/README.md)
   - [Sheogorath/README.md](Sheogorath/README.md)
@@ -120,7 +120,7 @@ Là, c'est la **capacité** du modèle qui commande, pas le ton :
 > Aucune cascade n'en dépend, et un test l'interdit.
 
 > [!IMPORTANT]
-> Les fonctionnalités GPU locales (TTS voice-cloning Chatterbox pour Sheogorath et vision locale Moondream) sont actuellement **parquées** (désactivées par défaut pour compatibilité avec les architectures CPU-only). Les pipelines basculent automatiquement en mode dégradé sur le texte cloud ou les fallback Gemini. Voir [FEATURE_VOIX_VISION_GPU.md](FEATURE_VOIX_VISION_GPU.md).
+> Les fonctionnalités GPU locales (TTS voice-cloning Chatterbox pour Sheogorath et vision locale Moondream) sont actuellement **parquées** (désactivées par défaut pour compatibilité avec les architectures CPU-only). Les pipelines basculent automatiquement en mode dégradé sur le texte cloud ou les fallback Gemini. Voir [FEATURE_VOIX_VISION_GPU.md](docs/plans/FEATURE_VOIX_VISION_GPU.md).
 
 ---
 
@@ -186,7 +186,7 @@ python crypto_utils.py encrypt   # Chiffre les .env → .env.encrypted
 python crypto_utils.py decrypt   # Déchiffre les fichiers pour modification
 ```
 
-Pour plus de détails sur le cycle de vie des clés et la rotation, consultez [API_KEYS_SETUP.md](API_KEYS_SETUP.md).
+Pour plus de détails sur le cycle de vie des clés et la rotation, consultez [API_KEYS_SETUP.md](docs/API_KEYS_SETUP.md).
 
 ---
 
