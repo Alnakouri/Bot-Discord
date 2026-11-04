@@ -1,0 +1,224 @@
+:root {
+  color-scheme: dark;
+  --fond: #15161b;
+  --panneau: #1d1f26;
+  --surface: #272a33;
+  --trait: #343843;
+  --texte: #ececf1;
+  --discret: #a3a8b5;
+  --accent: #d9a441;
+  --accent-texte: #1b1608;
+  --vous: #2f3f63;
+  --attention: #e8b4a0;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: var(--fond);
+  color: var(--texte);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+button, input { font: inherit; }
+
+a { color: var(--accent); }
+
+.masque {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  max-width: 1120px;
+  height: 100dvh;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.salon {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panneau);
+  border: 1px solid var(--trait);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.entete {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--trait);
+}
+
+.entete h1 { margin: 0; font-size: 1.1rem; }
+
+.entete p { margin: 0; color: var(--discret); font-size: .875rem; }
+
+.entete .discret { margin-left: auto; }
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 1.3rem;
+}
+
+.fil {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.accueil { max-width: 520px; margin: 8vh auto 0; text-align: center; }
+
+.accueil h2 { margin: 0 0 4px; font-size: 1.3rem; }
+
+.accueil p { margin: 0 0 16px; color: var(--discret); }
+
+.idees { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+
+.idees button {
+  min-height: 44px;
+  padding: 8px 14px;
+  color: var(--texte);
+  background: var(--surface);
+  border: 1px solid var(--trait);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.idees button:hover { border-color: var(--accent); }
+
+.ligne { display: flex; gap: 10px; margin-bottom: 14px; }
+
+.ligne.vous { justify-content: flex-end; }
+
+.bulle {
+  max-width: min(78%, 560px);
+  padding: 9px 13px;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ligne.vous .bulle { background: var(--vous); }
+
+.ligne.repli .bulle { color: var(--attention); }
+
+.attente { color: var(--discret); font-style: italic; }
+
+.saisie {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 8px;
+  border-top: 1px solid var(--trait);
+}
+
+.saisie input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--texte);
+  background: var(--surface);
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+}
+
+#envoyer {
+  min-height: 44px;
+  padding: 0 16px;
+  color: var(--accent-texte);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#envoyer:disabled { opacity: .55; cursor: wait; }
+
+.discret {
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--discret);
+  background: none;
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.mention {
+  margin: 0;
+  padding: 0 16px 12px;
+  color: var(--discret);
+  font-size: .75rem;
+}
+
+.capot {
+  min-height: 0;
+  padding: 14px 16px;
+  background: var(--panneau);
+  border: 1px solid var(--trait);
+  border-radius: 12px;
+  overflow-y: auto;
+  font-size: .875rem;
+}
+
+.capot summary { font-weight: 600; cursor: pointer; }
+
+.capot h3 { margin: 18px 0 4px; font-size: .875rem; }
+
+.capot ul { margin: 0; padding-left: 18px; color: var(--discret); }
+
+.capot li { margin-bottom: 4px; }
+
+.dernier { margin-top: 10px; }
+
+.dernier dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+
+.dernier dt { color: var(--discret); }
+
+.dernier dd { margin: 0; overflow-wrap: anywhere; }
+
+.vide { margin: 0; color: var(--discret); }
+
+.liens { margin: 16px 0 0; }
+
+.vers-dashboard { display: block; margin-top: 12px; color: var(--accent); font-weight: 600; text-decoration: none; }
+
+.vers-dashboard:hover { text-decoration: underline; }
+
+@media (max-width: 860px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .capot { max-height: 45dvh; padding: 10px 14px; }
+
+  .accueil { margin-top: 3vh; }
+
+  .bulle { max-width: 88%; }
+}

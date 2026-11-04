@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alfred, démo</title>
+  <meta name="description" content="Essayez Alfred, l'un des six bots Discord du projet, directement dans le navigateur.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤵</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <main class="salon">
+      <header class="entete">
+        <div class="avatar" aria-hidden="true">🤵</div>
+        <div>
+          <h1>Alfred</h1>
+          <p>Majordome pince-sans-rire, l'un des six bots du projet.</p>
+        </div>
+        <button id="effacer" class="discret" type="button">Effacer</button>
+      </header>
+
+      <section id="fil" class="fil" aria-live="polite" aria-label="Conversation">
+        <div id="accueil" class="accueil">
+          <h2>Il attend votre message.</h2>
+          <p>Écrivez-lui ce que vous voulez, ou piochez une idée.</p>
+          <div id="idees" class="idees"></div>
+        </div>
+      </section>
+
+      <form id="formulaire" class="saisie">
+        <label class="masque" for="message">Votre message à Alfred</label>
+        <input id="message" type="text" maxlength="300" autocomplete="off" placeholder="Écrire à Alfred…" required>
+        <button id="envoyer" type="submit">Envoyer</button>
+      </form>
+      <p class="mention">
+        Réponses générées par une IA, parfois fausses. La démo ne conserve rien, mais vos messages passent
+        par Groq, qui peut les garder jusqu'à 30 jours : n'y écrivez rien de personnel.
+        Personnage © DC, projet de fan non commercial.
+      </p>
+    </main>
+
+    <aside class="capot">
+      <details id="details-capot">
+        <summary>Sous le capot</summary>
+        <div id="dernier" class="dernier">
+          <p class="vide">Envoyez un message pour voir le trajet de la réponse.</p>
+        </div>
+        <h3>Ce qui vient du vrai bot</h3>
+        <ul>
+          <li>Sa fiche de personnalité, générée depuis le code du bot.</li>
+          <li>Son filtre de sortie, qui retire les didascalies et le gras.</li>
+          <li>Le principe de cascade : si un modèle refuse, le suivant répond.</li>
+        </ul>
+        <h3>Ce qui reste sur Discord</h3>
+        <ul>
+          <li>La mémoire à long terme et la modération.</li>
+          <li>La voix, la vision et les duels entre bots.</li>
+        </ul>
+        <p class="liens"><a href="https://github.com/Alnakouri/Bot-Discord">Voir le code sur GitHub</a></p>
+      </details>
+      <a class="vers-dashboard" href="dashboard/">📊 Le dashboard qui pilote les six bots (démo)</a>
+    </aside>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

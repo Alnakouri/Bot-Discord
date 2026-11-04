@@ -1,0 +1,43 @@
+/* Ajouts de la démo publique : le bandeau, et une mise en page qui tient sur un téléphone
+   (le vrai dashboard ne tourne que sur un écran de bureau). */
+.demo-bandeau {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 1.5rem;
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    background: rgba(139, 92, 246, 0.12);
+    font-size: 0.9rem;
+}
+
+.demo-bandeau a,
+.demo-retour {
+    color: #c4b5fd;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.demo-retour {
+    display: block;
+    margin-top: 12px;
+    text-align: center;
+}
+
+@media (max-width: 800px) {
+    body { flex-direction: column; height: auto; overflow: auto; }
+    .sidebar { width: 100%; padding: 1rem; }
+    .brand { margin-bottom: 1rem; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 6px; }
+    .nav-links li { padding: 0.45rem 0.7rem; margin: 0; gap: 6px; font-size: 0.85rem; }
+    .nav-links li.active { border-left: 0; }
+    .nav-links li.section-title, .system-status { display: none; }
+    .content { padding: 1rem; overflow: visible; }
+    header { flex-wrap: wrap; gap: 8px; }
+    .charts-row, .errors-layout { grid-template-columns: 1fr; height: auto; }
+    .content [style*="grid-template-columns"] { grid-template-columns: 1fr !important; height: auto !important; }
+    .content table { display: block; overflow-x: auto; }
+}

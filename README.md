@@ -2,6 +2,8 @@
 
 Écosystème de **6 bots Discord** à personnalités distinctes, partageant une architecture centralisée et exécutés via **Docker**.
 
+**▶ Essayer sans Discord :** [parler à Alfred](https://alfred-demo.alnakouri.workers.dev) et [ouvrir le dashboard](https://alfred-demo.alnakouri.workers.dev/dashboard/), avec des données fictives. Le code de la démo est dans [`demo-alfred/`](demo-alfred/README.md).
+
 ## 🎭 Les Bots
 
 | Bot | Personnalité | Spécialités |

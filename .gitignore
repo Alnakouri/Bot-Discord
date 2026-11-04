@@ -92,6 +92,8 @@ diagnostic_output.txt
 # Discloud
 .discloudignore
 node_modules/
+.wrangler/
+.dev.vars
 
 _temporary_keys.txt
 
@@ -139,3 +141,4 @@ data/twitch_chat_auth_*.json
 
 # Journal SQLite en mode TRUNCATE (data/api_usage.db)
 *.db-journal
+demo-alfred/site/dashboard/

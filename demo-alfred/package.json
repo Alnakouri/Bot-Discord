@@ -1,0 +1,8 @@
+{
+  "name": "demo-alfred",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/worker.test.mjs"
+  }
+}

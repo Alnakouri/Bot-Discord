@@ -70,3 +70,8 @@ jobs:
       env:
         DASHBOARD_RELANCE_SANS_CONSOLE: "1"
       run: python -m pytest -q
+
+    # La demo publique d'Alfred : gardes (detresse, politique, refus), limites et origine.
+    - name: Tests du Worker de la demo
+      working-directory: demo-alfred
+      run: npm test
