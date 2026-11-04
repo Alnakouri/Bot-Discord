@@ -15,3 +15,13 @@ namespace_id = "1001"
   [ratelimits.simple]
   limit = 6
   period = 60
+
+# Tous visiteurs confondus : le limiteur par IP est approximatif (17 passages sur 28 au test
+# du 04/11), et un script qui change d'IP viderait le quota Groq de tout le monde.
+[[ratelimits]]
+name = "LIMITE_GLOBALE"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60

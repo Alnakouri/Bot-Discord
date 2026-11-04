@@ -130,6 +130,11 @@ async function chat(requete, env) {
   if (politique(messages[messages.length - 1].content)) {
     return json({ reponse: MESSAGE_POLITIQUE, moteur: { modele: null, latence_ms: 0, essais: [], retires: 0, garde: 'politique' } });
   }
+  // Juste avant Groq : seules les requetes qui consomment le quota comptent.
+  if (env.LIMITE_GLOBALE) {
+    const { success } = await env.LIMITE_GLOBALE.limit({ key: 'tous' });
+    if (!success) return json({ erreur: 'cadence' }, 429);
+  }
   // Un secret passe par un pipe Windows garde son CRLF, et fetch refuse alors l'en-tete.
   return json(await cascade(messages, env.GROQ_KEY_DEMO?.trim()));
 }

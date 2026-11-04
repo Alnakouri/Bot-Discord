@@ -238,6 +238,18 @@ test('une autre origine est refusee, la meme origine passe', async () => {
   assert.equal(nulle.status, 403);
 });
 
+test('la limite globale coupe avant Groq, mais laisse passer les reponses fixes', async () => {
+  const appels = groqFactice('Bien.');
+  const cles = [];
+  const env = { ...ENV, LIMITE_GLOBALE: { limit: async ({ key }) => { cles.push(key); return { success: false }; } } };
+  assert.equal((await worker.fetch(requete(message('Bonjour')), env)).status, 429);
+  assert.deepEqual(cles, ['tous']);
+  const politique = await worker.fetch(requete(message('Ton avis sur Macron ?')), env);
+  assert.equal(politique.status, 200);
+  assert.equal(appels.length, 0);
+  assert.equal(cles.length, 1);
+});
+
 test('le limiteur de cadence coupe avant tout appel a Groq', async () => {
   const appels = groqFactice('Bien.');
   const env = { ...ENV, LIMITEUR: { limit: async () => ({ success: false }) } };
