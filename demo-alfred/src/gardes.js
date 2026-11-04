@@ -83,7 +83,7 @@ export function rappel(texte) {
   const propre = texte.replace(/’/g, "'").toLowerCase();
   const anglais = (propre.match(MOTS_ANGLAIS) ?? []).length > (propre.match(MOTS_FRANCAIS) ?? []).length;
   const langue = anglais ? "en anglais, la langue du dernier message de l'Invité" : "dans la langue du dernier message de l'Invité";
-  return `Rappel avant de répondre : réponds ${langue}. Ta pique vise la situation, l'objet ou la formulation, jamais l'Invité : rien sur son intelligence, sa logique, sa mémoire, son ambition, ses compétences, son endurance ou sa réputation, et aucune comparaison avec le Maître.`;
+  return `Rappel avant de répondre : réponds ${langue}. Ta pique vise un tiers ou un objet (recruteur, mot de passe, compilateur, météo, toi-même), jamais l'Invité ni ce qu'il a fait : rien sur son intelligence, sa logique, sa mémoire, son ambition, ses compétences, son endurance, sa réputation ou son avenir, aucune comparaison avec le Maître, et pas de « sans surprise » ni de « unsurprisingly », qui le visent aussi.`;
 }
 
 // Les refus de securite du modele sortent du personnage, parfois en anglais.
