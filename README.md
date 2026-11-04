@@ -8,7 +8,7 @@
 
 - **Ce que fait le projet** : six personnages qui discutent, jouent, modèrent et annoncent les lives Twitch sur un serveur Discord, chacun avec sa voix et son humour.
 - **Pour qui** : les membres d'un serveur Discord communautaire lié à des streams Twitch.
-- **Fait avec l'IA** : je développe avec des assistants IA (Claude Code, Google Antigravity). Je décide ce que fait chaque bot, j'en fais écrire une partie par l'IA, puis je vérifie : tests pytest et CI à chaque envoi (voir [Vérifications automatiques](#-vérifications-automatiques)), et essais à la main sur Discord avant de valider.
+- **Fait avec l'IA** : tout le code est écrit par des assistants IA (Claude Code, Google Antigravity), pas par moi. Les idées viennent de moi : je décide ce que fait chaque bot et comment il doit réagir, puis je l'essaie sur Discord avant de valider. Des tests pytest et une CI vérifient chaque envoi (voir [Vérifications automatiques](#-vérifications-automatiques)).
 
 ## 🎭 Les Bots
 
