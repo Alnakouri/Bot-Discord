@@ -4,6 +4,12 @@
 
 **▶ Essayer sans Discord :** [parler à Alfred](https://alfred-demo.alnakouri.workers.dev) et [ouvrir le dashboard](https://alfred-demo.alnakouri.workers.dev/dashboard/), avec des données fictives. Le code de la démo est dans [`demo-alfred/`](demo-alfred/README.md).
 
+## 🧭 En bref
+
+- **Ce que fait le projet** : six personnages qui discutent, jouent, modèrent et annoncent les lives Twitch sur un serveur Discord, chacun avec sa voix et son humour.
+- **Pour qui** : les membres d'un serveur Discord communautaire lié à des streams Twitch.
+- **Fait avec l'IA** : je développe avec des assistants IA (Claude Code, Google Antigravity). Je décide ce que fait chaque bot, j'en fais écrire une partie par l'IA, puis je vérifie : tests pytest et CI à chaque envoi (voir [Vérifications automatiques](#-vérifications-automatiques)), et essais à la main sur Discord avant de valider.
+
 ## 🎭 Les Bots
 
 | Bot | Personnalité | Spécialités |
