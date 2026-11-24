@@ -11,17 +11,20 @@
 # ⚠️ PAS DE torchvision. Il n'apporte rien ici et casse l'import de `transformers`
 # des que sa version ne suit pas celle de torch (« operator torchvision::nms does not
 # exist »). Le Dockerfile de chatterbox le desinstalle explicitement pour la meme raison.
-FROM python:3.12-slim
+FROM python:3.12.16-slim
 
 WORKDIR /app
 
+# Versions FIGEES (2026-11-24). laya 0.5.0 (19/11) a retire `laya.agent`, et la 0.4.x
+# aussi : l'image ne se construisait plus. 0.3.4 est la version du 20/09, celle sur
+# laquelle LAYA a ete mesure ; les autres sont celles de l'image qui tourne avec elle.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
-      "torch>=2.5" \
+      "torch==2.15.0+cpu" \
  && pip install --no-cache-dir \
-      "laya>=0.3.4" \
-      "transformers>=4.48" \
-      fastapi \
-      "uvicorn[standard]"
+      "laya==0.3.4" \
+      "transformers==5.24.1" \
+      "fastapi==0.165.0" \
+      "uvicorn[standard]==0.54.0"
 
 # Les poids sont EMBARQUES, pas montes : l'image est ainsi autonome et se deplacera
 # telle quelle le jour ou les bots partiront sur un serveur a part. ~650 Mo.

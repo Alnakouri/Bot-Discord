@@ -38,7 +38,7 @@ jobs:
     - name: Dependances Python
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements.lock
 
     - name: Compilation
       run: python -m py_compile */bot_*.py */core/*.py shared/*.py tools/*.py dashboard/backend/*.py

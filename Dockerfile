@@ -1,4 +1,6 @@
-FROM python:3.11-slim
+# Version de Python FIGEE, comme les paquets (requirements.lock) : deux builds a des mois
+# d'ecart doivent donner la meme image. Mise a jour : docs/MAINTENANCE.md.
+FROM python:3.11.18-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
@@ -15,9 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Dépendances Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Dépendances Python : les versions EXACTES de requirements.lock, jamais « la derniere ».
+# Mesure du 2026-11-24 : LAYA ne se construisait plus (laya 0.5 sortie le 19/11 avait
+# retire `laya.agent`), et des images de juin tournaient sans Pillow. Une image
+# reconstruite doit etre celle qu'on a testee, pas celle du jour.
+COPY requirements.lock .
+RUN pip install --no-cache-dir -r requirements.lock
 
 # Copie du dossier partagé
 COPY shared/ ./shared/
