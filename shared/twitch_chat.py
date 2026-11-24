@@ -287,6 +287,30 @@ def _load_dashboard_twitch_config(bot_id: str, logger) -> dict:
         return {}
 
 
+def _lien_a_jour(bot_id: str, cmd: str, url: str, label: str, logger) -> tuple[str, str]:
+    """(url, label) ACTUELS de la commande de lien `cmd`, relus dans le dashboard.
+
+    Les commandes sont construites une seule fois, au demarrage : changer un lien expire
+    dans le dashboard obligeait a redemarrer le bot, live compris (cf.
+    [[gotcha-config-twitch-lue-au-demarrage-seulement]]). On relit donc l'ADRESSE a
+    chaque appel — un petit JSON local, rien de couteux. Seuls l'adresse et le libelle
+    suivent : ajouter ou retirer une commande demande toujours un redemarrage. Commande
+    disparue ou adresse videe : on garde celle du demarrage plutot que de rendre un lien vide.
+    """
+    for entry in (_load_dashboard_twitch_config(bot_id, logger).get("link_commands") or []):
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("cmd") or "").strip().lower().lstrip("!") != cmd:
+            continue
+        nouvelle = str(entry.get("url") or "").strip()
+        if not nouvelle:
+            break
+        if nouvelle != url:
+            logger.info(f"🔄 [TWITCH_CHAT:{bot_id}] lien !{cmd} relu à chaud : {nouvelle}")
+        return nouvelle, str(entry.get("label") or "").strip()
+    return url, label
+
+
 def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = None,
                       key_manager=None, mistral_client=None, groq_client=None,
                        nvidia_client=None, bot_label: str | None = None,
@@ -456,11 +480,16 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
             logger.warning(f"⚠️ [TWITCH_CHAT:{bot_id}] link_command !{cmd} ignorée (placeholder inconnu : {bad})")
             continue
 
+        # L'adresse COURANTE, mise a jour par `_lien_a_jour` : un lien change au dashboard
+        # n'est annonce qu'une fois au journal, pas a chaque `!discord`.
+        lien = {"url": url, "label": label}
         if message_auto:
-            async def callback(author, args, u=url, l=label, c=cmd, t=msg_tmpl):
+            async def callback(author, args, lc=lien, c=cmd, t=msg_tmpl):
                 # ⚠️ Repli sur le gabarit fixe à la moindre défaillance : quota épuisé,
                 # cascade muette, phrase vide. Un `!discord` qui ne rend RIEN est pire
                 # qu'un `!discord` fade — le viewer, lui, attend une adresse.
+                lc["url"], lc["label"] = _lien_a_jour(bot_id, c, lc["url"], lc["label"], logger)
+                u, l = lc["url"], lc["label"]
                 bot = bot_ref.get("bot")
                 phrase = None
                 if bot is not None:
@@ -470,7 +499,9 @@ def setup_twitch_chat(bot_id: str, logger, *, personality_prompt: str | None = N
                         logger.error(f"❌ [TWITCH_CHAT:{bot_id}] phrase de lien !{c} : {e}")
                 return phrase or t.format(url=u, label=l)
         else:
-            callback = lambda author, args, u=url, l=label, t=msg_tmpl: t.format(url=u, label=l)
+            def callback(author, args, lc=lien, c=cmd, t=msg_tmpl):
+                lc["url"], lc["label"] = _lien_a_jour(bot_id, c, lc["url"], lc["label"], logger)
+                return t.format(url=lc["url"], label=lc["label"])
         link_cmds[cmd] = callback
         link_auto[cmd] = message_auto
 

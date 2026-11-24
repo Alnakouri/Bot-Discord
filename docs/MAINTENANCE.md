@@ -32,6 +32,46 @@ Le code `shared/` est monté en read-only — les modifications sont prises en c
 docker compose restart
 ```
 
+> ⚠️ `restart` garde l'IMAGE d'origine. Le code est monté, pas les paquets : un code qui
+> importe une dépendance ajoutée depuis le dernier build plante au démarrage et tourne en
+> boucle. Mesure du 2026-11-24 : quatre bots en `ModuleNotFoundError: PIL` sur des images
+> de juin. Dès que `requirements.txt` a bougé : `docker compose up -d --build`.
+
+### Dépendances figées
+`requirements.txt` est la liste voulue, écrite à la main. `requirements.lock` fige les
+versions exactes qu'elle a données ; l'image (`Dockerfile`) et la CI installent le lock, donc
+la CI teste exactement les versions de la production. Les images de base sont figées au
+correctif près (`python:3.11.18-slim`), et `laya-server/Dockerfile` fige chaque paquet
+(`laya==0.3.4` : les 0.4 et 0.5 n'ont plus `laya.agent`).
+
+Pour mettre à jour (nouvelle dépendance, correctif de sécurité) :
+```bash
+# 1. modifier requirements.txt, puis regénérer le lock dans la MÊME image de base :
+docker run --rm -v "$PWD/requirements.txt:/r.txt:ro" python:3.11.18-slim \
+  sh -c "pip install -q -r /r.txt && pip freeze" > requirements.lock
+# 2. remettre l'en-tête du fichier, pousser, attendre la CI verte, puis :
+docker compose up -d --build
+```
+`tests/test_dependances_figees.py` refuse une dépendance de `requirements.txt` absente du lock.
+
+### Sonde de santé
+`tools/sonde_sante.py` vérifie toutes les heures que chaque service de `docker-compose.yml`
+tourne sans boucler, que la dernière sauvegarde a moins de 26 h, et que chaque lien
+`!discord` du dashboard est vivant (et n'expire pas dans les 7 jours). Le bilan va dans
+`data/sante.json`, affiché par le bandeau d'alerte de l'accueil du dashboard ; un problème
+NOUVEAU déclenche une notification Windows. Docker arrêté n'est pas signalé (AutoStart
+coupé exprès).
+```bash
+python tools/sonde_sante.py --strict                       # à la main
+powershell -File tools\installer_sonde_sante.ps1           # tâche planifiée \BotDiscord\Sonde sante
+powershell -File tools\installer_sonde_sante.ps1 -Retirer  # la retirer
+```
+
+### Changer un lien `!discord`
+L'adresse est relue à chaque `!discord` : la changer dans le dashboard suffit, sans
+redémarrer. Ajouter ou retirer une commande, en revanche, demande toujours un redémarrage du
+bot. Préférer une invitation **permanente** (« Expire après : Jamais »).
+
 ---
 
 ## Maintenance de la Base de Données
@@ -83,6 +123,7 @@ python crypto_utils.py encrypt
 ## Diagnostic
 
 ### Un bot ne répond pas
+0. `python tools/sonde_sante.py` : boucle de redémarrage, conteneur absent, sauvegarde arrêtée ?
 1. Vérifier les logs : `docker compose logs -f <nom_bot>`
 2. Vérifier le token Discord dans `.env.encrypted`
 3. Vérifier les clés API Gemini : rotation automatique (voir logs `[API_MANAGER]`)
