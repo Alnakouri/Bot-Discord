@@ -489,6 +489,15 @@ async function updateStatTiles() {
         }
     } catch(e) { console.error("Error stat tile fetch error:", e); }
 
+    // Bilan de tools/sonde_sante.py : boucles de redemarrage, sauvegarde, liens expires.
+    try {
+        const santeRes = await fetch('/api/sante');
+        if (santeRes.ok) {
+            window.globalSante = await santeRes.json();
+            updateOverviewAlertBanner();
+        }
+    } catch(e) { console.error("Sante fetch error:", e); }
+
     try {
         const apiRes = await fetch('/api/api-usage?hours=24');
         if (apiRes.ok) {
@@ -1958,6 +1967,12 @@ function updateOverviewAlertBanner() {
     // « erreur » et non « erreur critique » : stat-errors compte TOUTES les erreurs 24 h.
     if (bots > 0) parts.push(`${bots} bot${bots > 1 ? 's' : ''} hors ligne`);
     if (errs > 0) parts.push(`${errs} erreur${errs > 1 ? 's' : ''} sur 24 h`);
+    const sante = window.globalSante;
+    if (sante && sante.present) {
+        sante.problemes.forEach(p => parts.push(p.message));
+        // Une sonde qui ne tourne plus ne dit plus rien : ce silence-la doit se voir aussi.
+        if (sante.perime) parts.push('sonde de santé muette depuis plus de 3 h (tâche planifiée ?)');
+    }
     if (parts.length > 0) {
         textEl.textContent = parts.join(' · ');
         banner.style.display = 'flex';

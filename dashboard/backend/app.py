@@ -286,6 +286,26 @@ async def log_stream(websocket: WebSocket, bot: str = None):
 async def get_errors_count(hours: int = 24):
     return error_analyzer.count_recent(hours)
 
+# --- SANTE (tools/sonde_sante.py, tache planifiee toutes les heures) ---
+# Le dashboard ne fait que LIRE le bilan : la sonde en est le seul ecrivain.
+SANTE_FILE = DATA_DIR / "sante.json"
+SANTE_PERIME_S = 3 * 3600   # la sonde passe chaque heure : 3 h sans bilan = elle ne tourne plus
+
+@app.get("/api/sante")
+async def get_sante():
+    try:
+        bilan = json.loads(SANTE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"present": False, "problemes": []}
+    try:
+        from datetime import datetime, timezone
+        age_s = (datetime.now(timezone.utc) - datetime.fromisoformat(bilan["verifie_le"])).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        age_s = None
+    return {"present": True, "verifie_le": bilan.get("verifie_le"),
+            "perime": age_s is None or age_s > SANTE_PERIME_S,
+            "problemes": bilan.get("problemes") or []}
+
 @app.post("/api/errors/{error_id}/resolve")
 async def resolve_error(error_id: int):
     res = error_analyzer.resolve(error_id)
