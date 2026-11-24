@@ -102,7 +102,8 @@ def test_la_derniere_sauvegarde_est_lue_dans_le_NOM_du_dossier(tmp_path):
 
 def test_le_montage_docker_desktop_est_ramene_au_chemin_windows(monkeypatch):
     etat = {"Mounts": [{"Destination": "/app/sauvegardes", "Source": "/run/desktop/mnt/host/d/Sauvegardes/bases"}]}
-    monkeypatch.setattr(sonde.os, "name", "nt")
+    # Jamais `os.name` : patcher le module os global fait planter pathlib (CI rouge du 24/11).
+    monkeypatch.setattr(sonde, "_WINDOWS", True)
     assert sonde.dossier_sauvegardes(etat) == Path("D:/Sauvegardes/bases")
 
 

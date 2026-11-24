@@ -54,7 +54,8 @@ BOUCLE_MIN_REDEMARRAGES = 3
 BOUCLE_FENETRE_MIN = 10
 LIEN_PREAVIS_JOURS = 7
 
-_SANS_FENETRE = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW (pythonw)
+_WINDOWS = os.name == "nt"   # point d'injection des tests (ne JAMAIS patcher os.name : pathlib en depend)
+_SANS_FENETRE = 0x08000000 if _WINDOWS else 0   # CREATE_NO_WINDOW (pythonw)
 _RE_INVITATION = re.compile(r"(?:discord\.gg|discord(?:app)?\.com/invite)/([A-Za-z0-9-]+)")
 _RE_DOSSIER_SAUVEGARDE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{4}$")
 
@@ -137,7 +138,7 @@ def dossier_sauvegardes(etat_sauvegarde):
             src = m["Source"]
             # Docker Desktop rend `/run/desktop/mnt/host/d/...` pour un chemin Windows `D:/...`
             hote = re.match(r"^/run/desktop/mnt/host/([a-z])/(.*)$", src)
-            if hote and os.name == "nt":
+            if hote and _WINDOWS:
                 return Path(f"{hote.group(1).upper()}:/{hote.group(2)}")
             return Path(src)
     return None
@@ -268,7 +269,7 @@ $app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell
 def notifier(problemes):
     """Notification Windows. Le texte passe par l'environnement, jamais dans le script :
     un nom de conteneur ou de bot ne peut pas devenir du PowerShell."""
-    if os.name != "nt" or not problemes:
+    if not _WINDOWS or not problemes:
         return
     titre = f"Bots Discord : {len(problemes)} probleme{'s' if len(problemes) > 1 else ''}"
     texte = "\n".join(p["message"] for p in problemes[:4])
